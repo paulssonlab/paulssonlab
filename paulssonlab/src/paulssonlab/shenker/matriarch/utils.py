@@ -1,6 +1,17 @@
 from collections import defaultdict
 from tqdm import tqdm, tqdm_notebook
 import zarr
+from datetime import datetime, timezone
+
+# FROM: https://stackoverflow.com/questions/2150739/iso-time-iso-8601-in-python
+def isonow():
+    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+
+
+# FROM: https://stackoverflow.com/questions/2150739/iso-time-iso-8601-in-python
+def timestamp_to_isoformat(ts):
+    dt = datetime.fromtimestamp(ts, timezone.utc)
+    return dt.astimezone().isoformat()
 
 
 def tree():

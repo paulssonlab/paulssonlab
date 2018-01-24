@@ -1,4 +1,4 @@
-put this todo in git
+replace ingested/processed flag with finished flag
 
 get rid of ingest_nd2_file
 implement quantize_nd2 by allowing ingest_nd2 take a filter func

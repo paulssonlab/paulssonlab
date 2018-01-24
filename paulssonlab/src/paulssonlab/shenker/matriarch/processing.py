@@ -7,7 +7,8 @@ import itertools
 from more_itertools import rstrip
 from collections.abc import Sequence, Iterable
 from copy import deepcopy
-from utils import tqdm_auto, open_zarr_group
+import time
+from utils import tqdm_auto, open_zarr_group, timestamp_to_isoformat
 
 DEFAULT_FRAME_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0
@@ -52,6 +53,7 @@ def process_positions(
     shape = None
     dtype = None
     for pos_name, position in progress_bar(in_group.items()):
+        time_started = time.time()
         if compressor is None:
             compressor = position.compressor
         if order is None:
@@ -82,12 +84,16 @@ def process_positions(
                 chunks=chunks,
                 order=order,
             )
-            ary.attrs["processed"] = False
+        ary.attrs["processed"] = False
+        ary.attrs["time_started"] = timestamp_to_isoformat(time_started)
         if res is None:
             map_ndarray(func, position, axis=axis, out=ary, progress_bar=progress_bar)
         else:
             ary[:] = res
             res = None
+        time_finished = time.time()
+        ary.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
+        ary.attrs["time_elapsed"] = time_finished - time_started
         ary.attrs["processed"] = True
     return out_group
 
@@ -97,10 +103,14 @@ def process_attrs(func, in_group, out_group, progress_bar=tqdm_auto):
         pos_group = out_group.require_group(pos_name)
         if "processed" and pos_group.attrs and pos_group.attrs["processed"]:
             continue
-        else:
-            pos_group.attrs["processed"] = False
+        pos_group.attrs["processed"] = False
+        time_started = time.time()
+        pos_group.attrs["time_started"] = timestamp_to_isoformat(time_started)
         res = func(position)
         pos_group.attrs["result"] = res
+        time_finished = time.time()
+        pos_group.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
+        pos_group.attrs["time_elapsed"] = time_finished - time_started
         pos_group.attrs["processed"] = True
     return out_group
 
@@ -135,10 +145,15 @@ def ingest_nd2(
         if "ingested" in ary.attrs and ary.attrs["ingested"]:
             continue
         ary.attrs["ingested"] = False
+        time_started = time.time()
+        ary.attrs["time_started"] = timestamp_to_isoformat(time_started)
         ary.attrs["metadata"] = meta
         for c in progress_bar(range(nd2.sizes["c"]), leave=False):
             for t in progress_bar(range(nd2.sizes["t"]), leave=False):
                 ary[c, t, :, :] = nd2.get_frame_2D(c=c, t=t, v=v)
+        time_finished = time.time()
+        ary.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
+        ary.attrs["time_elapsed"] = time_finished - time_started
         ary.attrs["ingested"] = True
     return raw_group
 
