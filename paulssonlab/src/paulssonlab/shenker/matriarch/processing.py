@@ -159,5 +159,5 @@ def quantize_frames(in_group, out_group, bits, random=True, progress_bar=tqdm_au
         lambda frame: quantize_frame(frame, bits, random=random),
         in_group,
         out_group,
-        axis=(0, 1),
+        axis=(0),
     )
