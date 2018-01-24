@@ -100,7 +100,7 @@ def process_attrs(func, in_group, out_group, progress_bar=tqdm_auto):
         else:
             pos_group.attrs["processed"] = False
         res = func(position)
-        pos_group["result"] = res
+        pos_group.attrs["result"] = res
         pos_group.attrs["processed"] = True
     return out_group
 
