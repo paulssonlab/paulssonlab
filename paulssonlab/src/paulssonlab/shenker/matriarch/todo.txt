@@ -1,0 +1,65 @@
+put this todo in git
+
+get rid of ingest_nd2_file
+implement quantize_nd2 by allowing ingest_nd2 take a filter func
+profile quantize
+
+contexttimer for tasks, store timing information (task_duration, task_date) in attrs
+decorator to grab task args, put in .attrs
+
+tiff metadata/sketch of folder watcher (“stream”) command
+hack trench_finder with fixed spacing, narrow angle, verify it works for ~20 frames
+mother cell endpoint tracking
+mother cell segmentation mask
+2nd, 3rd cell endpoint tracking, masks
+UI
+
+fix progress bar time heuristic
+command-line ingest/quantize commands (incl. option to only process first N)
+auto LSF parallelization for ingest/quantize
+auto-detect quantization level (need “natural image” vs. independent noise heuristic)
+
+debug object to store hierarchy of debug plots
+
+store segmentation debugging plots in dicts in .attrs
+helper functions for displaying debugging plots (labeled by ordereddict key... optional description?) in tabs/accordions
+
+store trench points in computed/trench_finder group metadata
+allow image viewer to overlay trenches easily
+link image viewer to frame stepping widget
+improve rotation detection/trench finding
+mother cell endpoint tracking
+mother cell volume mask
+allow image viewer to overlay seg masks, trench thumb boundaries easily
+fluorescent readout using cell masks
+allow image viewer to overlay mean cell intensity/variance easily on seg masks
+
+per-trench and per-frame sharpness
+dataframe join with per-frame, per-trench metadata
+beyond mother cell tracking
+
+spatial barcode warp/metric/clustering
+
+unify process_arrays, process_attrs, ingest_nd2 so they can all share the same parallelization/remote execution/completion status tracking/progress bar infrastructure
+
+fast/parallel nd2 to zarr converter, with progress bar (command line tool)
+
+crosstalk composite
+use fluorescent channel when doing lineage tracking
+
+process_frames: register computed groups callback to compute on demand (TODO: use threading to store, return computed value immediately), provide require_computed, keep track of which (c, t) have been computed
+LATER: need to handle versioning of computed callbacks
+
+universal caching/storage layer (look up diagnostic/intermediate calculations, if not found, recompute and store them)
+
+POLISH:
+alignment between kymograph pixel centers and sharpness plot points
+pixel value live display
+turn on wheel zoom by default
+
+AFTER BUG FIX/WORKAROUND:
+live-updating intersected point on thumbnail
+
+NICE THINGS:
+replace thumbnail viewer with full-size image viewer
+stich together multiple fields in image viewer, toggle to use unified or per-field coördinate system
