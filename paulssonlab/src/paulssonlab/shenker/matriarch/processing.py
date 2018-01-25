@@ -74,8 +74,8 @@ def process_positions(
                 )
                 shape = res.shape
                 dtype = res.dtype
-                if chunks is None and len(shape) == len(position.shape):
-                    chunks = position.chunks
+            if chunks is None and len(shape) == len(position.shape):
+                chunks = position.chunks
             ary = out_group.zeros(
                 pos_name,
                 shape=shape,
