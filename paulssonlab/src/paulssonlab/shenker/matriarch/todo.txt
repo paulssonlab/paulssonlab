@@ -1,23 +1,25 @@
+iterate through sorted keys (so that progress bar is correct), set smoothing=0.8
 replace ingested/processed flag with finished flag
 
-get rid of ingest_nd2_file
-implement quantize_nd2 by allowing ingest_nd2 take a filter func
-profile quantize
-
-contexttimer for tasks, store timing information (task_duration, task_date) in attrs
-decorator to grab task args, put in .attrs
-
-tiff metadata/sketch of folder watcher (“stream”) command
 hack trench_finder with fixed spacing, narrow angle, verify it works for ~20 frames
+
+look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
+non-binary hough transform (??)
 mother cell endpoint tracking
 mother cell segmentation mask
 2nd, 3rd cell endpoint tracking, masks
 UI
+tiff metadata/sketch of folder watcher (“stream”) command
 
-fix progress bar time heuristic
+sublime remotesubl retry
+
 command-line ingest/quantize commands (incl. option to only process first N)
 auto LSF parallelization for ingest/quantize
 auto-detect quantization level (need “natural image” vs. independent noise heuristic)
+
+get rid of ingest_nd2_file
+implement quantize_nd2 by allowing ingest_nd2 take a filter func
+profile quantize
 
 debug object to store hierarchy of debug plots
 

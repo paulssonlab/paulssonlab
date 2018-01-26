@@ -8,6 +8,7 @@ from more_itertools import rstrip
 from collections.abc import Sequence, Iterable
 from copy import deepcopy
 import time
+from natsort import natsorted
 from utils import tqdm_auto, open_zarr_group, timestamp_to_isoformat
 
 DEFAULT_FRAME_COMPRESSOR = Blosc(
@@ -52,7 +53,9 @@ def process_positions(
     res = None
     shape = None
     dtype = None
-    for pos_name, position in progress_bar(in_group.items()):
+    pbar = progress_bar(natsorted(in_group.items(), key=operator.itemgetter(0)))
+    for pos_name, position in pbar:
+        pbar.set_description("position {}".format(pos_name))
         time_started = time.time()
         if compressor is None:
             compressor = position.compressor
@@ -132,7 +135,9 @@ def ingest_nd2(
     meta = deepcopy(nd2.metadata)
     meta["date"] = meta["date"].isoformat()
     raw_group.attrs["metadata"] = meta
-    for v in progress_bar(range(nd2.sizes["v"])):
+    pbar_v = progress_bar(range(nd2.sizes["v"]))
+    for v in pbar_v:
+        pbar_v.set_description("position {}".format(v))
         ary = raw_group.require_dataset(
             "{:d}".format(v),
             shape=[nd2.sizes[n] for n in "ctyx"],
@@ -148,8 +153,12 @@ def ingest_nd2(
         time_started = time.time()
         ary.attrs["time_started"] = timestamp_to_isoformat(time_started)
         ary.attrs["metadata"] = meta
-        for c in progress_bar(range(nd2.sizes["c"]), leave=False):
-            for t in progress_bar(range(nd2.sizes["t"]), leave=False):
+        pbar_c = progress_bar(range(nd2.sizes["c"]), leave=False)
+        for c in pbar_c:
+            pbar_c.set_description("channel {}".format(c))
+            pbar_t = progress_bar(range(nd2.sizes["t"]), leave=False)
+            for t in pbar_t:
+                pbar_t.set_description("timepoint {}".format(t))
                 ary[c, t, :, :] = nd2.get_frame_2D(c=c, t=t, v=v)
         time_finished = time.time()
         ary.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
