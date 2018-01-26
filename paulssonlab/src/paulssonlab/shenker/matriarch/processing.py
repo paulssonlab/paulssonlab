@@ -132,7 +132,7 @@ def ingest_nd2(
     meta = deepcopy(nd2.metadata)
     meta["date"] = meta["date"].isoformat()
     raw_group.attrs["metadata"] = meta
-    for v in tqdm_auto(range(nd2.sizes["v"])):
+    for v in progress_bar(range(nd2.sizes["v"])):
         ary = raw_group.require_dataset(
             "{:d}".format(v),
             shape=[nd2.sizes[n] for n in "ctyx"],
