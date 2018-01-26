@@ -179,6 +179,7 @@ def quantize_frame(arr, bits, random=True):
 
 def quantize_frames(in_group, out_group, bits, random=True, progress_bar=tqdm_auto):
     out_group.attrs["quantization"] = {"bits": bits, "random": random}
+    out_group.attrs["metadata"] = in_group.attrs["metadata"]
     return process_positions(
         lambda frame: quantize_frame(frame, bits, random=random),
         in_group,
