@@ -1,3 +1,19 @@
+import numpy as np
+import scipy
+import skimage
+import sklearn
+import sklearn.cluster
+from sklearn.preprocessing import StandardScaler
+import peakutils
+from holoborodko_diff import holo_diff
+from collections import defaultdict
+from itertools import zip_longest
+import matplotlib.pyplot as plt
+import holoviews as hv
+import holoviews.operation.datashader as datashader
+from utils import get_if_not_none
+
+
 def _standardize_cluster_labels(X, fit):
     mean = defaultdict(lambda: 0)
     count = defaultdict(lambda: 0)
@@ -185,32 +201,52 @@ def stack_jagged(arys, fill=0):
     return np.array(list(zip_longest(*arys, fillvalue=fill))).T
 
 
-def detect_periodic_peaks(signal, diagnostics=None):
-    idxs = peakutils.indexes(signal, thres=0.2, min_dist=5)
-    xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
-    plt.figure(figsize=(16, 8))
-    plt.plot()
-    plt.plot(np.arange(len(signal)), signal)
-    plt.scatter(xs, signal[xs.astype(np.int_)], c="r")
-    dxs = np.diff(xs)
-    period_min = np.percentile(dxs, 10)
-    period_max = dxs.max()
-    num_periods = 100
-    periods = np.linspace(period_min, period_max, num_periods)
+def time_series_periodogram(xs, period_min, period_max, bins=100, diagnostics=None):
+    periods = np.linspace(period_min, period_max, bins)
     # std = ((dxs + periods[:,np.newaxis]/2) % periods[:,np.newaxis]).std(axis=1)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
     period_idx = std.argmin()
     period = periods[period_idx]
-    plt.figure()
-    plt.plot(periods, std)
-    plt.scatter([period], [std[period_idx]], c="r")
-    periods2 = np.linspace(period * 0.98, period * 1.02, num_periods)
-    std2 = scipy.stats.iqr(((xs) % periods2[:, np.newaxis]), axis=1) / periods2
-    period_idx2 = std2.argmin()
-    period2 = periods2[period_idx2]
-    plt.figure()
-    plt.plot(periods2, std2)
-    plt.scatter([period2], [std2[period_idx2]], c="r")
+    if diagnostics is not None:
+        highlighted_point = hv.Points([(period, std[period_idx])]).opts(
+            style={"Points": {"size": 10, "color": "red"}}
+        )
+        diagnostics["periodogram"] = hv.Curve((periods, std)) * highlighted_point
+    # plt.figure()
+    # plt.plot(periods, std)
+    # plt.scatter([period], [std[period_idx]], c='r')
+    return period
+
+
+def detect_periodic_peaks(signal, min_dist=10, max_dist=50, diagnostics=None):
+    idxs = peakutils.indexes(signal, thres=0.2, min_dist=min_dist)
+    # xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
+    xs = idxs
+    # plt.figure(figsize=(16,8))
+    # plt.plot()
+    # plt.plot(np.arange(len(signal)), signal)
+    # plt.scatter(xs, signal[xs.astype(np.int_)], c='r')
+    dxs = np.diff(xs)
+    # period_min = np.percentile(dxs, 10)
+    # period_max = dxs.max()
+    period_min = min_dist
+    period_max = max_dist
+    num_periods = 100
+    period = time_series_periodogram(
+        xs,
+        period_min,
+        period_max,
+        bins=num_periods,
+        diagnostics=get_if_not_none(diagnostics, "periodogram_1"),
+    )
+    # period2 = period
+    period2 = time_series_periodogram(
+        xs,
+        period * 0.98,
+        period * 1.02,
+        num_periods,
+        diagnostics=get_if_not_none(diagnostics, "periodogram_2"),
+    )
     offsets = np.linspace(0, period2, num_periods)
     offset_idxs = (
         np.arange(0, len(signal) - period2, period2) + offsets[:, np.newaxis]
@@ -218,9 +254,9 @@ def detect_periodic_peaks(signal, diagnostics=None):
     objective = signal[offset_idxs].sum(axis=1)
     offset_idx = objective.argmax()
     offset = offsets[offset_idx]
-    plt.figure()
-    plt.plot(offsets, objective)
-    plt.scatter([offset], [objective[offset_idx]], c="r")
+    # plt.figure()
+    # plt.plot(offsets, objective)
+    # plt.scatter([offset], [objective[offset_idx]], c='r')
     return period2, offset
 
 
@@ -230,11 +266,11 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     x2 = edge_point(t0, theta + np.pi / 2, x_lim, y_lim)
     xs, ys = coords_along(x1, x2)
     profile = img[ys, xs]
-    period, offset = detect_periodic_peaks(profile)
+    period, offset = detect_periodic_peaks(profile, diagnostics=diagnostics)
     idxs = np.arange(offset, len(profile), period).astype(np.int_)
-    plt.figure(figsize=(16, 8))
-    plt.plot(profile)
-    plt.scatter(idxs, profile[idxs], c="r")
+    # plt.figure(figsize=(16,8))
+    # plt.plot(profile)
+    # plt.scatter(idxs, profile[idxs], c='r')
     return np.vstack((xs[idxs], ys[idxs])).T
 
 
@@ -249,23 +285,21 @@ def _detect_trench_end(img, anchors, theta, diagnostics=None):
         xss.append(xs)
         yss.append(ys)
         trench_profiles.append(img[ys, xs])
-    plt.figure(figsize=(8, 8))
-    for trench_profile in trench_profiles:
-        plt.plot(trench_profile)
+    # plt.figure(figsize=(8,8))
+    # for trench_profile in trench_profiles:
+    #     plt.plot(trench_profile)
     stacked_profile = np.percentile(stack_jagged(trench_profiles), 80, axis=0)
     # cum_profile = np.cumsum(stacked_profile)
     # cum_profile /= cum_profile[-1]
     # end = np.where(cum_profile > 0.8)[0][0]
     stacked_profile_diff = holo_diff(1, stacked_profile)
     end = stacked_profile_diff.argmin()
-    plt.figure(figsize=(8, 8))
-    plt.plot(stacked_profile)
-    plt.axvline(end, c="r")
-    # ax2 = plt.gca().twinx()
-    # ax2.plot(stacked_profile_diff, color='g')
-    plt.figure(figsize=(8, 8))
-    plt.plot(stacked_profile_diff, color="g")
-    plt.axvline(end, c="r")
+    # plt.figure(figsize=(8,8))
+    # plt.plot(stacked_profile)
+    # plt.axvline(end, c='r')
+    # plt.figure(figsize=(8,8))
+    # plt.plot(stacked_profile_diff, color='g')
+    # plt.axvline(end, c='r')
     end_points = []
     for xs, ys in zip(xss, yss):
         idx = end
@@ -279,28 +313,35 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
     img_masked = np.where(
         skimage.morphology.binary_dilation(bin_img), img, np.percentile(img, 5)
     )
-    top_points = _detect_trench_end(img_masked, anchors, theta, debug=debug)
-    bottom_points = _detect_trench_end(img_masked, anchors, theta + np.pi, debug=debug)
-    plt.figure(figsize=(12, 12))
-    plt.imshow(img_masked)
-    plt.scatter(*anchors.T, s=3, c="w")
-    plt.scatter(*top_points.T, s=3, c="g")
-    plt.scatter(*bottom_points.T, s=3, c="r")
+    top_points = _detect_trench_end(
+        img_masked, anchors, theta, diagnostics=get_if_not_none(diagnostics, "top")
+    )
+    bottom_points = _detect_trench_end(
+        img_masked,
+        anchors,
+        theta + np.pi,
+        diagnostics=get_if_not_none(diagnostics, "bottom"),
+    )
+    # plt.figure(figsize=(12,12))
+    # plt.imshow(img_masked)
+    # plt.scatter(*anchors.T, s=3, c='w')
+    # plt.scatter(*top_points.T, s=3, c='g')
+    # plt.scatter(*bottom_points.T, s=3, c='r')
     return top_points, bottom_points
 
 
 def detect_trenches(img, bin_img, theta, diagnostics=None):
     t0 = detect_trench_region(bin_img, theta)
-    trench_anchors = detect_trench_anchors(img, t0, theta, debug=diagnostics)
+    trench_anchors = detect_trench_anchors(img, t0, theta, diagnostics=diagnostics)
     trench_points = detect_trench_ends(
-        img, bin_img, trench_anchors, theta, debug=diagnostics
+        img, bin_img, trench_anchors, theta, diagnostics=diagnostics
     )
     return trench_points
 
 
-def _label_for_trenches(img_series):
+def _label_for_trenches(img_series, channel):
     # img = img_series[::10].max(axis=0)
-    img = img_series[30]  # TODO
+    img = img_series[channel, 30]  # TODO
     # TODO: need rotation-invariant detrending
     img = img - np.percentile(img, 3, axis=1)[:, np.newaxis]
     img_thresh = img > skimage.filters.threshold_otsu(img)
@@ -308,15 +349,17 @@ def _label_for_trenches(img_series):
     return img, img_labels
 
 
-def get_trenches(img_series, diagnostics=None):
-    img, img_labels = _label_for_trenches(img_series)
-    plt.figure(figsize=(8, 8))
-    plt.imshow(img_labels)
+def get_trenches(img_series, channel, diagnostics=None):
+    img, img_labels = _label_for_trenches(img_series, channel)
+    if diagnostics is not None:
+        diagnostics["labeled_image"] = datashader.regrid(hv.Image(img))
     max_label = img_labels.max()
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
         trenches[label] = _get_trench_set(
-            img, img_labels == label, diagnostics=diagnostics
+            img,
+            img_labels == label,
+            diagnostics=get_if_not_none(diagnostics, "label_{}".format(label)),
         )
     return trenches
 

@@ -3,6 +3,14 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 
+
+def get_if_not_none(obj, key):
+    if obj is not None:
+        return obj[key]
+    else:
+        return None
+
+
 # FROM: https://stackoverflow.com/questions/2150739/iso-time-iso-8601-in-python
 def isonow():
     return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
