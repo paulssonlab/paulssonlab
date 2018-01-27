@@ -2,6 +2,7 @@ from collections import defaultdict
 from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
+import holoviews as hv
 
 
 def get_if_not_none(obj, key):
@@ -37,3 +38,7 @@ def tqdm_auto(*args, **kwargs):
 def open_zarr_group(dir_path):
     store = zarr.DirectoryStore(dir_path)
     return zarr.open_group(store=store)
+
+
+def RevImage(img, **kwargs):
+    return hv.Image(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0]))

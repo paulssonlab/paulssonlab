@@ -11,7 +11,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from utils import get_if_not_none
+from utils import get_if_not_none, RevImage
 
 
 def _standardize_cluster_labels(X, fit):
@@ -209,7 +209,7 @@ def time_series_periodogram(xs, period_min, period_max, bins=100, diagnostics=No
     period = periods[period_idx]
     if diagnostics is not None:
         highlighted_point = hv.Points([(period, std[period_idx])]).opts(
-            style={"Points": {"size": 10, "color": "red"}}
+            style={"size": 10, "color": "red"}
         )
         diagnostics["periodogram"] = hv.Curve((periods, std)) * highlighted_point
     # plt.figure()
@@ -268,6 +268,11 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     profile = img[ys, xs]
     period, offset = detect_periodic_peaks(profile, diagnostics=diagnostics)
     idxs = np.arange(offset, len(profile), period).astype(np.int_)
+    if diagnostics is not None:
+        highlighted_points = hv.Scatter((idxs, profile[idxs])).opts(
+            style={"size": 10, "color": "red"}
+        )
+        diagnostics["anchors"] = hv.Curve(profile) * highlighted_points
     # plt.figure(figsize=(16,8))
     # plt.plot(profile)
     # plt.scatter(idxs, profile[idxs], c='r')
@@ -285,6 +290,10 @@ def _detect_trench_end(img, anchors, theta, diagnostics=None):
         xss.append(xs)
         yss.append(ys)
         trench_profiles.append(img[ys, xs])
+    if diagnostics is not None:
+        diagnostics["trench_profiles"] = hv.Overlay.from_values(
+            [hv.Curve(tp) for tp in trench_profiles]
+        )
     # plt.figure(figsize=(8,8))
     # for trench_profile in trench_profiles:
     #     plt.plot(trench_profile)
@@ -294,9 +303,17 @@ def _detect_trench_end(img, anchors, theta, diagnostics=None):
     # end = np.where(cum_profile > 0.8)[0][0]
     stacked_profile_diff = holo_diff(1, stacked_profile)
     end = stacked_profile_diff.argmin()
+    if diagnostics is not None:
+        diagnostics["stacked_profile"] = hv.Curve(stacked_profile) * hv.VLine(end).opts(
+            style={"color": "red"}
+        )
     # plt.figure(figsize=(8,8))
     # plt.plot(stacked_profile)
     # plt.axvline(end, c='r')
+    if diagnostics is not None:
+        diagnostics["stacked_profile_diff"] = hv.Curve(stacked_profile_diff) * hv.VLine(
+            end
+        ).opts(style={"color": "green"})
     # plt.figure(figsize=(8,8))
     # plt.plot(stacked_profile_diff, color='g')
     # plt.axvline(end, c='r')
@@ -322,6 +339,22 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
         theta + np.pi,
         diagnostics=get_if_not_none(diagnostics, "bottom"),
     )
+    if diagnostics is not None:
+        anchor_points_plot = hv.Points(anchors.T).opts(
+            style={"size": 3, "color": "white"}
+        )
+        top_points_plot = hv.Points(top_points.T).opts(
+            style={"size": 3, "color": "green"}
+        )
+        bottom_points_plot = hv.Points(bottom_points.T).opts(
+            style={"size": 3, "color": "red"}
+        )
+        diagnostics["image_with_trenches"] = (
+            datashader.regrid(RevImage(img_masked))
+            * anchor_points_plot
+            * top_points_plot
+            * bottom_points_plot
+        )
     # plt.figure(figsize=(12,12))
     # plt.imshow(img_masked)
     # plt.scatter(*anchors.T, s=3, c='w')
@@ -352,7 +385,8 @@ def _label_for_trenches(img_series, channel):
 def get_trenches(img_series, channel, diagnostics=None):
     img, img_labels = _label_for_trenches(img_series, channel)
     if diagnostics is not None:
-        diagnostics["labeled_image"] = datashader.regrid(hv.Image(img))
+        diagnostics["image"] = datashader.regrid(hv.Image(img))
+        diagnostics["labeled_image"] = datashader.regrid(hv.Image(img_labels))
     max_label = img_labels.max()
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
