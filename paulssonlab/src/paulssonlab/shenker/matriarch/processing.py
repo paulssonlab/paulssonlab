@@ -15,9 +15,10 @@ DEFAULT_FRAME_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0
 )
 DEFAULT_FRAME_CHUNKS = (1, 1, 512, 512)
+DEFAULT_PROGRESS_BAR = partial(tqdm_auto, smoothing=0.8)
 
 
-def map_ndarray(func, ary, axis=0, out=None, progress_bar=tqdm_auto):
+def map_ndarray(func, ary, axis=0, out=None, progress_bar=DEFAULT_PROGRESS_BAR):
     if not isinstance(axis, Sequence):
         axis = [axis]
     iter_shape = [ary.shape[dim] for dim in axis]
@@ -48,7 +49,7 @@ def process_positions(
     compressor=None,
     chunks=None,
     order=None,
-    progress_bar=tqdm_auto,
+    progress_bar=DEFAULT_PROGRESS_BAR,
 ):
     res = None
     shape = None
@@ -101,7 +102,7 @@ def process_positions(
     return out_group
 
 
-def process_attrs(func, in_group, out_group, progress_bar=tqdm_auto):
+def process_attrs(func, in_group, out_group, progress_bar=DEFAULT_PROGRESS_BAR):
     for pos_name, position in progress_bar(in_group.items()):
         pos_group = out_group.require_group(pos_name)
         if "processed" and pos_group.attrs and pos_group.attrs["processed"]:
@@ -127,7 +128,7 @@ def ingest_nd2_file(nd2_path, zarr_path, **kwargs):
 def ingest_nd2(
     nd2,
     raw_group,
-    progress_bar=tqdm_auto,
+    progress_bar=DEFAULT_PROGRESS_BAR,
     compressor=DEFAULT_FRAME_COMPRESSOR,
     chunks=DEFAULT_FRAME_CHUNKS,
     **kwargs,
@@ -177,7 +178,9 @@ def quantize_frame(arr, bits, random=True):
         return arr // factor
 
 
-def quantize_frames(in_group, out_group, bits, random=True, progress_bar=tqdm_auto):
+def quantize_frames(
+    in_group, out_group, bits, random=True, progress_bar=DEFAULT_PROGRESS_BAR
+):
     out_group.attrs["quantization"] = {"bits": bits, "random": random}
     out_group.attrs["metadata"] = in_group.attrs["metadata"]
     return process_positions(

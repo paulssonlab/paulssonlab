@@ -1,4 +1,3 @@
-iterate through sorted keys (so that progress bar is correct), set smoothing=0.8
 replace ingested/processed flag with finished flag
 
 hack trench_finder with fixed spacing, narrow angle, verify it works for ~20 frames
