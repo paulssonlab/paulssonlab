@@ -16,6 +16,7 @@ UI
 tiff metadata/sketch of folder watcher (“stream”) command
 
 allow multiple accordion panes to be open simultaneously (see ipywidgets bug)
+tweak regrid aggregator to improve regridding of mask/label images (use spatial search to randomly select some non-zero pixel in bin, draw using that color, no averaging)
 revisit holoviews image axis inversion/overlay bug
 
 sublime remotesubl retry

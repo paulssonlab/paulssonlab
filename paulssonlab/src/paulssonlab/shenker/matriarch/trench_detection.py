@@ -350,7 +350,7 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
             style={"size": 3, "color": "red"}
         )
         diagnostics["image_with_trenches"] = (
-            datashader.regrid(RevImage(img_masked))
+            datashader.regrid(RevImage(img_masked)).redim.range(z=(0, img_masked.max()))
             * anchor_points_plot
             * top_points_plot
             * bottom_points_plot
@@ -385,9 +385,12 @@ def _label_for_trenches(img_series, channel):
 def get_trenches(img_series, channel, diagnostics=None):
     img, img_labels = _label_for_trenches(img_series, channel)
     if diagnostics is not None:
-        diagnostics["image"] = datashader.regrid(hv.Image(img))
-        diagnostics["labeled_image"] = datashader.regrid(hv.Image(img_labels))
-    max_label = img_labels.max()
+        diagnostics["image"] = datashader.regrid(RevImage(img)).redim.range(
+            z=(0, img.max())
+        )
+        diagnostics["labeled_image"] = datashader.regrid(
+            RevImage(img_labels)
+        ).redim.range(z=(0, img_labels.max()))
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
         trenches[label] = _get_trench_set(
