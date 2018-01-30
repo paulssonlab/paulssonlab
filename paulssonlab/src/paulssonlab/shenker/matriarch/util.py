@@ -5,6 +5,13 @@ from datetime import datetime, timezone
 import holoviews as hv
 
 
+def fail_silently(func):
+    try:
+        return func()
+    except:
+        return None
+
+
 def get_if_not_none(obj, key):
     if obj is not None:
         return obj[key]

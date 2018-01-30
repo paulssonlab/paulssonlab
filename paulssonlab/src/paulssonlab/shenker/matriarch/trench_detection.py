@@ -374,6 +374,7 @@ def get_trenches(img_series, channel, diagnostics=None):
     if diagnostics is not None:
         # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
         diagnostics["image"] = RevImage(img)
+        # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
         diagnostics["labeled_image"] = RevImage(img_labels)
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0

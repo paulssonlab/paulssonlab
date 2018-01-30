@@ -1,10 +1,10 @@
+plot_browser with dynamicmap slider (to scroll through frames, using regrid)
+test detect_trenches on each position using max-stack, on a few positions using each timepoint (use trench spacing/rotation as benchmark)
+
 replace ingested/processed flag with finished flag
 
-dig into trench_detection internals in notebook
 minimum spacing from smallest consecutive peak spacing
-weight periodogram by peak height (?? this may be badv)
-
-hack trench_finder with fixed spacing, narrow angle, verify it works for ~20 frames
+weight periodogram by peak height (?? this may be bad)
 
 look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
 non-binary hough transform (??)
@@ -18,6 +18,7 @@ tiff metadata/sketch of folder watcher (“stream”) command
 allow multiple accordion panes to be open simultaneously (see ipywidgets bug)
 figure out why regrid(aggregator='mode') segfaults
 revisit holoviews image axis inversion/overlay bug
+fix bokeh toolbar/wheel zoom on by default
 
 sublime remotesubl retry
 
@@ -60,6 +61,7 @@ POLISH:
 alignment between kymograph pixel centers and sharpness plot points
 pixel value live display
 turn on wheel zoom by default
+DWG overlay
 
 AFTER BUG FIX/WORKAROUND:
 live-updating intersected point on thumbnail
