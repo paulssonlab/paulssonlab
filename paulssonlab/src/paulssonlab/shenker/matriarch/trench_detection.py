@@ -254,9 +254,11 @@ def detect_periodic_peaks(signal, min_dist=10, max_dist=50, diagnostics=None):
     objective = signal[offset_idxs].sum(axis=1)
     offset_idx = objective.argmax()
     offset = offsets[offset_idx]
-    # plt.figure()
-    # plt.plot(offsets, objective)
-    # plt.scatter([offset], [objective[offset_idx]], c='r')
+    if diagnostics is not None:
+        highlighted_point = hv.Points([(offset, objective[offset_idx])]).opts(
+            style={"size": 10, "color": "red"}
+        )
+        diagnostics["offsets"] = hv.Curve((offsets, objective)) * highlighted_point
     return period2, offset
 
 
@@ -273,9 +275,6 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
             style={"size": 10, "color": "red"}
         )
         diagnostics["anchors"] = hv.Curve(profile) * highlighted_points
-    # plt.figure(figsize=(16,8))
-    # plt.plot(profile)
-    # plt.scatter(idxs, profile[idxs], c='r')
     return np.vstack((xs[idxs], ys[idxs])).T
 
 
@@ -294,9 +293,6 @@ def _detect_trench_end(img, anchors, theta, diagnostics=None):
         diagnostics["trench_profiles"] = hv.Overlay.from_values(
             [hv.Curve(tp) for tp in trench_profiles]
         )
-    # plt.figure(figsize=(8,8))
-    # for trench_profile in trench_profiles:
-    #     plt.plot(trench_profile)
     stacked_profile = np.percentile(stack_jagged(trench_profiles), 80, axis=0)
     # cum_profile = np.cumsum(stacked_profile)
     # cum_profile /= cum_profile[-1]
@@ -307,16 +303,10 @@ def _detect_trench_end(img, anchors, theta, diagnostics=None):
         diagnostics["stacked_profile"] = hv.Curve(stacked_profile) * hv.VLine(end).opts(
             style={"color": "red"}
         )
-    # plt.figure(figsize=(8,8))
-    # plt.plot(stacked_profile)
-    # plt.axvline(end, c='r')
     if diagnostics is not None:
         diagnostics["stacked_profile_diff"] = hv.Curve(stacked_profile_diff) * hv.VLine(
             end
         ).opts(style={"color": "green"})
-    # plt.figure(figsize=(8,8))
-    # plt.plot(stacked_profile_diff, color='g')
-    # plt.axvline(end, c='r')
     end_points = []
     for xs, ys in zip(xss, yss):
         idx = end
@@ -355,11 +345,6 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
             * top_points_plot
             * bottom_points_plot
         )
-    # plt.figure(figsize=(12,12))
-    # plt.imshow(img_masked)
-    # plt.scatter(*anchors.T, s=3, c='w')
-    # plt.scatter(*top_points.T, s=3, c='g')
-    # plt.scatter(*bottom_points.T, s=3, c='r')
     return top_points, bottom_points
 
 
