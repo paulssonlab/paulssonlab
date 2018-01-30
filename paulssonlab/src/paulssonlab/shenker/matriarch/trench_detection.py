@@ -201,7 +201,7 @@ def stack_jagged(arys, fill=0):
     return np.array(list(zip_longest(*arys, fillvalue=fill))).T
 
 
-def time_series_periodogram(xs, period_min, period_max, bins=100, diagnostics=None):
+def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
     periods = np.linspace(period_min, period_max, bins)
     # std = ((dxs + periods[:,np.newaxis]/2) % periods[:,np.newaxis]).std(axis=1)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
@@ -212,9 +212,6 @@ def time_series_periodogram(xs, period_min, period_max, bins=100, diagnostics=No
             style={"size": 10, "color": "red"}
         )
         diagnostics["periodogram"] = hv.Curve((periods, std)) * highlighted_point
-    # plt.figure()
-    # plt.plot(periods, std)
-    # plt.scatter([period], [std[period_idx]], c='r')
     return period
 
 
@@ -222,16 +219,19 @@ def detect_periodic_peaks(signal, min_dist=10, max_dist=50, diagnostics=None):
     idxs = peakutils.indexes(signal, thres=0.2, min_dist=min_dist)
     # xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
     xs = idxs
-    # plt.figure(figsize=(16,8))
-    # plt.plot()
-    # plt.plot(np.arange(len(signal)), signal)
-    # plt.scatter(xs, signal[xs.astype(np.int_)], c='r')
+    if diagnostics is not None:
+        highlighted_points = hv.Scatter((xs, signal[xs.astype(np.int_)])).opts(
+            style={"size": 10, "color": "red"}
+        )
+        diagnostics["peaks"] = (
+            hv.Curve((range(len(signal)), signal)) * highlighted_points
+        )
     dxs = np.diff(xs)
     # period_min = np.percentile(dxs, 10)
     # period_max = dxs.max()
     period_min = min_dist
     period_max = max_dist
-    num_periods = 100
+    num_periods = 1000
     period = time_series_periodogram(
         xs,
         period_min,
@@ -369,13 +369,14 @@ def _label_for_trenches(img_series, channel):
 
 def get_trenches(img_series, channel, diagnostics=None):
     img, img_labels = _label_for_trenches(img_series, channel)
+    max_label = img_labels.max()
     if diagnostics is not None:
         diagnostics["image"] = datashader.regrid(RevImage(img)).redim.range(
             z=(0, img.max())
         )
         diagnostics["labeled_image"] = datashader.regrid(
             RevImage(img_labels)
-        ).redim.range(z=(0, img_labels.max()))
+        ).redim.range(z=(0, max_label))
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
         trenches[label] = _get_trench_set(
@@ -387,6 +388,7 @@ def get_trenches(img_series, channel, diagnostics=None):
 
 
 def _get_trench_set(img, img_mask, diagnostics=None):
+    # TODO: should only need to detect rotation once per image, not per trench set
     theta, dists = detect_rotation(img_mask, diagnostics=diagnostics)
     trench_points = detect_trenches(img, img_mask, theta, diagnostics=diagnostics)
     return trench_points
