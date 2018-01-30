@@ -330,17 +330,18 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
         diagnostics=get_if_not_none(diagnostics, "bottom"),
     )
     if diagnostics is not None:
-        anchor_points_plot = hv.Points(anchors.T).opts(
+        anchor_points_plot = hv.Points(anchors).opts(
             style={"size": 3, "color": "white"}
         )
-        top_points_plot = hv.Points(top_points.T).opts(
+        top_points_plot = hv.Points(top_points).opts(
             style={"size": 3, "color": "green"}
         )
-        bottom_points_plot = hv.Points(bottom_points.T).opts(
+        bottom_points_plot = hv.Points(bottom_points).opts(
             style={"size": 3, "color": "red"}
         )
+        # diagnostics['image_with_trenches'] = datashader.regrid(RevImage(img_masked), aggregator='first').redim.range(z=(0,img_masked.max())) * anchor_points_plot * top_points_plot * bottom_points_plot
         diagnostics["image_with_trenches"] = (
-            datashader.regrid(RevImage(img_masked)).redim.range(z=(0, img_masked.max()))
+            RevImage(img_masked)
             * anchor_points_plot
             * top_points_plot
             * bottom_points_plot
@@ -371,12 +372,9 @@ def get_trenches(img_series, channel, diagnostics=None):
     img, img_labels = _label_for_trenches(img_series, channel)
     max_label = img_labels.max()
     if diagnostics is not None:
-        diagnostics["image"] = datashader.regrid(RevImage(img)).redim.range(
-            z=(0, img.max())
-        )
-        diagnostics["labeled_image"] = datashader.regrid(
-            RevImage(img_labels)
-        ).redim.range(z=(0, max_label))
+        # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
+        diagnostics["image"] = RevImage(img)
+        diagnostics["labeled_image"] = RevImage(img_labels)
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
         trenches[label] = _get_trench_set(
