@@ -9,7 +9,7 @@ from collections.abc import Sequence, Iterable
 from copy import deepcopy
 import time
 from natsort import natsorted
-from utils import tqdm_auto, open_zarr_group, timestamp_to_isoformat
+from util import tqdm_auto, open_zarr_group, timestamp_to_isoformat
 
 DEFAULT_FRAME_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0

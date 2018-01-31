@@ -1,6 +1,6 @@
 import click
 from processing import ingest_nd2_file, quantize_frames
-from utils import open_zarr_group
+from util import open_zarr_group
 
 
 @click.group()

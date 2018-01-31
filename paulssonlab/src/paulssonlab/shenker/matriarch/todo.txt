@@ -1,4 +1,7 @@
 plot_browser with dynamicmap slider (to scroll through frames, using regrid)
+rotation-invariant detrending
+refactor trench detection
+
 test detect_trenches on each position using max-stack, on a few positions using each timepoint (use trench spacing/rotation as benchmark)
 
 replace ingested/processed flag with finished flag
@@ -8,7 +11,6 @@ weight periodogram by peak height (?? this may be bad)
 
 look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
 non-binary hough transform (??)
-rotation-invariant detrending
 mother cell endpoint tracking
 mother cell segmentation mask
 2nd, 3rd cell endpoint tracking, masks

@@ -11,7 +11,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from utils import get_if_not_none, RevImage
+from util import get_if_not_none, RevImage
 
 
 def _standardize_cluster_labels(X, fit):
@@ -68,28 +68,46 @@ def get_img_limits(img):
     return x_lim, y_lim
 
 
-def detect_rotation(bin_img, diagnostics=None):
-    h, theta, d = skimage.transform.hough_line(bin_img)
+def find_hough_angle(bin_img, theta=None, diagnostics=None):
+    h, theta, d = skimage.transform.hough_line(bin_img, theta=theta)
     abs_diff_h = np.diff(h.astype(np.int32), axis=1).var(axis=0)
     theta_idx = abs_diff_h.argmax()
-    angle1 = theta[theta_idx]
-    h2, theta2, d2 = skimage.transform.hough_line(
-        bin_img, theta=np.linspace(0.9 * angle1, 1.1 * angle1, 200)
+    angle = theta[theta_idx]
+    if diagnostics is not None:
+        diagnostics["theta_range (deg)"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
+        bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
+        diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
+        # TODO: fix the left-edge vs. right-edge issue for theta bins
+        diagnostics["abs_diff_h"] = hv.Curve(
+            (np.rad2deg(theta[:-1]), abs_diff_h)
+        ) * hv.VLine(np.rad2deg(angle)).opts(style={"color": "red"})
+        diagnostics["angle (deg)"] = np.rad2deg(angle)
+    return angle
+
+
+def detect_rotation(bin_img, diagnostics=None):
+    # h, theta, d = skimage.transform.hough_line(bin_img)
+    # abs_diff_h = np.diff(h.astype(np.int32), axis=1).var(axis=0)
+    # theta_idx = abs_diff_h.argmax()
+    # angle1 = theta[theta_idx]
+    angle1 = find_hough_angle(
+        bin_img, diagnostics=get_if_not_none(diagnostics, "hough_1")
     )
-    abs_diff_h2 = np.diff(h2.astype(np.int32), axis=1).var(axis=0)
-    theta_idx2 = abs_diff_h2.argmax()
-    angle2 = theta2[theta_idx2]
-    d_profile = h2[:, theta_idx2].astype(np.int32)
-    freqs = np.abs(np.fft.fft(d_profile))
-    peak_idxs = peakutils.indexes(d_profile, thres=0.4, min_dist=5)
-    peaks = d2[peak_idxs]
-    spacing = scipy.stats.mode(np.diff(peaks)).mode[0]
-    return np.pi / 2 - angle2, peaks
-
-
-def get_rough_spacing(dists):
-    spacing = scipy.stats.mode(np.diff(dists).astype(int)).mode[0]
-    return spacing
+    # h2, theta2, d2 = skimage.transform.hough_line(bin_img, theta=np.linspace(0.9*angle1, 1.1*angle1, 200))
+    # abs_diff_h2 = np.diff(h2.astype(np.int32), axis=1).var(axis=0)
+    # theta_idx2 = abs_diff_h2.argmax()
+    # angle2 = theta2[theta_idx2]
+    angle2 = find_hough_angle(
+        bin_img,
+        theta=np.linspace(0.9 * angle1, 1.1 * angle1, 200),
+        diagnostics=get_if_not_none(diagnostics, "hough_2"),
+    )
+    # d_profile = h2[:,theta_idx2].astype(np.int32)
+    # freqs = np.abs(np.fft.fft(d_profile))
+    # peak_idxs = peakutils.indexes(d_profile, thres=0.4, min_dist=5)
+    # peaks = d2[peak_idxs]
+    # spacing = scipy.stats.mode(np.diff(peaks)).mode[0]
+    return np.pi / 2 - angle2
 
 
 def point_linspace(anchor0, anchor1, num_points):
@@ -180,7 +198,7 @@ def get_anchors(theta, x_lim, y_lim):
     return anchor0, anchor1
 
 
-def detect_trench_region(bin_img, theta):
+def detect_trench_region(bin_img, theta, diagnostics=None):
     x_lim, y_lim = get_img_limits(bin_img)
     anchor0, anchor1 = get_anchors(theta, x_lim, y_lim)
     cross_sections = []
@@ -191,8 +209,16 @@ def detect_trench_region(bin_img, theta):
     for x0, x1, x2 in lines:
         xs, ys = coords_along(x1, x2)
         cross_sections.append(bin_img[ys, xs])
+    if diagnostics is not None:
+        diagnostics["cross_sections"] = hv.Overlay.from_values(
+            [hv.Curve(cs) for cs in cross_sections]
+        )
     cross_section_vars = np.array([cs.var() for cs in cross_sections])
     idx = cross_section_vars.argmax()
+    if diagnostics is not None:
+        diagnostics["cross_section_vars"] = hv.Curve(cross_section_vars) * hv.VLine(
+            idx
+        ).opts(style={"color": "red"})
     return anchors[idx]
 
 
@@ -203,11 +229,13 @@ def stack_jagged(arys, fill=0):
 
 def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
     periods = np.linspace(period_min, period_max, bins)
-    # std = ((dxs + periods[:,np.newaxis]/2) % periods[:,np.newaxis]).std(axis=1)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
     period_idx = std.argmin()
     period = periods[period_idx]
     if diagnostics is not None:
+        diagnostics["search_range"] = (period_min, period_max)
+        diagnostics["bins"] = bins
+        diagnostics["period"] = period
         highlighted_point = hv.Points([(period, std[period_idx])]).opts(
             style={"size": 10, "color": "red"}
         )
@@ -215,8 +243,10 @@ def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=N
     return period
 
 
-def detect_periodic_peaks(signal, min_dist=10, max_dist=50, diagnostics=None):
-    idxs = peakutils.indexes(signal, thres=0.2, min_dist=min_dist)
+def detect_periodic_peaks(
+    signal, threshold=0.2, min_dist=5, period_min=None, max_dist=None, diagnostics=None
+):
+    idxs = peakutils.indexes(signal, thres=threshold, min_dist=min_dist)
     # xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
     xs = idxs
     if diagnostics is not None:
@@ -227,19 +257,18 @@ def detect_periodic_peaks(signal, min_dist=10, max_dist=50, diagnostics=None):
             hv.Curve((range(len(signal)), signal)) * highlighted_points
         )
     dxs = np.diff(xs)
-    # period_min = np.percentile(dxs, 10)
-    # period_max = dxs.max()
-    period_min = min_dist
-    period_max = max_dist
+    if min_dist is None:
+        min_dist = max(dxs.min() - 1, 2)
+    if max_dist is None:
+        max_dist = dxs.max() + 1
     num_periods = 1000
     period = time_series_periodogram(
         xs,
-        period_min,
-        period_max,
+        min_dist,
+        max_dist,
         bins=num_periods,
         diagnostics=get_if_not_none(diagnostics, "periodogram_1"),
     )
-    # period2 = period
     period2 = time_series_periodogram(
         xs,
         period * 0.98,
@@ -267,7 +296,7 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     x1 = edge_point(t0, theta - np.pi / 2, x_lim, y_lim)
     x2 = edge_point(t0, theta + np.pi / 2, x_lim, y_lim)
     xs, ys = coords_along(x1, x2)
-    profile = img[ys, xs]
+    profile = img[ys, xs].astype(np.int_)
     period, offset = detect_periodic_peaks(profile, diagnostics=diagnostics)
     idxs = np.arange(offset, len(profile), period).astype(np.int_)
     if diagnostics is not None:
@@ -350,28 +379,42 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
 
 
 def detect_trenches(img, bin_img, theta, diagnostics=None):
-    t0 = detect_trench_region(bin_img, theta)
-    trench_anchors = detect_trench_anchors(img, t0, theta, diagnostics=diagnostics)
+    t0 = detect_trench_region(
+        bin_img, theta, diagnostics=get_if_not_none(diagnostics, "trench_region")
+    )
+    trench_anchors = detect_trench_anchors(
+        img, t0, theta, diagnostics=get_if_not_none(diagnostics, "trench_anchors")
+    )
     trench_points = detect_trench_ends(
-        img, bin_img, trench_anchors, theta, diagnostics=diagnostics
+        img,
+        bin_img,
+        trench_anchors,
+        theta,
+        diagnostics=get_if_not_none(diagnostics, "trench_ends"),
     )
     return trench_points
 
 
-def _label_for_trenches(img_series, channel):
+def _label_for_trenches(img, diagnostics=None):
     # img = img_series[::10].max(axis=0)
-    img = img_series[channel, 30]  # TODO
+    # img = img_series[channel, 30]
     # TODO: need rotation-invariant detrending
     img = img - np.percentile(img, 3, axis=1)[:, np.newaxis]
-    img_thresh = img > skimage.filters.threshold_otsu(img)
+    threshold = skimage.filters.threshold_otsu(img)
+    if diagnostics is not None:
+        diagnostics["threshold"] = threshold
+    img_thresh = img > threshold
     img_labels = label_binary_image(img_thresh)
-    return img, img_labels
+    return img_labels
 
 
-def get_trenches(img_series, channel, diagnostics=None):
-    img, img_labels = _label_for_trenches(img_series, channel)
+def get_trenches(img, diagnostics=None):
+    img_labels = _label_for_trenches(
+        img, diagnostics=get_if_not_none(diagnostics, "labeling")
+    )
     max_label = img_labels.max()
     if diagnostics is not None:
+        diagnostics["max_label"] = max_label
         # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
         diagnostics["image"] = RevImage(img)
         # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
@@ -388,6 +431,8 @@ def get_trenches(img_series, channel, diagnostics=None):
 
 def _get_trench_set(img, img_mask, diagnostics=None):
     # TODO: should only need to detect rotation once per image, not per trench set
-    theta, dists = detect_rotation(img_mask, diagnostics=diagnostics)
+    theta = detect_rotation(
+        img_mask, diagnostics=get_if_not_none(diagnostics, "trench_rotation")
+    )
     trench_points = detect_trenches(img, img_mask, theta, diagnostics=diagnostics)
     return trench_points
