@@ -86,27 +86,14 @@ def find_hough_angle(bin_img, theta=None, diagnostics=None):
 
 
 def detect_rotation(bin_img, diagnostics=None):
-    # h, theta, d = skimage.transform.hough_line(bin_img)
-    # abs_diff_h = np.diff(h.astype(np.int32), axis=1).var(axis=0)
-    # theta_idx = abs_diff_h.argmax()
-    # angle1 = theta[theta_idx]
     angle1 = find_hough_angle(
         bin_img, diagnostics=get_if_not_none(diagnostics, "hough_1")
     )
-    # h2, theta2, d2 = skimage.transform.hough_line(bin_img, theta=np.linspace(0.9*angle1, 1.1*angle1, 200))
-    # abs_diff_h2 = np.diff(h2.astype(np.int32), axis=1).var(axis=0)
-    # theta_idx2 = abs_diff_h2.argmax()
-    # angle2 = theta2[theta_idx2]
     angle2 = find_hough_angle(
         bin_img,
         theta=np.linspace(0.9 * angle1, 1.1 * angle1, 200),
         diagnostics=get_if_not_none(diagnostics, "hough_2"),
     )
-    # d_profile = h2[:,theta_idx2].astype(np.int32)
-    # freqs = np.abs(np.fft.fft(d_profile))
-    # peak_idxs = peakutils.indexes(d_profile, thres=0.4, min_dist=5)
-    # peaks = d2[peak_idxs]
-    # spacing = scipy.stats.mode(np.diff(peaks)).mode[0]
     return np.pi / 2 - angle2
 
 
