@@ -12,11 +12,17 @@ def fail_silently(func):
         return None
 
 
-def get_if_not_none(obj, key):
+def getattr_if_not_none(obj, key):
     if obj is not None:
         return obj[key]
     else:
         return None
+
+
+def recursive_getattr(obj, keys):
+    for k in keys:
+        obj = obj[k]
+    return obj
 
 
 # FROM: https://stackoverflow.com/questions/2150739/iso-time-iso-8601-in-python
@@ -48,4 +54,12 @@ def open_zarr_group(dir_path):
 
 
 def RevImage(img, **kwargs):
-    return hv.Image(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0]))
+    return hv.Image(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
+        plot={"invert_yaxis": True}
+    )
+
+
+def RevRGB(img, **kwargs):
+    return hv.RGB(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
+        plot={"invert_yaxis": True}
+    )

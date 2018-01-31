@@ -11,7 +11,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import get_if_not_none, RevImage
+from util import getattr_if_not_none, RevImage
 
 
 def _standardize_cluster_labels(X, fit):
@@ -87,12 +87,12 @@ def find_hough_angle(bin_img, theta=None, diagnostics=None):
 
 def detect_rotation(bin_img, diagnostics=None):
     angle1 = find_hough_angle(
-        bin_img, diagnostics=get_if_not_none(diagnostics, "hough_1")
+        bin_img, diagnostics=getattr_if_not_none(diagnostics, "hough_1")
     )
     angle2 = find_hough_angle(
         bin_img,
         theta=np.linspace(0.9 * angle1, 1.1 * angle1, 200),
-        diagnostics=get_if_not_none(diagnostics, "hough_2"),
+        diagnostics=getattr_if_not_none(diagnostics, "hough_2"),
     )
     return np.pi / 2 - angle2
 
@@ -254,14 +254,14 @@ def detect_periodic_peaks(
         min_dist,
         max_dist,
         bins=num_periods,
-        diagnostics=get_if_not_none(diagnostics, "periodogram_1"),
+        diagnostics=getattr_if_not_none(diagnostics, "periodogram_1"),
     )
     period2 = time_series_periodogram(
         xs,
         period * 0.98,
         period * 1.02,
         num_periods,
-        diagnostics=get_if_not_none(diagnostics, "periodogram_2"),
+        diagnostics=getattr_if_not_none(diagnostics, "periodogram_2"),
     )
     offsets = np.linspace(0, period2, num_periods)
     offset_idxs = (
@@ -337,13 +337,13 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
         skimage.morphology.binary_dilation(bin_img), img, np.percentile(img, 5)
     )
     top_points = _detect_trench_end(
-        img_masked, anchors, theta, diagnostics=get_if_not_none(diagnostics, "top")
+        img_masked, anchors, theta, diagnostics=getattr_if_not_none(diagnostics, "top")
     )
     bottom_points = _detect_trench_end(
         img_masked,
         anchors,
         theta + np.pi,
-        diagnostics=get_if_not_none(diagnostics, "bottom"),
+        diagnostics=getattr_if_not_none(diagnostics, "bottom"),
     )
     if diagnostics is not None:
         anchor_points_plot = hv.Points(anchors).opts(
@@ -367,17 +367,17 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
 
 def detect_trenches(img, bin_img, theta, diagnostics=None):
     t0 = detect_trench_region(
-        bin_img, theta, diagnostics=get_if_not_none(diagnostics, "trench_region")
+        bin_img, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_region")
     )
     trench_anchors = detect_trench_anchors(
-        img, t0, theta, diagnostics=get_if_not_none(diagnostics, "trench_anchors")
+        img, t0, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_anchors")
     )
     trench_points = detect_trench_ends(
         img,
         bin_img,
         trench_anchors,
         theta,
-        diagnostics=get_if_not_none(diagnostics, "trench_ends"),
+        diagnostics=getattr_if_not_none(diagnostics, "trench_ends"),
     )
     return trench_points
 
@@ -397,7 +397,7 @@ def _label_for_trenches(img, diagnostics=None):
 
 def get_trenches(img, diagnostics=None):
     img_labels = _label_for_trenches(
-        img, diagnostics=get_if_not_none(diagnostics, "labeling")
+        img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
     )
     max_label = img_labels.max()
     if diagnostics is not None:
@@ -411,7 +411,7 @@ def get_trenches(img, diagnostics=None):
         trenches[label] = _get_trench_set(
             img,
             img_labels == label,
-            diagnostics=get_if_not_none(diagnostics, "label_{}".format(label)),
+            diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
         )
     return trenches
 
@@ -419,7 +419,7 @@ def get_trenches(img, diagnostics=None):
 def _get_trench_set(img, img_mask, diagnostics=None):
     # TODO: should only need to detect rotation once per image, not per trench set
     theta = detect_rotation(
-        img_mask, diagnostics=get_if_not_none(diagnostics, "trench_rotation")
+        img_mask, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
     )
     trench_points = detect_trenches(img, img_mask, theta, diagnostics=diagnostics)
     return trench_points
