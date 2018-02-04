@@ -1,4 +1,5 @@
-plot_browser with dynamicmap slider (to scroll through frames, using regrid)
+plot browser: regrid (using hacky solution)
+plot browser: only update visible outputs (accordion state)
 rotation-invariant detrending
 refactor trench detection
 
