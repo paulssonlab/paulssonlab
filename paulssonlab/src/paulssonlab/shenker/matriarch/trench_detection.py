@@ -406,15 +406,20 @@ def get_trenches(img, diagnostics=None):
         diagnostics["image"] = RevImage(img)
         # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
         diagnostics["labeled_image"] = RevImage(img_labels)
-    theta = detect_rotation(
-        img_labels != 0, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
-    )
     trenches = {}
     for label in range(1, max_label + 1):  # TODO: this relies on background == 0
-        trenches[label] = detect_trenches(
+        trenches[label] = _get_trench_set(
             img,
             img_labels == label,
-            theta,
             diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
         )
     return trenches
+
+
+def _get_trench_set(img, img_mask, diagnostics=None):
+    # TODO: should only need to detect rotation once per image, not per trench set
+    theta = detect_rotation(
+        img_mask, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
+    )
+    trench_points = detect_trenches(img, img_mask, theta, diagnostics=diagnostics)
+    return trench_points

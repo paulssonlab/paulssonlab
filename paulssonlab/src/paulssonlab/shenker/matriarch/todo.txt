@@ -1,8 +1,15 @@
 REPLY TO HOLOVIEWS DEVS
 
+NONE_POS:
+3: intensity hough, no peaks in dxs.max()
+44: same
+50: same, end of row (half of frame blank)
+76: same
+239: single peak, need to normalize trenches before period-finding (for each disjoint segment in segmentation mask, normalize to max in that segment)
+
 fix pickling of diag_pos:
     make sure pickle isn't doing something stupid (compare pickled sizes with asized)
-    compress/crop intermediates (esp. masks)
+    compress/quantize/change dtype/crop intermediates (esp. masks)
     load raw images from disk
 set up viewer for quick refresh of new data (just send new data to Stream)
 fix none_pos
@@ -19,6 +26,7 @@ dataframe join with per-frame, per-trench metadata
 rotation-invariant detrending
 test detect_trenches on each position using max-stack, on a few positions using each timepoint (use trench spacing/rotation as benchmark)
 look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
+synchronize RangeXY of all images
 
 ####################
 
