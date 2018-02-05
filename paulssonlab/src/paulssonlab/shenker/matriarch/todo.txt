@@ -1,19 +1,35 @@
-plot browser: regrid (using hacky solution)
-plot browser: only update visible outputs (accordion state)
-rotation-invariant detrending
-refactor trench detection
+REPLY TO HOLOVIEWS DEVS
 
+fix pickling of diag_pos:
+    make sure pickle isn't doing something stupid (compare pickled sizes with asized)
+    compress/crop intermediates (esp. masks)
+    load raw images from disk
+set up viewer for quick refresh of new data (just send new data to Stream)
+fix none_pos
+use trench_spacing to identify good/bad trench finding, use median (robust metric) from first 10 positions to constrain trench finding for rest of positions
+refactor trench detection, only detect rotation once
+mother cell endpoint tracking
+mother cell segmentation mask
+allow image viewer to overlay seg masks, trench thumb boundaries easily
+fluorescent readout using cell masks
+per-trench and per-frame sharpness
+per-trench and per-frame debris/QA detector
+dataframe join with per-frame, per-trench metadata
+
+rotation-invariant detrending
 test detect_trenches on each position using max-stack, on a few positions using each timepoint (use trench spacing/rotation as benchmark)
+look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
+
+####################
+
+plot browser: only update visible outputs (accordion state)
 
 replace ingested/processed flag with finished flag
 
 minimum spacing from smallest consecutive peak spacing
 weight periodogram by peak height (?? this may be bad)
 
-look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
 non-binary hough transform (??)
-mother cell endpoint tracking
-mother cell segmentation mask
 2nd, 3rd cell endpoint tracking, masks
 UI
 tiff metadata/sketch of folder watcher (“stream”) command
@@ -38,12 +54,7 @@ link image viewer to frame stepping widget
 improve rotation detection/trench finding
 mother cell endpoint tracking
 mother cell volume mask
-allow image viewer to overlay seg masks, trench thumb boundaries easily
-fluorescent readout using cell masks
 allow image viewer to overlay mean cell intensity/variance easily on seg masks
-
-per-trench and per-frame sharpness
-dataframe join with per-frame, per-trench metadata
 beyond mother cell tracking
 
 spatial barcode warp/metric/clustering

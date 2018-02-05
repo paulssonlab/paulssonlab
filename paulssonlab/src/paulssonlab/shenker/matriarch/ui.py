@@ -199,6 +199,13 @@ def display_plot_browser_contents(plots, to_display, stream=None):
     for output, (obj, path) in to_display.items():
         if stream is None:
             with output:
+                if isinstance(obj, hv.core.dimension.ViewableElement):
+                    obj = obj.map(
+                        lambda img: regrid(img, aggregator="first").redim.range(
+                            z=(0, img.data.max())
+                        ),
+                        lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
+                    ).collate()
                 display(obj)
         else:
             # print(path, obj.__class__)
