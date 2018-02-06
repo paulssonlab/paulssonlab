@@ -1,5 +1,15 @@
 REPLY TO HOLOVIEWS DEVS
 
+mother cell endpoint tracking
+mother cell segmentation mask
+allow image viewer to overlay seg masks, trench thumb boundaries easily
+fluorescent readout using cell masks
+
+use first N=20, majority vote to constrain all others
+fix too-narrow periods
+fix period-finding: trench intensity normalization
+fix rotation
+
 NONE_POS:
 3: intensity hough, no peaks in dxs.max()
 44: same
@@ -15,10 +25,6 @@ set up viewer for quick refresh of new data (just send new data to Stream)
 fix none_pos
 use trench_spacing to identify good/bad trench finding, use median (robust metric) from first 10 positions to constrain trench finding for rest of positions
 refactor trench detection, only detect rotation once
-mother cell endpoint tracking
-mother cell segmentation mask
-allow image viewer to overlay seg masks, trench thumb boundaries easily
-fluorescent readout using cell masks
 per-trench and per-frame sharpness
 per-trench and per-frame debris/QA detector
 dataframe join with per-frame, per-trench metadata
