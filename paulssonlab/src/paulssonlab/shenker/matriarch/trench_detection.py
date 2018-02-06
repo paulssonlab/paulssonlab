@@ -72,7 +72,7 @@ def find_hough_angle(bin_img, theta=None, diagnostics=None):
     h, theta, d = skimage.transform.hough_line(bin_img, theta=theta)
     abs_diff_h = np.diff(h.astype(np.int32), axis=1).var(axis=0)
     theta_idx = abs_diff_h.argmax()
-    angle = theta[theta_idx]
+    theta = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["theta_range (deg)"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
         bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
@@ -81,7 +81,7 @@ def find_hough_angle(bin_img, theta=None, diagnostics=None):
         diagnostics["abs_diff_h"] = hv.Curve(
             (np.rad2deg(theta[:-1]), abs_diff_h)
         ) * hv.VLine(np.rad2deg(angle)).opts(style={"color": "red"})
-        diagnostics["angle (deg)"] = np.rad2deg(angle)
+        diagnostics["theta (deg)"] = np.rad2deg(theta)
     return angle
 
 
