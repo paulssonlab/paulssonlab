@@ -57,28 +57,37 @@ def get_trench_thumbnail(img, trench_points, trench_idx):
     return img[ul[1] : lr[1], ul[0] : lr[0]]
 
 
-def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim):
+def linear_mix(x, y, s):
+    return (1 - s) * x + s * y
+
+
+def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
+    # separation=0 is the narrowest trench, separation=1 includes neighboring trench midlines
+    separation = 0.5 + overlap
     # trench_points[0][trench_idx], trench_points[1][trench_idx]
     num_trenches = min(len(trench_points[0]), len(trench_points[1]))
     if not 0 <= trench_idx < num_trenches:
         raise ValueError("trench index out of bounds")
     points = [trench_points[i][trench_idx] for i in (0, 1)]
-    if trench_idx == 0:
-        x0_prev = 2 * trench_points[0][0] - trench_points[0][1]
-        x1_prev = 2 * trench_points[1][0] - trench_points[1][1]
-        x0_prev = crop_point(x0_prev, x_lim, y_lim)
-        x1_prev = crop_point(x1_prev, x_lim, y_lim)
-        points += [x0_prev, x1_prev]
-    else:
-        points += [trench_points[i][trench_idx - 1] for i in (0, 1)]
-    if trench_idx + 1 == num_trenches:
-        x0_next = 2 * trench_points[0][-1] - trench_points[0][-2]
-        x1_next = 2 * trench_points[1][-1] - trench_points[1][-2]
-        x0_next = crop_point(x0_next, x_lim, y_lim)
-        x1_next = crop_point(x1_next, x_lim, y_lim)
-        points += [x0_next, x1_next]
-    else:
-        points += [trench_points[i][trench_idx + 1] for i in (0, 1)]
+    for i in (0, 1):
+        if trench_idx == 0:
+            x_prev = 2 * trench_points[i][0] - trench_points[i][1]
+        else:
+            x_prev = trench_points[i][trench_idx - 1]
+        x_prev = linear_mix(trench_points[i][trench_idx], x_prev, separation).astype(
+            np.int_
+        )  # TODO: should we round or truncate? here and below?
+        x_prev = crop_point(x_prev, x_lim, y_lim)
+        points.append(x_prev)
+        if trench_idx + 1 == num_trenches:
+            x_next = 2 * trench_points[i][-1] - trench_points[i][-2]
+        else:
+            x_next = trench_points[i][trench_idx + 1]
+        x_next = linear_mix(trench_points[i][trench_idx], x_next, separation).astype(
+            np.int_
+        )
+        x_next = crop_point(x_next, x_lim, y_lim)
+        points.append(x_next)
     return bounding_box(points)
 
 

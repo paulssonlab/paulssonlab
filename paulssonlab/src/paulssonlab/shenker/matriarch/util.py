@@ -3,6 +3,8 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 import holoviews as hv
+from functools import reduce
+from cytoolz import compose
 
 
 def fail_silently(func):
@@ -23,6 +25,10 @@ def recursive_getattr(obj, keys):
     for k in keys:
         obj = obj[k]
     return obj
+
+
+def repeat_apply(func, n):
+    return reduce(lambda f1, f2: compose(f1, f2), [func] * n)
 
 
 # FROM: https://stackoverflow.com/questions/2150739/iso-time-iso-8601-in-python
