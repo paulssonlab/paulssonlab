@@ -41,11 +41,23 @@ def tree():
 
 
 def tqdm_auto(*args, **kwargs):
+    try:
+        # FROM: https://github.com/tqdm/tqdm/issues/372
+        from IPython import get_ipython
+
+        ipy = get_ipython()
+        if ipy and ipy.__class__.__name__ == "ZMQInteractiveShell":
+            return tqdm_notebook(*args, **kwargs)
+    except:
+        pass
     return tqdm(*args, **kwargs)
-    # try:
-    #    return tqdm_notebook(*args, **kwargs)
-    # except:
-    #    return tqdm(*args, **kwargs)
+
+
+# return tqdm(*args, **kwargs)
+# try:
+#    return tqdm_notebook(*args, **kwargs)
+# except:
+#    return tqdm(*args, **kwargs)
 
 
 def open_zarr_group(dir_path):
