@@ -1,5 +1,8 @@
 REPLY TO HOLOVIEWS DEVS
 
+get_trench_bbox: half-way to next trench
+dilate 3x, then get from left/right edges of original mask
+
 mother cell endpoint tracking
 mother cell segmentation mask
 allow image viewer to overlay seg masks, trench thumb boundaries easily
@@ -47,6 +50,8 @@ non-binary hough transform (??)
 2nd, 3rd cell endpoint tracking, masks
 UI
 tiff metadata/sketch of folder watcher (“stream”) command
+
+compute loading statistics (over time)
 
 allow multiple accordion panes to be open simultaneously (see ipywidgets bug)
 figure out why regrid(aggregator='mode') segfaults
