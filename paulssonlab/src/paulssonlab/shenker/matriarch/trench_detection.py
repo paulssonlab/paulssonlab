@@ -57,9 +57,9 @@ def drop_rare_labels(labels):
     return good_labels
 
 
-def get_img_limits(img):
+def get_img_limits(shape):
     x_min = y_min = 0
-    x_max, y_max = img.shape
+    x_max, y_max = shape
     # TODO: what convention should we use, should max be inclusive??
     # x_max = img.shape[0] - 1
     # y_max = img.shape[1] - 1
@@ -186,7 +186,7 @@ def get_anchors(theta, x_lim, y_lim):
 
 
 def detect_trench_region(bin_img, theta, diagnostics=None):
-    x_lim, y_lim = get_img_limits(bin_img)
+    x_lim, y_lim = get_img_limits(bin_img.shape)
     anchor0, anchor1 = get_anchors(theta, x_lim, y_lim)
     cross_sections = []
     anchors = list(point_linspace(anchor0, anchor1, 40))[3:-3]  # TODO: parameterize
@@ -279,7 +279,7 @@ def detect_periodic_peaks(
 
 
 def detect_trench_anchors(img, t0, theta, diagnostics=None):
-    x_lim, y_lim = get_img_limits(img)
+    x_lim, y_lim = get_img_limits(img.shape)
     x1 = edge_point(t0, theta - np.pi / 2, x_lim, y_lim)
     x2 = edge_point(t0, theta + np.pi / 2, x_lim, y_lim)
     xs, ys = coords_along(x1, x2)
@@ -294,8 +294,8 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     return np.vstack((xs[idxs], ys[idxs])).T
 
 
-def _detect_trench_end(img, anchors, theta, diagnostics=None):
-    x_lim, y_lim = get_img_limits(img)
+def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
+    x_lim, y_lim = get_img_limits(img.shape)
     xss = []
     yss = []
     trench_profiles = []

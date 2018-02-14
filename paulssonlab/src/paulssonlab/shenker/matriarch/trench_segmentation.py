@@ -52,7 +52,7 @@ def crop_point(x, x_lim, y_lim):
 
 
 def get_trench_thumbnail(img, trench_points, trench_idx):
-    x_lim, y_lim = get_img_limits(img)
+    x_lim, y_lim = get_img_limits(img.shape)
     ul, lr = get_trench_bbox(trench_points, trench_idx, x_lim, y_lim)
     return img[ul[1] : lr[1], ul[0] : lr[0]]
 
