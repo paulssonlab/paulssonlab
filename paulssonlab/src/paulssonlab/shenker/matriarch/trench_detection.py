@@ -314,12 +314,12 @@ def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
     # cum_profile /= cum_profile[-1]
     # end = np.where(cum_profile > 0.8)[0][0]
     stacked_profile_diff = holo_diff(1, stacked_profile)
-    end = stacked_profile_diff.argmin()
+    end = stacked_profile_diff.argmin() + margin
     if diagnostics is not None:
+        diagnostics["margin"] = margin
         diagnostics["stacked_profile"] = hv.Curve(stacked_profile) * hv.VLine(end).opts(
             style={"color": "red"}
         )
-    if diagnostics is not None:
         diagnostics["stacked_profile_diff"] = hv.Curve(stacked_profile_diff) * hv.VLine(
             end
         ).opts(style={"color": "green"})
