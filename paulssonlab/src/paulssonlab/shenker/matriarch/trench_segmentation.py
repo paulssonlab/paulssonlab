@@ -1,3 +1,7 @@
+import numpy as np
+import skimage
+
+
 def hessian_eigenvalues(img):
     I = skimage.filters.gaussian(img, 1.5)
     I_x = skimage.filters.sobel_h(I)
