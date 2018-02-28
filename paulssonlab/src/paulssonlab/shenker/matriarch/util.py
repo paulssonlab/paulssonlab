@@ -28,6 +28,8 @@ def recursive_getattr(obj, keys):
 
 
 def repeat_apply(func, n):
+    if n <= 0:
+        return lambda x: x
     return reduce(lambda f1, f2: compose(f1, f2), [func] * n)
 
 
