@@ -11,7 +11,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none, RevImage
+from util import getattr_if_not_none, RevImage, repeat_apply
 
 
 def _standardize_cluster_labels(X, fit):
@@ -43,7 +43,7 @@ def label_binary_image(bin_img):
     label_img = np.zeros_like(bin_img, dtype=np.int8)  # TODO: fixing dtype
     for i in range(len(fit.labels_)):
         label_img[X[i, 0], X[i, 1]] = fit.labels_[i] + 1
-    return label_img
+    return label_img, np.sort(np.unique(fit.labels_))
 
 
 def drop_rare_labels(labels):
@@ -382,34 +382,91 @@ def detect_trenches(img, bin_img, theta, diagnostics=None):
     return trench_points
 
 
-def _label_for_trenches(img, diagnostics=None):
+def find_trench_threshold(img, bins=10, diagnostics=None):
+    if diagnostics is not None:
+        threshold_img_x = np.zeros(img.shape)
+        threshold_img_y = np.zeros(img.shape)
+    thresholds_x = []
+    xs = np.linspace(0, img.shape[1], bins).astype(np.int_)
+    for x0, x1 in zip(xs[:-1], xs[1:]):
+        threshold_x = skimage.filters.threshold_otsu(img[:, x0:x1])
+        if diagnostics is not None:
+            threshold_img_x[:, x0:x1] = threshold_x
+        thresholds_x.append(threshold_x)
+    thresholds_y = []
+    ys = np.linspace(0, img.shape[0], bins).astype(np.int_)
+    for y0, y1 in zip(ys[:-1], ys[1:]):
+        threshold_y = skimage.filters.threshold_otsu(img[y0:y1, :])
+        if diagnostics is not None:
+            threshold_img_y[y0:y1, :] = threshold_y
+        thresholds_y.append(threshold_y)
+    threshold = np.median(thresholds_x)
+    if diagnostics is not None:
+        diagnostics["threshold_img_x"] = RevImage(threshold_img_x)
+        diagnostics["threshold_img_y"] = RevImage(threshold_img_y)
+        diagnostics["threshold"] = threshold
+    return threshold
+
+
+def label_for_trenches(img, diagnostics=None):
     # img = img_series[::10].max(axis=0)
     # img = img_series[channel, 30]
     # TODO: need rotation-invariant detrending
     img = img - np.percentile(img, 3, axis=1)[:, np.newaxis]
-    threshold = skimage.filters.threshold_otsu(img)
-    if diagnostics is not None:
-        diagnostics["threshold"] = threshold
+    threshold = find_trench_threshold(
+        img, diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold")
+    )
     img_thresh = img > threshold
-    img_labels = label_binary_image(img_thresh)
-    return img_labels
+    img_labels, label_index = label_binary_image(img_thresh)
+    components, num_components = skimage.morphology.label(img_labels, return_num=True)
+    normalized_img = normalize_segmentwise(
+        img, components, label_index=np.arange(1, num_components)
+    )
+    if diagnostics is not None:
+        diagnostics["label_index"] = list(label_index)
+        # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
+        diagnostics["image"] = RevImage(img)
+        diagnostics["components"] = RevImage(components)
+        diagnostics["num_components"] = num_components
+        diagnostics["normalized_image"] = RevImage(normalized_img)
+        # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
+        diagnostics["labeled_image"] = RevImage(img_labels)
+    return normalized_img, img_labels, label_index
+
+
+def normalize_segmentwise(
+    img,
+    img_labels,
+    label_index=None,
+    dilation=5,
+    background_value=0,
+    inplace=False,
+    dtype=np.float32,
+):
+    if not inplace:
+        img = img.astype(dtype).copy()
+    # TODO: don't recompute index, and max_label below
+    if label_index is None:
+        label_index = np.unique(img_labels)
+    means = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
+    background_mask = np.ones(img.shape, dtype=np.int_)
+    for idx, label in enumerate(label_index):
+        mask = img_labels == label
+        mask = repeat_apply(skimage.morphology.binary_dilation, dilation)(mask)
+        background_mask[mask] = 0
+        img[mask] /= means[idx]
+    img[background_mask] = background_value
+    return img
 
 
 def get_trenches(img, diagnostics=None):
-    img_labels = _label_for_trenches(
+    normalized_img, img_labels, label_index = label_for_trenches(
         img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
     )
-    max_label = img_labels.max()
-    if diagnostics is not None:
-        diagnostics["max_label"] = max_label
-        # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
-        diagnostics["image"] = RevImage(img)
-        # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
-        diagnostics["labeled_image"] = RevImage(img_labels)
     trenches = {}
-    for label in range(1, max_label + 1):  # TODO: this relies on background == 0
+    for label in label_index:  # TODO: this relies on background == 0
         trenches[label] = _get_trench_set(
-            img,
+            normalized_img,
             img_labels == label,
             diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
         )

@@ -1,12 +1,6 @@
-REPLY TO HOLOVIEWS DEVS
+perfect trench detection on old data, then new data
 
-get_trench_bbox: half-way to next trench
-dilate 3x, then get from left/right edges of original mask
-
-mother cell endpoint tracking
-mother cell segmentation mask
-allow image viewer to overlay seg masks, trench thumb boundaries easily
-fluorescent readout using cell masks
+DILATE BEFORE MODIFYING MASK BY MAX, SET IMAGE TO ZERO OUTSIDE
 
 use first N=20, majority vote to constrain all others
 fix too-narrow periods
@@ -19,6 +13,17 @@ NONE_POS:
 50: same, end of row (half of frame blank)
 76: same
 239: single peak, need to normalize trenches before period-finding (for each disjoint segment in segmentation mask, normalize to max in that segment)
+
+ingest_tiff
+ingest_tiff --watch (need some way of updating latest field, poll metadata?)
+mother cell endpoint tracking
+mother cell segmentation mask
+allow image viewer to overlay seg masks, trench thumb boundaries easily
+fluorescent readout using cell masks
+
+switch to pipenv on orchestra / FIX JUPYTER THEME (git repo/rectify with Bancroft)
+
+REPLY TO HOLOVIEWS DEVS
 
 fix pickling of diag_pos:
     make sure pickle isn't doing something stupid (compare pickled sizes with asized)
