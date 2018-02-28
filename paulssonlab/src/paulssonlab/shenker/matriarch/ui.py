@@ -205,7 +205,9 @@ def display_plot_browser_contents(plots, to_display, stream=None):
                             z=(0, img.data.max())
                         ),
                         lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
-                    ).collate()
+                    )
+                    if hasattr(obj, "collate"):
+                        obj = obj.collate()
                 display(obj)
         else:
             # print(path, obj.__class__)
