@@ -408,7 +408,7 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
     return threshold
 
 
-def label_for_trenches(img, diagnostics=None):
+def label_for_trenches(img, min_component_size=10, diagnostics=None):
     # img = img_series[::10].max(axis=0)
     # img = img_series[channel, 30]
     # TODO: need rotation-invariant detrending
@@ -419,6 +419,9 @@ def label_for_trenches(img, diagnostics=None):
     img_thresh = img > threshold
     img_labels, label_index = label_binary_image(img_thresh)
     components, num_components = skimage.morphology.label(img_labels, return_num=True)
+    skimage.morphology.remove_small_objects(
+        components, min_size=min_component_size, in_place=True
+    )
     normalized_img = normalize_segmentwise(
         img, components, label_index=np.arange(1, num_components)
     )
@@ -435,27 +438,19 @@ def label_for_trenches(img, diagnostics=None):
 
 
 def normalize_segmentwise(
-    img,
-    img_labels,
-    label_index=None,
-    dilation=5,
-    background_value=0,
-    inplace=False,
-    dtype=np.float32,
+    img, img_labels, label_index=None, dilation=5, in_place=False, dtype=np.float32
 ):
-    if not inplace:
+    if not in_place:
         img = img.astype(dtype).copy()
     # TODO: don't recompute index, and max_label below
     if label_index is None:
         label_index = np.unique(img_labels)
-    means = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
-    background_mask = np.ones(img.shape, dtype=np.int_)
+    maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
+    img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
+    img[img_labels == 0] = 0
     for idx, label in enumerate(label_index):
         mask = img_labels == label
-        mask = repeat_apply(skimage.morphology.binary_dilation, dilation)(mask)
-        background_mask[mask] = 0
-        img[mask] /= means[idx]
-    img[background_mask] = background_value
+        img[mask] /= maxes[idx]
     return img
 
 
@@ -464,7 +459,7 @@ def get_trenches(img, diagnostics=None):
         img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
     )
     trenches = {}
-    for label in label_index:  # TODO: this relies on background == 0
+    for label in label_index:
         trenches[label] = _get_trench_set(
             normalized_img,
             img_labels == label,
