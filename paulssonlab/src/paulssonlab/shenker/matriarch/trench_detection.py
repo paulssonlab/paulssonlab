@@ -43,7 +43,7 @@ def label_binary_image(bin_img):
     label_img = np.zeros_like(bin_img, dtype=np.int8)  # TODO: fixing dtype
     for i in range(len(fit.labels_)):
         label_img[X[i, 0], X[i, 1]] = fit.labels_[i] + 1
-    return label_img, np.sort(np.unique(fit.labels_))
+    return label_img, np.sort(np.unique(fit.labels_)) + 1
 
 
 def drop_rare_labels(labels):
@@ -176,7 +176,7 @@ def line_array(
             yield y0, y1
 
 
-def get_anchors(theta, x_lim, y_lim):
+def get_edge_points(theta, x_lim, y_lim):
     x_min = np.array([x_lim[0], y_lim[0]])
     x_max = np.array([x_lim[1], y_lim[1]])
     x0 = x_min + (x_max - x_min) / 2
@@ -185,11 +185,13 @@ def get_anchors(theta, x_lim, y_lim):
     return anchor0, anchor1
 
 
-def detect_trench_region(bin_img, theta, diagnostics=None):
+def detect_trench_region(bin_img, theta, margin=3, diagnostics=None):
     x_lim, y_lim = get_img_limits(bin_img.shape)
-    anchor0, anchor1 = get_anchors(theta, x_lim, y_lim)
+    anchor0, anchor1 = get_edge_points(theta, x_lim, y_lim)
     cross_sections = []
-    anchors = list(point_linspace(anchor0, anchor1, 40))[3:-3]  # TODO: parameterize
+    anchors = list(point_linspace(anchor0, anchor1, 40))[
+        margin:-margin
+    ]  # TODO: parameterize
     lines = list(
         line_array(anchors, np.pi / 2 + theta, x_lim, y_lim, bidirectional=True)
     )
@@ -197,6 +199,13 @@ def detect_trench_region(bin_img, theta, diagnostics=None):
         xs, ys = coords_along(x1, x2)
         cross_sections.append(bin_img[ys, xs])
     if diagnostics is not None:
+        # anchors = np.vstack((xs[idxs], ys[idxs])).T
+        # for l in lines:
+        #    print(l, (l[1][0], l[2][0]), (l[1][1], l[2][1]))
+        region_slices_plot = hv.Overlay.from_values(
+            [hv.Path(((l[1][0], l[2][0]), (l[1][1], l[2][1]))) for l in lines]
+        )
+        diagnostics["region_slices"] = RevImage(bin_img) * region_slices_plot
         diagnostics["cross_sections"] = hv.Overlay.from_values(
             [hv.Curve(cs) for cs in cross_sections]
         )
@@ -233,6 +242,11 @@ def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=N
 def detect_periodic_peaks(
     signal, threshold=0.2, min_dist=5, period_min=None, max_dist=None, diagnostics=None
 ):
+    if diagnostics is not None:
+        # plot signal without highlighted points in case peakutils hangs
+        diagnostics["peaks"] = hv.Curve((range(len(signal)), signal))
+    if np.all(signal == signal[0]):
+        raise ValueError("attempting to detect periodic peaks in a constant signal")
     idxs = peakutils.indexes(signal, thres=threshold, min_dist=min_dist)
     # xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
     xs = idxs
@@ -283,15 +297,25 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     x1 = edge_point(t0, theta - np.pi / 2, x_lim, y_lim)
     x2 = edge_point(t0, theta + np.pi / 2, x_lim, y_lim)
     xs, ys = coords_along(x1, x2)
-    profile = img[ys, xs].astype(np.int_)
+    profile = img[ys, xs]  # .astype(np.int_)
+    if diagnostics is not None:
+        diagnostics["trench_anchor_profile"] = hv.Curve(profile)
+        diagnostics["trench_slice"] = RevImage(img) * hv.Path(
+            ((x1[0], x2[0]), (x1[1], x2[1]))
+        )
     period, offset = detect_periodic_peaks(profile, diagnostics=diagnostics)
     idxs = np.arange(offset, len(profile), period).astype(np.int_)
+    anchors = np.vstack((xs[idxs], ys[idxs])).T
     if diagnostics is not None:
         highlighted_points = hv.Scatter((idxs, profile[idxs])).opts(
             style={"size": 10, "color": "red"}
         )
-        diagnostics["anchors"] = hv.Curve(profile) * highlighted_points
-    return np.vstack((xs[idxs], ys[idxs])).T
+        diagnostics["trench_anchor_profile"] = hv.Curve(profile) * highlighted_points
+        anchor_points_plot = hv.Points(anchors).opts(
+            style={"size": 3, "color": "white"}
+        )
+        diagnostics["anchor_points"] = RevImage(img) * anchor_points_plot
+    return anchors
 
 
 def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
@@ -365,7 +389,7 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
     return top_points, bottom_points
 
 
-def detect_trenches(img, bin_img, theta, diagnostics=None):
+def detect_trench_set(img, bin_img, theta, diagnostics=None):
     t0 = detect_trench_region(
         bin_img, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_region")
     )
@@ -423,8 +447,8 @@ def label_for_trenches(img, min_component_size=10, diagnostics=None):
         components, min_size=min_component_size, in_place=True
     )
     normalized_img = normalize_segmentwise(
-        img, components, label_index=np.arange(1, num_components)
-    )
+        img, components, label_index=np.arange(num_components) + 1
+    )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["label_index"] = list(label_index)
         # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
@@ -442,7 +466,6 @@ def normalize_segmentwise(
 ):
     if not in_place:
         img = img.astype(dtype).copy()
-    # TODO: don't recompute index, and max_label below
     if label_index is None:
         label_index = np.unique(img_labels)
     maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
@@ -473,5 +496,5 @@ def _get_trench_set(img, img_mask, diagnostics=None):
     theta = detect_rotation(
         img_mask, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
     )
-    trench_points = detect_trenches(img, img_mask, theta, diagnostics=diagnostics)
+    trench_points = detect_trench_set(img, img_mask, theta, diagnostics=diagnostics)
     return trench_points
