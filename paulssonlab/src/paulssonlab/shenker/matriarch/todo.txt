@@ -1,6 +1,7 @@
-perfect trench detection on old data, then new data
+flatten diag_pos to dataframe (with names in parent.parent.leaf notation), plot with tooltips
+SEE: https://github.com/ioam/holoviews/issues/1600
 
-DILATE BEFORE MODIFYING MASK BY MAX, SET IMAGE TO ZERO OUTSIDE
+perfect trench detection on old data, then new data
 
 use first N=20, majority vote to constrain all others
 fix too-narrow periods

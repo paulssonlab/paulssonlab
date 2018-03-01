@@ -1,3 +1,4 @@
+import pandas as pd
 from collections import defaultdict
 from tqdm import tqdm, tqdm_notebook
 import zarr
@@ -5,6 +6,7 @@ from datetime import datetime, timezone
 import holoviews as hv
 from functools import reduce
 from cytoolz import compose
+import collections
 
 
 def fail_silently(func):
@@ -27,6 +29,28 @@ def recursive_getattr(obj, keys):
     for k in keys:
         obj = obj[k]
     return obj
+
+
+def diagnostics_to_dataframe(diagnostics):
+    d = {
+        k: flatten(v, predicate=lambda _, x: not isinstance(x, hv.ViewableElement))
+        for k, v in diagnostics.items()
+    }
+    df = pd.DataFrame.from_dict(d, orient="index")
+    return df
+
+
+# FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
+def flatten(d, parent_key="", sep=".", predicate=None):
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + str(k) if parent_key else str(k)
+        if isinstance(v, collections.MutableMapping):
+            items.extend(flatten(v, new_key, sep=sep, predicate=predicate).items())
+        else:
+            if predicate is None or predicate(k, v):
+                items.append((new_key, v))
+    return dict(items)
 
 
 def repeat_apply(func, n):
