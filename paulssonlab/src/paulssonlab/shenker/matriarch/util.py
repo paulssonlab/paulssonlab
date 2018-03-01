@@ -10,6 +10,8 @@ from cytoolz import compose
 def fail_silently(func):
     try:
         return func()
+    except KeyboardInterrupt:
+        raise
     except:
         return None
 
