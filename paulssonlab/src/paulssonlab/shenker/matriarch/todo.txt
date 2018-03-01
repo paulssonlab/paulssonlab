@@ -1,5 +1,15 @@
-flatten diag_pos to dataframe (with names in parent.parent.leaf notation), plot with tooltips
+set of scatter plots synchronized to qgrid (bidirectional RangeXY), tool tips
 SEE: https://github.com/ioam/holoviews/issues/1600
+
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos0/ch1
+ingest_tiff
+ingest_tiff --watch (need some way of updating latest field, poll metadata?)
+trench_pack
+trench_pack QUALITY THRESHOLDS for trench detection, if it fails just keep whole frame unmodified (or quantized, if --quantize-trench)
+trench_pack --quantize-trench/--quantize-fov (which keeps a quantized whole-FOV copy in pos#/ch0/fov)
+trench_pack --crop-fov (for each trench set keeps only bounding box of all trench thumb corners, which can be combined with --quantize-fov)
+inventory_data --formats nd2,tiff,zarr
+PARALLELIZE ingest_nd2, ingest_tiff, quantize
 
 perfect trench detection on old data, then new data
 
@@ -15,8 +25,6 @@ NONE_POS:
 76: same
 239: single peak, need to normalize trenches before period-finding (for each disjoint segment in segmentation mask, normalize to max in that segment)
 
-ingest_tiff
-ingest_tiff --watch (need some way of updating latest field, poll metadata?)
 mother cell endpoint tracking
 mother cell segmentation mask
 allow image viewer to overlay seg masks, trench thumb boundaries easily
