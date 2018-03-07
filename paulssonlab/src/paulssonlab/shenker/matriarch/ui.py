@@ -8,11 +8,13 @@ from holoviews.operation.datashader import (
     shade,
     regrid,
 )
-from IPython.display import display, clear_output
+from IPython.display import display, clear_output, HTML
 from holoviews.streams import Stream, param
 from matplotlib.colors import hex2color
+import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
+import uuid
 from util import RevImage, RevRGB, recursive_getattr
 
 # TODO
@@ -269,3 +271,46 @@ def plot_browser(plots, to_display=None, path=()):
             accordion.set_title(i, k)
         children.append(accordion)
     return widgets.VBox(children)
+
+
+def resize_qgrid_header(widget, height):
+    widget_class = "qgrid-{}".format(uuid.uuid1())
+    widget.add_class(widget_class)
+    filter_height = height + 12  # TODO: why 12??
+    css = """
+    <style>
+    .{widget_class} .slick-header-column.ui-state-default {{
+        height: {height}px;
+    }}
+    .{widget_class} .slick-column-name {{
+        width: {height}px;
+        overflow-wrap: break-word;
+    }}
+    .{widget_class} .slick-column-name {{
+        white-space: normal;
+    }}
+    .{widget_class} .filter-button {{
+        height: {filter_height}px;
+    }}
+    </style>"""
+    display(
+        HTML(
+            css.format(
+                widget_class=widget_class, height=height, filter_height=filter_height
+            )
+        )
+    )
+
+
+def qshow(df, header_height=100):
+    qg = qgrid.show_grid(
+        df,
+        grid_options={
+            "forceFitColumns": False,
+            "editable": False,
+            "enableColumnReorder": True,
+        },
+        precision=1,
+    )
+    resize_qgrid_header(qg, header_height)
+    return qg

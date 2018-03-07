@@ -37,7 +37,44 @@ def diagnostics_to_dataframe(diagnostics):
         for k, v in diagnostics.items()
     }
     df = pd.DataFrame.from_dict(d, orient="index")
+    df.index.rename("pos", inplace=True)
     return df
+
+
+def expand_diagnostics_by_label(df, label="label_", keep_all=True):
+    data = {}
+    column_to_label_num = {}
+    column_to_flattened_name = {}
+    label_nums = set()
+    for column in df.columns:
+        column_parts = column.split(".")
+        if column_parts[0].startswith(label):
+            label_num = int(column_parts[0][len(label) :])
+            column_to_label_num[column] = label_num
+            column_to_flattened_name[column] = ".".join(column_parts[1:])
+            label_nums.add(label_num)
+    for idx, row in df.iterrows():
+        d = defaultdict(dict)
+        for column in df.columns:
+            if column in column_to_label_num:
+                label_num = column_to_label_num[column]
+                d[label_num][column_to_flattened_name[column]] = row[column]
+            else:
+                if keep_all:
+                    for label_num in label_nums:
+                        d[label_num][column] = row[column]
+        # data.extend(d.values())
+        for label_num, dd in d.items():
+            data[(idx, label_num)] = dd
+    df2 = pd.DataFrame.from_dict(data, orient="index")
+    # parent_index = pd.MultiIndex(df.index)
+    # df2.index.rename(parent_index.names, level=parent_index.levels, inplace=True)
+    df2.index.rename([df.index.name, label[:-1]], inplace=True)
+    return df2
+
+
+def drop_constant_columns(df):
+    return df.loc[:, df.nunique(dropna=False) != 1]
 
 
 # FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
