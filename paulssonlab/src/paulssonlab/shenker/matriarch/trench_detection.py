@@ -74,14 +74,14 @@ def find_hough_angle(bin_img, theta=None, diagnostics=None):
     theta_idx = abs_diff_h.argmax()
     angle = theta[theta_idx]
     if diagnostics is not None:
-        diagnostics["angle_range (deg)"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
+        diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
         bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
         diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
         # TODO: fix the left-edge vs. right-edge issue for theta bins
         diagnostics["abs_diff_h"] = hv.Curve(
             (np.rad2deg(theta[:-1]), abs_diff_h)
         ) * hv.VLine(np.rad2deg(angle)).opts(style={"color": "red"})
-        diagnostics["angle (deg)"] = np.rad2deg(angle)
+        diagnostics["angle"] = np.rad2deg(angle)
     return angle
 
 
