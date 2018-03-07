@@ -450,7 +450,7 @@ def label_for_trenches(img, min_component_size=10, diagnostics=None):
         img, components, label_index=np.arange(num_components) + 1
     )  # TODO: check arange
     if diagnostics is not None:
-        diagnostics["label_index"] = list(label_index)
+        diagnostics["label_index"] = tuple(label_index)
         # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
         diagnostics["image"] = RevImage(img)
         diagnostics["components"] = RevImage(components)
