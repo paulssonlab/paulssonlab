@@ -1,3 +1,40 @@
+###
+
+ImageMetadataLV!
+? 126992:ImageCalibrationLV|0!
+? 131088:ImageMetadataSeqLV|0!
+? 204816:ImageCalibrationLV|0!
+image_metadata_sequence 208912:ImageMetadataSeqLV|0!
+? 286736:ImageAttributesLV!
+image_calibration 3752952739:ImageCalibrationLV|0!
+image_attributes 3752952776:ImageAttributesLV!
+z_data 3752952810:CustomData|Z!
+y_data 3752952839:CustomData|Y!
+x_data 3752952868:CustomData|X!
+CUSTOM 3752952897:CustomData|TimeSourceCache!
+CUSTOM 3752952940:CustomData|RoiRleGlobal_v1!
+pfs_status 3752952983:CustomData|PFS_STATUS!
+pfs_offset 3752953021:CustomData|PFS_OFFSET!
+camera_exposure_time 3752953059:CustomData|Camera_ExposureTime1!
+camera_temp 3752953107:CustomData|CameraTemp1!
+acquisition_times 3752953146:CustomData|AcqTimesCache!
+acquisition_times_2 3752953187:CustomData|AcqTimes2Cache!
+acquisition_frames 3752953229:CustomData|AcqFramesCache!
+CUSTOM 3752953271:CustomDataVar|StreamDataV1_0!
+CUSTOM 3752953316:CustomDataVar|NDControlV1_0!
+lut_data 3752953360:CustomDataVar|LUTDataV1_0!
+grabber_settings 3752953402:CustomDataVar|GrabberCameraSettingsV1_0!
+custom_data 3752953458:CustomDataVar|CustomDataV2_0!
+app_info 3752953503:CustomDataVar|AppInfo_V1_0!
+CUSTOM 3752953546:CustomDataVar|AcqTimeV1_0!
+
+done 3752926025:ImageDataSeq|10686!
+
+###
+
+blur trench profile, set minimum trench spacing
+fix rotation: do non-binary hough, try edge-filtering first
+
 set of scatter plots synchronized to qgrid (bidirectional RangeXY), tool tips
 SEE: https://github.com/ioam/holoviews/issues/1600
 

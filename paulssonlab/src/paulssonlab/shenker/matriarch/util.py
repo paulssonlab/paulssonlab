@@ -31,6 +31,17 @@ def recursive_getattr(obj, keys):
     return obj
 
 
+# FROM: https://stackoverflow.com/questions/4664850/find-all-occurrences-of-a-substring-in-python
+def find_all(a_str, sub):
+    start = 0
+    while True:
+        start = a_str.find(sub, start)
+        if start == -1:
+            return
+        yield start
+        start += 1  # find overlapping matches (otherwise += len(sub))
+
+
 def diagnostics_to_dataframe(diagnostics):
     d = {
         k: flatten_dict(v, predicate=lambda _, x: not isinstance(x, hv.ViewableElement))
