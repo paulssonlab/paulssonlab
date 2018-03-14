@@ -55,7 +55,9 @@ class BytesSerializer(Serializer):
 @click.argument("in_path", type=click.Path(exists=True))
 @click.argument("out_path", type=click.Path(writable=True, dir_okay=False))
 @click.option("--metadata/--no-metadata", default=True)
-def inventory(in_path, out_path, metadata):
+@click.option("--skip-tiff", is_flag=True, default=False)
+@click.option("--skip-nd2", is_flag=True, default=False)
+def inventory(in_path, out_path, metadata, skip_tiff, skip_nd2):
     serialization = SerializationMiddleware()
     # serialization.register_serializer(DateTimeSerializer(), 'datetime')
     serialization.register_serializer(ZarrSerializer(), "zarr")
@@ -63,9 +65,13 @@ def inventory(in_path, out_path, metadata):
     db = TinyDB(out_path, storage=serialization)
     files_to_process = OrderedDict()
     valid_extensions = set(METADATA_READERS.keys())
-    for root, dirs, files in tqdm_auto(
-        os.walk(in_path), desc="scanning for image files"
-    ):
+    if skip_tiff:
+        valid_extensions -= set(["tif", "tiff"])
+    if skip_nd2:
+        valid_extensions.remove("nd2")
+    pbar = tqdm_auto(os.walk(in_path), desc="scanning for image files")
+    for root, dirs, files in pbar:
+        pbar.set_postfix(to_process=len(files_to_process))
         # modifying dirs in place will affect which dirs are traversed
         # SEE: https://stackoverflow.com/questions/19859840/excluding-directories-in-os-walk
         dirs[:] = [
