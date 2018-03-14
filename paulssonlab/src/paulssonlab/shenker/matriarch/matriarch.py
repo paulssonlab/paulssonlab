@@ -1,6 +1,7 @@
 import click
 from processing import ingest_nd2_file, quantize_frames
 from util import open_zarr_group
+from inventory import inventory
 
 
 @click.group()
@@ -24,6 +25,9 @@ def quantize(in_path, out_path, bits, random):
     in_group = open_zarr_group(in_path)
     out_group = open_zarr_group(out_path)
     quantize_frames(in_group, out_group, bits=bits, random=random)
+
+
+cli.add_command(inventory)
 
 
 def main():

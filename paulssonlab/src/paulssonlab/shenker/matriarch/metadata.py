@@ -29,6 +29,10 @@ ND2_METADATA_DOUBLE_ARRAYS = [
 ]
 
 
+def read_nd2_file_metadata(nd2_file):
+    return read_nd2_metadata(nd2reader.ND2Reader(nd2_file))
+
+
 def read_nd2_metadata(nd2):
     label_map = nd2.parser._label_map
     raw_metadata = nd2.parser._raw_metadata
