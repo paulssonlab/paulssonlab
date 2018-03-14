@@ -43,14 +43,12 @@ def parse_nd2_metadata(nd2):
     metadata = {}
     metadata["time_source"] = _nd2_parse_chunk(nd2, b"CustomData|TimeSourceCache!")
     metadata["roi_rle_global"] = _nd2_parse_chunk(nd2, b"CustomData|RoiRleGlobal_v1!")
-    metadata["acquisition_time"] = xmltodict.parse(
-        _nd2_parse_chunk(nd2, b"CustomDataVar|AcqTimeV1_0!")
+    metadata["acquisition_time"] = _nd2_parse_xml_chunk(
+        nd2, b"CustomDataVar|AcqTimeV1_0!"
     )
-    metadata["nd_control"] = xmltodict.parse(
-        _nd2_parse_chunk(nd2, b"CustomDataVar|NDControlV1_0!")
-    )
-    metadata["stream_data"] = xmltodict.parse(
-        _nd2_parse_chunk(nd2, b"CustomDataVar|StreamDataV1_0!")
+    metadata["nd_control"] = _nd2_parse_xml_chunk(nd2, b"CustomDataVar|NDControlV1_0!")
+    metadata["stream_data"] = _nd2_parse_xml_chunk(
+        nd2, b"CustomDataVar|StreamDataV1_0!"
     )
     for label in ND2_METADATA_PARSED:
         metadata[label] = getattr(raw_metadata, label)
@@ -63,6 +61,14 @@ def _nd2_parse_chunk(nd2, label):
     return nd2reader.common.read_chunk(
         nd2._fh, nd2.parser._label_map._get_location(label)
     )
+
+
+def _nd2_parse_xml_chunk(nd2, label):
+    data = _nd2_parse_chunk(nd2, label)
+    if data is not None:
+        return xmltodict.parse(data)
+    else:
+        return None
 
 
 def _nd2_parse_array(nd2, label, dtype, compressor=DEFAULT_METADATA_COMPRESSOR):
