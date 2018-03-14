@@ -1,4 +1,5 @@
 import nd2reader
+import PIL
 import zarr
 from numcodecs import Blosc
 import xmltodict
@@ -27,13 +28,14 @@ ND2_METADATA_DOUBLE_ARRAYS = [
     "acquisition_times_2",
     "acquisition_frames",
 ]
+NIKON_TIFF_METADATA_TAGS = [65330, 65331, 65332, 65333]
 
 
-def read_nd2_file_metadata(nd2_file):
-    return read_nd2_metadata(nd2reader.ND2Reader(nd2_file))
+def parse_nd2_file_metadata(nd2_file):
+    return parse_nd2_metadata(nd2reader.ND2Reader(nd2_file))
 
 
-def read_nd2_metadata(nd2):
+def parse_nd2_metadata(nd2):
     label_map = nd2.parser._label_map
     raw_metadata = nd2.parser._raw_metadata
     metadata = {}
@@ -69,3 +71,41 @@ def _nd2_parse_array(nd2, label, dtype, compressor=DEFAULT_METADATA_COMPRESSOR):
     )
     ary = zarr.array(raw_ary, compressor=compressor)
     return ary
+
+
+def parse_nikon_tiff_file_metadata(tiff_file):
+    with PIL.Image.open(tiff_file) as f:
+        return parse_nikon_tiff_metadata(
+            {tag: f.tag[tag][0] for tag in NIKON_TIFF_METADATA_TAGS}
+        )
+
+
+def parse_nikon_tiff_metadata(tags):
+    metadata = {}
+    for tag, data in tags.items():
+        if tag == 65330:
+            label = _nikon_tiff_label(b"SLxImageTextInfo")
+            idx = data.index(label) - 2
+            md = nd2reader.common.read_metadata(data[idx:], 1)
+            metadata["image_text_info"] = md
+        elif tag == 65331:
+            label = _nikon_tiff_label("SLxPictureMetadata")
+            idx = data.index(label) - 2
+            md = nd2reader.common.read_metadata(data[idx:], 1)
+            metadata["image_metadata_sequence"] = md
+        elif tag == 65332:
+            label = _nikon_tiff_label("AppInfo_V1_0")
+            idx = (
+                data.index(label) + len(label) + 9
+            )  # TODO: no idea what these bytes are
+            md = xmltodict.parse(data[idx:])
+            metadata["app_info"] = md
+        else:
+            metadata[tag] = data
+    return metadata
+
+
+def _nikon_tiff_label(label):
+    if type(label) != bytes:
+        label = label.encode("utf-8")
+    return b"\x00".join([label[i : i + 1] for i in range(len(label))])

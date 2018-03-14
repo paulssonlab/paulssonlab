@@ -9,9 +9,9 @@ from metadata import read_nd2_file_metadata
 
 read_tiff_file_metadata = lambda p: None
 METADATA_READERS = {
-    "tif": read_tiff_file_metadata,
-    "tiff": read_tiff_file_metadata,
-    "nd2": read_nd2_file_metadata,
+    "tif": parse_tiff_file_metadata,
+    "tiff": parse_tiff_file_metadata,
+    "nd2": parse_nd2_file_metadata,
 }
 
 
