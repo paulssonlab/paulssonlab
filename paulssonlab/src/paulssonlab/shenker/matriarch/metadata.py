@@ -1,5 +1,6 @@
 import nd2reader
 import PIL
+import array
 import zarr
 from numcodecs import Blosc
 import xmltodict
@@ -17,17 +18,18 @@ ND2_METADATA_PARSED = [
     "app_info",
     "image_text_info",
 ]
-ND2_METADATA_INT_ARRAYS = ["pfs_status", "pfs_offset"]
-ND2_METADATA_DOUBLE_ARRAYS = [
-    "x_data",
-    "y_data",
-    "z_data",
-    "camera_exposure_time",
-    "camera_temp",
-    "acquisition_times",
-    "acquisition_times_2",
-    "acquisition_frames",
-]
+ND2_METADATA_ARRAYS = {
+    "pfs_status": "i",
+    "pfs_offset": "i",
+    "x_data": "d",
+    "y_data": "d",
+    "z_data": "d",
+    "camera_exposure_time": "d",
+    "camera_temp": "d",
+    "acquisition_times": "d",
+    "acquisition_times_2": "d",
+    "acquisition_frames": "i",
+}  # TODO: have no idea about correct type for acquisition_frames
 NIKON_TIFF_METADATA_TAGS = [65330, 65331, 65332, 65333]
 
 
@@ -52,10 +54,8 @@ def parse_nd2_metadata(nd2):
     )
     for label in ND2_METADATA_PARSED:
         metadata[label] = getattr(raw_metadata, label)
-    for label in ND2_METADATA_INT_ARRAYS:
-        metadata[label] = _nd2_parse_array(nd2, label, "int")
-    for label in ND2_METADATA_DOUBLE_ARRAYS:
-        metadata[label] = _nd2_parse_array(nd2, label, "double")
+    for label, dtype in ND2_METADATA_ARRAYS.items():
+        metadata[label] = _nd2_parse_array(nd2, label, dtype)
     return metadata
 
 
@@ -66,9 +66,11 @@ def _nd2_parse_chunk(nd2, label):
 
 
 def _nd2_parse_array(nd2, label, dtype, compressor=DEFAULT_METADATA_COMPRESSOR):
-    raw_ary = nd2reader.common.read_array(
-        nd2._fh, dtype, getattr(nd2.parser._label_map, label)
-    )
+    chunk_location = getattr(nd2.parser._label_map, label)
+    raw_data = nd2reader.common.read_chunk(nd2._fh, chunk_location)
+    raw_ary = array.array(dtype, raw_data)
+    if raw_data is None:
+        return None
     ary = zarr.array(raw_ary, compressor=compressor)
     return ary
 
