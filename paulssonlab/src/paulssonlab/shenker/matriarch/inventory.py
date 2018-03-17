@@ -1,7 +1,13 @@
 import numpy as np
 import click
 from peewee import Model
-from playhouse.apsw_ext import APSWDatabase, TextField, IntegerField, DoubleField
+from playhouse.apsw_ext import (
+    APSWDatabase,
+    TextField,
+    IntegerField,
+    DoubleField,
+    BooleanField,
+)
 from json_util import JSONField
 import pickle
 import base64
@@ -10,12 +16,16 @@ from datetime import datetime
 from collections import OrderedDict
 from contextlib import contextmanager
 import os
+import re
 import gc
 from util import tqdm_auto
 from metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
 
+AGGREGATE_EXCLUDE = re.compile(r"Thumbs\.db|\..*")
+
+EXTENSION_ALIASES = {"tif": "tiff"}
+
 METADATA_READERS = {
-    "tif": parse_nikon_tiff_file_metadata,
     "tiff": parse_nikon_tiff_file_metadata,
     "nd2": parse_nd2_file_metadata,
 }
@@ -39,6 +49,8 @@ class File(BaseModel):
     atime = DoubleField()
     mtime = DoubleField()
     ctime = DoubleField()
+    aggregated = BooleanField()
+    aggregated_path = TextField()
     metadata = JSONField()
 
 
@@ -60,8 +72,10 @@ def _processing_step(name, reprocess=False):
         yield False
 
 
-def _get_extension(path):
-    return path.split(".")[-1].lower()
+def _get_extension(path, aliases=EXTENSION_ALIASES):
+    extension = path.split(".")[-1].lower()
+    extension = aliases.get(extension, extension)
+    return extension
 
 
 def _scan_file(path):
@@ -82,19 +96,90 @@ def _abbreviate_filename(filename, length, sep="..."):
     return filename[: length // 2 - len(sep)] + sep + filename[-length // 2 :]
 
 
+def _scan_file_list(file_list, valid_extensions, extension_aliases=EXTENSION_ALIASES):
+    pbar = tqdm_auto(file_list, desc="scanning for image files")
+    num_files_to_process = 0
+    skipped = []
+    for path in pbar:
+        pbar.set_postfix(to_process=num_files_to_process)
+        path = path.strip()
+        if not os.path.exists(path):
+            skipped.append(path)
+            continue
+        root, file = os.path.split(path)
+        extension = _get_extension(file)
+        if extension in valid_extensions:
+            yield path, extension, False
+            num_files_to_process += 1
+    print("skipped: {}".format(skipped))
+
+
+def _should_aggregate_directory(
+    extensions, root, dirs, files, exclude_files=AGGREGATE_EXCLUDE
+):
+    if dirs:
+        return False
+    files_to_aggregate = [f for f in files if not exclude_files.match(f)]
+    if not files_to_aggregate:
+        return False
+    dir_extensions = [_get_extension(f) for f in files_to_aggregate]
+    if dir_extensions[0] in dir_extensions and dir_extensions.count(
+        dir_extensions[0]
+    ) == len(dir_extensions):
+        return [os.path.join(root, f) for f in files_to_aggregate]
+    else:
+        return False
+
+
+def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
+    pbar = tqdm_auto(os.walk(directory), desc="scanning for image files")
+    num_files_to_process = 0
+    skipped = []
+    for root, dirs, files in pbar:
+        pbar.set_postfix(to_process=num_files_to_process)
+        # modifying dirs in place will affect which dirs are traversed
+        # SEE: https://stackoverflow.com/questions/19859840/excluding-directories-in-os-walk
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and not os.path.exists(os.path.join(root, d, ".zattrs"))
+        ]
+        files_to_aggregate = _should_aggregate_directory(
+            aggregate_extensions, root, dirs, files
+        )
+        if files_to_aggregate:
+            # assumes we only aggregate directories with one file type
+            yield root, _get_extension(files_to_aggregate[0]), files_to_aggregate
+            num_files_to_process += 1
+        else:
+            for file in files:
+                extension = _get_extension(file)
+                if extension in valid_extensions:
+                    path = os.path.join(root, file)
+                    if not os.path.exists(path):
+                        skipped.append(path)
+                        continue
+                    yield path, extension, False
+                    num_files_to_process += 1
+    print("skipped: {}".format(skipped))
+
+
 @click.command()
 @click.argument("in_path", type=click.Path(exists=True))
 @click.argument(
     "out_path", type=click.Path(writable=True, dir_okay=False), required=False
 )
 @click.option("--rescan", is_flag=True, default=False)
-@click.option("--file-list", type=click.File("r"))
-@click.option("--skip-tiff", is_flag=True, default=False)
-@click.option("--skip-nd2", is_flag=True, default=False)
+@click.option(
+    "--file-list", type=click.File("r")
+)  # TODO: make this a flag, have file list as in_path instead?
+@click.option("--skip", multiple=True, default=False)
+@click.option("--aggregate", multiple=True, default=["tiff"])
 @click.option("--metadata/--no-metadata", default=True)
 @click.option("--duplicates/--no-duplicates", default=False)
 def inventory(
-    in_path, out_path, rescan, file_list, skip_tiff, skip_nd2, metadata, duplicates
+    in_path, out_path, rescan, file_list, skip, aggregate, metadata, duplicates
 ):
     # use one unified files table
     # add stat information on initial scan
@@ -106,80 +191,65 @@ def inventory(
     try:
         ### SCAN
         valid_extensions = set(METADATA_READERS.keys())
-        if skip_tiff:
-            valid_extensions -= set(["tif", "tiff"])
-        if skip_nd2:
-            valid_extensions.remove("nd2")
+        for extension in skip:
+            extension = EXTENSION_ALIASES.get(extension.lower(), extension.lower())
+            valid_extensions -= extension
         with _processing_step("scan", reprocess=rescan) as process:
             if process:
-                skipped = []
-                num_files_to_process = 0
                 if file_list:
-                    pbar = tqdm_auto(file_list, desc="scanning for image files")
-                    for path in pbar:
-                        path = path.strip()
-                        if not os.path.exists(path):
-                            skipped.append(path)
-                            continue
-                        root, file = os.path.split(path)
-                        extension = _get_extension(file)
-                        if extension in valid_extensions:
-                            doc = _scan_file(path)
-                            doc["type"] = extension
-                            doc["metadata"] = ""
-                            File.create(**doc)
-                            num_files_to_process += 1
+                    files_to_scan = _scan_file_list(file_list, valid_extensions)
                 else:
-                    pbar = tqdm_auto(os.walk(in_path), desc="scanning for image files")
-                    for root, dirs, files in pbar:
-                        pbar.set_postfix(to_process=num_files_to_process)
-                        # modifying dirs in place will affect which dirs are traversed
-                        # SEE: https://stackoverflow.com/questions/19859840/excluding-directories-in-os-walk
-                        dirs[:] = [
-                            d
-                            for d in dirs
-                            if not os.path.exists(os.path.join(root, d, ".zattrs"))
-                        ]
-                        for file in files:
-                            extension = _get_extension(file)
-                            if extension in valid_extensions:
-                                path = os.path.join(root, file)
-                                if not os.path.exists(path):
-                                    skipped.append(path)
-                                    continue
-                                doc = _scan_file(path)
-                                doc["type"] = extension
-                                doc["metadata"] = ""
-                                File.create(**doc)
-                                num_files_to_process += 1
-                print("skipped: {}".format(skipped))
-        ### METADATA
-        with _processing_step("metadata") as process:
-            if process:
-                skipped = []
-                files_to_process = (
-                    File.select()
-                    .where(File.metadata.is_null(False))
-                    .order_by(File.size.desc())
-                )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
-                pbar = tqdm_auto(files_to_process)
-                for file_row in pbar:
-                    path = file_row.path
-                    file = os.path.split(path)[-1]
-                    extension = _get_extension(file)
-                    pbar.set_postfix(
-                        file=_abbreviate_filename(file, 20), skipped=len(skipped)
+                    files_to_scan = _scan_directory(
+                        in_path, valid_extensions, aggregate_extensions=aggregate
                     )
-                    try:
-                        file_row.metadata = METADATA_READERS[extension](path)
-                    except KeyboardInterrupt:
-                        raise
-                    except:
-                        skipped.append(path)
+                for path, extension, aggregated_files in files_to_scan:
+                    if aggregated_files:
+                        # TODO: pick oldest file as exemplar??
+                        scanned_files = [_scan_file(f) for f in aggregated_files]
+                        scanned_files = sorted(scanned_files, key=lambda x: x["mtime"])
+                        total_size = sum(d["size"] for d in scanned_files)
+                        doc = scanned_files[0]
+                        doc["size"] = total_size
+                        doc["type"] = extension
+                        doc["metadata"] = ""
+                        doc["aggregated"] = True
+                        doc["aggregated_path"] = path
+                        del scanned_files  # TODO: probably not necessary, GC will get it
                     else:
-                        file_row.save()
-                    #     files_table.write_back([doc])
-                    #     gc.collect()
-                print("skipped: {}".format(skipped))
+                        doc = _scan_file(path)
+                        doc["type"] = extension
+                        doc["metadata"] = ""
+                        doc["aggregated"] = False
+                        doc["aggregated_path"] = ""
+                    File.create(**doc)
+        ### METADATA
+        if metadata:
+            with _processing_step("metadata") as process:
+                if process:
+                    skipped = []
+                    files_to_process = (
+                        File.select()
+                        .where(File.metadata.is_null(False))
+                        .order_by(File.size.desc())
+                    )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
+                    pbar = tqdm_auto(files_to_process)
+                    for file_row in pbar:
+                        path = file_row.path
+                        file = os.path.split(path)[-1]
+                        extension = _get_extension(file)
+                        pbar.set_postfix(
+                            file=_abbreviate_filename(file, 20), skipped=len(skipped)
+                        )
+                        try:
+                            file_row.metadata = METADATA_READERS[extension](path)
+                        except KeyboardInterrupt:
+                            raise
+                        except:
+                            skipped.append(path)
+                        else:
+                            file_row.save()
+                        #     files_table.write_back([doc])
+                        #     gc.collect()
+                    print("skipped: {}".format(skipped))
     finally:
         db.close()  # flush
