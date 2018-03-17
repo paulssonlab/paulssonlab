@@ -13,12 +13,11 @@ ND2_METADATA_PARSED = [
     "image_metadata_sequence",
     "image_calibration",
     "image_attributes",
-    "lut_data",
-    "grabber_settings",
-    "custom_data",
-    "app_info",
+    "roi_metadata",
     "image_text_info",
+    "image_metadata",
 ]
+ND2_METADATA_XML = ["lut_data", "grabber_settings", "custom_data", "app_info"]
 ND2_METADATA_ARRAYS = {
     "pfs_status": "i",
     "pfs_offset": "i",
@@ -57,6 +56,13 @@ def parse_nd2_metadata(nd2):
     metadata["stream_data"] = _nd2_parse_xml_chunk(
         nd2, b"CustomDataVar|StreamDataV1_0!"
     )
+    for label in ND2_METADATA_XML:
+        location = getattr(label_map, label)
+        if location:
+            data = _nd2_parse_xml_chunk(nd2, location=location)
+        else:
+            data = None
+        metadata[label] = data
     for label in ND2_METADATA_PARSED:
         metadata[label] = _stringify_dict_keys(getattr(raw_metadata, label))
     for label, dtype in ND2_METADATA_ARRAYS.items():
@@ -64,14 +70,16 @@ def parse_nd2_metadata(nd2):
     return metadata
 
 
-def _nd2_parse_chunk(nd2, label):
-    return nd2reader.common.read_chunk(
-        nd2._fh, nd2.parser._label_map._get_location(label)
-    )
+def _nd2_parse_chunk(nd2, label=None, location=None):
+    if location is None:
+        if label is None:
+            raise ValueError("need either label or location")
+        location = nd2.parser._label_map._get_location(label)
+    return nd2reader.common.read_chunk(nd2._fh, location)
 
 
-def _nd2_parse_xml_chunk(nd2, label):
-    data = _nd2_parse_chunk(nd2, label)
+def _nd2_parse_xml_chunk(nd2, label=None, location=None):
+    data = _nd2_parse_chunk(nd2, label=label, location=location)
     if data is not None:
         return xmltodict.parse(data)
     else:
@@ -81,9 +89,9 @@ def _nd2_parse_xml_chunk(nd2, label):
 def _nd2_parse_array(nd2, label, dtype, compressor=DEFAULT_METADATA_COMPRESSOR):
     chunk_location = getattr(nd2.parser._label_map, label)
     raw_data = nd2reader.common.read_chunk(nd2._fh, chunk_location)
-    raw_ary = array.array(dtype, raw_data)
     if raw_data is None:
         return None
+    raw_ary = array.array(dtype, raw_data)
     ary = zarr.array(raw_ary, compressor=compressor)
     return ary
 
