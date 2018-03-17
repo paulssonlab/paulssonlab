@@ -235,32 +235,28 @@ def inventory(
                     File.create(**doc)
         ### METADATA
         if metadata:
-            with _processing_step("metadata") as process:
-                if process:
-                    skipped = []
-                    files_to_process = (
-                        File.select()
-                        .where(File.metadata.is_null(False))
-                        .order_by(File.size.desc())
-                    )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
-                    pbar = tqdm_auto(files_to_process)
-                    for file_row in pbar:
-                        path = file_row.path
-                        file = os.path.split(path)[-1]
-                        extension = _get_extension(file)
-                        pbar.set_postfix(
-                            file=_abbreviate_filename(file, 20), skipped=len(skipped)
-                        )
-                        try:
-                            file_row.metadata = METADATA_READERS[extension](path)
-                        except KeyboardInterrupt:
-                            raise
-                        except:
-                            skipped.append(path)
-                        else:
-                            file_row.save()
-                        #     files_table.write_back([doc])
-                        #     gc.collect()
-                    print("skipped: {}".format(skipped))
+            skipped = []
+            files_to_process = (
+                File.select().where(File.metadata == "").order_by(File.size.desc())
+            )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
+            pbar = tqdm_auto(files_to_process)
+            for file_row in pbar:
+                path = file_row.path
+                file = os.path.split(path)[-1]
+                extension = _get_extension(file)
+                pbar.set_postfix(
+                    file=_abbreviate_filename(file, 20), skipped=len(skipped)
+                )
+                try:
+                    file_row.metadata = METADATA_READERS[extension](path)
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    skipped.append(path)
+                else:
+                    file_row.save()
+                #     files_table.write_back([doc])
+                #     gc.collect()
+            print("skipped: {}".format(skipped))
     finally:
         db.close()  # flush
