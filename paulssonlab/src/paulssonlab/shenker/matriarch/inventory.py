@@ -141,11 +141,15 @@ def inventory(
             valid_extensions.remove("nd2")
         with _processing_step(status_table, "scan", reprocess=rescan) as process:
             if process:
+                skipped = []
                 num_files_to_process = 0
                 if file_list:
                     pbar = tqdm_auto(file_list, desc="scanning for image files")
                     for path in pbar:
                         path = path.strip()
+                        if not os.path.exists(path):
+                            skipped.append(path)
+                            continue
                         root, file = os.path.split(path)
                         if _get_extension(file) in valid_extensions:
                             doc = _scan_file(path)
@@ -165,9 +169,13 @@ def inventory(
                         for file in files:
                             if _get_extension(file) in valid_extensions:
                                 path = os.path.join(root, file)
+                                if not os.path.exists(path):
+                                    skipped.append(path)
+                                    continue
                                 doc = _scan_file(path)
                                 files_table.upsert(doc, Query().path == path)
                                 num_files_to_process += 1
+                print("skipped: {}".format(skipped))
         ### METADATA
         with _processing_step(status_table, "metadata") as process:
             if process:
