@@ -1,5 +1,5 @@
 import pandas as pd
-from collections import defaultdict
+from collections import defaultdict, Sequence, Mapping
 from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
@@ -99,6 +99,30 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
             if predicate is None or predicate(k, v):
                 items.append((new_key, v))
     return dict(items)
+
+
+# FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
+def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False):
+    apply = lambda x: recursive_map(
+        func, x, shortcircuit=shortcircuit, ignore=ignore, keys=keys
+    )
+    if isinstance(data, shortcircuit):
+        return func(data)
+    # to avoid an infinite recursion error
+    # we need to hardcode that strs are ignored, because str[0] is a str, and hence a Sequence
+    elif isinstance(data, str) or ignore is not True and isinstance(data, ignore):
+        return data
+    elif isinstance(data, Mapping):
+        if keys:
+            return type(data)(dict({apply(k): apply(v) for k, v in data.items()}))
+        else:
+            return type(data)(dict({k: apply(v) for k, v in data.items()}))
+    elif isinstance(data, Sequence):
+        return type(data)(list(apply(v) for v in data))
+    elif ignore is True or True in ignore:
+        return data
+    else:
+        return func(data)
 
 
 def repeat_apply(func, n):

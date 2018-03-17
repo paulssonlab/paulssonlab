@@ -4,6 +4,7 @@ import array
 import zarr
 from numcodecs import Blosc
 import xmltodict
+from util import recursive_map
 
 DEFAULT_METADATA_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0
@@ -37,6 +38,12 @@ def parse_nd2_file_metadata(nd2_file):
     return parse_nd2_metadata(nd2reader.ND2Reader(nd2_file))
 
 
+def _stringify_dict_keys(d):
+    return recursive_map(
+        lambda s: s.decode("utf-8"), d, shortcircuit=bytes, ignore=True, keys=True
+    )
+
+
 def parse_nd2_metadata(nd2):
     label_map = nd2.parser._label_map
     raw_metadata = nd2.parser._raw_metadata
@@ -51,7 +58,7 @@ def parse_nd2_metadata(nd2):
         nd2, b"CustomDataVar|StreamDataV1_0!"
     )
     for label in ND2_METADATA_PARSED:
-        metadata[label] = getattr(raw_metadata, label)
+        metadata[label] = _stringify_dict_keys(getattr(raw_metadata, label))
     for label, dtype in ND2_METADATA_ARRAYS.items():
         metadata[label] = _nd2_parse_array(nd2, label, dtype)
     return metadata
@@ -95,12 +102,12 @@ def parse_nikon_tiff_metadata(tags):
             label = _nikon_tiff_label(b"SLxImageTextInfo")
             idx = data.index(label) - 2
             md = nd2reader.common.read_metadata(data[idx:], 1)
-            metadata["image_text_info"] = md
+            metadata["image_text_info"] = _stringify_dict_keys(md)
         elif tag == 65331:
             label = _nikon_tiff_label("SLxPictureMetadata")
             idx = data.index(label) - 2
             md = nd2reader.common.read_metadata(data[idx:], 1)
-            metadata["image_metadata_sequence"] = md
+            metadata["image_metadata_sequence"] = _stringify_dict_keys(md)
         elif tag == 65332:
             label = _nikon_tiff_label("AppInfo_V1_0")
             idx = (
