@@ -150,8 +150,10 @@ def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
         )
         if files_to_aggregate:
             # assumes we only aggregate directories with one file type
-            yield root, _get_extension(files_to_aggregate[0]), files_to_aggregate
-            num_files_to_process += 1
+            extension = _get_extension(files_to_aggregate[0])
+            if extension in valid_extensions:
+                yield root, extension, files_to_aggregate
+                num_files_to_process += 1
         else:
             for file in files:
                 extension = _get_extension(file)
@@ -193,7 +195,7 @@ def inventory(
         valid_extensions = set(METADATA_READERS.keys())
         for extension in skip:
             extension = EXTENSION_ALIASES.get(extension.lower(), extension.lower())
-            valid_extensions -= extension
+            valid_extensions.remove(extension)
         with _processing_step("scan", reprocess=rescan) as process:
             if process:
                 if file_list:
