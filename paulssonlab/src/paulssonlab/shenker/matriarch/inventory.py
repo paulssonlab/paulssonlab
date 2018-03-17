@@ -13,7 +13,7 @@ import pickle
 import base64
 import zarr
 from datetime import datetime
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 import os
 import re
@@ -21,7 +21,10 @@ import gc
 from util import tqdm_auto
 from metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
 
-AGGREGATE_EXCLUDE = re.compile(r"Thumbs\.db|\..*")
+AGGREGATE_EXCLUDE = re.compile(
+    r"^(Thumbs.*\.db|Pos7_TimelapseAnalysis\.mat|.*\.txt|\..*)$"
+)
+AGGREGATE_EXCLUDE_DIRS = re.compile(r"^ps$")
 
 EXTENSION_ALIASES = {"tif": "tiff"}
 
@@ -114,19 +117,28 @@ def _scan_file_list(file_list, valid_extensions, extension_aliases=EXTENSION_ALI
     print("skipped: {}".format(skipped))
 
 
-def _should_aggregate_directory(
-    extensions, root, dirs, files, exclude_files=AGGREGATE_EXCLUDE
-):
-    if dirs:
-        return False
-    files_to_aggregate = [f for f in files if not exclude_files.match(f)]
-    if not files_to_aggregate:
-        return False
-    dir_extensions = [_get_extension(f) for f in files_to_aggregate]
-    if dir_extensions[0] in dir_extensions and dir_extensions.count(
-        dir_extensions[0]
-    ) == len(dir_extensions):
-        return [os.path.join(root, f) for f in files_to_aggregate]
+# TODO: untested/unused
+def _is_empty_excluding(root, dirs, exclude):
+    for d in dirs:
+        if not exclude.match(d):
+            new_root = os.path.join(root, d)
+            is_empty = _is_empty_excluding(new_root, os.listdir(new_root), exclude)
+            if not is_empty:
+                return False
+    else:
+        return True
+
+
+def _should_aggregate_directory(root, dirs, extension, files_by_extension):
+    if (
+        len(files_by_extension[extension]) > 5
+        and sum(
+            len(files) for ext, files in files_by_extension.items() if ext != extension
+        )
+        / len(files_by_extension[extension])
+        < 0.1
+    ):
+        return True
     else:
         return False
 
@@ -145,26 +157,23 @@ def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
             if not d.startswith(".")
             and not os.path.exists(os.path.join(root, d, ".zattrs"))
         ]
-        files_to_aggregate = _should_aggregate_directory(
-            aggregate_extensions, root, dirs, files
-        )
-        if files_to_aggregate:
-            # assumes we only aggregate directories with one file type
-            extension = _get_extension(files_to_aggregate[0])
+        files_by_extension = defaultdict(list)
+        for file in files:
+            extension = _get_extension(file)
             if extension in valid_extensions:
-                yield root, extension, files_to_aggregate
+                path = os.path.join(root, file)
+                files_by_extension[extension].append(path)
+        for extension, paths in files_by_extension.items():
+            if extension in aggregate_extensions and _should_aggregate_directory(
+                root, dirs, extension, files_by_extension
+            ):
+                yield root, extension, paths
                 num_files_to_process += 1
-        else:
-            for file in files:
-                extension = _get_extension(file)
-                if extension in valid_extensions:
-                    path = os.path.join(root, file)
-                    if not os.path.exists(path):
-                        skipped.append(path)
-                        continue
+            else:
+                for path in paths:
                     yield path, extension, False
                     num_files_to_process += 1
-    print("skipped: {}".format(skipped))
+    print("skipped: {}".format(skipped))  # TODO: not used
 
 
 @click.command()
