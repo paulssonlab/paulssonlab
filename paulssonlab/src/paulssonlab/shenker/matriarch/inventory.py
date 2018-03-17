@@ -18,6 +18,7 @@ from contextlib import contextmanager
 import os
 import re
 import gc
+from IPython import embed
 from util import tqdm_auto
 from metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
 
@@ -260,3 +261,14 @@ def inventory(
             print("skipped: {}".format(skipped))
     finally:
         db.close()  # flush
+
+
+@click.command()
+@click.argument("file", type=click.Path(exists=True, dir_okay=False))
+def inspect_metadata(file):
+    extension = _get_extension(os.path.split(file)[-1])
+    md = METADATA_READERS[extension](file)
+    embed()
+
+
+commands = [inventory, inspect_metadata]
