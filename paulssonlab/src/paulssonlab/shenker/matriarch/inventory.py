@@ -251,6 +251,7 @@ def inventory(
                 try:
                     file_row.metadata = METADATA_READERS[extension](path)
                 except KeyboardInterrupt:
+                    print("skipped: {}".format(skipped))
                     raise
                 except:
                     skipped.append(path)
