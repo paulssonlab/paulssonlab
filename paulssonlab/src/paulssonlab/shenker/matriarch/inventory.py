@@ -265,9 +265,21 @@ def inventory(
 
 @click.command()
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
-def inspect_metadata(file):
+@click.option("--force/--no-force", default=False)
+def inspect_metadata(file, force):
+    # convenience imports
+    from metadata import _nikon_tiff_label, _nikon_tiff_field, parse_nikon_tiff_metadata
+    import PIL.Image
+    import nd2reader
+
     extension = _get_extension(os.path.split(file)[-1])
-    md = METADATA_READERS[extension](file)
+    if force:
+        try:
+            md = METADATA_READERS[extension](file)
+        except:
+            print("could not load metadata")
+    else:
+        md = METADATA_READERS[extension](file)
     embed()
 
 
