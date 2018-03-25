@@ -259,8 +259,6 @@ def inventory(
                     skipped.append(path)
                 else:
                     file_row.save()
-                #     files_table.write_back([doc])
-                #     gc.collect()
             print("skipped: {}".format(skipped))
     finally:
         db.close()  # flush
