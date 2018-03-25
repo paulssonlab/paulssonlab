@@ -59,7 +59,7 @@ def drop_rare_labels(labels):
 
 def get_img_limits(shape):
     x_min = y_min = 0
-    x_max, y_max = shape
+    y_max, x_max = shape  # note order
     # TODO: what convention should we use, should max be inclusive??
     # x_max = img.shape[0] - 1
     # y_max = img.shape[1] - 1
