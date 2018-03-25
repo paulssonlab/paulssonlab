@@ -240,7 +240,9 @@ def inventory(
             files_to_process = (
                 File.select().where(File.metadata == "").order_by(File.size.desc())
             )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
-            pbar = tqdm_auto(files_to_process)
+            pbar = tqdm_auto(
+                files_to_process.iterator(), total=files_to_process.count()
+            )  # .iterator() so we don't cache rows (memory leak)
             for file_row in pbar:
                 path = file_row.path
                 file = os.path.split(path)[-1]
