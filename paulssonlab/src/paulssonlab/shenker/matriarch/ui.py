@@ -15,7 +15,7 @@ import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
-from util import RevImage, RevRGB, recursive_getattr
+from util import RevImage, RevRGB, iterate_getattr
 
 # TODO
 channel_to_color = {

@@ -25,10 +25,28 @@ def getattr_if_not_none(obj, key):
         return None
 
 
-def recursive_getattr(obj, keys):
+def iterate_getattr(obj, keys):
     for k in keys:
-        obj = obj[k]
+        if k in obj:
+            obj = obj[k]
+        else:
+            return None
     return obj
+
+
+def extract_diagnostics_singleton(diagnostics, keys):
+    return wrap_dict_values(
+        drop_dict_nones({k: iterate_getattr(v, keys) for k, v in diagnostics.items()}),
+        ".".join(keys),
+    )
+
+
+def wrap_dict_values(obj, label):
+    return {k: {label: v} for k, v in obj.items()}
+
+
+def drop_dict_nones(obj):
+    return {k: v for k, v in obj.items() if v is not None}
 
 
 # FROM: https://stackoverflow.com/questions/4664850/find-all-occurrences-of-a-substring-in-python
