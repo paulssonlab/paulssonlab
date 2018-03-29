@@ -1,5 +1,9 @@
+SEGMENTATION
+TRACKING
+vectorize hessian_eigenvalues so we don't need to use map_ndarray on image stacks
 rough hough with binarized image, then blur and intensity hough
 
+#################
 
 fix rotation: blur, do intensity hough, try edge-filtering first
 blur trench profile, set minimum trench spacing
@@ -7,7 +11,7 @@ blur trench profile, set minimum trench spacing
 set of scatter plots synchronized to qgrid (bidirectional RangeXY), tool tips
 SEE: https://github.com/ioam/holoviews/issues/1600
 
-STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos0/ch1
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
 ingest_tiff
 ingest_tiff --watch (need some way of updating latest field, poll metadata?)
 trench_pack
