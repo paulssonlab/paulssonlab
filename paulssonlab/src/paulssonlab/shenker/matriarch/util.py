@@ -187,15 +187,3 @@ def tqdm_auto(*args, **kwargs):
 def open_zarr_group(dir_path):
     store = zarr.DirectoryStore(dir_path)
     return zarr.open_group(store=store)
-
-
-def RevImage(img, **kwargs):
-    return hv.Image(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
-        plot={"invert_yaxis": True}
-    )
-
-
-def RevRGB(img, **kwargs):
-    return hv.RGB(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
-        plot={"invert_yaxis": True}
-    )

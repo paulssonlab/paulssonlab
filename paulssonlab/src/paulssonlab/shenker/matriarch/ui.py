@@ -15,7 +15,7 @@ import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
-from util import RevImage, RevRGB, iterate_getattr
+from util import iterate_getattr
 
 # TODO
 channel_to_color = {
@@ -28,7 +28,21 @@ channel_to_color = {
 }
 
 
-def select(xs, mask):
+def RevImage(img, **kwargs):
+    return _RevImage(hv.Image, img, **kwargs)
+
+
+def _RevImage(cls, img, **kwargs):
+    return cls(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
+        plot={"invert_yaxis": True}
+    )
+
+
+def RevRGB(img, **kwargs):
+    return _RevImage(hv.RGB, img, **kwargs)
+
+
+def _select(xs, mask):
     if len(xs) != len(mask):
         raise ValueError("mask length does not match")
     return [xs[i] for i in range(len(xs)) if mask[i]]

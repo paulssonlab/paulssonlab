@@ -11,7 +11,8 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none, RevImage, repeat_apply
+from util import getattr_if_not_none, repeat_apply
+from ui import RevImage
 
 
 def _standardize_cluster_labels(X, fit):
