@@ -1,7 +1,20 @@
+#### FOR TOMORROW
+
+rough segmentation
+NOT TRACKING
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
+parallelized ingest_nd2/ingest_tiff/trench_pack (NO QUANTIZATION)
+ingest_tiff --watch
+intensity hough
+rotation-invariant (feeding channel) detrending
+
+################
+
 SEGMENTATION
 TRACKING
 vectorize hessian_eigenvalues so we don't need to use map_ndarray on image stacks
 rough hough with binarized image, then blur and intensity hough
+ability to join runs of the same experiment (???)
 
 #################
 
