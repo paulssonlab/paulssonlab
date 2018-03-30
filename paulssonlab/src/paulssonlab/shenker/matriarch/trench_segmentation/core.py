@@ -32,14 +32,6 @@ def extract_kymograph(img_series, x0, x1):
     return kymo
 
 
-def get_image_series_segmentation(img_series, x0, x1):
-    pass  # list of trenches, for each trench, a list of cell masks
-
-
-def map_over_segmentation(img_series, cell_seg, func):
-    pass
-
-
 def bounding_box(points):
     upper_left_x = min(point[0] for point in points)
     upper_left_y = min(point[1] for point in points)
