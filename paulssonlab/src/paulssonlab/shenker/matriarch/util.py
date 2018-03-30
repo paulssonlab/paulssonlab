@@ -34,6 +34,14 @@ def iterate_getattr(obj, keys):
     return obj
 
 
+def iterate_get_collection_value(obj, level):
+    for i in range(level):
+        if isinstance(obj, Mapping):
+            obj = iter(obj.values())
+        obj = next(obj)
+    return obj
+
+
 def extract_diagnostics_singleton(diagnostics, keys):
     return wrap_dict_values(
         drop_dict_nones({k: iterate_getattr(v, keys) for k, v in diagnostics.items()}),
@@ -119,7 +127,23 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
     return dict(items)
 
 
+def map_collections(func, data, max_level):
+    # TODO: allow specifying a range of levels
+    if max_level == 0:
+        return data
+    if isinstance(data, dict):
+        return func(
+            {
+                k: map_collections(func, v, max_level=max_level - 1)
+                for k, v in data.items()
+            }
+        )
+    else:
+        raise NotImplementedError  # TODO: flesh out this function
+
+
 # FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
+# TODO: document!!!
 def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False):
     apply = lambda x: recursive_map(
         func, x, shortcircuit=shortcircuit, ignore=ignore, keys=keys

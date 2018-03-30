@@ -2,8 +2,9 @@ import numpy as np
 import pandas as pd
 import zarr
 import skimage
+from functools import partial
 from trench_detection import get_img_limits
-from util import tqdm_auto
+from util import tqdm_auto, map_collections, iterate_get_collection_value
 
 
 def hessian_eigenvalues(img):
@@ -122,21 +123,22 @@ def trenchwise_map(
         del kwargs["channel_slice"]
         del kwargs["time_slice"]
     obj = {
-        trench_set_idx: pd.concat(
-            {
-                trench_idx: trenchwise_apply(
-                    img_stack, trench_set_points, trench_idx, func, **kwargs
-                )
-                for trench_idx in progress_bar(range(len(trench_set_points[0])))
-            },
-            axis=1,
-        )
+        trench_set_idx: {
+            trench_idx: trenchwise_apply(
+                img_stack, trench_set_points, trench_idx, func, **kwargs
+            )
+            for trench_idx in progress_bar(range(len(trench_set_points[0])))
+        }
         for trench_set_idx, trench_set_points in progress_bar(trench_points.items())
     }
-    df = pd.concat(obj, axis=1)
-    df.columns.set_names("trench_set_idx", level=0, inplace=True)
-    df.columns.set_names("trench_idx", level=1, inplace=True)
-    return df
+    representative_obj = iterate_get_collection_value(obj, 2)
+    if isinstance(representative_obj, (pd.Series, pd.DataFrame)):
+        df = map_collections(partial(pd.concat, axis=1), obj, max_level=2)
+        df.columns.set_names("trench_set_idx", level=0, inplace=True)
+        df.columns.set_names("trench_idx", level=1, inplace=True)
+        return df
+    else:
+        return obj
 
 
 def positionwise_trenchwise_map(
@@ -154,9 +156,12 @@ def positionwise_trenchwise_map(
         )
         for pos in progress_bar(positions)
     }
-    df = pd.concat(obj, axis=1)
-    df.columns.set_names("position", level=0, inplace=True)
-    return df
+    if isinstance(iterate_get_collection_value(obj, 1), (pd.Series, pd.DataFrame)):
+        df = pd.concat(obj, axis=1)
+        df.columns.set_names("position", level=0, inplace=True)
+        return df
+    else:
+        return obj
 
 
 def image_sharpness(img):
