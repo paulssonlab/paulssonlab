@@ -1,13 +1,9 @@
 import numpy as np
 import holoviews as hv
 import ipywidgets as widgets
-from holoviews.operation.datashader import (
-    aggregate,
-    datashade,
-    dynspread,
-    shade,
-    regrid,
-)
+
+# from holoviews.operation.datashader import aggregate, datashade, dynspread, shade, regrid
+from holoviews.operation import datashader
 from IPython.display import display, clear_output, HTML
 from holoviews.streams import Stream, param
 from matplotlib.colors import hex2color
@@ -182,14 +178,14 @@ def big_image_viewer(positions, frame_stream=None):
         channel_imgs = [
             pos_stack[c, t, :, :] for c in range(num_channels) if channel_enabled[c]
         ]
-        img = composite_channels(channel_imgs, select(channel_colors, channel_enabled))
+        img = composite_channels(channel_imgs, _select(channel_colors, channel_enabled))
         viewer = RevRGB(img)
         return viewer
 
     image = hv.DynamicMap(
         image_callback, streams=[frame_stream, display_settings_stream]
     )
-    image = regrid(image)
+    image = datashader.regrid(image)
     image = image.opts(plot={"width": 500, "height": 500})
     output = widgets.Output()
     box = widgets.VBox([widgets.HBox([channels_box, slider_box]), output])
@@ -199,7 +195,7 @@ def big_image_viewer(positions, frame_stream=None):
     return box
 
 
-def display_plot_browser(plots, stream=None):
+def display_plot_browser(plots, stream=None, **kwargs):
     to_display = {}
     if stream is None:
         initial_plots = plots
@@ -207,23 +203,24 @@ def display_plot_browser(plots, stream=None):
         initial_plots = plots(**stream.contents)
     browser = plot_browser(initial_plots, to_display)
     display(browser)
-    display_plot_browser_contents(plots, to_display, stream=stream)
+    display_plot_browser_contents(plots, to_display, stream=stream, **kwargs)
     return browser
 
 
-def display_plot_browser_contents(plots, to_display, stream=None):
+def display_plot_browser_contents(plots, to_display, stream=None, regrid=True):
     for output, (obj, path) in to_display.items():
         if stream is None:
             with output:
                 if isinstance(obj, hv.core.dimension.ViewableElement):
-                    obj = obj.map(
-                        lambda img: regrid(img, aggregator="first").redim.range(
-                            z=(0, img.data.max())
-                        ),
-                        lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
-                    )
-                    if hasattr(obj, "collate"):
-                        obj = obj.collate()
+                    if regrid:
+                        obj = obj.map(
+                            lambda img: datashader.regrid(
+                                img, aggregator="first"
+                            ).redim.range(z=(0, img.data.max())),
+                            lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
+                        )
+                        if hasattr(obj, "collate"):
+                            obj = obj.collate()
                 display(obj)
         else:
             # print(path, obj.__class__)
@@ -235,7 +232,7 @@ def display_plot_browser_contents(plots, to_display, stream=None):
                     plot = recursive_getattr(plots(**kwargs), p)
                     # allow customizable aggregators
                     return plot.map(
-                        lambda img: regrid.instance(
+                        lambda img: datashader.regrid.instance(
                             dynamic=False,
                             x_range=x_range,
                             y_range=y_range,
