@@ -66,4 +66,4 @@ def segment_trench(img, threshold=4e-2, diagnostics=None):
     )
     if diagnostics is not None:
         diagnostics["watershed_labels_eroded"] = _trench_img(watershed_labels_eroded)
-    return watershed_labels_eroded  # _rescaled
+    return watershed_labels_eroded.astype(np.uint8)
