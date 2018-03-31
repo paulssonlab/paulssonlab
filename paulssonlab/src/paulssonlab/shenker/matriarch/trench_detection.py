@@ -69,18 +69,21 @@ def get_img_limits(shape):
     return x_lim, y_lim
 
 
-def find_hough_angle(bin_img, theta=None, diagnostics=None):
-    h, theta, d = skimage.transform.hough_line(bin_img, theta=theta)
-    abs_diff_h = np.diff(h.astype(np.int32), axis=1).var(axis=0)
-    theta_idx = abs_diff_h.argmax()
+def find_hough_angle(
+    bin_img, theta=None, hough_func=skimage.transform.hough_line, diagnostics=None
+):
+    h, theta, d = hough_func(bin_img, theta=theta)
+    diff_h = np.diff(h.astype(np.int32), axis=1)
+    diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
+    theta_idx = diff_h_std.argmax()
     angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
         bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
         diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
         # TODO: fix the left-edge vs. right-edge issue for theta bins
-        diagnostics["abs_diff_h"] = hv.Curve(
-            (np.rad2deg(theta[:-1]), abs_diff_h)
+        diagnostics["diff_h_std"] = hv.Curve(
+            (np.rad2deg(theta[:-1]), diff_h_std)
         ) * hv.VLine(np.rad2deg(angle)).opts(style={"color": "red"})
         diagnostics["angle"] = np.rad2deg(angle)
     return angle
@@ -433,16 +436,23 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
     return threshold
 
 
-def label_for_trenches(img, min_component_size=10, diagnostics=None):
+def label_for_trenches(img, min_component_size=30, diagnostics=None):
     # img = img_series[::10].max(axis=0)
     # img = img_series[channel, 30]
     # TODO: need rotation-invariant detrending
+    if diagnostics is not None:
+        diagnostics["image"] = RevImage(img)
     img = img - np.percentile(img, 3, axis=1)[:, np.newaxis]
+    if diagnostics is not None:
+        diagnostics["detrended_image"] = RevImage(img)
     threshold = find_trench_threshold(
         img, diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold")
     )
     img_thresh = img > threshold
     img_labels, label_index = label_binary_image(img_thresh)
+    if diagnostics is not None:
+        diagnostics["labeled_image"] = RevImage(img_labels)
+        diagnostics["label_index"] = tuple(label_index)
     components, num_components = skimage.morphology.label(img_labels, return_num=True)
     skimage.morphology.remove_small_objects(
         components, min_size=min_component_size, in_place=True
@@ -451,14 +461,9 @@ def label_for_trenches(img, min_component_size=10, diagnostics=None):
         img, components, label_index=np.arange(num_components) + 1
     )  # TODO: check arange
     if diagnostics is not None:
-        diagnostics["label_index"] = tuple(label_index)
-        # diagnostics['image'] = datashader.regrid(RevImage(img)).redim.range(z=(0,img.max()))
-        diagnostics["image"] = RevImage(img)
         diagnostics["components"] = RevImage(components)
         diagnostics["num_components"] = num_components
         diagnostics["normalized_image"] = RevImage(normalized_img)
-        # diagnostics['labeled_image'] = datashader.regrid(RevImage(img_labels), aggregator='first').redim.range(z=(0,max_label))
-        diagnostics["labeled_image"] = RevImage(img_labels)
     return normalized_img, img_labels, label_index
 
 
