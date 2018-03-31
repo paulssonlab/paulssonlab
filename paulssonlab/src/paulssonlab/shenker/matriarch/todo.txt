@@ -1,12 +1,20 @@
 #### FOR TOMORROW
 
-rough segmentation
-NOT TRACKING
-STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
+use LRUStorageCache for zarr
+
 parallelized ingest_nd2/ingest_tiff/trench_pack (NO QUANTIZATION)
 ingest_tiff --watch
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
+FUNCTIONS FOR MOVING TRENCH THUMBS/SEG MASKS ON AND OFF DISK
+REGULARIZE (half-way normalize) trench intensity for sharpness measurement
+turn on trench_set/trench progress bars for segmentation
+rough segmentation
+NOT TRACKING
 intensity hough
 rotation-invariant (feeding channel) detrending
+fix trench detection to work with only one trench set filled
+
+OUTPUT (and input!!!) in MATLAB .CSV FORMAT
 
 ################
 
