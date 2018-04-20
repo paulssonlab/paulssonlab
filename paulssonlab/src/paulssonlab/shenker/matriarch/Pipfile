@@ -1,0 +1,50 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+apsw = "*"
+"autopep8" = "*"
+blosc = "*"
+bokeh = "*"
+holoviews = "*"
+click = "*"
+cython = "*"
+dask = {extras = ["complete"]}
+distributed = "*"
+ipywidgets = "*"
+"iso8601" = "*"
+ujson = "*"
+jupyter = "*"
+jupyterlab = "*"
+jupyter-nbextensions-configurator = "*"
+jupyter-contrib-nbextensions = "*"
+line-profiler = "*"
+lmdb = "*"
+matplotlib = "*"
+natsort = "*"
+"nd2reader" = "*"
+numba = "*"
+numcodecs = "*"
+zarr = "*"
+peewee = "*"
+pillow = "*"
+pytz = "*"
+scikit-learn = "*"
+scipy = "*"
+streamz = "*"
+cytoolz = "*"
+tqdm = "*"
+qgrid = "*"
+xarray = "*"
+pandas = "*"
+hide-code = "*"
+more-itertools = "*"
+tifffile = "*"
+deepdiff = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.6"
