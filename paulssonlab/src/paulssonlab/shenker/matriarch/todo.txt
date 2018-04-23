@@ -1,5 +1,30 @@
+#### TODAY
+
+file hash
+deduplicate ND2's using file hash (check reliability of other heuristics)
+diagnose ND2 time mismatch
+check self-consistency/availability of TIFF metadata for TIFF aggregations with lots of files/bytes
+make preliminary ND2/TIFF correspondences
+check frame data for representative TIFF only
+output preliminary deletion list (correspondences and duplicated ND2's) for review
+use jq/JMESPath
+
+#### LATER
+check frame data (first, last, evenly-spaced frames, random) [requires parsing TIFF naming conventions... or parsing all metadata]
+
+#### ASAP
+
+de-duplicate nd2 files using size/mtime/metadata strings
+de-duplicate tiffs vs. nd2 using EITHER time or x_data (kdtree?)
+dask-parallelization from notebook
+cmd line arg to parallelize compress operation (see below)
+command to output static .html with trench finding diagnostics given file
+notebook which allows easily identifying trench finding errors at scale running on file lists pulled from inventory queries
+DEPLOY: set up matriarch on peoples' O2 accounts, give people file lists of good and bad files to check diagnostics
+
 #### FOR TOMORROW
 
+use hough to detect trench periodicity! run hough on each trench set separately?
 use LRUStorageCache for zarr
 
 parallelized ingest_nd2/ingest_tiff/trench_pack (NO QUANTIZATION)
