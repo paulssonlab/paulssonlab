@@ -39,6 +39,11 @@ def snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    tick_length=5,
+    tick_margin=5,
+    tick_period=50,
+    tick_text_size=None,
+    tick_labels=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
 ):
@@ -46,6 +51,8 @@ def snake(
         port_margin = margin / 2
     if trench_margin is None:
         trench_margin = 10  # min(trench_length, feeding_channel_width / 2)
+    if tick_text_size is None:
+        tick_text_size = tick_length
     effective_trench_length = trench_length + lane_gap / 2
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
@@ -150,7 +157,17 @@ def snake(
             layer=trench_layer,
         )
     )
-    for y in lane_ys:
+    tick_cell = Cell("Tick")
+    tick_cell.add(
+        g.Rectangle(
+            (-trench_width / 2, trench_length + tick_margin),
+            (trench_width / 2, trench_length + tick_margin + tick_length),
+            layer=trench_layer,
+        )
+    )
+    tick_xs = trench_xs[::tick_period]
+    num_ticks = len(tick_xs)
+    for lane_idx, y in enumerate(lane_ys):
         snake_cell.add(
             g.CellArray(
                 trench_cell,
@@ -170,6 +187,33 @@ def snake(
                 x_reflection=True,
             )
         )
+        snake_cell.add(
+            g.CellArray(
+                tick_cell,
+                num_ticks,
+                1,
+                (tick_period * (trench_width + trench_spacing), 0),
+                (trench_xs[0], y + feeding_channel_width / 2),
+            )
+        )
+        if tick_labels:
+            for tick_idx, x in enumerate(tick_xs):
+                tick_idx = (
+                    lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
+                )
+                snake_cell.add(
+                    g.Text(
+                        str(tick_idx),
+                        tick_text_size,
+                        (
+                            x + 2 * trench_width,
+                            y + feeding_channel_width / 2 + trench_length + tick_margin,
+                        ),
+                        layer=trench_layer,
+                    )
+                )
+        # snake_cell.add(g.CellArray(tick_cell, int(trenches_per_set // tick_period), 1, (tick_period*(trench_width + trench_spacing), 0),
+        #                            (trench_xs[0], y - feeding_channel_width/2), x_reflection=True))
     return snake_cell, metadata
 
 
