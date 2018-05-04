@@ -34,13 +34,18 @@ def snake(
     port_margin=None,
     trench_width=1.5,
     trench_length=35,
+    trench_margin=None,
     lane_gap=20,
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    feeding_channel_layer=FEEDING_CHANNEL_LAYER,
+    trench_layer=TRENCH_LAYER,
 ):
     if port_margin is None:
         port_margin = margin / 2
+    if trench_margin is None:
+        trench_margin = 10  # min(trench_length, feeding_channel_width / 2)
     effective_trench_length = trench_length + lane_gap / 2
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
@@ -83,10 +88,8 @@ def snake(
         if k in ("num_lanes", "trenches_per_set", "num_trenches")
     }
     last_lane_y = ((num_lanes - 1) * lane_height) / 2
-    port_cell = Cell("Feeding Channel Port")
-    trench_cell = Cell("Trench")
-    lane_cell = Cell("Lane")
     snake_cell = Cell("Snake")
+    lane_cell = Cell("Lane")
     lane_fc = g.Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2)
     lane_cell.add(lane_fc)
     bend_cell = Cell("Feeding Channel Bend")
@@ -98,6 +101,7 @@ def snake(
     )
     bend = g.slice(bend, 0, 0)
     bend_cell.add(bend[1])
+    port_cell = Cell("Feeding Channel Port")
     port_x = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     port = g.Round((port_x, 0), port_radius, number_of_points=500)
     port_fc = g.Rectangle((0, -lane_fc_dims[1] / 2), (port_x, lane_fc_dims[1] / 2))
@@ -138,7 +142,35 @@ def snake(
                 port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
             )
         )
-    return (snake_cell, lane_cell, bend_cell, trench_cell, port_cell), metadata
+    trench_cell = Cell("Trench")
+    trench_cell.add(
+        g.Rectangle(
+            (-trench_width / 2, -trench_margin),
+            (trench_width / 2, trench_length),
+            layer=trench_layer,
+        )
+    )
+    for y in lane_ys:
+        snake_cell.add(
+            g.CellArray(
+                trench_cell,
+                trenches_per_set,
+                1,
+                (trench_width + trench_spacing, 0),
+                (trench_xs[0], y + feeding_channel_width / 2),
+            )
+        )
+        snake_cell.add(
+            g.CellArray(
+                trench_cell,
+                trenches_per_set,
+                1,
+                (trench_width + trench_spacing, 0),
+                (trench_xs[0], y - feeding_channel_width / 2),
+                x_reflection=True,
+            )
+        )
+    return snake_cell, metadata
 
 
 # TODO: implement using bbox-aware auto-gridding helper
@@ -163,24 +195,34 @@ def profilometry_marks(
         )
         profilometry_cell.add(g.CellArray(cell, columns, rows, dims * 2, origin))
         profilometry_cell.add(
-            g.Text(str(layer), dims[1], origin - np.array([0, 2 * dims[1]]))
+            g.Text(
+                str(layer), dims[1], origin - np.array([0, 2 * dims[1]]), layer=layer
+            )
         )
     return profilometry_cell
 
 
 @memoize
-def alignment_cross(size=1e3, width=6):
+def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
     alignment_cell = Cell("Alignment Cross")
     horizontal = g.Rectangle((-size, -width / 2), (size, width / 2))
     vertical = g.Rectangle((-width / 2, -size), (width / 2, size))
-    cross = g.fast_boolean(horizontal, vertical, "or")
+    cross = g.fast_boolean(horizontal, vertical, "or", layer=layer)
     alignment_cell.add(cross)
-    alignment_cell.add(g.Rectangle((-3 * size, -size), (-2 * size, size)))
-    alignment_cell.add(g.Rectangle((2 * size, -size), (3 * size, size)))
+    alignment_cell.add(g.Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
+    alignment_cell.add(g.Rectangle((2 * size, -size), (3 * size, size), layer=layer))
     return alignment_cell
 
 
-def wafer(chips, name, diameter=76.2e3, side=87.15e3, chip_area_angle=np.pi / 4):
+def wafer(
+    chips,
+    name,
+    diameter=76.2e3,
+    side=87.15e3,
+    chip_area_angle=np.pi / 4,
+    feeding_channel_layer=FEEDING_CHANNEL_LAYER,
+    trench_layer=TRENCH_LAYER,
+):
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
     main_cell = Cell("main")
@@ -195,20 +237,28 @@ def wafer(chips, name, diameter=76.2e3, side=87.15e3, chip_area_angle=np.pi / 4)
     )
     main_cell.add(g.Rectangle(-chip_area_corner, chip_area_corner))
     main_cell.add(wafer_outline)
-    profilometry_cell = profilometry_marks()
+    profilometry_cell = profilometry_marks(layers=(feeding_channel_layer, trench_layer))
     profilometry_spacing = np.array([0, chip_area_corner[1] * 2 / 3])
     main_cell.add(
         g.CellArray(
             profilometry_cell, 1, 2, profilometry_spacing, -profilometry_spacing / 2
         )
     )
-    alignment_cell = alignment_cross()
+    alignment_cell = alignment_cross(layer=trench_layer)
     alignment_spacing = np.array([0, chip_area_corner[1] * 7 / 3])
     main_cell.add(
         g.CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
     )
     text_position = (3e4, 1e4)
-    main_cell.add(g.Text(name, 2000, position=text_position, angle=-np.pi / 2))
+    main_cell.add(
+        g.Text(
+            name,
+            2000,
+            position=text_position,
+            angle=-np.pi / 2,
+            layer=feeding_channel_layer,
+        )
+    )
     horizontal_chip_spacing = chip_area_corner[0]
     vertical_chip_spacing = chip_area_corner[1]
     for (horizontal, vertical), chip in zip(product((-1, 1), (-1, 0, 1)), chips):
@@ -219,27 +269,36 @@ def wafer(chips, name, diameter=76.2e3, side=87.15e3, chip_area_angle=np.pi / 4)
 
 
 @memoize
-def chip(name, design_func=snake, **kwargs):
+def chip(
+    name,
+    design_func=snake,
+    feeding_channel_layer=FEEDING_CHANNEL_LAYER,
+    trench_layer=TRENCH_LAYER,
+    **kwargs,
+):
     if "dims" not in kwargs:
         kwargs["dims"] = DEFAULT_DIMS
+    kwargs["feeding_channel_layer"] = feeding_channel_layer
+    kwargs["trench_layer"] = trench_layer
     dims = kwargs["dims"]
-    design_cells, _ = design_func(**kwargs)
-    design_cell = design_cells[0]
+    design_cell, _ = design_func(**kwargs)
     chip_cell = Cell("Chip-{}".format(name))
-    chip_cell.add(outline(dims))
+    chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(g.CellReference(design_cell, (0, 0)))
     # text_position = (-1e4,1.2e3)
     text_size = 600
     text_position = (-dims[0] / 2 + 1.5 * text_size, dims[1] / 2 - 1.5 * text_size)
-    chip_cell.add(g.Text(name, text_size, position=text_position))
+    chip_cell.add(
+        g.Text(name, text_size, position=text_position, layer=feeding_channel_layer)
+    )
     return chip_cell
 
 
 @memoize
-def outline(dims, thickness=0.15e3):
+def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     outline_inner = g.Rectangle(-dims / 2, dims / 2)
     outline_outer = g.Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
-    outline = g.fast_boolean(outline_outer, outline_inner, "not")
+    outline = g.fast_boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
 
 
