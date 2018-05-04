@@ -2,36 +2,31 @@ import numpy as np
 import gdspy as g
 import click
 from functools import partial
+from itertools import product
 import numbers
+from util import make_odd, memoize
 
-DEFAULT_DIMS = (23e3, 13e3)
+TRENCH_LAYER = 2
+FEEDING_CHANNEL_LAYER = 6
+DEFAULT_DIMS = np.array([23e3, 13e3])
 
+# TODO: freeze numpy arrays, hash dicts: hash(frozenset(self.items()))
 Cell = partial(g.Cell, exclude_from_current=True)
 
 # TODO: encode parameters in cell names
 # TODO: break out func for each cell, use memoize decorator to reuse cells from multiple chips
+# SAMPLER_WAFER FUNCTION TAKES KWARGS, when arrays are given, make variations and name approrpiately
+
+# TODO
+# alignment marks
+# trenches
+# label profilometry marks
+# trench numbers (every 100 with tick mark)??
+# layers
+# union
 
 
-def outline(dims, thickness=0.15e3):
-    outline_inner = g.Rectangle(-dims / 2, dims / 2)
-    outline_outer = g.Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
-    outline = g.fast_boolean(outline_outer, outline_inner, "not")
-    return outline
-
-
-# def chip(design_func, dims=DEFAULT_DIMS, name=None):
-#     cell = Cell('Chip_{}'.format(name) if name else 'Chip')
-
-# TODO: add snake gap using multiple snake calls, put gap between them on chip
-
-
-def make_odd(number):
-    if number % 2 == 0:
-        return number - 1
-    else:
-        return number
-
-
+@memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
@@ -144,6 +139,114 @@ def snake(
             )
         )
     return (snake_cell, lane_cell, bend_cell, trench_cell, port_cell), metadata
+
+
+# TODO: implement using bbox-aware auto-gridding helper
+@memoize
+def profilometry_marks(
+    dims=np.array([150, 75]),
+    columns=3,
+    rows=3,
+    layers=(FEEDING_CHANNEL_LAYER, TRENCH_LAYER),
+):
+    dims = np.array(dims)
+    grid_size = np.array([rows, columns])
+    grid_dims = dims * grid_size * 2
+    profilometry_cell = Cell("Profilometry Marks")
+    mark_cells = {
+        layer: Cell("Profilometry Mark Layer {}".format(layer)) for layer in layers
+    }
+    for i, (layer, cell) in enumerate(mark_cells.items()):
+        cell.add(g.Rectangle(dims, -dims / 2, layer=layer))
+        origin = -grid_dims / 2 + (i - (len(mark_cells) - 1) / 2) * np.array(
+            [grid_dims[0], 0]
+        )
+        profilometry_cell.add(g.CellArray(cell, columns, rows, dims * 2, origin))
+        profilometry_cell.add(
+            g.Text(str(layer), dims[1], origin - np.array([0, 2 * dims[1]]))
+        )
+    return profilometry_cell
+
+
+@memoize
+def alignment_cross(size=1e3, width=6):
+    alignment_cell = Cell("Alignment Cross")
+    horizontal = g.Rectangle((-size, -width / 2), (size, width / 2))
+    vertical = g.Rectangle((-width / 2, -size), (width / 2, size))
+    cross = g.fast_boolean(horizontal, vertical, "or")
+    alignment_cell.add(cross)
+    alignment_cell.add(g.Rectangle((-3 * size, -size), (-2 * size, size)))
+    alignment_cell.add(g.Rectangle((2 * size, -size), (3 * size, size)))
+    return alignment_cell
+
+
+def wafer(chips, name, diameter=76.2e3, side=87.15e3, chip_area_angle=np.pi / 4):
+    if len(chips) > 6:
+        raise Exception("cannot lay out more than six chips on a wafer")
+    main_cell = Cell("main")
+    corner = np.array((side, side)) / 2
+    square = g.Rectangle(-corner, corner)
+    circle = g.Round((0, 0), diameter / 2, number_of_points=500)
+    wafer_outline = g.fast_boolean(square, circle, "not")
+    # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
+    # TODO: move alignment marks accordingly
+    chip_area_corner = (
+        diameter / 2 * np.array([np.cos(chip_area_angle), np.sin(chip_area_angle)])
+    )
+    main_cell.add(g.Rectangle(-chip_area_corner, chip_area_corner))
+    main_cell.add(wafer_outline)
+    profilometry_cell = profilometry_marks()
+    profilometry_spacing = np.array([0, chip_area_corner[1] * 2 / 3])
+    main_cell.add(
+        g.CellArray(
+            profilometry_cell, 1, 2, profilometry_spacing, -profilometry_spacing / 2
+        )
+    )
+    alignment_cell = alignment_cross()
+    alignment_spacing = np.array([0, chip_area_corner[1] * 7 / 3])
+    main_cell.add(
+        g.CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+    )
+    text_position = (3e4, 1e4)
+    main_cell.add(g.Text(name, 2000, position=text_position, angle=-np.pi / 2))
+    horizontal_chip_spacing = chip_area_corner[0]
+    vertical_chip_spacing = chip_area_corner[1]
+    for (horizontal, vertical), chip in zip(product((-1, 1), (-1, 0, 1)), chips):
+        x = horizontal_chip_spacing * horizontal / 2
+        y = vertical_chip_spacing * vertical * 2 / 3
+        main_cell.add(g.CellReference(chip, (x, y)))
+    return main_cell
+
+
+@memoize
+def chip(name, design_func=snake, **kwargs):
+    if "dims" not in kwargs:
+        kwargs["dims"] = DEFAULT_DIMS
+    dims = kwargs["dims"]
+    design_cells, _ = design_func(**kwargs)
+    design_cell = design_cells[0]
+    chip_cell = Cell("Chip-{}".format(name))
+    chip_cell.add(outline(dims))
+    chip_cell.add(g.CellReference(design_cell, (0, 0)))
+    # text_position = (-1e4,1.2e3)
+    text_size = 600
+    text_position = (-dims[0] / 2 + 1.5 * text_size, dims[1] / 2 - 1.5 * text_size)
+    chip_cell.add(g.Text(name, text_size, position=text_position))
+    return chip_cell
+
+
+@memoize
+def outline(dims, thickness=0.15e3):
+    outline_inner = g.Rectangle(-dims / 2, dims / 2)
+    outline_outer = g.Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
+    outline = g.fast_boolean(outline_outer, outline_inner, "not")
+    return outline
+
+
+# def chip(design_func, dims=DEFAULT_DIMS, name=None):
+#     cell = Cell('Chip_{}'.format(name) if name else 'Chip')
+
+# TODO: add snake gap using multiple snake calls, put gap between them on chip
 
 
 @click.group()

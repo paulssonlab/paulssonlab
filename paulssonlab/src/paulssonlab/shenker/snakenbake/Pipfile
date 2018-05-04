@@ -12,6 +12,7 @@ numpy = "*"
 notebook = "*"
 gdspy = "*"
 click = "*"
+cytoolz = "*"
 
 
 [dev-packages]
