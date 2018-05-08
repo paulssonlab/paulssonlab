@@ -13,6 +13,8 @@ notebook = "*"
 gdspy = "*"
 click = "*"
 cytoolz = "*"
+svgpathtools = "*"
+freetype-py = "*"
 
 
 [dev-packages]

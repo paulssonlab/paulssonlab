@@ -1,5 +1,8 @@
 import numpy as np
 import gdspy as g
+from gdspy import Cell, CellReference, CellArray, Rectangle, Round, fast_boolean
+
+# from text import Text
 import click
 from functools import partial
 from itertools import product
@@ -8,51 +11,120 @@ from util import make_odd, memoize
 
 TRENCH_LAYER = 2
 FEEDING_CHANNEL_LAYER = 6
+MAX_POINTS = 4094  # 8191 # same as LayoutEditor
+ROUND_POINTS = 50
 DEFAULT_DIMS = np.array([23e3, 13e3])
 
 # TODO: freeze numpy arrays, hash dicts: hash(frozenset(self.items()))
-Cell = partial(g.Cell, exclude_from_current=True)
+Cell = partial(Cell, exclude_from_current=True)
+Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
+fast_boolean = partial(fast_boolean, max_points=MAX_POINTS)
+
+
+def get_bounding_box(polygons):
+    all_points = np.concatenate(polygons).transpose()
+    bbox = np.array(
+        (
+            (all_points[0].min(), all_points[1].min()),
+            (all_points[0].max(), all_points[1].max()),
+        )
+    )
+    return bbox
+
+
+def Text(
+    text,
+    size,
+    position=(0, 0),
+    alignment="left",
+    horizontal=True,
+    angle=0,
+    layer=0,
+    datatype=0,
+):
+    obj = g.Text(
+        text,
+        size,
+        (0, 0),
+        horizontal=horizontal,
+        angle=angle,
+        layer=layer,
+        datatype=datatype,
+    )
+    bbox = get_bounding_box(obj.polygons)
+    if not horizontal:
+        raise NotImplementedError
+    if angle == 0:
+        if alignment == "left":
+            offset = np.array([bbox[1, 0], 0])
+        elif alignment == "centered":
+            offset = np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
+        elif alignment == "right":
+            offset = np.array([bbox[0, 0], 0])
+        else:
+            raise NotImplementedError
+        factor = np.array([-1, 1])
+    elif angle == -np.pi / 2:
+        if alignment != "left":
+            raise NotImplementedError
+        offset = np.array([0, bbox[0, 1]])
+        factor = np.array([1, -1])
+    else:
+        raise NotImplementedError
+    position = np.array(position) + offset
+    obj.polygons = [position + factor * poly for poly in obj.polygons]
+    return obj
+
 
 # TODO: encode parameters in cell names
 # TODO: break out func for each cell, use memoize decorator to reuse cells from multiple chips
 # SAMPLER_WAFER FUNCTION TAKES KWARGS, when arrays are given, make variations and name approrpiately
 
 # TODO
-# alignment marks
-# trenches
-# label profilometry marks
-# trench numbers (every 100 with tick mark)??
-# layers
-# union
+# naming
+# make ROUND_POINST, MAX_POINTS modifyable at runtime by replacing partial
+
+# .5mm margin outside of port for punching
+# .5mm mixing zone after bends
+# use round number for align mark value, brandon uses -32000um
+# fix font to reduce x-extent
+# make index numbers larger so smallest feature is 1.5um across
+# make alternate wafer with 3 only chips, centered: centered
+# put 1/bottom on bottom align mark
+# mirror all text
 
 
 @memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
-    margin=1e3,
+    margin=2.5e3,
     port_margin=None,
     trench_width=1.5,
     trench_length=35,
-    trench_margin=None,
+    trench_fc_overlap=None,
+    trench_margin=0.5e3,
     lane_gap=20,
     trench_spacing=2,
     feeding_channel_width=90,
-    port_radius=200,
+    port_radius=210,
     tick_length=5,
     tick_margin=5,
     tick_period=50,
     tick_text_size=None,
     tick_labels=True,
+    draw_trenches=True,
+    flatten_feeding_channel=False,
+    merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
 ):
     if port_margin is None:
         port_margin = margin / 2
-    if trench_margin is None:
-        trench_margin = 10  # min(trench_length, feeding_channel_width / 2)
+    if trench_fc_overlap is None:
+        trench_fc_overlap = 10  # min(trench_length, feeding_channel_width / 2)
     if tick_text_size is None:
-        tick_text_size = tick_length
+        tick_text_size = tick_length * 2
     effective_trench_length = trench_length + lane_gap / 2
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
@@ -83,8 +155,8 @@ def snake(
             )
     num_lanes = sum(split)
     trench_xs = np.arange(
-        -(lane_fc_dims[0] - trench_width) / 2,
-        (lane_fc_dims[0] + trench_width) / 2,
+        -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
+        (lane_fc_dims[0] - trench_margin - trench_width) / 2,
         trench_width + trench_spacing,
     )
     trenches_per_set = len(trench_xs)
@@ -97,21 +169,27 @@ def snake(
     last_lane_y = ((num_lanes - 1) * lane_height) / 2
     snake_cell = Cell("Snake")
     lane_cell = Cell("Lane")
-    lane_fc = g.Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2)
+    lane_fc = Rectangle(
+        -lane_fc_dims / 2, lane_fc_dims / 2, layer=feeding_channel_layer
+    )
     lane_cell.add(lane_fc)
     bend_cell = Cell("Feeding Channel Bend")
-    bend = g.Round(
+    bend = Round(
         (0, 0),
         outer_snake_turn_radius,
         inner_radius=inner_snake_turn_radius,
-        number_of_points=500,
+        layer=feeding_channel_layer,
     )
-    bend = g.slice(bend, 0, 0)
+    bend = g.slice(bend, 0, 0, layer=feeding_channel_layer)
     bend_cell.add(bend[1])
     port_cell = Cell("Feeding Channel Port")
     port_x = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
-    port = g.Round((port_x, 0), port_radius, number_of_points=500)
-    port_fc = g.Rectangle((0, -lane_fc_dims[1] / 2), (port_x, lane_fc_dims[1] / 2))
+    port = Round((port_x, 0), port_radius, layer=feeding_channel_layer)
+    port_fc = Rectangle(
+        (0, -lane_fc_dims[1] / 2),
+        (port_x, lane_fc_dims[1] / 2),
+        layer=feeding_channel_layer,
+    )
     port_cell.add(port)
     port_cell.add(port_fc)
     lane_ys = np.linspace(last_lane_y, -last_lane_y, num_lanes)
@@ -125,41 +203,53 @@ def snake(
         ]
     )
     left_bend_lanes = right_bend_lanes + 1
+    snake_fc_cell = Cell("Snake Feeding Channel")
     for y in lane_ys:
-        snake_cell.add(g.CellReference(lane_cell, (0, y)))
+        snake_fc_cell.add(CellReference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
-        snake_cell.add(
-            g.CellReference(
+        snake_fc_cell.add(
+            CellReference(
                 bend_cell, (lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2)
             )
         )
     for lane in left_bend_lanes:
-        snake_cell.add(
-            g.CellReference(
+        snake_fc_cell.add(
+            CellReference(
                 bend_cell,
                 (-lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2),
                 rotation=180,
             )
         )
     for lane in right_port_lanes:
-        snake_cell.add(g.CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane])))
+        snake_fc_cell.add(
+            CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane]))
+        )
     for lane in left_port_lanes:
-        snake_cell.add(
-            g.CellReference(
+        snake_fc_cell.add(
+            CellReference(
                 port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
             )
         )
+    if flatten_feeding_channel or merge_feeding_channel:
+        snake_fc_cell.flatten()
+    if merge_feeding_channel:
+        assert len(snake_fc_cell.elements) == 1
+        snake_fc_cell.elements[0] = fast_boolean(
+            snake_fc_cell.elements[0], None, "or", layer=feeding_channel_layer
+        )
+        # print(len(snake_fc_cell.elements[0].polygons))
+    snake_cell.add(CellReference(snake_fc_cell, (0, 0)))
     trench_cell = Cell("Trench")
     trench_cell.add(
-        g.Rectangle(
-            (-trench_width / 2, -trench_margin),
+        Rectangle(
+            (-trench_width / 2, -trench_fc_overlap),
             (trench_width / 2, trench_length),
             layer=trench_layer,
         )
     )
     tick_cell = Cell("Tick")
     tick_cell.add(
-        g.Rectangle(
+        Rectangle(
             (-trench_width / 2, trench_length + tick_margin),
             (trench_width / 2, trench_length + tick_margin + tick_length),
             layer=trench_layer,
@@ -167,53 +257,57 @@ def snake(
     )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
-    for lane_idx, y in enumerate(lane_ys):
-        snake_cell.add(
-            g.CellArray(
-                trench_cell,
-                trenches_per_set,
-                1,
-                (trench_width + trench_spacing, 0),
-                (trench_xs[0], y + feeding_channel_width / 2),
-            )
-        )
-        snake_cell.add(
-            g.CellArray(
-                trench_cell,
-                trenches_per_set,
-                1,
-                (trench_width + trench_spacing, 0),
-                (trench_xs[0], y - feeding_channel_width / 2),
-                x_reflection=True,
-            )
-        )
-        snake_cell.add(
-            g.CellArray(
-                tick_cell,
-                num_ticks,
-                1,
-                (tick_period * (trench_width + trench_spacing), 0),
-                (trench_xs[0], y + feeding_channel_width / 2),
-            )
-        )
-        if tick_labels:
-            for tick_idx, x in enumerate(tick_xs):
-                tick_idx = (
-                    lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
+    if draw_trenches:
+        for lane_idx, y in enumerate(lane_ys):
+            snake_cell.add(
+                CellArray(
+                    trench_cell,
+                    trenches_per_set,
+                    1,
+                    (trench_width + trench_spacing, 0),
+                    (trench_xs[0], y + feeding_channel_width / 2),
                 )
-                snake_cell.add(
-                    g.Text(
-                        str(tick_idx),
-                        tick_text_size,
-                        (
-                            x + 2 * trench_width,
-                            y + feeding_channel_width / 2 + trench_length + tick_margin,
-                        ),
-                        layer=trench_layer,
+            )
+            snake_cell.add(
+                CellArray(
+                    trench_cell,
+                    trenches_per_set,
+                    1,
+                    (trench_width + trench_spacing, 0),
+                    (trench_xs[0], y - feeding_channel_width / 2),
+                    x_reflection=True,
+                )
+            )
+            snake_cell.add(
+                CellArray(
+                    tick_cell,
+                    num_ticks,
+                    1,
+                    (tick_period * (trench_width + trench_spacing), 0),
+                    (trench_xs[0], y + feeding_channel_width / 2),
+                )
+            )
+            if tick_labels:
+                for tick_idx, x in enumerate(tick_xs):
+                    tick_idx = (
+                        lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
                     )
-                )
-        # snake_cell.add(g.CellArray(tick_cell, int(trenches_per_set // tick_period), 1, (tick_period*(trench_width + trench_spacing), 0),
-        #                            (trench_xs[0], y - feeding_channel_width/2), x_reflection=True))
+                    snake_cell.add(
+                        Text(
+                            str(tick_idx),
+                            tick_text_size,
+                            (
+                                x + 2 * trench_width,
+                                y
+                                + feeding_channel_width / 2
+                                + trench_length
+                                + tick_margin,
+                            ),
+                            layer=trench_layer,
+                        )
+                    )
+            # snake_cell.add(CellArray(tick_cell, int(trenches_per_set // tick_period), 1, (tick_period*(trench_width + trench_spacing), 0),
+            #                            (trench_xs[0], y - feeding_channel_width/2), x_reflection=True))
     return snake_cell, metadata
 
 
@@ -233,15 +327,13 @@ def profilometry_marks(
         layer: Cell("Profilometry Mark Layer {}".format(layer)) for layer in layers
     }
     for i, (layer, cell) in enumerate(mark_cells.items()):
-        cell.add(g.Rectangle(dims, -dims / 2, layer=layer))
+        cell.add(Rectangle(dims, -dims / 2, layer=layer))
         origin = -grid_dims / 2 + (i - (len(mark_cells) - 1) / 2) * np.array(
             [grid_dims[0], 0]
         )
-        profilometry_cell.add(g.CellArray(cell, columns, rows, dims * 2, origin))
+        profilometry_cell.add(CellArray(cell, columns, rows, dims * 2, origin))
         profilometry_cell.add(
-            g.Text(
-                str(layer), dims[1], origin - np.array([0, 2 * dims[1]]), layer=layer
-            )
+            Text(str(layer), dims[1], origin - np.array([0, 2 * dims[1]]), layer=layer)
         )
     return profilometry_cell
 
@@ -249,12 +341,12 @@ def profilometry_marks(
 @memoize
 def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
     alignment_cell = Cell("Alignment Cross")
-    horizontal = g.Rectangle((-size, -width / 2), (size, width / 2))
-    vertical = g.Rectangle((-width / 2, -size), (width / 2, size))
-    cross = g.fast_boolean(horizontal, vertical, "or", layer=layer)
+    horizontal = Rectangle((-size, -width / 2), (size, width / 2))
+    vertical = Rectangle((-width / 2, -size), (width / 2, size))
+    cross = fast_boolean(horizontal, vertical, "or", layer=layer)
     alignment_cell.add(cross)
-    alignment_cell.add(g.Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
-    alignment_cell.add(g.Rectangle((2 * size, -size), (3 * size, size), layer=layer))
+    alignment_cell.add(Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
+    alignment_cell.add(Rectangle((2 * size, -size), (3 * size, size), layer=layer))
     return alignment_cell
 
 
@@ -264,6 +356,9 @@ def wafer(
     diameter=76.2e3,
     side=87.15e3,
     chip_area_angle=np.pi / 4,
+    alignment_mark_position=32e3,
+    alignment_text_size=1000,
+    label_text_size=2000,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
 ):
@@ -271,33 +366,45 @@ def wafer(
         raise Exception("cannot lay out more than six chips on a wafer")
     main_cell = Cell("main")
     corner = np.array((side, side)) / 2
-    square = g.Rectangle(-corner, corner)
-    circle = g.Round((0, 0), diameter / 2, number_of_points=500)
-    wafer_outline = g.fast_boolean(square, circle, "not")
+    square = Rectangle(-corner, corner)
+    circle = Round((0, 0), diameter / 2)
+    wafer_outline = fast_boolean(square, circle, "not")
     # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
     # TODO: move alignment marks accordingly
     chip_area_corner = (
         diameter / 2 * np.array([np.cos(chip_area_angle), np.sin(chip_area_angle)])
     )
-    main_cell.add(g.Rectangle(-chip_area_corner, chip_area_corner))
+    if alignment_mark_position is None:
+        alignment_mark_position = chip_area_corner[1] * 7 / 6
+    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner))
     main_cell.add(wafer_outline)
     profilometry_cell = profilometry_marks(layers=(feeding_channel_layer, trench_layer))
     profilometry_spacing = np.array([0, chip_area_corner[1] * 2 / 3])
     main_cell.add(
-        g.CellArray(
+        CellArray(
             profilometry_cell, 1, 2, profilometry_spacing, -profilometry_spacing / 2
         )
     )
     alignment_cell = alignment_cross(layer=trench_layer)
-    alignment_spacing = np.array([0, chip_area_corner[1] * 7 / 3])
+    alignment_spacing = np.array([0, alignment_mark_position * 2])
     main_cell.add(
-        g.CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+        Text(
+            "bottom",
+            alignment_text_size,
+            alignment="centered",
+            position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
+            layer=trench_layer,
+        )
     )
+    main_cell.add(
+        CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+    )
+    # main_cell.add(Text(name, label_text_size, position=text_position, alignment='centered', angle=-np.pi/2, layer=feeding_channel_layer))
     text_position = (3e4, 1e4)
     main_cell.add(
-        g.Text(
+        Text(
             name,
-            2000,
+            label_text_size,
             position=text_position,
             angle=-np.pi / 2,
             layer=feeding_channel_layer,
@@ -305,10 +412,16 @@ def wafer(
     )
     horizontal_chip_spacing = chip_area_corner[0]
     vertical_chip_spacing = chip_area_corner[1]
-    for (horizontal, vertical), chip in zip(product((-1, 1), (-1, 0, 1)), chips):
+    if len(chips) <= 3:
+        horizontal_spacings = (0,)
+    else:
+        horizontal_spacings = (-1, 1)
+    for (horizontal, vertical), chip in zip(
+        product(horizontal_spacings, (-1, 0, 1)), chips
+    ):
         x = horizontal_chip_spacing * horizontal / 2
         y = vertical_chip_spacing * vertical * 2 / 3
-        main_cell.add(g.CellReference(chip, (x, y)))
+        main_cell.add(CellReference(chip, (x, y)))
     return main_cell
 
 
@@ -328,21 +441,21 @@ def chip(
     design_cell, _ = design_func(**kwargs)
     chip_cell = Cell("Chip-{}".format(name))
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
-    chip_cell.add(g.CellReference(design_cell, (0, 0)))
+    chip_cell.add(CellReference(design_cell, (0, 0)))
     # text_position = (-1e4,1.2e3)
     text_size = 600
     text_position = (-dims[0] / 2 + 1.5 * text_size, dims[1] / 2 - 1.5 * text_size)
     chip_cell.add(
-        g.Text(name, text_size, position=text_position, layer=feeding_channel_layer)
+        Text(name, text_size, position=text_position, layer=feeding_channel_layer)
     )
     return chip_cell
 
 
 @memoize
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
-    outline_inner = g.Rectangle(-dims / 2, dims / 2)
-    outline_outer = g.Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
-    outline = g.fast_boolean(outline_outer, outline_inner, "not", layer=layer)
+    outline_inner = Rectangle(-dims / 2, dims / 2)
+    outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
+    outline = fast_boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
 
 
