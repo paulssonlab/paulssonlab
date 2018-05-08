@@ -8,6 +8,7 @@ from functools import partial
 from itertools import product
 import numbers
 from util import make_odd, memoize
+import shortuuid
 
 TRENCH_LAYER = 2
 FEEDING_CHANNEL_LAYER = 6
@@ -19,6 +20,8 @@ DEFAULT_DIMS = np.array([23e3, 13e3])
 Cell = partial(Cell, exclude_from_current=True)
 Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
 fast_boolean = partial(fast_boolean, max_points=MAX_POINTS)
+
+get_uuid = partial(shortuuid.random, length=2)
 
 
 def get_bounding_box(polygons):
@@ -81,7 +84,7 @@ def Text(
 # SAMPLER_WAFER FUNCTION TAKES KWARGS, when arrays are given, make variations and name approrpiately
 
 # TODO
-# naming
+# autonaming of cells according to argument that changed, autolabeling of sampler_wafer
 # make ROUND_POINST, MAX_POINTS modifyable at runtime by replacing partial
 
 # .5mm margin outside of port for punching
@@ -98,7 +101,9 @@ def Text(
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
-    margin=2.5e3,
+    horizontal_margin=2.5e3,
+    top_margin=1.5e3,
+    bottom_margin=1e3,
     port_margin=None,
     trench_width=1.5,
     trench_length=35,
@@ -118,9 +123,12 @@ def snake(
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
+    label=None,
 ):
+    if label is None:
+        label = get_uuid()
     if port_margin is None:
-        port_margin = margin / 2
+        port_margin = horizontal_margin / 2
     if trench_fc_overlap is None:
         trench_fc_overlap = 10  # min(trench_length, feeding_channel_width / 2)
     if tick_text_size is None:
@@ -129,10 +137,13 @@ def snake(
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
     lane_fc_dims = np.array(
-        [dims[0] - 2 * margin - outer_snake_turn_radius, feeding_channel_width]
+        [
+            dims[0] - 2 * horizontal_margin - outer_snake_turn_radius,
+            feeding_channel_width,
+        ]
     )
     lane_height = feeding_channel_width + 2 * effective_trench_length
-    max_lanes = int((dims[1] - 2 * margin) // lane_height)
+    max_lanes = int((dims[1] - top_margin - bottom_margin) // lane_height)
     if split is None:
         split = 1
     if isinstance(split, numbers.Integral):
@@ -167,13 +178,13 @@ def snake(
         if k in ("num_lanes", "trenches_per_set", "num_trenches")
     }
     last_lane_y = ((num_lanes - 1) * lane_height) / 2
-    snake_cell = Cell("Snake")
-    lane_cell = Cell("Lane")
+    snake_cell = Cell("Snake-{}".format(label))
+    lane_cell = Cell("Lane-{}".format(label))
     lane_fc = Rectangle(
         -lane_fc_dims / 2, lane_fc_dims / 2, layer=feeding_channel_layer
     )
     lane_cell.add(lane_fc)
-    bend_cell = Cell("Feeding Channel Bend")
+    bend_cell = Cell("Feeding Channel Bend-{}".format(label))
     bend = Round(
         (0, 0),
         outer_snake_turn_radius,
@@ -182,7 +193,7 @@ def snake(
     )
     bend = g.slice(bend, 0, 0, layer=feeding_channel_layer)
     bend_cell.add(bend[1])
-    port_cell = Cell("Feeding Channel Port")
+    port_cell = Cell("Feeding Channel Port-{}".format(label))
     port_x = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     port = Round((port_x, 0), port_radius, layer=feeding_channel_layer)
     port_fc = Rectangle(
@@ -192,7 +203,10 @@ def snake(
     )
     port_cell.add(port)
     port_cell.add(port_fc)
-    lane_ys = np.linspace(last_lane_y, -last_lane_y, num_lanes)
+    lane_ys = (
+        np.linspace(last_lane_y, -last_lane_y, num_lanes)
+        + (bottom_margin - top_margin) / 2
+    )
     split_cum = np.concatenate(((0,), np.cumsum(split)))
     right_port_lanes = split_cum[1:] - 1
     left_port_lanes = split_cum[:-1]
@@ -203,7 +217,7 @@ def snake(
         ]
     )
     left_bend_lanes = right_bend_lanes + 1
-    snake_fc_cell = Cell("Snake Feeding Channel")
+    snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
     for y in lane_ys:
         snake_fc_cell.add(CellReference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
@@ -239,7 +253,7 @@ def snake(
         )
         # print(len(snake_fc_cell.elements[0].polygons))
     snake_cell.add(CellReference(snake_fc_cell, (0, 0)))
-    trench_cell = Cell("Trench")
+    trench_cell = Cell("Trench-{}".format(label))
     trench_cell.add(
         Rectangle(
             (-trench_width / 2, -trench_fc_overlap),
@@ -247,7 +261,7 @@ def snake(
             layer=trench_layer,
         )
     )
-    tick_cell = Cell("Tick")
+    tick_cell = Cell("Tick-{}".format(label))
     tick_cell.add(
         Rectangle(
             (-trench_width / 2, trench_length + tick_margin),
@@ -431,6 +445,7 @@ def chip(
     design_func=snake,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
+    metadata=None,
     **kwargs,
 ):
     if "dims" not in kwargs:
@@ -438,7 +453,9 @@ def chip(
     kwargs["feeding_channel_layer"] = feeding_channel_layer
     kwargs["trench_layer"] = trench_layer
     dims = kwargs["dims"]
-    design_cell, _ = design_func(**kwargs)
+    design_cell, md = design_func(**{"label": name, **kwargs})
+    if metadata is not None:
+        metadata[name] = md
     chip_cell = Cell("Chip-{}".format(name))
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
