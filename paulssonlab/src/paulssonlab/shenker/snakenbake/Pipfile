@@ -16,6 +16,7 @@ cytoolz = "*"
 svgpathtools = "*"
 freetype-py = "*"
 shortuuid = "*"
+scipy = "*"
 
 
 [dev-packages]
