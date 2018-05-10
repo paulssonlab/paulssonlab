@@ -35,6 +35,7 @@ def get_bounding_box(polygons):
     return bbox
 
 
+# TURN INTO GENERAL MIRROR/ALIGN FUNCTION
 def Text(
     text,
     size,
@@ -443,6 +444,7 @@ def wafer(
 def chip(
     name,
     design_func=snake,
+    label_text_size=600,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
     metadata=None,
@@ -460,7 +462,6 @@ def chip(
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
     # text_position = (-1e4,1.2e3)
-    text_size = 600
     text_position = (-dims[0] / 2 + 1.5 * text_size, dims[1] / 2 - 1.5 * text_size)
     chip_cell.add(
         Text(name, text_size, position=text_position, layer=feeding_channel_layer)
