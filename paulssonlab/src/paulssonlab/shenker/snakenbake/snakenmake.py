@@ -1,84 +1,31 @@
 import numpy as np
 import gdspy as g
-from gdspy import Cell, CellReference, CellArray, Rectangle, Round, fast_boolean
-
-# from text import Text
+from gdspy import CellReference, CellArray, Rectangle
+from geometry import (
+    MAX_POINTS,
+    ROUND_POINTS,
+    Cell,
+    Round,
+    fast_boolean,
+    mirror,
+    mirror_refs,
+    align,
+)
+import text
+from util import make_odd, memoize
 import click
 from functools import partial
+from cytoolz import compose
 from itertools import product
 import numbers
-from util import make_odd, memoize
 import shortuuid
 
 TRENCH_LAYER = 2
 FEEDING_CHANNEL_LAYER = 6
-MAX_POINTS = 4094  # 8191 # same as LayoutEditor
-ROUND_POINTS = 50
 DEFAULT_DIMS = np.array([23e3, 13e3])
-
-# TODO: freeze numpy arrays, hash dicts: hash(frozenset(self.items()))
-Cell = partial(Cell, exclude_from_current=True)
-Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
-fast_boolean = partial(fast_boolean, max_points=MAX_POINTS)
+Text = compose(mirror_refs, text.Text)
 
 get_uuid = partial(shortuuid.random, length=2)
-
-
-def get_bounding_box(polygons):
-    all_points = np.concatenate(polygons).transpose()
-    bbox = np.array(
-        (
-            (all_points[0].min(), all_points[1].min()),
-            (all_points[0].max(), all_points[1].max()),
-        )
-    )
-    return bbox
-
-
-# TURN INTO GENERAL MIRROR/ALIGN FUNCTION
-def Text(
-    text,
-    size,
-    position=(0, 0),
-    alignment="left",
-    horizontal=True,
-    angle=0,
-    layer=0,
-    datatype=0,
-):
-    obj = g.Text(
-        text,
-        size,
-        (0, 0),
-        horizontal=horizontal,
-        angle=angle,
-        layer=layer,
-        datatype=datatype,
-    )
-    bbox = get_bounding_box(obj.polygons)
-    if not horizontal:
-        raise NotImplementedError
-    if angle == 0:
-        if alignment == "left":
-            offset = np.array([bbox[1, 0], 0])
-        elif alignment == "centered":
-            offset = np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
-        elif alignment == "right":
-            offset = np.array([bbox[0, 0], 0])
-        else:
-            raise NotImplementedError
-        factor = np.array([-1, 1])
-    elif angle == -np.pi / 2:
-        if alignment != "left":
-            raise NotImplementedError
-        offset = np.array([0, bbox[0, 1]])
-        factor = np.array([1, -1])
-    else:
-        raise NotImplementedError
-    position = np.array(position) + offset
-    obj.polygons = [position + factor * poly for poly in obj.polygons]
-    return obj
-
 
 # TODO: encode parameters in cell names
 # TODO: break out func for each cell, use memoize decorator to reuse cells from multiple chips
@@ -440,7 +387,6 @@ def wafer(
     return main_cell
 
 
-@memoize
 def chip(
     name,
     design_func=snake,
@@ -461,10 +407,12 @@ def chip(
     chip_cell = Cell("Chip-{}".format(name))
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
-    # text_position = (-1e4,1.2e3)
-    text_position = (-dims[0] / 2 + 1.5 * text_size, dims[1] / 2 - 1.5 * text_size)
+    text_position = (
+        -dims[0] / 2 + 1.5 * label_text_size,
+        dims[1] / 2 - 1.5 * label_text_size,
+    )
     chip_cell.add(
-        Text(name, text_size, position=text_position, layer=feeding_channel_layer)
+        Text(name, label_text_size, position=text_position, layer=feeding_channel_layer)
     )
     return chip_cell
 

@@ -2,6 +2,8 @@ import numpy as np
 from scipy.special import binom
 import freetype
 import gdspy as g
+from geometry import Cell
+from util import memoize
 
 DEFAULT_FACE = freetype.Face("Vera.ttf")
 POINTS_PER_SEGMENT = 10
@@ -91,15 +93,54 @@ def render_character(
     return polygons, metadata
 
 
-def Text2(
+@memoize
+def character(
+    char, size, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGMENT, layer=0
+):
+    cell = Cell("~{}~s{}l{}".format(char, size, layer))
+    polygons, metadata = render_character(
+        char, size, face=face, points_per_segment=points_per_segment
+    )
+    cell.add(g.PolygonSet(polygons, layer=layer))
+    return cell, metadata
+
+
+def Text(
     text,
     size,
     position=(0, 0),
     horizontal=True,
     angle=0,
-    x_reflection=False,
     layer=0,
     datatype=0,
     face=DEFAULT_FACE,
+    points_per_segment=POINTS_PER_SEGMENT,
 ):
-    pass
+    if not horizontal or angle != 0:
+        raise NotImplementedError
+    position = np.array(position)
+    offset = np.zeros(2)
+    face.set_char_size(int(size * 64))
+    linespace = face.size.height / 64
+    face.load_char(" ")
+    space_advance = face.glyph.metrics.horiAdvance / 64
+    cells = []
+    for char in text:
+        if char == "\n":
+            offset[0] = 0
+            offset[1] -= linespace
+            continue
+        elif char == " ":
+            face.load_char(char)
+            offset[0] += space_advance
+            continue
+        char_cell, metadata = character(
+            char, size, face=face, points_per_segment=points_per_segment
+        )
+        cells.append(
+            g.CellReference(
+                char_cell, position + offset, x_reflection=True, rotation=180
+            )
+        )
+        offset[0] += metadata["horiAdvance"]
+    return cells
