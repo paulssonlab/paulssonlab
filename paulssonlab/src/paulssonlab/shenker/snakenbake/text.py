@@ -2,7 +2,7 @@ import numpy as np
 from scipy.special import binom
 import freetype
 import gdspy as g
-from geometry import Cell
+from geometry import Cell, fast_boolean
 from util import memoize
 
 DEFAULT_FACE = freetype.Face("Vera.ttf")
@@ -22,12 +22,9 @@ def bezier(points, t):
     ).sum(axis=0)
 
 
-def render_character(
-    char, size, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGMENT
-):
+def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGMENT):
     # SEE: https://www.freetype.org/freetype2/docs/glyphs/glyphs-6.html
-    face.set_char_size(size)
-    face.load_char(char)
+    face.load_char(char, freetype.FT_LOAD_NO_SCALE)
     outline = face.glyph.outline
     contours = np.array(outline.contours)
     polygons = []
@@ -86,23 +83,59 @@ def render_character(
                 )
         polygon = np.concatenate(polygon_segments)
         polygons.append(polygon)
-    metadata = {
+    print("char", char, "polys", len(polygons))
+    metrics = {
         attr: getattr(face.glyph.metrics, attr)
         for attr in ("vertAdvance", "horiAdvance")
     }
-    return polygons, metadata
+    return polygons, metrics
 
 
-@memoize
+def polygon_interior(polygons, layer=0, datatype=0):
+    if len(polygons) == 3:
+        print("inside", g.inside([polygons[0]], g.Polygon(polygons[1])))
+        print("inside2", g.inside([polygons[1]], g.Polygon(polygons[0])))
+        print("inside3", g.inside([polygons[1]], g.Polygon(polygons[2])))
+        print("inside32", g.inside([polygons[2]], g.Polygon(polygons[1])))
+        # print('inside', g.inside(polygons[1], polygons[0]))
+    polygon0 = g.Polygon(polygons[0], layer=layer, datatype=datatype)
+    print("l", len(polygons), polygon0)
+    # polygons = list(reversed(polygons))
+    for polygon in polygons[1:]:
+        # print('blah',len(polygon))
+        # print('b', polygons[1]==polygon, polygon0 == polygons[0])
+        # if g.inside([g.Polygon(polygon0)], polygon):
+        # if g.inside([polygon0], [polygon]):
+        #         print('char', char, 'polys', len(polygons))
+        # if g.inside([polygon0], g.Polygon(polygon)):
+        if True:
+            polygon1 = fast_boolean(
+                polygon0, g.Polygon(polygon), "not", layer=layer, datatype=datatype
+            )
+            if polygon1 is not None:
+                polygon0 = polygon1
+        else:
+            raise ValueError("something weird happened")
+    print("ret", polygon0)
+    return polygon0
+
+
+# @memoize
 def character(
-    char, size, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGMENT, layer=0
+    char,
+    face=DEFAULT_FACE,
+    scale_factor=1,
+    points_per_segment=POINTS_PER_SEGMENT,
+    layer=0,
+    datatype=0,
 ):
-    cell = Cell("~{}~s{}l{}".format(char, size, layer))
-    polygons, metadata = render_character(
-        char, size, face=face, points_per_segment=points_per_segment
+    cell = Cell("~{}~s{}l{}".format(char, scale_factor, layer))
+    polygons, metrics = render_character(
+        char, face=face, points_per_segment=points_per_segment
     )
-    cell.add(g.PolygonSet(polygons, layer=layer))
-    return cell, metadata
+    polygons = [p * scale_factor for p in polygons]
+    cell.add(polygon_interior(polygons, layer=layer, datatype=datatype))
+    return cell, metrics
 
 
 def Text(
@@ -114,16 +147,17 @@ def Text(
     layer=0,
     datatype=0,
     face=DEFAULT_FACE,
+    scale_factor=1,
     points_per_segment=POINTS_PER_SEGMENT,
 ):
     if not horizontal or angle != 0:
         raise NotImplementedError
     position = np.array(position)
     offset = np.zeros(2)
-    face.set_char_size(int(size * 64))
-    linespace = face.size.height / 64
-    face.load_char(" ")
-    space_advance = face.glyph.metrics.horiAdvance / 64
+    magnification = size / (face.units_per_EM * scale_factor)
+    linespace = face.height * magnification
+    face.load_char(" ", freetype.FT_LOAD_NO_SCALE)
+    space_advance = face.glyph.metrics.horiAdvance * magnification
     cells = []
     for char in text:
         if char == "\n":
@@ -131,16 +165,21 @@ def Text(
             offset[1] -= linespace
             continue
         elif char == " ":
-            face.load_char(char)
+            # face.load_char(char)
             offset[0] += space_advance
             continue
-        char_cell, metadata = character(
-            char, size, face=face, points_per_segment=points_per_segment
+        char_cell, metrics = character(
+            char,
+            face=face,
+            scale_factor=scale_factor,
+            points_per_segment=points_per_segment,
+            layer=layer,
+            datatype=datatype,
         )
         cells.append(
             g.CellReference(
-                char_cell, position + offset, x_reflection=True, rotation=180
+                char_cell, position + offset, rotation=0, magnification=magnification
             )
         )
-        offset[0] += metadata["horiAdvance"]
+        offset[0] += metrics["horiAdvance"] * magnification
     return cells

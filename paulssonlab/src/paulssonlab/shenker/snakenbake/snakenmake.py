@@ -10,8 +10,9 @@ from geometry import (
     mirror,
     mirror_refs,
     align,
+    align_refs,
 )
-import text
+from text import Text as _Text
 from util import make_odd, memoize
 import click
 from functools import partial
@@ -23,7 +24,36 @@ import shortuuid
 TRENCH_LAYER = 2
 FEEDING_CHANNEL_LAYER = 6
 DEFAULT_DIMS = np.array([23e3, 13e3])
-Text = compose(mirror_refs, text.Text)
+
+
+def Text(
+    text,
+    size,
+    position=(0, 0),
+    alignment="left",
+    prerotate_alignment=None,
+    angle=0,
+    **kwargs,
+):
+    objs = _Text(text, size, position=(0, 0), **kwargs)
+    objs = mirror_refs(objs)
+    if prerotate_alignment is not None:
+        objs = align_refs(objs, position=(0, 0), alignment=prerotate_alignment)
+    if angle == 0:
+        pass
+    elif angle == -np.pi / 2:
+        for ref in objs:
+            ref.rotation += 90
+            ref.origin[:] = ref.origin[::-1]
+    elif angle == np.pi / 2:
+        for ref in objs:
+            ref.rotation -= 90
+            ref.origin[:] = ref.origin[::-1] * np.array([1, -1])
+    else:
+        raise NotImplementedError
+    objs = align_refs(objs, position=position, alignment=alignment)
+    return objs
+
 
 get_uuid = partial(shortuuid.random, length=2)
 
@@ -318,6 +348,7 @@ def wafer(
     diameter=76.2e3,
     side=87.15e3,
     chip_area_angle=np.pi / 4,
+    chip_area_margin=4e3,
     alignment_mark_position=32e3,
     alignment_text_size=1000,
     label_text_size=2000,
@@ -333,8 +364,8 @@ def wafer(
     wafer_outline = fast_boolean(square, circle, "not")
     # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
     # TODO: move alignment marks accordingly
-    chip_area_corner = (
-        diameter / 2 * np.array([np.cos(chip_area_angle), np.sin(chip_area_angle)])
+    chip_area_corner = (diameter / 2 - chip_area_margin) * np.array(
+        [np.cos(chip_area_angle), np.sin(chip_area_angle)]
     )
     if alignment_mark_position is None:
         alignment_mark_position = chip_area_corner[1] * 7 / 6
@@ -353,8 +384,8 @@ def wafer(
         Text(
             "bottom",
             alignment_text_size,
-            alignment="centered",
             position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
+            alignment="centered",
             layer=trench_layer,
         )
     )
@@ -362,13 +393,15 @@ def wafer(
         CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
     )
     # main_cell.add(Text(name, label_text_size, position=text_position, alignment='centered', angle=-np.pi/2, layer=feeding_channel_layer))
-    text_position = (3e4, 1e4)
+    text_position = (chip_area_corner[0] + label_text_size, 0)
     main_cell.add(
         Text(
             name,
             label_text_size,
             position=text_position,
-            angle=-np.pi / 2,
+            angle=np.pi / 2,
+            alignment="left",
+            prerotate_alignment="centered",
             layer=feeding_channel_layer,
         )
     )
@@ -407,12 +440,15 @@ def chip(
     chip_cell = Cell("Chip-{}".format(name))
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
-    text_position = (
-        -dims[0] / 2 + 1.5 * label_text_size,
-        dims[1] / 2 - 1.5 * label_text_size,
-    )
+    text_position = (0, dims[1] / 2 - 1.5 * label_text_size)
     chip_cell.add(
-        Text(name, label_text_size, position=text_position, layer=feeding_channel_layer)
+        Text(
+            name,
+            label_text_size,
+            position=text_position,
+            alignment="centered",
+            layer=feeding_channel_layer,
+        )
     )
     return chip_cell
 
