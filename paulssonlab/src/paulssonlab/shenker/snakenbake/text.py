@@ -1,9 +1,11 @@
 import numpy as np
 from scipy.special import binom
+import scipy.spatial
 import freetype
 import gdspy as g
 from geometry import Cell, fast_boolean
-from util import memoize
+from util import memoize, make_hashable
+from functools import reduce, partial
 
 DEFAULT_FACE = freetype.Face("Vera.ttf")
 POINTS_PER_SEGMENT = 10
@@ -83,7 +85,6 @@ def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGM
                 )
         polygon = np.concatenate(polygon_segments)
         polygons.append(polygon)
-    print("char", char, "polys", len(polygons))
     metrics = {
         attr: getattr(face.glyph.metrics, attr)
         for attr in ("vertAdvance", "horiAdvance")
@@ -91,33 +92,52 @@ def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGM
     return polygons, metrics
 
 
-def polygon_interior(polygons, layer=0, datatype=0):
-    if len(polygons) == 3:
-        print("inside", g.inside([polygons[0]], g.Polygon(polygons[1])))
-        print("inside2", g.inside([polygons[1]], g.Polygon(polygons[0])))
-        print("inside3", g.inside([polygons[1]], g.Polygon(polygons[2])))
-        print("inside32", g.inside([polygons[2]], g.Polygon(polygons[1])))
-        # print('inside', g.inside(polygons[1], polygons[0]))
-    polygon0 = g.Polygon(polygons[0], layer=layer, datatype=datatype)
-    print("l", len(polygons), polygon0)
-    # polygons = list(reversed(polygons))
-    for polygon in polygons[1:]:
-        # print('blah',len(polygon))
-        # print('b', polygons[1]==polygon, polygon0 == polygons[0])
-        # if g.inside([g.Polygon(polygon0)], polygon):
-        # if g.inside([polygon0], [polygon]):
-        #         print('char', char, 'polys', len(polygons))
-        # if g.inside([polygon0], g.Polygon(polygon)):
-        if True:
-            polygon1 = fast_boolean(
-                polygon0, g.Polygon(polygon), "not", layer=layer, datatype=datatype
-            )
-            if polygon1 is not None:
-                polygon0 = polygon1
-        else:
-            raise ValueError("something weird happened")
-    print("ret", polygon0)
-    return polygon0
+def cut_out_hole(exterior, interior, layer=0, datatype=0):
+    dists = scipy.spatial.distance.cdist(exterior, interior)
+    idx_ext, idx_int = np.unravel_index(dists.argmin(), dists.shape)
+    # exterior = np.concatenate((exterior[:idx_ext+1],
+    #                               interior[:idx_int+1:-1],
+    #                               interior[idx_int::-1],
+    #                               exterior[idx_ext:]))
+    result = np.concatenate(
+        (
+            exterior[: idx_ext + 1],
+            interior[idx_int:],
+            interior[: idx_int + 1],
+            exterior[idx_ext:],
+        )
+    )
+    return result
+
+
+def cut_out_holes(polygons, layer=0, datatype=0):
+    top_level_polygons = []
+    used_polygons = set()
+    for polygon_ext in polygons:
+        print("ext")
+        polygons_to_cut = [polygon_ext]
+        for polygon_int in polygons:
+            print("int")
+            if polygon_ext is polygon_int:
+                print("skipping")
+                continue
+            # if g.inside([polygon_ext], g.Polygon(polygon_int))[0]:
+            if g.inside([polygon_int], g.Polygon(polygon_ext))[0]:
+                print("cutting")
+                polygons_to_cut.append(polygon_int)
+                used_polygons.add(make_hashable(polygon_int))
+        if len(polygons_to_cut) >= 2:
+            print("adding cut", len(polygons_to_cut))
+            top_level_polygons.append(polygons_to_cut)
+    for polygon in polygons:
+        if make_hashable(polygon) not in used_polygons:
+            top_level_polygons.append([polygon])
+    result = [
+        reduce(partial(cut_out_hole, layer=layer, datatype=datatype), polygons_to_cut)
+        for polygons_to_cut in top_level_polygons
+    ]
+    print("len", len(result))
+    return g.Polygon(result[0], layer=layer, datatype=datatype)
 
 
 # @memoize
@@ -134,7 +154,7 @@ def character(
         char, face=face, points_per_segment=points_per_segment
     )
     polygons = [p * scale_factor for p in polygons]
-    cell.add(polygon_interior(polygons, layer=layer, datatype=datatype))
+    cell.add(cut_out_holes(polygons, layer=layer, datatype=datatype))
     return cell, metrics
 
 

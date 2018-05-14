@@ -10,6 +10,21 @@ Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
 fast_boolean = partial(fast_boolean, max_points=MAX_POINTS)
 
 
+def polygon_orientation(polygon):
+    # SEE: https://en.wikipedia.org/wiki/Curve_orientation
+    polygon = np.array(polygon)
+    x_min = polygon[:, 0].min()
+    y_min = polygon[polygon[:, 0] == x_min, 1].min()
+    idx_b = np.where((polygon[:, 0] == x_min) & (polygon[:, 1] == y_min))[0][0]
+    idx_a = (idx_b - 1) % len(polygon)
+    idx_c = (idx_b + 1) % len(polygon)
+    x_a, y_a = polygon[idx_a]
+    x_b, y_b = polygon[idx_b]
+    x_c, y_c = polygon[idx_c]
+    det = (x_b - x_a) * (y_c - y_a) - (x_c - x_a) * (y_b - y_c)
+    return det
+
+
 def get_bounding_box(polygons):
     all_points = np.concatenate(polygons).transpose()
     bbox = np.array(

@@ -17,6 +17,7 @@ svgpathtools = "*"
 freetype-py = "*"
 shortuuid = "*"
 scipy = "*"
+pyclipper = "*"
 
 
 [dev-packages]
