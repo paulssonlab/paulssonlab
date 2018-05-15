@@ -90,7 +90,7 @@ def snake(
     lane_gap=20,
     trench_spacing=2,
     feeding_channel_width=90,
-    port_radius=210,
+    port_radius=200,
     tick_length=5,
     tick_margin=5,
     tick_period=50,
@@ -108,7 +108,7 @@ def snake(
     if port_margin is None:
         port_margin = horizontal_margin / 2
     if trench_fc_overlap is None:
-        trench_fc_overlap = 10  # min(trench_length, feeding_channel_width / 2)
+        trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
     if tick_text_size is None:
         tick_text_size = tick_length * 2
     effective_trench_length = trench_length + lane_gap / 2

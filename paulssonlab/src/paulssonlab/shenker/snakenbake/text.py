@@ -114,20 +114,18 @@ def cut_out_holes(polygons, layer=0, datatype=0):
     top_level_polygons = []
     used_polygons = set()
     for polygon_ext in polygons:
-        print("ext")
         polygons_to_cut = [polygon_ext]
         for polygon_int in polygons:
-            print("int")
             if polygon_ext is polygon_int:
-                print("skipping")
                 continue
             # if g.inside([polygon_ext], g.Polygon(polygon_int))[0]:
             if g.inside([polygon_int], g.Polygon(polygon_ext))[0]:
-                print("cutting")
                 polygons_to_cut.append(polygon_int)
                 used_polygons.add(make_hashable(polygon_int))
         if len(polygons_to_cut) >= 2:
-            print("adding cut", len(polygons_to_cut))
+            used_polygons.add(
+                make_hashable(polygons_to_cut[0])
+            )  # don't add an un-cut exterior
             top_level_polygons.append(polygons_to_cut)
     for polygon in polygons:
         if make_hashable(polygon) not in used_polygons:
@@ -136,11 +134,10 @@ def cut_out_holes(polygons, layer=0, datatype=0):
         reduce(partial(cut_out_hole, layer=layer, datatype=datatype), polygons_to_cut)
         for polygons_to_cut in top_level_polygons
     ]
-    print("len", len(result))
-    return g.Polygon(result[0], layer=layer, datatype=datatype)
+    return g.PolygonSet(result, layer=layer, datatype=datatype)
 
 
-# @memoize
+@memoize
 def character(
     char,
     face=DEFAULT_FACE,
