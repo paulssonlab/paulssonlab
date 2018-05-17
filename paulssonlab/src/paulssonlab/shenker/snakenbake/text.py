@@ -146,7 +146,10 @@ def character(
     layer=0,
     datatype=0,
 ):
-    cell = Cell("~{}~s{}l{}".format(char, scale_factor, layer))
+    cell_name = "~{}~l{}".format(char, scale_factor, layer)
+    if scale_factor != 1:
+        cell_name += "s{}".format(scale_factor)
+    cell = Cell(cell_name)
     polygons, metrics = render_character(
         char, face=face, points_per_segment=points_per_segment
     )
