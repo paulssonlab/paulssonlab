@@ -153,8 +153,16 @@ def snake(
     metadata = {
         k: v
         for k, v in locals().items()
-        if k in ("num_lanes", "trenches_per_set", "num_trenches")
+        if k
+        in (
+            "num_lanes",
+            "trenches_per_set",
+            "num_trenches",
+            "split",
+            "feeding_channel_width",
+        )
     }
+    metadata["lane_length"] = lane_fc_dims[0]
     last_lane_y = ((num_lanes - 1) * lane_height) / 2
     snake_cell = Cell("Snake-{}".format(label))
     lane_cell = Cell("Lane-{}".format(label))
