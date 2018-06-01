@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
 from util import iterate_getattr
+import common
 
 # TODO
 channel_to_color = {
@@ -29,8 +30,8 @@ def RevImage(img, **kwargs):
 
 
 def _RevImage(cls, img, **kwargs):
-    return cls(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).opts(
-        plot={"invert_yaxis": True}
+    return cls(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).options(
+        invert_yaxis=True
     )
 
 

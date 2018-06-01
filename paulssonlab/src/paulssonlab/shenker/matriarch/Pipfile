@@ -14,7 +14,6 @@ cython = "*"
 dask = {extras = ["complete"]}
 distributed = "*"
 ipywidgets = "*"
-"iso8601" = "*"
 ujson = "*"
 jupyter = "*"
 jupyterlab = "*"
@@ -43,6 +42,19 @@ hide-code = "*"
 more-itertools = "*"
 tifffile = "*"
 deepdiff = "*"
+pendulum = "*"
+jdcal = "*"
+jq = "*"
+jmespath = "*"
+xxhash = "*"
+"8ac6f2a" = {path = "/home/jqs1/projects/datashader", editable = true}
+scikit-image = "*"
+peakutils = "*"
+"1e22951" = {path = "/home/jqs1/projects/dask-jobqueue", editable = true}
+cvxpy = "*"
+picos = "*"
+pyomo = "*"
+"037fc10" = {path = "/home/jqs1/projects/dask", editable = true}
 
 [dev-packages]
 

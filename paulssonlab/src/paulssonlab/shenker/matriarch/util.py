@@ -4,11 +4,11 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 import holoviews as hv
-from functools import reduce
+from functools import reduce, wraps
 from cytoolz import compose
 import collections
 
-
+# TODO: replace with toolz.excepts??
 def fail_silently(func):
     try:
         return func()
@@ -25,6 +25,7 @@ def getattr_if_not_none(obj, key):
         return None
 
 
+# TODO: replace with dicttoolz.get_in
 def iterate_getattr(obj, keys):
     for k in keys:
         if k in obj:
@@ -66,6 +67,15 @@ def find_all(a_str, sub):
             return
         yield start
         start += 1  # find overlapping matches (otherwise += len(sub))
+
+
+def wrap_diagnostics(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        diag = tree()
+        return (func(*args, **{"diagnostics": diag, **kwargs}), diag)
+
+    return wrapper
 
 
 def diagnostics_to_dataframe(diagnostics):
@@ -127,17 +137,33 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
     return dict(items)
 
 
-def map_collections(func, data, max_level):
+def split_dict(d):
+    lengths = []
+    recursive_map(lambda x: lengths.append(len(x)), d, shortcircuit=tuple)
+    min_length = min(lengths)
+    return [
+        recursive_map(partial(getitem_r, i), d, shortcircuit=tuple)
+        for i in range(min_length)
+    ]
+
+
+# TODO: used??
+def map_collections(func, data, max_level, contents=False):
     # TODO: allow specifying a range of levels
     if max_level == 0:
-        return data
+        if contents:
+            return func(data)
+        else:
+            return data
     if isinstance(data, dict):
-        return func(
-            {
-                k: map_collections(func, v, max_level=max_level - 1)
-                for k, v in data.items()
-            }
-        )
+        d = {
+            k: map_collections(func, v, max_level=max_level - 1)
+            for k, v in data.items()
+        }
+        if contents:
+            return d
+        else:
+            return func(d)
     else:
         raise NotImplementedError  # TODO: flesh out this function
 

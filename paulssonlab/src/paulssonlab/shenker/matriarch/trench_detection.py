@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import skimage
+import skimage.morphology
 import sklearn
 import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
@@ -13,6 +14,7 @@ import holoviews as hv
 import holoviews.operation.datashader as datashader
 from util import getattr_if_not_none, repeat_apply
 from ui import RevImage
+import common
 
 
 def _standardize_cluster_labels(X, fit):
