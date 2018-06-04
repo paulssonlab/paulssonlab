@@ -86,7 +86,7 @@ def find_hough_angle(
         # TODO: fix the left-edge vs. right-edge issue for theta bins
         diagnostics["diff_h_std"] = hv.Curve(
             (np.rad2deg(theta[:-1]), diff_h_std)
-        ) * hv.VLine(np.rad2deg(angle)).opts(style={"color": "red"})
+        ) * hv.VLine(np.rad2deg(angle)).options(color="red")
         diagnostics["angle"] = np.rad2deg(angle)
     return angle
 
@@ -220,7 +220,7 @@ def detect_trench_region(bin_img, theta, margin=3, diagnostics=None):
     if diagnostics is not None:
         diagnostics["cross_section_vars"] = hv.Curve(cross_section_vars) * hv.VLine(
             idx
-        ).opts(style={"color": "red"})
+        ).options(color="red")
     return anchors[idx]
 
 
@@ -238,8 +238,8 @@ def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=N
         diagnostics["search_range"] = (period_min, period_max)
         diagnostics["bins"] = bins
         diagnostics["period"] = period
-        highlighted_point = hv.Points([(period, std[period_idx])]).opts(
-            style={"size": 10, "color": "red"}
+        highlighted_point = hv.Points([(period, std[period_idx])]).options(
+            size=5, color="red"
         )
         diagnostics["periodogram"] = hv.Curve((periods, std)) * highlighted_point
     return period
@@ -257,8 +257,8 @@ def detect_periodic_peaks(
     # xs = peakutils.interpolate(np.arange(len(signal)), signal, ind=idxs)
     xs = idxs
     if diagnostics is not None:
-        highlighted_points = hv.Scatter((xs, signal[xs.astype(np.int_)])).opts(
-            style={"size": 10, "color": "red"}
+        highlighted_points = hv.Scatter((xs, signal[xs.astype(np.int_)])).options(
+            size=5, color="red"
         )
         diagnostics["peaks"] = (
             hv.Curve((range(len(signal)), signal)) * highlighted_points
@@ -291,8 +291,8 @@ def detect_periodic_peaks(
     offset_idx = objective.argmax()
     offset = offsets[offset_idx]
     if diagnostics is not None:
-        highlighted_point = hv.Points([(offset, objective[offset_idx])]).opts(
-            style={"size": 10, "color": "red"}
+        highlighted_point = hv.Points([(offset, objective[offset_idx])]).options(
+            size=5, color="red"
         )
         diagnostics["offsets"] = hv.Curve((offsets, objective)) * highlighted_point
     return period2, offset
@@ -313,13 +313,11 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     idxs = np.arange(offset, len(profile), period).astype(np.int_)
     anchors = np.vstack((xs[idxs], ys[idxs])).T
     if diagnostics is not None:
-        highlighted_points = hv.Scatter((idxs, profile[idxs])).opts(
-            style={"size": 10, "color": "red"}
+        highlighted_points = hv.Scatter((idxs, profile[idxs])).options(
+            size=5, color="red"
         )
         diagnostics["trench_anchor_profile"] = hv.Curve(profile) * highlighted_points
-        anchor_points_plot = hv.Points(anchors).opts(
-            style={"size": 3, "color": "white"}
-        )
+        anchor_points_plot = hv.Points(anchors).options(size=3, color="white")
         diagnostics["anchor_points"] = RevImage(img) * anchor_points_plot
     return anchors
 
@@ -347,12 +345,12 @@ def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
     end = stacked_profile_diff.argmin() + margin
     if diagnostics is not None:
         diagnostics["margin"] = margin
-        diagnostics["stacked_profile"] = hv.Curve(stacked_profile) * hv.VLine(end).opts(
-            style={"color": "red"}
-        )
+        diagnostics["stacked_profile"] = hv.Curve(stacked_profile) * hv.VLine(
+            end
+        ).options(color="red")
         diagnostics["stacked_profile_diff"] = hv.Curve(stacked_profile_diff) * hv.VLine(
             end
-        ).opts(style={"color": "green"})
+        ).options(color="green")
     end_points = []
     for xs, ys in zip(xss, yss):
         idx = end
@@ -376,15 +374,9 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
         diagnostics=getattr_if_not_none(diagnostics, "bottom"),
     )
     if diagnostics is not None:
-        anchor_points_plot = hv.Points(anchors).opts(
-            style={"size": 3, "color": "white"}
-        )
-        top_points_plot = hv.Points(top_points).opts(
-            style={"size": 3, "color": "green"}
-        )
-        bottom_points_plot = hv.Points(bottom_points).opts(
-            style={"size": 3, "color": "red"}
-        )
+        anchor_points_plot = hv.Points(anchors).options(size=3, color="white")
+        top_points_plot = hv.Points(top_points).options(size=3, color="green")
+        bottom_points_plot = hv.Points(bottom_points).options(size=3, color="red")
         # diagnostics['image_with_trenches'] = datashader.regrid(RevImage(img_masked), aggregator='first').redim.range(z=(0,img_masked.max())) * anchor_points_plot * top_points_plot * bottom_points_plot
         diagnostics["image_with_trenches"] = (
             RevImage(img_masked)

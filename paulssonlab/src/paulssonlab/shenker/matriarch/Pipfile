@@ -38,7 +38,6 @@ tqdm = "*"
 qgrid = "*"
 xarray = "*"
 pandas = "*"
-hide-code = "*"
 more-itertools = "*"
 tifffile = "*"
 deepdiff = "*"
@@ -55,6 +54,8 @@ cvxpy = "*"
 picos = "*"
 pyomo = "*"
 "037fc10" = {path = "/home/jqs1/projects/dask", editable = true}
+wrapt = "*"
+"92bd2ca" = {path = "./../holoviews", editable = true}
 
 [dev-packages]
 
