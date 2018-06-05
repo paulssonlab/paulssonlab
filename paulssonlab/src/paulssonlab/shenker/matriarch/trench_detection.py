@@ -12,7 +12,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none, repeat_apply
+from util import getattr_if_not_none, repeat_apply, wrap_diagnostics
 from ui import RevImage
 import common
 
@@ -489,6 +489,9 @@ def get_trenches(img, diagnostics=None):
             diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
         )
     return trenches
+
+
+get_trenches_diagnostics = wrap_diagnostics(get_trenches)
 
 
 def _get_trench_set(img, img_mask, diagnostics=None):

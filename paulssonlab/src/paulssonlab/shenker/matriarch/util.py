@@ -4,9 +4,12 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 import holoviews as hv
-from functools import reduce, wraps
+from functools import reduce, partial, wraps
+import wrapt
 from cytoolz import compose
 import collections
+from dask.distributed import Future
+import operator
 
 # TODO: replace with toolz.excepts??
 def fail_silently(func):
@@ -78,13 +81,17 @@ def wrap_diagnostics(func):
     return wrapper
 
 
+# @wrapt.decorator
+# def wrap_diagnostics(func, instance, args, kwargs):
+#     diag = tree()
+#     return (func(*args, **{'diagnostics': diag, **kwargs}), diag)
+
+
 def diagnostics_to_dataframe(diagnostics):
-    d = {
-        k: flatten_dict(v, predicate=lambda _, x: not isinstance(x, hv.ViewableElement))
-        for k, v in diagnostics.items()
-    }
-    df = pd.DataFrame.from_dict(d, orient="index")
-    df.index.rename("pos", inplace=True)
+    d = flatten_dict(
+        diagnostics, predicate=lambda _, x: not isinstance(x, hv.ViewableElement)
+    )
+    df = pd.DataFrame.from_dict({0: d}, orient="index")
     return df
 
 
@@ -137,17 +144,13 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
     return dict(items)
 
 
-def split_dict(d):
-    lengths = []
-    recursive_map(lambda x: lengths.append(len(x)), d, shortcircuit=tuple)
-    min_length = min(lengths)
-    return [
-        recursive_map(partial(getitem_r, i), d, shortcircuit=tuple)
-        for i in range(min_length)
-    ]
+# FROM: https://stackoverflow.com/questions/16458340/python-equivalent-of-zip-for-dictionaries
+def zip_dicts(*dicts):
+    for k in set(dicts[0]).intersection(*dicts[1:]):
+        yield (k,) + tuple(d[k] for d in dicts)
 
 
-# TODO: used??
+# TODO: used?? made redundant by recursive_map??
 def map_collections(func, data, max_level, contents=False):
     # TODO: allow specifying a range of levels
     if max_level == 0:
@@ -170,9 +173,18 @@ def map_collections(func, data, max_level, contents=False):
 
 # FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
 # TODO: document!!!
-def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False):
+def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False, max_level=None):
+    if max_level is not None and max_level is not False:
+        if max_level == 0:
+            return func(data)
+        max_level -= 1
     apply = lambda x: recursive_map(
-        func, x, shortcircuit=shortcircuit, ignore=ignore, keys=keys
+        func,
+        x,
+        shortcircuit=shortcircuit,
+        ignore=ignore,
+        keys=keys,
+        max_level=max_level,
     )
     if isinstance(data, shortcircuit):
         return func(data)
@@ -191,6 +203,35 @@ def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False):
         return data
     else:
         return func(data)
+
+
+map_futures = partial(recursive_map, shortcircuit=Future)
+
+getitem_r = lambda b, a: operator.getitem(a, b)
+getattr_r = lambda b, a: operator.getattr(a, b)
+
+
+class Pointer:
+    def __init__(self, value):
+        self.value = value
+
+
+def gather_futures(client, data):
+    pointers = []
+    futures = []
+
+    def add_to_gather_list(future):
+        pointer = Pointer(len(futures))
+        pointers.append(pointer)
+        futures.append(future)
+        return pointer
+
+    data_with_pointers = recursive_map(add_to_gather_list, data, shortcircuit=Future)
+    results = client.gather(futures)
+    pointer_to_result = dict(zip(pointers, results))
+    return recursive_map(
+        lambda p: pointer_to_result[p], data_with_pointers, shortcircuit=Pointer
+    )
 
 
 def repeat_apply(func, n):

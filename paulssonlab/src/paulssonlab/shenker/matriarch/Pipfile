@@ -56,6 +56,8 @@ pyomo = "*"
 "037fc10" = {path = "/home/jqs1/projects/dask", editable = true}
 wrapt = "*"
 "92bd2ca" = {path = "./../holoviews", editable = true}
+"c160678" = {path = "./../holoplot", editable = true}
+colorama = "*"
 
 [dev-packages]
 
