@@ -8,14 +8,23 @@ from util import (
     iterate_getattr,
     flatten_dict,
     map_collections,
+    tree,
 )
 
 
-def wrap_diagnostics(func):
+def wrap_diagnostics(func, ignore_exceptions=True):
     @wraps(func)
     def wrapper(*args, **kwargs):
         diag = tree()
-        return (func(*args, **{"diagnostics": diag, **kwargs}), diag)
+        # TODO: replace with util.fail_silently or toolz.excepts??
+        if ignore_exceptions:
+            try:
+                result = func(*args, **{"diagnostics": diag, **kwargs})
+            except Exception as e:
+                return (None, diag, e)
+        else:
+            result = func(*args, **{"diagnostics": diag, **kwargs})
+        return (result, diag, None)
 
     return wrapper
 
