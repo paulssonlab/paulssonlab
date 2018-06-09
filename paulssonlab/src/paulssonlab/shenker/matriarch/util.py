@@ -5,8 +5,9 @@ import zarr
 from datetime import datetime, timezone
 import holoviews as hv
 from functools import reduce, partial, wraps
+from itertools import count
 import wrapt
-from cytoolz import compose
+from toolz import compose
 import collections
 from dask.distributed import Future
 import operator
@@ -111,7 +112,16 @@ def map_collections(func, data, max_level, contents=False):
 
 # FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
 # TODO: document!!!
-def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False, max_level=None):
+def recursive_map(
+    func,
+    data,
+    shortcircuit=(),
+    ignore=(),
+    keys=False,
+    max_level=None,
+    predicate=None,
+    key_predicate=None,
+):
     if max_level is not None and max_level is not False:
         if max_level == 0:
             return func(data)
@@ -123,6 +133,8 @@ def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False, max_level=
         ignore=ignore,
         keys=keys,
         max_level=max_level,
+        predicate=predicate,
+        key_predicate=key_predicate,
     )
     if isinstance(data, shortcircuit):
         return func(data)
@@ -132,11 +144,19 @@ def recursive_map(func, data, shortcircuit=(), ignore=(), keys=False, max_level=
         return data
     elif isinstance(data, Mapping):
         if keys:
-            return type(data)(dict({apply(k): apply(v) for k, v in data.items()}))
+            values = {apply(k): apply(v) for k, v in data.items()}
         else:
-            return type(data)(dict({k: apply(v) for k, v in data.items()}))
+            values = {k: apply(v) for k, v in data.items()}
+        if predicate is not None:
+            values = {k: v for k, v in values.items() if predicate(v)}
+        if key_predicate is not None:
+            values = {k: v for k, v in values.items() if key_predicate(k)}
+        return type(data)(values)
     elif isinstance(data, Sequence):
-        return type(data)(list(apply(v) for v in data))
+        values = [apply(v) for v in data]
+        if predicate is not None:
+            values = [v for v in values if predicate(v)]
+        return type(data)(values)
     elif ignore is True or True in ignore:
         return data
     else:
@@ -154,22 +174,49 @@ class Pointer:
         self.value = value
 
 
-def gather_futures(client, data):
+def apply_map_futures(func, data, predicate=None):
     pointers = []
     futures = []
+    pointer_num = count()
+    skip_value = object()
 
-    def add_to_gather_list(future):
-        pointer = Pointer(len(futures))
-        pointers.append(pointer)
-        futures.append(future)
+    def add_to_future_list(future):
+        pointer = Pointer(next(pointer_num))
+        if predicate is None or predicate(future):
+            pointers.append(pointer)
+            futures.append(future)
         return pointer
 
-    data_with_pointers = recursive_map(add_to_gather_list, data, shortcircuit=Future)
-    results = client.gather(futures)
+    data_with_pointers = map_futures(add_to_future_list, data)
+    results = func(futures)
     pointer_to_result = dict(zip(pointers, results))
+    if predicate:
+        skip_predicate = lambda x: x is not skip_value
+    else:
+        skip_predicate = None
     return recursive_map(
-        lambda p: pointer_to_result[p], data_with_pointers, shortcircuit=Pointer
+        lambda p: pointer_to_result.get(p, skip_value),
+        data_with_pointers,
+        shortcircuit=Pointer,
+        predicate=skip_predicate,
     )
+
+
+# TODO: rewrite all _future util functions in terms of generic shortcutting recursive_map functions
+def collect_futures(data, predicate=lambda f: True):
+    futures = []
+    map_futures(lambda f: futures.append(f) if predicate(f) else None, data)
+    return futures
+
+
+finished_futures = partial(collect_futures, predicate=lambda f: f.status == "finished")
+pending_futures = partial(collect_futures, predicate=lambda f: f.status == "pending")
+failed_futures = partial(collect_futures, predicate=lambda f: f.status == "error")
+
+
+def failed_futures(data):
+    futures = []
+    return futures
 
 
 def repeat_apply(func, n):
@@ -204,13 +251,11 @@ def tqdm_auto(*args, **kwargs):
     except:
         pass
     return tqdm(*args, **kwargs)
-
-
-# return tqdm(*args, **kwargs)
-# try:
-#    return tqdm_notebook(*args, **kwargs)
-# except:
-#    return tqdm(*args, **kwargs)
+    # return tqdm(*args, **kwargs)
+    # try:
+    #    return tqdm_notebook(*args, **kwargs)
+    # except:
+    #    return tqdm(*args, **kwargs)
 
 
 def open_zarr_group(dir_path):
