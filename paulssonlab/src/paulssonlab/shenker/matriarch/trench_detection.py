@@ -12,8 +12,10 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none, repeat_apply, wrap_diagnostics
+from util import getattr_if_not_none, repeat_apply
+from diagnostics import wrap_diagnostics
 from ui import RevImage
+from image import hough_line_intensity
 import common
 
 
@@ -72,10 +74,12 @@ def get_img_limits(shape):
 
 
 def find_hough_angle(
-    bin_img, theta=None, hough_func=skimage.transform.hough_line, diagnostics=None
+    img, theta=None, hough_func=hough_line_intensity, diagnostics=None
 ):
-    h, theta, d = hough_func(bin_img, theta=theta)
-    diff_h = np.diff(h.astype(np.int32), axis=1)
+    if theta is None:
+        theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
+    h, theta, d = hough_func(img, theta=theta)
+    diff_h = np.diff(h.astype(np.int_), axis=1)
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
     theta_idx = diff_h_std.argmax()
     angle = theta[theta_idx]
@@ -91,13 +95,13 @@ def find_hough_angle(
     return angle
 
 
-def detect_rotation(bin_img, diagnostics=None):
+def detect_rotation(img, window=np.deg2rad(10), diagnostics=None):
     angle1 = find_hough_angle(
-        bin_img, diagnostics=getattr_if_not_none(diagnostics, "hough_1")
+        img, diagnostics=getattr_if_not_none(diagnostics, "hough_1")
     )
     angle2 = find_hough_angle(
-        bin_img,
-        theta=np.linspace(0.9 * angle1, 1.1 * angle1, 200),
+        img,
+        theta=np.linspace(angle1 - window, angle1 + window, 200),
         diagnostics=getattr_if_not_none(diagnostics, "hough_2"),
     )
     return np.pi / 2 - angle2
@@ -322,7 +326,7 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
     return anchors
 
 
-def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
+def _detect_trench_end(img, anchors, theta, margin=15, threshold=0.8, diagnostics=None):
     x_lim, y_lim = get_img_limits(img.shape)
     xss = []
     yss = []
@@ -337,7 +341,10 @@ def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
         diagnostics["trench_profiles"] = hv.Overlay.from_values(
             [hv.Curve(tp) for tp in trench_profiles]
         )
-    stacked_profile = np.percentile(stack_jagged(trench_profiles), 80, axis=0)
+        diagnostics["threshold"] = threshold
+    stacked_profile = np.percentile(
+        stack_jagged(trench_profiles), threshold * 100, axis=0
+    )
     # cum_profile = np.cumsum(stacked_profile)
     # cum_profile /= cum_profile[-1]
     # end = np.where(cum_profile > 0.8)[0][0]
@@ -360,15 +367,12 @@ def _detect_trench_end(img, anchors, theta, margin=15, diagnostics=None):
     return np.array(end_points)
 
 
-def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
-    img_masked = np.where(
-        skimage.morphology.binary_dilation(bin_img), img, np.percentile(img, 5)
-    )
+def detect_trench_ends(img, anchors, theta, diagnostics=None):
     top_points = _detect_trench_end(
-        img_masked, anchors, theta, diagnostics=getattr_if_not_none(diagnostics, "top")
+        img, anchors, theta, diagnostics=getattr_if_not_none(diagnostics, "top")
     )
     bottom_points = _detect_trench_end(
-        img_masked,
+        img,
         anchors,
         theta + np.pi,
         diagnostics=getattr_if_not_none(diagnostics, "bottom"),
@@ -379,24 +383,20 @@ def detect_trench_ends(img, bin_img, anchors, theta, diagnostics=None):
         bottom_points_plot = hv.Points(bottom_points).options(size=3, color="red")
         # diagnostics['image_with_trenches'] = datashader.regrid(RevImage(img_masked), aggregator='first').redim.range(z=(0,img_masked.max())) * anchor_points_plot * top_points_plot * bottom_points_plot
         diagnostics["image_with_trenches"] = (
-            RevImage(img_masked)
-            * anchor_points_plot
-            * top_points_plot
-            * bottom_points_plot
+            RevImage(img) * anchor_points_plot * top_points_plot * bottom_points_plot
         )
     return top_points, bottom_points
 
 
-def detect_trench_set(img, bin_img, theta, diagnostics=None):
+def detect_trench_set(img, theta, diagnostics=None):
     t0 = detect_trench_region(
-        bin_img, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_region")
+        img, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_region")
     )
     trench_anchors = detect_trench_anchors(
         img, t0, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_anchors")
     )
     trench_points = detect_trench_ends(
         img,
-        bin_img,
         trench_anchors,
         theta,
         diagnostics=getattr_if_not_none(diagnostics, "trench_ends"),
@@ -477,15 +477,22 @@ def normalize_segmentwise(
     return img
 
 
-def get_trenches(img, diagnostics=None):
+def get_trenches(img, find_angle_setwise=False, diagnostics=None):
     normalized_img, img_labels, label_index = label_for_trenches(
         img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
     )
+    if find_angle_setwise:
+        theta = None
+    else:
+        theta = detect_rotation(
+            img, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
+        )
     trenches = {}
     for label in label_index:
         trenches[label] = _get_trench_set(
             normalized_img,
             img_labels == label,
+            theta=theta,
             diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
         )
     return trenches
@@ -494,10 +501,14 @@ def get_trenches(img, diagnostics=None):
 get_trenches_diagnostics = wrap_diagnostics(get_trenches)
 
 
-def _get_trench_set(img, img_mask, diagnostics=None):
-    # TODO: should only need to detect rotation once per image, not per trench set
-    theta = detect_rotation(
-        img_mask, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
+def _get_trench_set(img, img_mask, theta=None, diagnostics=None):
+    img_masked = np.where(
+        skimage.morphology.binary_dilation(img_mask), img, np.percentile(img, 5)
     )
-    trench_points = detect_trench_set(img, img_mask, theta, diagnostics=diagnostics)
+    # TODO: should only need to detect rotation once per image, not per trench set
+    if theta is None:
+        theta = detect_rotation(
+            img_masked, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
+        )
+    trench_points = detect_trench_set(img_masked, theta, diagnostics=diagnostics)
     return trench_points
