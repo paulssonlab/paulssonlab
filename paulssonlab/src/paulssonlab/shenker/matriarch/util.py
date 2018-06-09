@@ -12,6 +12,13 @@ import collections
 from dask.distributed import Future
 import operator
 
+# FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+def multi_join(left, right):
+    return pd.merge(
+        left.reset_index(), right.reset_index(), on=right.index.names, how="inner"
+    ).set_index(left.index.names)
+
+
 # TODO: replace with toolz.excepts??
 def fail_silently(func):
     try:
