@@ -58,6 +58,8 @@ wrapt = "*"
 "92bd2ca" = {path = "./../holoviews", editable = true}
 "c160678" = {path = "./../holoplot", editable = true}
 colorama = "*"
+"4a8dedc" = {path = "./../pyviz_comms", editable = true}
+pyviz-comms = "*"
 
 [dev-packages]
 
