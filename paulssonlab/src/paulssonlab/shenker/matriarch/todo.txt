@@ -1,5 +1,11 @@
+### 
+compare stage position to trench finding, use stage position to find absolute trench numbers
+parallel load trenches from ND2
+
 #### TODAY
 
+only compute checksums for files with duplicate sizes
+debug old ND2 version warning
 file hash
 deduplicate ND2's using file hash (check reliability of other heuristics)
 diagnose ND2 time mismatch
