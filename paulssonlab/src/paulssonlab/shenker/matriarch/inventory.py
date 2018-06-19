@@ -7,11 +7,13 @@ from playhouse.apsw_ext import (
     IntegerField,
     DoubleField,
     BooleanField,
+    BlobField,
 )
 from json_util import JSONField
 import pickle
 import base64
 import zarr
+import xxhash
 from datetime import datetime
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
@@ -50,12 +52,17 @@ class File(BaseModel):
     path = TextField(unique=True)
     type = TextField()
     size = IntegerField()
+    count = IntegerField(default=1)
+    mode = IntegerField()
+    uid = IntegerField()
+    gid = IntegerField()
     atime = DoubleField()
     mtime = DoubleField()
     ctime = DoubleField()
     aggregated = BooleanField()
     aggregated_path = TextField()
     metadata = JSONField()
+    checksum = BlobField()
 
 
 def connect_db(db_file):
@@ -82,11 +89,50 @@ def _get_extension(path, aliases=EXTENSION_ALIASES):
     return extension
 
 
+# TODO: unused
+def _intdigest(hashobj):
+    if hasattr(hashobj, "intdigest"):
+        return hashobj.intdigest()
+    else:
+        # FROM: https://stackoverflow.com/questions/37237753/how-to-convert-a-sha256-object-to-integer-and-pack-it-to-bytearray-in-python
+        return int.from_bytes(hashobj.digest(), "big")
+
+
+def hash_file(
+    filename,
+    size=None,
+    num_chunks=5,
+    chunk_size=10**4,
+    block_size=2**20,
+    hashing_function=xxhash.xxh64,
+):
+    if chunk_size > block_size:
+        raise NotImplemented("chunk_size needs to be less than block_size")
+    if size is None:
+        size = os.path.getsize(filename)
+    hashobj = hashing_function()
+    hashobj.update(bytes(str(size) + "|", "utf8"))
+    total = num_chunks * chunk_size
+    with open(filename, "rb") as f:
+        if size <= total:
+            for block in iter(lambda: f.read(block_size), b""):
+                hashobj.update(block)
+        else:
+            for start in np.linspace(0, size - chunk_size, num_chunks):
+                start = int(start)
+                f.seek(start)
+                hashobj.update(f.read(chunk_size))
+    return hashobj.digest()
+
+
 def _scan_file(path):
     doc = {}
     doc["path"] = path
     stat = os.stat(path)
     doc["size"] = stat.st_size
+    doc["mode"] = stat.st_mode
+    doc["uid"] = stat.st_uid
+    doc["gid"] = stat.st_gid
     doc["atime"] = stat.st_atime
     doc["mtime"] = stat.st_mtime
     doc["ctime"] = stat.st_ctime
@@ -130,6 +176,7 @@ def _is_empty_excluding(root, dirs, exclude):
         return True
 
 
+# TODO: don't hard-code parameters!
 def _should_aggregate_directory(root, dirs, extension, files_by_extension):
     if (
         len(files_by_extension[extension]) > 5
@@ -189,9 +236,18 @@ def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
 @click.option("--skip", multiple=True, default=False)
 @click.option("--aggregate", multiple=True, default=["tiff"])
 @click.option("--metadata/--no-metadata", default=True)
+@click.option("--checksums/--no-checksums", default=True)
 @click.option("--duplicates/--no-duplicates", default=False)
 def inventory(
-    in_path, out_path, rescan, file_list, skip, aggregate, metadata, duplicates
+    in_path,
+    out_path,
+    rescan,
+    file_list,
+    skip,
+    aggregate,
+    metadata,
+    checksums,
+    duplicates,
 ):
     # use one unified files table
     # add stat information on initial scan
@@ -222,6 +278,7 @@ def inventory(
                         total_size = sum(d["size"] for d in scanned_files)
                         doc = scanned_files[0]
                         doc["size"] = total_size
+                        doc["count"] = len(scanned_files)
                         doc["type"] = extension
                         doc["metadata"] = ""
                         doc["aggregated"] = True
@@ -229,6 +286,7 @@ def inventory(
                         del scanned_files  # TODO: probably not necessary, GC will get it
                     else:
                         doc = _scan_file(path)
+                        doc["count"] = 1
                         doc["type"] = extension
                         doc["metadata"] = ""
                         doc["aggregated"] = False
@@ -239,27 +297,47 @@ def inventory(
             skipped = []
             files_to_process = (
                 File.select().where(File.metadata == "").order_by(File.size.desc())
-            )  # sorted(files_table.search(~Query().metadata.exists()), key=lambda x: x['size'], reverse=True)
+            )
             pbar = tqdm_auto(
                 files_to_process.iterator(), total=files_to_process.count()
             )  # .iterator() so we don't cache rows (memory leak)
             for file_row in pbar:
-                path = file_row.path
-                file = os.path.split(path)[-1]
+                file = os.path.split(file_row.path)[-1]
                 extension = _get_extension(file)
                 pbar.set_postfix(
                     file=_abbreviate_filename(file, 20), skipped=len(skipped)
                 )
                 try:
-                    file_row.metadata = METADATA_READERS[extension](path)
+                    file_row.metadata = METADATA_READERS[extension](file_row.path)
                 except KeyboardInterrupt:
                     print("skipped: {}".format(skipped))
                     raise
                 except:
-                    skipped.append(path)
+                    skipped.append(file_row.path)
                 else:
                     file_row.save()
             print("skipped: {}".format(skipped))
+        ### CHECKSUMS
+        if checksums:
+            skipped = []
+            files_to_process = (
+                File.select()
+                .where((File.checksum.is_null(True)) & (File.aggregated == False))
+                .order_by(File.size.desc())
+            )
+            pbar = tqdm_auto(
+                files_to_process.iterator(), total=files_to_process.count()
+            )
+            for file_row in pbar:
+                file = os.path.split(file_row.path)[-1]
+                pbar.set_postfix(
+                    file=_abbreviate_filename(file, 20), skipped=len(skipped)
+                )
+                try:
+                    file_row.checksum = hash_file(file_row.path, size=file_row.size)
+                    file_row.save()
+                except FileNotFoundError:
+                    pass
     finally:
         db.close()  # flush
 

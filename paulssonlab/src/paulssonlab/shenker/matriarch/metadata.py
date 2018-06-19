@@ -1,4 +1,5 @@
 import nd2reader
+from tifffile import TiffFile
 import PIL
 import array
 import zarr
@@ -98,17 +99,48 @@ def _nd2_parse_array(nd2, label, dtype, compressor=DEFAULT_METADATA_COMPRESSOR):
     return ary
 
 
-def parse_nikon_tiff_file_metadata(tiff_file):
+def _tifffile_tags(tiff_file):
+    with TiffFile(tiff_file) as f:
+        return {
+            tag.code: tag.value
+            for tag in f.pages[0].tags.values()
+            if tag.code in NIKON_TIFF_METADATA_TAGS
+        }
+
+
+def _pillow_tags(tiff_file):
     with PIL.Image.open(tiff_file) as f:
-        return parse_nikon_tiff_metadata(
-            {tag: f.tag[tag][0] for tag in NIKON_TIFF_METADATA_TAGS if tag in f.tag}
-        )
+        return {tag: f.tag[tag][0] for tag in NIKON_TIFF_METADATA_TAGS if tag in f.tag}
+
+
+def parse_nikon_tiff_file_metadata(tiff_file, parser="both"):
+    tifffile_tags = pillow_tags = None
+    if parser in ("tifffile", "both"):
+        tifffile_tags = _tifffile_tags(tiff_file)
+    elif parser in ("pillow", "both"):
+        try:
+            pillow_tags = _pillow_tags(tiff_file)
+        except:
+            pass
+    else:
+        raise ValueError("unknown tiff parser {}".format(parser))
+    if parser == "both" and tifffile_tags is not None and pillow_tags is not None:
+        import deepdiff
+
+        diff = deepdiff.DeepDiff(tifffile_tags, pillow_tags)
+        if diff:
+            raise Exception("TIFF parsers disagreed: {}".format(diff))
+    tags = tifffile_tags if tifffile_tags is not None else pillow_tags
+    return parse_nikon_tiff_metadata(tags)
 
 
 def parse_nikon_tiff_metadata(tags):
     metadata = {}
     for tag, data in tags.items():
-        if tag == 270:
+        if data == b"\x00\x00\x00\x00":
+            # metadata[tag] = data
+            continue
+        elif tag == 270:
             if data:
                 try:
                     parsed_data = xmltodict.parse(data)
@@ -138,6 +170,14 @@ def parse_nikon_tiff_metadata(tags):
             # from IPython import embed;embed()
             md = xmltodict.parse(data[idx:])
             metadata["app_info"] = md
+        elif tag == 65333:
+            # SEEMS TO STORE (with null bytes): hhh
+            label = _nikon_tiff_label(b"MetadataTiffV1_0")
+            idx = (
+                data.index(label) + len(label) + 17
+            )  # TODO: total hack, no idea why 17
+            md = xmltodict.parse(data[idx:])
+            metadata["metadata_tiff"] = md
         else:
             metadata[tag] = data
     return metadata
