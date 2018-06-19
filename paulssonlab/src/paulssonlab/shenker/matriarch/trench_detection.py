@@ -477,7 +477,7 @@ def normalize_segmentwise(
     return img
 
 
-def get_trenches(img, find_angle_setwise=False, diagnostics=None):
+def get_trenches(img, find_angle_setwise=True, diagnostics=None):
     normalized_img, img_labels, label_index = label_for_trenches(
         img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
     )
