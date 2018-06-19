@@ -154,10 +154,10 @@ def recursive_map(
             values = {apply(k): apply(v) for k, v in data.items()}
         else:
             values = {k: apply(v) for k, v in data.items()}
-        if predicate is not None:
-            values = {k: v for k, v in values.items() if predicate(v)}
         if key_predicate is not None:
             values = {k: v for k, v in values.items() if key_predicate(k)}
+        if predicate is not None:
+            values = {k: v for k, v in values.items() if predicate(v)}
         return type(data)(values)
     elif isinstance(data, Sequence):
         values = [apply(v) for v in data]
@@ -181,7 +181,7 @@ class Pointer:
         self.value = value
 
 
-def apply_map_futures(func, data, predicate=None):
+def apply_map_futures(func, data, predicate=None, skip_empty=True):
     pointers = []
     futures = []
     pointer_num = count()
@@ -198,7 +198,12 @@ def apply_map_futures(func, data, predicate=None):
     results = func(futures)
     pointer_to_result = dict(zip(pointers, results))
     if predicate:
-        skip_predicate = lambda x: x is not skip_value
+        if skip_empty:
+            skip_predicate = lambda x: x is not skip_value and (
+                not hasattr(x, "__len__") or len(x) > 0
+            )
+        else:
+            skip_predicate = lambda x: x is not skip_value
     else:
         skip_predicate = None
     return recursive_map(
@@ -219,11 +224,6 @@ def collect_futures(data, predicate=lambda f: True):
 finished_futures = partial(collect_futures, predicate=lambda f: f.status == "finished")
 pending_futures = partial(collect_futures, predicate=lambda f: f.status == "pending")
 failed_futures = partial(collect_futures, predicate=lambda f: f.status == "error")
-
-
-def failed_futures(data):
-    futures = []
-    return futures
 
 
 def repeat_apply(func, n):
