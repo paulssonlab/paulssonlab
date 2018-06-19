@@ -6,6 +6,7 @@ import skimage.morphology
 from .core import hessian_eigenvalues
 from ui import RevImage
 from util import repeat_apply
+import common
 
 
 def _trench_img(img):
@@ -33,7 +34,7 @@ def segment_trench(img, threshold=4e-2, diagnostics=None):
     img = normalize_trench_intensity(uniformize_trench_intensity(img))
     if diagnostics is not None:
         diagnostics["img_normalized"] = _trench_img(img)
-    img_scaled = skimage.transform.pyramid_expand(img, upscale=2, multichannel=False)
+    img_scaled = skimage.transform.pyramid_expand(img, upscale=2)
     if diagnostics is not None:
         diagnostics["img_scaled"] = _trench_img(img_scaled)
     img_blurred = skimage.filters.gaussian(img, 0.5)
