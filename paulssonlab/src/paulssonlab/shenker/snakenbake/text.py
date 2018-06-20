@@ -146,7 +146,7 @@ def character(
     layer=0,
     datatype=0,
 ):
-    cell_name = "~{}~l{}".format(char, scale_factor, layer)
+    cell_name = "~{}~l{}".format(char, layer)
     if scale_factor != 1:
         cell_name += "s{}".format(scale_factor)
     cell = Cell(cell_name)
