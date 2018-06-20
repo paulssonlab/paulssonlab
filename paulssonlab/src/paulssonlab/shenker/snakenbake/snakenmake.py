@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import numpy as np
 import gdspy as g
 from gdspy import CellReference, CellArray, Rectangle
@@ -318,6 +320,7 @@ def profilometry_marks(
     columns=3,
     rows=3,
     layers=(FEEDING_CHANNEL_LAYER, TRENCH_LAYER),
+    text=True,
 ):
     dims = np.array(dims)
     grid_size = np.array([rows, columns])
@@ -332,9 +335,15 @@ def profilometry_marks(
             [grid_dims[0], 0]
         )
         profilometry_cell.add(CellArray(cell, columns, rows, dims * 2, origin))
-        profilometry_cell.add(
-            Text(str(layer), dims[1], origin - np.array([0, 2 * dims[1]]), layer=layer)
-        )
+        if text:
+            profilometry_cell.add(
+                Text(
+                    str(layer),
+                    dims[1],
+                    origin - np.array([0, 2 * dims[1]]),
+                    layer=layer,
+                )
+            )
     return profilometry_cell
 
 
@@ -360,6 +369,7 @@ def wafer(
     alignment_mark_position=32e3,
     alignment_text_size=1000,
     label_text_size=2000,
+    text=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
 ):
@@ -379,7 +389,9 @@ def wafer(
         alignment_mark_position = chip_area_corner[1] * 7 / 6
     main_cell.add(Rectangle(-chip_area_corner, chip_area_corner))
     main_cell.add(wafer_outline)
-    profilometry_cell = profilometry_marks(layers=(feeding_channel_layer, trench_layer))
+    profilometry_cell = profilometry_marks(
+        layers=(feeding_channel_layer, trench_layer), text=text
+    )
     profilometry_spacing = np.array([0, chip_area_corner[1] * 2 / 3])
     main_cell.add(
         CellArray(
@@ -388,31 +400,33 @@ def wafer(
     )
     alignment_cell = alignment_cross(layer=trench_layer)
     alignment_spacing = np.array([0, alignment_mark_position * 2])
-    main_cell.add(
-        Text(
-            "bottom",
-            alignment_text_size,
-            position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
-            alignment="centered",
-            layer=trench_layer,
+    if text:
+        main_cell.add(
+            Text(
+                "bottom",
+                alignment_text_size,
+                position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
+                alignment="centered",
+                layer=trench_layer,
+            )
         )
-    )
     main_cell.add(
         CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
     )
     # main_cell.add(Text(name, label_text_size, position=text_position, alignment='centered', angle=-np.pi/2, layer=feeding_channel_layer))
     text_position = (chip_area_corner[0] + label_text_size, 0)
-    main_cell.add(
-        Text(
-            name,
-            label_text_size,
-            position=text_position,
-            angle=np.pi / 2,
-            alignment="left",
-            prerotate_alignment="centered",
-            layer=feeding_channel_layer,
+    if text:
+        main_cell.add(
+            Text(
+                name,
+                label_text_size,
+                position=text_position,
+                angle=np.pi / 2,
+                alignment="left",
+                prerotate_alignment="centered",
+                layer=feeding_channel_layer,
+            )
         )
-    )
     horizontal_chip_spacing = chip_area_corner[0]
     vertical_chip_spacing = chip_area_corner[1]
     if len(chips) <= 3:
@@ -432,6 +446,7 @@ def chip(
     name,
     design_func=snake,
     label_text_size=600,
+    text=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
     metadata=None,
@@ -449,15 +464,16 @@ def chip(
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
     text_position = (0, dims[1] / 2 - 1.5 * label_text_size)
-    chip_cell.add(
-        Text(
-            name,
-            label_text_size,
-            position=text_position,
-            alignment="centered",
-            layer=feeding_channel_layer,
+    if text:
+        chip_cell.add(
+            Text(
+                name,
+                label_text_size,
+                position=text_position,
+                alignment="centered",
+                layer=feeding_channel_layer,
+            )
         )
-    )
     return chip_cell
 
 
