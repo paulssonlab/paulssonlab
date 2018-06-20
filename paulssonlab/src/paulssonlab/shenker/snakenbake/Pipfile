@@ -18,6 +18,8 @@ freetype-py = "*"
 shortuuid = "*"
 scipy = "*"
 pyclipper = "*"
+pint = "*"
+fenics-ffc = "*"
 
 
 [dev-packages]
