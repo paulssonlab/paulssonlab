@@ -1,5 +1,12 @@
 ### TODAY
-show_frame_info
+run charles segmentation locally on one frame stack
+run my segmentation locally on one frame stack
+look at txnerr002, pos87, t0: why bad angle?
+    intensity hough on hessian k2
+    OR upsample before intensity hough
+run my trench detection+segmentation using dask (gather all diags, just using one time point)
+
+### TOMORROW
 calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
 is binary hough more robust to dim debris??
 also throw out out-of-focus frames

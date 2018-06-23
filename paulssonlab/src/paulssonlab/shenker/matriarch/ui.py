@@ -432,7 +432,6 @@ def image_viewer(stream, image_callback=get_nd2_frame):
 
 def show_frame_info(df, stream):
     df_noindex = df.reset_index()
-    output = widgets.Output()
     qg = show_grid(
         df_noindex.iloc[0],
         header_height=20,
@@ -444,10 +443,10 @@ def show_frame_info(df, stream):
         idx = df.index.get_loc(
             tuple(getattr(stream, column) for column in df.index.names)
         )
-        qg.df = df_noindex.iloc[idx].to_frame()
+        new_df = df_noindex.iloc[idx]
+        qg._df.loc[:, 0] = new_df
+        qg._unfiltered_df.loc[:, 0] = new_df
+        qg._update_table(triggered_by="cell_change", fire_data_change_event=True)
 
-    display(output)
-    with output:
-        display(qg)
     stream.add_subscriber(update_frame_info)
-    return output
+    return qg
