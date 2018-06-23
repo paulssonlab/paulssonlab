@@ -11,6 +11,7 @@ from toolz import compose
 import collections
 from dask.distributed import Future
 import operator
+import os
 
 # FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 def multi_join(left, right):
@@ -268,3 +269,8 @@ def tqdm_auto(*args, **kwargs):
 def open_zarr_group(dir_path):
     store = zarr.DirectoryStore(dir_path)
     return zarr.open_group(store=store)
+
+
+def summarize_filenames(filenames):
+    common_prefix = os.path.commonpath(filenames)
+    return ["/..." + filename[len(common_prefix) :] for filename in filenames]

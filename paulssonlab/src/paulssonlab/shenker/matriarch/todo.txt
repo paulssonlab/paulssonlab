@@ -1,3 +1,47 @@
+### TODAY
+subclass Stream, take column names of given df as parameters (use type of column?)
+    make it take a dataframe as a parameter
+    handle updates to individual parameters
+    allow getting current option lists for each parameter
+    handle update to dataframe
+    order: filename, position, t, channel
+
+update qgrid selection in response to stream event (without looping): if index doesn't exist in df, set empty selection (if qgrid and FrameStream were initialized with different dfs)
+
+calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
+is binary hough more robust to dim debris??
+also throw out out-of-focus frames
+(join dataframe with focus, debris indicators, find appropriate cuts)
+debug period-finding errors (find period using intensity hough??)
+fix remaining trench finding errors
+
+### NEXT
+run charles segmentation locally on one frame stack
+run my trench detection+charles segmentation using dask
+do the same for charles phase segmentation, compare with fluorescence
+trench finding in phase
+
+###AFTER
+my trench detection in phase+charles phase segmentation using dask
+first cut of tracking using integer programming (given a good segmentation)
+tracking+segmentation
+trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitrary callbacks that return (possibly cached) hv ViewableElements to overlay (e.g., can compute segmentation on-the-fly, cache it using cachetools, return an overlayed contour)
+    FrameStream <-> TrenchStream <-> CellStream, e.g., updating cellstream updates trench (if needed), which updates frame (if needed)
+    moving TrenchStream also picks the first cell in the trench, Frame picks first trench in frame
+    show right/left trench/cell arrow widgets below frame browser widgets
+    trench/cell scrolling updates contour but does not change frame/viewport by default
+    “Zoom to Trench” button sets x_range, y_range, frame to zoom in on selected trench
+    “Zoom to Cell” button (in same row as Zoom to Trench) does the same for cell (using bbox for current frame)
+
+###POLISH
+fix qgrid column name wrapping
+qgrid data wrapping
+qgrid resize column width to fit data
+qgrid UI to show/hide many columns quickly
+qgrid freeze index/multiindex
+
+####################################################################################################################
+
 ### 
 compare stage position to trench finding, use stage position to find absolute trench numbers
 parallel load trenches from ND2

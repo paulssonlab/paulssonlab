@@ -11,8 +11,9 @@ import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
-from util import iterate_getattr
+from util import iterate_getattr, summarize_filenames
 import common
+from workflow import get_nd2_frame
 
 # TODO
 channel_to_color = {
@@ -37,163 +38,6 @@ def _RevImage(cls, img, **kwargs):
 
 def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
-
-
-def _select(xs, mask):
-    if len(xs) != len(mask):
-        raise ValueError("mask length does not match")
-    return [xs[i] for i in range(len(xs)) if mask[i]]
-
-
-def composite_channels(imgs, hexcolors, scale=True):
-    colors = [hex2color(hexcolor) for hexcolor in hexcolors]
-    return _composite_channels(imgs, colors, scale=scale)
-
-
-def _composite_channels(channel_imgs, colors, scale=True):
-    if len(channel_imgs) != len(colors):
-        raise ValueError("expecting equal numbers of channels and colors")
-    num_channels = len(channel_imgs)
-    if scale:
-        scaled_imgs = [
-            channel_imgs[i][:, :, np.newaxis] / np.percentile(channel_imgs[i], 99.9)
-            for i in range(num_channels)
-        ]
-        for scaled_img in scaled_imgs:
-            np.clip(scaled_img, 0, 1, scaled_img)  # clip in place
-    else:
-        scaled_imgs = channel_imgs
-    imgs_to_combine = [
-        scaled_imgs[i] * np.array(colors[i]) for i in range(num_channels)
-    ]
-    if not len(imgs_to_combine):
-        imgs_to_combine = [np.ones(colored_imgs[0].shape)]  # white placeholder
-    img = imgs_to_combine[0]
-    for img2 in imgs_to_combine[1:]:
-        img = 1 - (1 - img) * (1 - img2)
-    return img
-
-
-def multichannel_selector(frames):
-    channels = frames.attrs["metadata"]["channels"]
-    num_channels = len(channels)
-    # colors = [hex2color(channel_colors[channel]) for channel in channels]
-    channel_boxes = []
-    channel_widgets = []
-    channel_enabled = [True] * num_channels
-    channel_colors = [channel_to_color[channel] for channel in channels]
-    for i, channel in enumerate(channels):
-        solo_button = widgets.Button(
-            description="S", layout=widgets.Layout(width="10%")
-        )
-        enabled_button = widgets.ToggleButton(
-            description=channel, value=channel_enabled[i]
-        )
-        solo_button._button_to_enable = enabled_button
-        color_picker = widgets.ColorPicker(concise=True, value=channel_colors[i])
-        channel_box = widgets.HBox([solo_button, enabled_button, color_picker])
-        channel_widgets.append([solo_button, enabled_button, color_picker, channel_box])
-    solo_buttons, enabled_buttons, color_pickers, channel_boxes = zip(*channel_widgets)
-    channels_box = widgets.VBox(channel_boxes)
-    DisplaySettings = Stream.define(
-        "DisplaySettings",
-        channel_enabled=channel_enabled,
-        channel_colors=channel_colors,
-    )
-    display_settings_stream = DisplaySettings()
-
-    def update_enabled_channels(change):
-        channel_enabled = [button.value for button in enabled_buttons]
-        display_settings_stream.event(channel_enabled=channel_enabled)
-
-    def update_solo(solo_button):
-        if (
-            solo_button._button_to_enable.value
-            and sum([b.value for b in enabled_buttons]) == 1
-        ):
-            for enabled_button in enabled_buttons:
-                enabled_button.value = True
-        else:
-            for enabled_button in enabled_buttons:
-                enabled_button.value = enabled_button == solo_button._button_to_enable
-        # update_enabled_channels(None)
-
-    for solo_button in solo_buttons:
-        solo_button.on_click(update_solo)
-    for enabled_button in enabled_buttons:
-        enabled_button.observe(update_enabled_channels, names="value")
-
-    def update_channel_colors(change):
-        channel_colors = [color_picker.value for color_picker in color_pickers]
-        display_settings_stream.event(channel_colors=channel_colors)
-
-    for color_picker in color_pickers:
-        color_picker.observe(update_channel_colors, names="value")
-    return channels_box, display_settings_stream
-
-
-FrameStream = Stream.define("Frame", t=0, v=0)
-
-
-def timepoints_browser(frames, frame_stream):
-    num_timepoints = len(frames.attrs["metadata"]["frames"])
-    # play_buttons = widgets.Play(interval=10, min=0, max=num_timepoints, step=1)
-    back_step_button = widgets.Button(
-        description="<", layout=widgets.Layout(width="10%")
-    )
-    forward_step_button = widgets.Button(
-        description=">", layout=widgets.Layout(width="10%")
-    )
-    t_slider = widgets.IntSlider(
-        label="t", min=0, max=num_timepoints, step=1, value=0, continuous_update=False
-    )
-    slider_box = widgets.HBox([back_step_button, t_slider, forward_step_button])
-    t_slider.observe(lambda change: frame_stream.event(t=change["new"]), names="value")
-    return slider_box
-
-
-def frame_browser(frames, frame_stream):
-    num_timepoints = len(frames.attrs["metadata"]["frames"])
-    num_fovs = len(frames.attrs["metadata"]["fields_of_view"])
-    t_slider = widgets.IntSlider(
-        label="t", min=0, max=num_timepoints, step=1, value=0, continuous_update=False
-    )
-    v_slider = widgets.IntSlider(
-        label="v", min=0, max=num_fovs, step=1, value=0, continuous_update=False
-    )
-    slider_box = widgets.VBox([v_slider, t_slider])
-    t_slider.observe(lambda change: frame_stream.event(t=change["new"]), names="value")
-    v_slider.observe(lambda change: frame_stream.event(v=change["new"]), names="value")
-    return slider_box
-
-
-def big_image_viewer(positions, frame_stream=None):
-    num_channels = positions[0].shape[0]  # TODO
-    if frame_stream is None:
-        frame_stream = FrameStream()
-    slider_box = frame_browser(positions, frame_stream)
-    channels_box, display_settings_stream = multichannel_selector(positions)
-
-    def image_callback(t, v, channel_enabled, channel_colors):
-        pos_stack = positions[str(v)]
-        channel_imgs = [
-            pos_stack[c, t, :, :] for c in range(num_channels) if channel_enabled[c]
-        ]
-        img = composite_channels(channel_imgs, _select(channel_colors, channel_enabled))
-        viewer = RevRGB(img)
-        return viewer
-
-    image = hv.DynamicMap(
-        image_callback, streams=[frame_stream, display_settings_stream]
-    )
-    image = datashader.regrid(image)
-    image = image.opts(plot={"width": 500, "height": 500})
-    output = widgets.Output()
-    box = widgets.VBox([widgets.HBox([channels_box, slider_box]), output])
-    display(box)
-    with output:
-        display(image)
-    return box
 
 
 def display_plot_browser(plots, stream=None, **kwargs):
@@ -314,15 +158,306 @@ def resize_qgrid_header(widget, height):
     )
 
 
-def qshow(df, header_height=100):
+Selected = Stream.define("Selected", selected=None)
+
+
+def show_grid(df, header_height=100, stream=None, **kwargs):
     qg = qgrid.show_grid(
         df,
         grid_options={
             "forceFitColumns": False,
             "editable": False,
             "enableColumnReorder": True,
+            "defaultColumnWidth": 90,
+            **kwargs,
         },
         precision=1,
     )
     resize_qgrid_header(qg, header_height)
+    if stream is not None:
+
+        def handle_selection_changed(event, widget):
+            stream.event(selected=df.index[event["new"][0]])
+
+        qg.on("selection_changed", handle_selection_changed)
+        # TODO: update qgrid selection on stream event (without recursion!)
     return qg
+
+
+def _select(xs, mask):
+    if len(xs) != len(mask):
+        raise ValueError("mask length does not match")
+    return [xs[i] for i in range(len(xs)) if mask[i]]
+
+
+def composite_channels(imgs, hexcolors, scale=True):
+    colors = [hex2color(hexcolor) for hexcolor in hexcolors]
+    return _composite_channels(imgs, colors, scale=scale)
+
+
+def _composite_channels(channel_imgs, colors, scale=True):
+    if len(channel_imgs) != len(colors):
+        raise ValueError("expecting equal numbers of channels and colors")
+    num_channels = len(channel_imgs)
+    if scale:
+        scaled_imgs = [
+            channel_imgs[i][:, :, np.newaxis] / np.percentile(channel_imgs[i], 99.9)
+            for i in range(num_channels)
+        ]
+        for scaled_img in scaled_imgs:
+            np.clip(scaled_img, 0, 1, scaled_img)  # clip in place
+    else:
+        scaled_imgs = channel_imgs
+    imgs_to_combine = [
+        scaled_imgs[i] * np.array(colors[i]) for i in range(num_channels)
+    ]
+    if not len(imgs_to_combine):
+        imgs_to_combine = [np.ones(colored_imgs[0].shape)]  # white placeholder
+    img = imgs_to_combine[0]
+    for img2 in imgs_to_combine[1:]:
+        img = 1 - (1 - img) * (1 - img2)
+    return img
+
+
+def multichannel_selector(frames):
+    channels = frames.attrs["metadata"]["channels"]
+    num_channels = len(channels)
+    # colors = [hex2color(channel_colors[channel]) for channel in channels]
+    channel_boxes = []
+    channel_widgets = []
+    channel_enabled = [True] * num_channels
+    channel_colors = [channel_to_color[channel] for channel in channels]
+    for i, channel in enumerate(channels):
+        solo_button = widgets.Button(
+            description="S", layout=widgets.Layout(width="10%")
+        )
+        enabled_button = widgets.ToggleButton(
+            description=channel, value=channel_enabled[i]
+        )
+        solo_button._button_to_enable = enabled_button
+        color_picker = widgets.ColorPicker(concise=True, value=channel_colors[i])
+        channel_box = widgets.HBox([solo_button, enabled_button, color_picker])
+        channel_widgets.append([solo_button, enabled_button, color_picker, channel_box])
+    solo_buttons, enabled_buttons, color_pickers, channel_boxes = zip(*channel_widgets)
+    channels_box = widgets.VBox(channel_boxes)
+    display_settings_stream = DisplaySettings()
+
+    def update_enabled_channels(change):
+        channel_enabled = [button.value for button in enabled_buttons]
+        display_settings_stream.event(channel_enabled=channel_enabled)
+
+    def update_solo(solo_button):
+        if (
+            solo_button._button_to_enable.value
+            and sum([b.value for b in enabled_buttons]) == 1
+        ):
+            for enabled_button in enabled_buttons:
+                enabled_button.value = True
+        else:
+            for enabled_button in enabled_buttons:
+                enabled_button.value = enabled_button == solo_button._button_to_enable
+        # update_enabled_channels(None)
+
+    for solo_button in solo_buttons:
+        solo_button.on_click(update_solo)
+    for enabled_button in enabled_buttons:
+        enabled_button.observe(update_enabled_channels, names="value")
+
+    def update_channel_colors(change):
+        channel_colors = [color_picker.value for color_picker in color_pickers]
+        display_settings_stream.event(channel_colors=channel_colors)
+
+    for color_picker in color_pickers:
+        color_picker.observe(update_channel_colors, names="value")
+    return channels_box, display_settings_stream
+
+
+# FrameStream = Stream.define('Frame', t=0, v=0)
+
+# def positionpoints_browser(frames, frame_stream):
+#     num_positionpoints = len(frames.attrs['metadata']['frames'])
+#     #play_buttons = widgets.Play(interval=10, min=0, max=num_positionpoints, step=1)
+#     back_step_button = widgets.Button(description='<', layout=widgets.Layout(width='10%'))
+#     forward_step_button = widgets.Button(description='>', layout=widgets.Layout(width='10%'))
+#     t_slider = widgets.IntSlider(label='t', min=0, max=num_positionpoints, step=1, value=0, continuous_update=False)
+#     slider_box = widgets.HBox([back_step_button, t_slider, forward_step_button])
+#     t_slider.observe(lambda change: frame_stream.event(t=change['new']), names='value')
+#     return slider_box
+
+# def frame_browser(frames, frame_stream):
+#     num_positionpoints = len(frames.attrs['metadata']['frames'])
+#     num_fovs = len(frames.attrs['metadata']['fields_of_view'])
+#     t_slider = widgets.IntSlider(label='t', min=0, max=num_positionpoints, step=1, value=0, continuous_update=False)
+#     v_slider = widgets.IntSlider(label='v', min=0, max=num_fovs, step=1, value=0, continuous_update=False)
+#     slider_box = widgets.VBox([v_slider, t_slider])
+#     t_slider.observe(lambda change: frame_stream.event(t=change['new']), names='value')
+#     v_slider.observe(lambda change: frame_stream.event(v=change['new']), names='value')
+#     return slider_box
+
+
+def big_image_viewer(positions, frame_stream=None):
+    num_channels = positions[0].shape[0]  # TODO
+    if frame_stream is None:
+        frame_stream = FrameStream()
+    slider_box = frame_browser(positions, frame_stream)
+    channels_box, display_settings_stream = multichannel_selector(positions)
+
+    def image_callback(t, v, channel_enabled, channel_colors):
+        pos_stack = positions[str(v)]
+        channel_imgs = [
+            pos_stack[c, t, :, :] for c in range(num_channels) if channel_enabled[c]
+        ]
+        img = composite_channels(channel_imgs, _select(channel_colors, channel_enabled))
+        viewer = RevRGB(img)
+        return viewer
+
+    image = hv.DynamicMap(
+        image_callback, streams=[frame_stream, display_settings_stream]
+    )
+    image = datashader.regrid(image)
+    image = image.opts(plot={"width": 500, "height": 500})
+    output = widgets.Output()
+    box = widgets.VBox([widgets.HBox([channels_box, slider_box]), output])
+    display(box)
+    with output:
+        display(image)
+    return box
+
+
+FrameChannels = Stream.define(
+    "FrameChannels", channel_enabled=None, channel_colors=None
+)
+
+
+class DataframeStream(Stream):
+    @classmethod
+    def define(cls, name, df):
+        params = {"name": param.Parameter(default=name)}
+        for column, dtype in df.dtypes.iteritems():
+            params[column] = param.Parameter(default=df.iloc[0][column], constant=True)
+        params["_df"] = param.Parameter(default=df)
+        params["_options"] = {}
+        return type(name, (DataframeStream,), params)
+
+    def __init__(self, **kwargs):
+        super(DataframeStream, self).__init__(**kwargs)
+        self.transform()  # set self._options
+
+    def transform(self):
+        df = self._df
+        mask = np.ones(len(df)).astype(np.bool_)
+        new_params = {}
+        for column in df.columns:
+            options = df[mask][column].unique().tolist()
+            self._options[column] = options
+            value = getattr(self, column)
+            if value not in options:
+                value = df[mask][column].iloc[0]
+                new_params[column] = value
+            mask = (df[column] == value) & mask
+        return new_params
+
+    def __repr__(self):
+        cls_name = self.__class__.__name__
+        kwargs = ",".join(
+            "%s=%r" % (k, v)
+            for (k, v) in self.get_param_values()
+            if k not in ("name", "_df")
+        )
+        kwargs += ",_df=<DataFrame ({} rows)>".format(len(self._df))
+        if not self._rename:
+            return "%s(%s)" % (cls_name, kwargs)
+        else:
+            return "%s(%r, %s)" % (cls_name, self._rename, kwargs)
+
+
+def filename_browser(df, frame_stream):
+    filename_left = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
+    filename_right = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
+    filename_dropdown = widgets.Dropdown(description="filename", options=range(1))
+    filename_browser = widgets.HBox([filename_left, filename_dropdown, filename_right])
+
+    def increment_filename(inc, button):
+        filenames = frame_stream._options["filename"]
+        idx = filenames.index(frame_stream.filename)
+        new_idx = (idx + inc) % len(filenames)
+        frame_stream.event(filename=filenames[new_idx])
+
+    filename_left.on_click(partial(increment_filename, -1))
+    filename_right.on_click(partial(increment_filename, 1))
+
+    def set_filename(change):
+        if change["name"] == "value":
+            # TODO: do I need to do this check?
+            if change["new"] != frame_stream.position:
+                frame_stream.event(filename=change["new"])
+
+    filename_dropdown.observe(set_filename)
+
+    def update_filename_browser(filename, **kwargs):
+        filenames = frame_stream._options["filename"]
+        filenames_for_display = dict(zip(summarize_filenames(filenames), filenames))
+        try:
+            filename_dropdown.options = filenames_for_display
+        except:
+            pass
+        filename_dropdown.value = filename
+
+    frame_stream.add_subscriber(update_filename_browser)
+    return filename_browser
+
+
+def position_browser(df, frame_stream):
+    position_left = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
+    position_right = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
+    position_slider = widgets.SelectionSlider(
+        description="position", options=range(1), continuous_update=False
+    )
+    position_browser = widgets.HBox([position_left, position_slider, position_right])
+
+    def increment_position(inc, button):
+        idx = position_slider.index
+        new_idx = (idx + inc) % len(position_slider.options)
+        frame_stream.event(position=position_slider.options[new_idx])
+
+    position_left.on_click(partial(increment_position, -1))
+    position_right.on_click(partial(increment_position, 1))
+
+    def set_position(change):
+        if change["name"] == "value":
+            # TODO: do I need to do this check?
+            if change["new"] != frame_stream.position:
+                frame_stream.event(position=change["new"])
+
+    position_slider.observe(set_position)
+
+    def update_position_browser(filename, position, **kwargs):
+        # TODO: don't recompute possible filenames unless filename was changed (cache??)
+        positions = frame_stream._options["position"]
+        # TODO: workaround for https://github.com/jupyter-widgets/ipywidgets/issues/2075
+        try:
+            position_slider.options = positions
+        except:
+            pass
+        print("bar", position_slider.options, "z", positions, "h", position)
+        position_slider.value = position
+        print("baz")
+
+    frame_stream.add_subscriber(update_position_browser)
+    return position_browser
+
+
+def frame_browser(df, frame_stream):
+    filename_browser = widgets.HBox([filename_left, filename_dropdown, filename_right])
+    box = widgets.VBox([])
+
+
+def image_viewer(*streams, image_callback=get_nd2_frame):
+    def callback(x_range, y_range, **kwargs):
+        img = RevImage(image_callback(**kwargs))
+        return datashader.regrid.instance(
+            dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
+        )(img).redim.range(z=(0, img.data.max()))
+
+    dmap = hv.DynamicMap(callback, streams=streams + [hv.streams.RangeXY()])
+    return dmap
