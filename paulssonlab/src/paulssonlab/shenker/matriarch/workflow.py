@@ -82,8 +82,7 @@ def _get_nd2_reader(filename, **kwargs):
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 
 
-def _get_nd2_frame(key, memmap=False):
-    filename, position, channel, t = key[:4]
+def _get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
@@ -91,4 +90,8 @@ def _get_nd2_frame(key, memmap=False):
     return np.array(reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap))
 
 
-get_nd2_frame = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
+get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
+
+
+def get_nd2_frame(filename, position, channel, t, memmap=False, **kwargs):
+    return get_nd2_frame_cached(filename, position, channel, t, memmap=memmap)

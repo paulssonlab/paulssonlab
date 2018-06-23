@@ -178,10 +178,22 @@ def show_grid(df, header_height=100, stream=None, **kwargs):
     if stream is not None:
 
         def handle_selection_changed(event, widget):
-            stream.event(selected=df.index[event["new"][0]])
+            index_df = df.index.to_frame(index=False)
+            row = index_df.iloc[event["new"][0]]  # use first selected row
+            params = {}
+            for column in stream._df.columns:
+                params[column] = row[column]
+            stream.event(**params)
 
         qg.on("selection_changed", handle_selection_changed)
-        # TODO: update qgrid selection on stream event (without recursion!)
+        # def update_selection(**kwargs):
+        #     for column in df.index.names:
+        #         if column not in kwargs:
+        #             return # stream is missing columns in index
+        #     idx = df.index.get_loc(tuple(getattr(frame_stream, column) for column in df.index.names))
+        #     qg._selected_rows = [idx]
+        # TODO: need to fire an update event
+        # stream.add_subscriber(update_selection)
     return qg
 
 
@@ -421,12 +433,17 @@ def dataframe_browser(stream):
     return widgets.VBox(browsers)
 
 
-def image_viewer(*streams, image_callback=get_nd2_frame):
+def image_viewer(stream, image_callback=get_nd2_frame):
     def callback(x_range, y_range, **kwargs):
-        img = RevImage(image_callback(**kwargs))
+        keys = {
+            column: kwargs[column]
+            for column in kwargs["_df"].columns
+            if column in kwargs
+        }
+        img = RevImage(image_callback(**keys))
         return datashader.regrid.instance(
             dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
         )(img).redim.range(z=(0, img.data.max()))
 
-    dmap = hv.DynamicMap(callback, streams=streams + [hv.streams.RangeXY()])
+    dmap = hv.DynamicMap(callback, streams=[stream, hv.streams.RangeXY()])
     return dmap
