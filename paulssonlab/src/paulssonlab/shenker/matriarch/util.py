@@ -37,16 +37,6 @@ def getattr_if_not_none(obj, key):
         return None
 
 
-# TODO: replace with dicttoolz.get_in
-def iterate_getattr(obj, keys):
-    for k in keys:
-        if k in obj:
-            obj = obj[k]
-        else:
-            return None
-    return obj
-
-
 def iterate_get_collection_value(obj, level):
     for i in range(level):
         if isinstance(obj, Mapping):

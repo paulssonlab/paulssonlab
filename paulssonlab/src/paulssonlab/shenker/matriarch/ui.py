@@ -11,10 +11,11 @@ import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
-from util import iterate_getattr, summarize_filenames
+from util import summarize_filenames
 import common
 from workflow import get_nd2_frame
 import numbers
+from cytoolz import get_in
 
 # TODO
 channel_to_color = {

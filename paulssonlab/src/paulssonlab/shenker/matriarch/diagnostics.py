@@ -2,14 +2,7 @@ import pandas as pd
 import holoviews as hv
 from collections import defaultdict
 from functools import wraps
-from util import (
-    wrap_dict_values,
-    drop_dict_nones,
-    iterate_getattr,
-    flatten_dict,
-    map_collections,
-    tree,
-)
+from util import wrap_dict_values, drop_dict_nones, flatten_dict, map_collections, tree
 
 
 def wrap_diagnostics(func, ignore_exceptions=True):
@@ -82,6 +75,6 @@ def expand_diagnostics_by_label(df, label="label_", keep_all=True):
 
 def extract_diagnostics_singleton(diagnostics, keys):
     return wrap_dict_values(
-        drop_dict_nones({k: iterate_getattr(v, keys) for k, v in diagnostics.items()}),
+        drop_dict_nones({k: get_in(keys, v) for k, v in diagnostics.items()}),
         ".".join(keys),
     )
