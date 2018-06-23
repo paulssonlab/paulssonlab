@@ -1,13 +1,5 @@
 ### TODAY
-subclass Stream, take column names of given df as parameters (use type of column?)
-    make it take a dataframe as a parameter
-    handle updates to individual parameters
-    allow getting current option lists for each parameter
-    handle update to dataframe
-    order: filename, position, t, channel
-
-update qgrid selection in response to stream event (without looping): if index doesn't exist in df, set empty selection (if qgrid and FrameStream were initialized with different dfs)
-
+show_frame_info
 calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
 is binary hough more robust to dim debris??
 also throw out out-of-focus frames

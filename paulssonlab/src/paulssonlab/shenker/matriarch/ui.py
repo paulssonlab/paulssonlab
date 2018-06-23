@@ -428,3 +428,26 @@ def image_viewer(stream, image_callback=get_nd2_frame):
 
     dmap = hv.DynamicMap(callback, streams=[stream, hv.streams.RangeXY()])
     return dmap
+
+
+def show_frame_info(df, stream):
+    df_noindex = df.reset_index()
+    output = widgets.Output()
+    qg = show_grid(
+        df_noindex.iloc[0],
+        header_height=20,
+        defaultColumnWidth=300,
+        forceFitColumns=True,
+    )
+
+    def update_frame_info(**kwargs):
+        idx = df.index.get_loc(
+            tuple(getattr(stream, column) for column in df.index.names)
+        )
+        qg.df = df_noindex.iloc[idx].to_frame()
+
+    display(output)
+    with output:
+        display(qg)
+    stream.add_subscriber(update_frame_info)
+    return output
