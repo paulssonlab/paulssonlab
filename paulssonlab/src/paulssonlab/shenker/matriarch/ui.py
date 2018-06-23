@@ -14,6 +14,7 @@ import uuid
 from util import iterate_getattr, summarize_filenames
 import common
 from workflow import get_nd2_frame
+import numbers
 
 # TODO
 channel_to_color = {
@@ -407,12 +408,17 @@ def column_browser(
 
     stream.add_subscriber(update_selector)
     return browser
-    return position_browser
 
 
-def frame_browser(df, frame_stream):
-    filename_browser = widgets.HBox([left_arrow, dropdown, filename_right])
-    box = widgets.VBox([])
+def dataframe_browser(stream):
+    browsers = []
+    for column, dtype in stream._df.dtypes.iteritems():
+        if issubclass(dtype.type, numbers.Number):
+            kwargs = {"widget": widgets.SelectionSlider}
+        else:
+            kwargs = {}
+        browsers.append(column_browser(column, stream, **kwargs))
+    return widgets.VBox(browsers)
 
 
 def image_viewer(*streams, image_callback=get_nd2_frame):
