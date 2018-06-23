@@ -498,7 +498,7 @@ def get_trenches(img, find_angle_setwise=True, diagnostics=None):
     return trenches
 
 
-get_trenches_diagnostics = wrap_diagnostics(get_trenches)
+get_trenches_diag = wrap_diagnostics(get_trenches)
 
 
 def _get_trench_set(img, img_mask, theta=None, diagnostics=None):
