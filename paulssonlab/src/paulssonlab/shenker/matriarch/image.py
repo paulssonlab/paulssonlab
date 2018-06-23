@@ -1,4 +1,7 @@
 import numpy as np
+import scipy
+import skimage.morphology
+from util import repeat_apply
 import numba
 
 
@@ -43,3 +46,54 @@ def _hough_line_intensity(accumulator, img, theta, diagonal):
             for k in range(num_thetas):
                 rho = int(np.round_(i * sin_theta[k] + j * cos_theta[k])) + diagonal
                 accumulator[rho, k] += img[i, j]
+
+
+def remove_large_objects(labeled_img, max_size, in_place=False):
+    if not in_place:
+        labeled_img = labeled_img.copy()
+    component_sizes = np.bincount(labeled_img.ravel())
+    too_big = component_sizes > max_size
+    too_big_mask = too_big[labeled_img]
+    labeled_img[too_big_mask] = 0
+    return labeled_img
+
+
+def normalize_componentwise(
+    img, img_labels, label_index=None, dilation=5, in_place=False, dtype=np.float32
+):
+    if not in_place:
+        img = img.astype(dtype).copy()
+    if label_index is None:
+        label_index = np.unique(img_labels)
+    maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
+    img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
+    img[img_labels == 0] = 0
+    for idx, label in enumerate(label_index):
+        mask = img_labels == label
+        img[mask] /= maxes[idx]
+    return img
+
+
+def image_sharpness(img):
+    # FROM: https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry/7767755#7767755
+    # TODO: vectorize?? normalize?? verify against some kind of ground truth?
+    img_blurred = skimage.filters.gaussian(img, 1)
+    img_lofg = skimage.filters.laplace(img_blurred)
+    return np.percentile(img_lofg, 99.9)
+
+
+def hessian_eigenvalues(img):
+    I = skimage.filters.gaussian(img, 1.5)
+    I_x = skimage.filters.sobel_h(I)
+    I_y = skimage.filters.sobel_v(I)
+    I_xx = skimage.filters.sobel_h(I_x)
+    I_xy = skimage.filters.sobel_v(I_x)
+    I_yx = skimage.filters.sobel_h(I_y)
+    I_yy = skimage.filters.sobel_v(I_y)
+    kappa_1 = (I_xx + I_yy) / 2
+    kappa_2 = (np.sqrt((I_xx + I_yy) ** 2 - 4 * (I_xx * I_yy - I_xy * I_yx))) / 2
+    k1 = kappa_1 + kappa_2
+    k2 = kappa_1 - kappa_2
+    k1[np.isnan(k1)] = 0
+    k2[np.isnan(k2)] = 0
+    return k1, k2

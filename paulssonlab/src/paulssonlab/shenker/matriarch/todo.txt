@@ -1,13 +1,14 @@
 ### TODAY
 first pass at fast normalize_componentwise??
-get rid of large components before image normalization
 smooth diff_h_std (2 pixel kernel)
-synchronize show_plot_browser StreamXY [only images]
+some way of passing options through to sub-functions in processing pipeline? quick hack now.
+synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
 
 easy dask re-running of trench detection on bad_angle frames
 fix detrending? (is this necessary?)
 intensity hough on hessian k2
 OR upsample before intensity hough
+change angle bounds to +/-40deg (weird aliasing at exactly 45deg)
 run periodicity detection on componentwise normalized image with ALL components, not just selected trench set?
 run charles segmentation locally on one frame stack
 run my segmentation locally on one frame stack

@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import skimage
 import skimage.morphology
+import skimage.segmentation
 import sklearn
 import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
@@ -12,10 +13,10 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none, repeat_apply
+from util import getattr_if_not_none
 from diagnostics import wrap_diagnostics
 from ui import RevImage
-from image import hough_line_intensity
+from image import hough_line_intensity, remove_large_objects, normalize_componentwise
 import common
 
 
@@ -430,7 +431,9 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
     return threshold
 
 
-def label_for_trenches(img, min_component_size=30, diagnostics=None):
+def label_for_trenches(
+    img, min_component_size=30, max_component_size=10**4, diagnostics=None
+):
     # img = img_series[::10].max(axis=0)
     # img = img_series[channel, 30]
     # TODO: need rotation-invariant detrending
@@ -443,38 +446,34 @@ def label_for_trenches(img, min_component_size=30, diagnostics=None):
         img, diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold")
     )
     img_thresh = img > threshold
-    img_labels, label_index = label_binary_image(img_thresh)
     if diagnostics is not None:
-        diagnostics["labeled_image"] = RevImage(img_labels)
-        diagnostics["label_index"] = tuple(label_index)
-    components, num_components = skimage.morphology.label(img_labels, return_num=True)
-    skimage.morphology.remove_small_objects(
-        components, min_size=min_component_size, in_place=True
-    )
-    normalized_img = normalize_segmentwise(
-        img, components, label_index=np.arange(num_components) + 1
-    )  # TODO: check arange
+        diagnostics["thresholded_image"] = RevImage(img_thresh)
+    components, num_components = skimage.morphology.label(img_thresh, return_num=True)
     if diagnostics is not None:
         diagnostics["components"] = RevImage(components)
         diagnostics["num_components"] = num_components
+    cleaned_components = components.copy()
+    skimage.morphology.remove_small_objects(
+        cleaned_components, min_size=min_component_size, in_place=True
+    )
+    remove_large_objects(cleaned_components, max_component_size, in_place=True)
+    cleaned_components, _, inverse_map = skimage.segmentation.relabel_sequential(
+        cleaned_components
+    )
+    num_cleaned_components = len(inverse_map)
+    if diagnostics is not None:
+        diagnostics["cleaned_components"] = RevImage(cleaned_components)
+        diagnostics["num_cleaned_components"] = num_cleaned_components
+    normalized_img = normalize_componentwise(
+        img, cleaned_components, label_index=np.arange(num_components) + 1
+    )  # TODO: check arange
+    if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)
+    img_labels, label_index = label_binary_image(cleaned_components)
+    if diagnostics is not None:
+        diagnostics["labeled_image"] = RevImage(img_labels)
+        diagnostics["label_index"] = tuple(label_index)
     return normalized_img, img_labels, label_index
-
-
-def normalize_segmentwise(
-    img, img_labels, label_index=None, dilation=5, in_place=False, dtype=np.float32
-):
-    if not in_place:
-        img = img.astype(dtype).copy()
-    if label_index is None:
-        label_index = np.unique(img_labels)
-    maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
-    img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
-    img[img_labels == 0] = 0
-    for idx, label in enumerate(label_index):
-        mask = img_labels == label
-        img[mask] /= maxes[idx]
-    return img
 
 
 def get_trenches(img, find_angle_setwise=True, diagnostics=None):
