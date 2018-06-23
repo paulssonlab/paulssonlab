@@ -15,7 +15,7 @@ from util import summarize_filenames
 import common
 from workflow import get_nd2_frame
 import numbers
-from cytoolz import get_in
+from cytoolz import get_in, compose
 
 # TODO
 channel_to_color = {
@@ -42,7 +42,12 @@ def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
 
 
-def display_plot_browser(plots, stream=None, **kwargs):
+def show_plot_browser(plots, key=None, stream=None, **kwargs):
+    if key is not None:
+        if stream is None:
+            plots = get_in(key.split("."), plots)
+        else:
+            plots = compose(partial(get_in, key.split(".")), plots)
     to_display = {}
     if stream is None:
         initial_plots = plots
@@ -54,57 +59,58 @@ def display_plot_browser(plots, stream=None, **kwargs):
     return browser
 
 
-def display_plot_browser_contents(plots, to_display, stream=None, regrid=True):
-    for output, (obj, path) in to_display.items():
-        if stream is None:
-            with output:
-                if isinstance(obj, hv.core.dimension.ViewableElement):
-                    if regrid:
-                        obj = obj.map(
-                            lambda img: datashader.regrid(
-                                img, aggregator="first"
-                            ).redim.range(z=(0, img.data.max())),
-                            lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
-                        )
-                        if hasattr(obj, "collate"):
-                            obj = obj.collate()
-                display(obj)
-        else:
-            # print(path, obj.__class__)
-            if isinstance(
-                obj, hv.core.dimension.ViewableElement
-            ):  # TODO: is this the right comparison?
-
-                def callback(p, x_range, y_range, **kwargs):
-                    plot = recursive_getattr(plots(**kwargs), p)
-                    # allow customizable aggregators
-                    return plot.map(
-                        lambda img: datashader.regrid.instance(
-                            dynamic=False,
-                            x_range=x_range,
-                            y_range=y_range,
-                            aggregator="first",
-                        )(img).redim.range(z=(0, img.data.max())),
+def display_plot_browser_item(output, obj, path, stream=None, regrid=True):
+    if stream is None:
+        with output:
+            if isinstance(obj, hv.core.dimension.ViewableElement):
+                if regrid:
+                    obj = obj.map(
+                        lambda img: datashader.regrid(
+                            img, aggregator="first"
+                        ).redim.range(z=(0, img.data.max())),
                         lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
                     )
+                    if hasattr(obj, "collate"):
+                        obj = obj.collate()
+            display(obj)
+    else:
+        if isinstance(
+            obj, hv.core.dimension.ViewableElement
+        ):  # TODO: is this the right comparison?
 
-                dmap = hv.DynamicMap(
-                    partial(callback, path), streams=[stream, hv.streams.RangeXY()]
-                )  # .collate()
-                with output:
-                    display(dmap)
-            else:
-                # normal python type
-                def callback(o, p, **kwargs):
-                    with o:
-                        clear_output()
-                        display(recursive_getattr(plots(**kwargs), p))
-                        # display((p, kwargs, np.random.random(), recursive_getattr(plots(**kwargs), p)))
-                        # display((p, np.random.random()))
+            def callback(p, x_range, y_range, **kwargs):
+                plot = recursive_getattr(plots(**kwargs), p)
+                # allow customizable aggregators
+                return plot.map(
+                    lambda img: datashader.regrid.instance(
+                        dynamic=False,
+                        x_range=x_range,
+                        y_range=y_range,
+                        aggregator="first",
+                    )(img).redim.range(z=(0, img.data.max())),
+                    lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
+                )
 
-                callback(output, path, **stream.contents)
-                # we need to do the partial trick, or else output is only bound to the last output of the for loop
-                stream.add_subscriber(partial(callback, output, path))
+            dmap = hv.DynamicMap(
+                partial(callback, path), streams=[stream, hv.streams.RangeXY()]
+            )  # .collate()
+            with output:
+                display(dmap)
+        else:
+            # normal python type
+            def callback(o, p, **kwargs):
+                with o:
+                    clear_output()
+                    display(recursive_getattr(plots(**kwargs), p))
+
+            callback(output, path, **stream.contents)
+            # we need to do the partial trick, or else output is only bound to the last output of the for loop
+            stream.add_subscriber(partial(callback, output, path))
+
+
+def display_plot_browser_contents(plots, to_display, stream=None, regrid=True):
+    for output, (obj, path) in to_display.items():
+        display_plot_browser_item(output, obj, path, stream=stream, regrid=regrid)
 
 
 def plot_browser(plots, to_display=None, path=()):
