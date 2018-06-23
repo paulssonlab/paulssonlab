@@ -166,9 +166,6 @@ def resize_qgrid_header(widget, height):
     )
 
 
-Selected = Stream.define("Selected", selected=None)
-
-
 def show_grid(df, header_height=100, stream=None, **kwargs):
     qg = qgrid.show_grid(
         df,
@@ -290,29 +287,6 @@ def multichannel_selector(frames):
     for color_picker in color_pickers:
         color_picker.observe(update_channel_colors, names="value")
     return channels_box, display_settings_stream
-
-
-# FrameStream = Stream.define('Frame', t=0, v=0)
-
-# def positionpoints_browser(frames, frame_stream):
-#     num_positionpoints = len(frames.attrs['metadata']['frames'])
-#     #play_buttons = widgets.Play(interval=10, min=0, max=num_positionpoints, step=1)
-#     back_step_button = widgets.Button(description='<', layout=widgets.Layout(width='10%'))
-#     forward_step_button = widgets.Button(description='>', layout=widgets.Layout(width='10%'))
-#     t_slider = widgets.IntSlider(label='t', min=0, max=num_positionpoints, step=1, value=0, continuous_update=False)
-#     slider_box = widgets.HBox([back_step_button, t_slider, forward_step_button])
-#     t_slider.observe(lambda change: frame_stream.event(t=change['new']), names='value')
-#     return slider_box
-
-# def frame_browser(frames, frame_stream):
-#     num_positionpoints = len(frames.attrs['metadata']['frames'])
-#     num_fovs = len(frames.attrs['metadata']['fields_of_view'])
-#     t_slider = widgets.IntSlider(label='t', min=0, max=num_positionpoints, step=1, value=0, continuous_update=False)
-#     v_slider = widgets.IntSlider(label='v', min=0, max=num_fovs, step=1, value=0, continuous_update=False)
-#     slider_box = widgets.VBox([v_slider, t_slider])
-#     t_slider.observe(lambda change: frame_stream.event(t=change['new']), names='value')
-#     v_slider.observe(lambda change: frame_stream.event(v=change['new']), names='value')
-#     return slider_box
 
 
 def big_image_viewer(positions, frame_stream=None):
