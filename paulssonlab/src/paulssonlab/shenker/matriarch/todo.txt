@@ -2,7 +2,6 @@
 first pass at fast normalize_componentwise??
 smooth diff_h_std (2 pixel kernel)
 some way of passing options through to sub-functions in processing pipeline? quick hack now.
-synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
 
 easy dask re-running of trench detection on bad_angle frames
 fix detrending? (is this necessary?)
@@ -33,6 +32,7 @@ corrupted nd2 reader
 my trench detection in phase+charles phase segmentation using dask
 first cut of tracking using integer programming (given a good segmentation)
 tracking+segmentation
+synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
 trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitrary callbacks that return (possibly cached) hv ViewableElements to overlay (e.g., can compute segmentation on-the-fly, cache it using cachetools, return an overlayed contour)
     FrameStream <-> TrenchStream <-> CellStream, e.g., updating cellstream updates trench (if needed), which updates frame (if needed)
     moving TrenchStream also picks the first cell in the trench, Frame picks first trench in frame

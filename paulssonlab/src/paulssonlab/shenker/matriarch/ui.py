@@ -42,7 +42,7 @@ def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
 
 
-def show_plot_browser(plots, key=None, stream=None, **kwargs):
+def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
     if key is not None:
         if stream is None:
             plots = get_in(key.split("."), plots)
@@ -53,13 +53,21 @@ def show_plot_browser(plots, key=None, stream=None, **kwargs):
         initial_plots = plots
     else:
         initial_plots = plots(**stream.contents)
+    if range_xy is True:
+        range_xy = hv.streams.RangeXY()
     browser = plot_browser(initial_plots, to_display)
     display(browser)
-    display_plot_browser_contents(plots, to_display, stream=stream, **kwargs)
+    display_plot_browser_contents(
+        plots, to_display, stream=stream, range_xy=range_xy, **kwargs
+    )
     return browser
 
 
-def display_plot_browser_item(output, obj, path, stream=None, regrid=True):
+def display_plot_browser_item(
+    output, obj, path, stream=None, range_xy=None, regrid=True
+):
+    if range_xy is None:
+        range_xy = hv.streams.RangeXY()
     if stream is None:
         with output:
             if isinstance(obj, hv.core.dimension.ViewableElement):
@@ -92,7 +100,7 @@ def display_plot_browser_item(output, obj, path, stream=None, regrid=True):
                 )
 
             dmap = hv.DynamicMap(
-                partial(callback, path), streams=[stream, hv.streams.RangeXY()]
+                partial(callback, path), streams=[stream, range_xy]
             )  # .collate()
             with output:
                 display(dmap)
@@ -108,9 +116,13 @@ def display_plot_browser_item(output, obj, path, stream=None, regrid=True):
             stream.add_subscriber(partial(callback, output, path))
 
 
-def display_plot_browser_contents(plots, to_display, stream=None, regrid=True):
+def display_plot_browser_contents(
+    plots, to_display, stream=None, range_xy=None, regrid=True
+):
     for output, (obj, path) in to_display.items():
-        display_plot_browser_item(output, obj, path, stream=stream, regrid=regrid)
+        display_plot_browser_item(
+            output, obj, path, stream=stream, range_xy=range_xy, regrid=regrid
+        )
 
 
 def plot_browser(plots, to_display=None, path=()):
