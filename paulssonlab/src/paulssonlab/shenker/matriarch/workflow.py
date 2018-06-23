@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 from cytoolz import get_in
+import cachetools
+import nd2reader
+import sys
 
 
 def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
@@ -52,3 +55,40 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
     )
     positions.index.names = ["filename", "position"]
     return positions
+
+
+def get_channels_to_indices(channels):
+    df = pd.concat(
+        {
+            filename: pd.DataFrame(
+                {"channel": channels, "channel_idx": range(len(channels))}
+            )
+            for filename, channels in channels.items()
+        }
+    )
+    df = df.reset_index().set_index(["level_0", "channel"])[["channel_idx"]]
+    df.index.names = ["filename", "channel"]
+    return df
+
+
+ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
+ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**9, getsizeof=sys.getsizeof)
+
+
+def _get_nd2_reader(filename, **kwargs):
+    return nd2reader.ND2Reader(filename, **kwargs)
+
+
+get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
+
+
+def _get_nd2_frame(key, memmap=False):
+    filename, position, channel, t = key[:4]
+    reader = get_nd2_reader(filename)
+    # TODO: how slow is the channel lookup?
+    channel_idx = reader.metadata["channels"].index(channel)
+    # TODO: should I wrap in ndarray or keep as PIMS Frame?
+    return np.array(reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap))
+
+
+get_nd2_frame = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
