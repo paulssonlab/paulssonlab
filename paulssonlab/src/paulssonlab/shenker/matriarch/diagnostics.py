@@ -5,7 +5,7 @@ from functools import wraps
 from util import wrap_dict_values, drop_dict_nones, flatten_dict, map_collections, tree
 
 
-def wrap_diagnostics(func, ignore_exceptions=True):
+def wrap_diagnostics(func, ignore_exceptions=False):
     @wraps(func)
     def wrapper(*args, **kwargs):
         diag = tree()
