@@ -371,84 +371,47 @@ class DataframeStream(Stream):
             return "%s(%r, %s)" % (cls_name, self._rename, kwargs)
 
 
-def filename_browser(df, frame_stream):
-    filename_left = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
-    filename_right = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
-    filename_dropdown = widgets.Dropdown(description="filename", options=range(1))
-    filename_browser = widgets.HBox([filename_left, filename_dropdown, filename_right])
+def column_browser(
+    name, stream, widget=widgets.Dropdown, format_function=lambda x: map(str, x)
+):
+    left_arrow = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
+    right_arrow = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
+    selector = widget(description=name, options=range(1))
+    browser = widgets.HBox([left_arrow, selector, right_arrow])
 
-    def increment_filename(inc, button):
-        filenames = frame_stream._options["filename"]
-        idx = filenames.index(frame_stream.filename)
-        new_idx = (idx + inc) % len(filenames)
-        frame_stream.event(filename=filenames[new_idx])
+    def increment(inc, button):
+        options = stream._options[name]
+        idx = options.index(getattr(stream, name))
+        new_idx = (idx + inc) % len(options)
+        stream.event(**{name: options[new_idx]})
 
-    filename_left.on_click(partial(increment_filename, -1))
-    filename_right.on_click(partial(increment_filename, 1))
+    left_arrow.on_click(partial(increment, -1))
+    right_arrow.on_click(partial(increment, 1))
 
-    def set_filename(change):
+    def set_selection(change):
         if change["name"] == "value":
             # TODO: do I need to do this check?
-            if change["new"] != frame_stream.position:
-                frame_stream.event(filename=change["new"])
+            if change["new"] != getattr(stream, name):
+                stream.event(**{name: change["new"]})
 
-    filename_dropdown.observe(set_filename)
+    selector.observe(set_selection)
 
-    def update_filename_browser(filename, **kwargs):
-        filenames = frame_stream._options["filename"]
-        filenames_for_display = dict(zip(summarize_filenames(filenames), filenames))
+    def update_selector(**kwargs):
+        options = stream._options[name]
+        options_for_display = dict(zip(format_function(options), options))
         try:
-            filename_dropdown.options = filenames_for_display
+            selector.options = options_for_display
         except:
             pass
-        filename_dropdown.value = filename
+        selector.value = kwargs[name]
 
-    frame_stream.add_subscriber(update_filename_browser)
-    return filename_browser
-
-
-def position_browser(df, frame_stream):
-    position_left = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
-    position_right = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
-    position_slider = widgets.SelectionSlider(
-        description="position", options=range(1), continuous_update=False
-    )
-    position_browser = widgets.HBox([position_left, position_slider, position_right])
-
-    def increment_position(inc, button):
-        idx = position_slider.index
-        new_idx = (idx + inc) % len(position_slider.options)
-        frame_stream.event(position=position_slider.options[new_idx])
-
-    position_left.on_click(partial(increment_position, -1))
-    position_right.on_click(partial(increment_position, 1))
-
-    def set_position(change):
-        if change["name"] == "value":
-            # TODO: do I need to do this check?
-            if change["new"] != frame_stream.position:
-                frame_stream.event(position=change["new"])
-
-    position_slider.observe(set_position)
-
-    def update_position_browser(filename, position, **kwargs):
-        # TODO: don't recompute possible filenames unless filename was changed (cache??)
-        positions = frame_stream._options["position"]
-        # TODO: workaround for https://github.com/jupyter-widgets/ipywidgets/issues/2075
-        try:
-            position_slider.options = positions
-        except:
-            pass
-        print("bar", position_slider.options, "z", positions, "h", position)
-        position_slider.value = position
-        print("baz")
-
-    frame_stream.add_subscriber(update_position_browser)
+    stream.add_subscriber(update_selector)
+    return browser
     return position_browser
 
 
 def frame_browser(df, frame_stream):
-    filename_browser = widgets.HBox([filename_left, filename_dropdown, filename_right])
+    filename_browser = widgets.HBox([left_arrow, dropdown, filename_right])
     box = widgets.VBox([])
 
 
