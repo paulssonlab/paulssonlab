@@ -465,7 +465,7 @@ def label_for_trenches(
         diagnostics["cleaned_components"] = RevImage(cleaned_components)
         diagnostics["num_cleaned_components"] = num_cleaned_components
     normalized_img = normalize_componentwise(
-        img, cleaned_components, label_index=np.arange(num_components) + 1
+        img, cleaned_components, label_index=np.arange(num_cleaned_components) + 1
     )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)

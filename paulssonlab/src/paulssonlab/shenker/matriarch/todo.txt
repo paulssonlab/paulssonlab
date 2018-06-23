@@ -1,7 +1,5 @@
 ### TODAY
-first pass at fast normalize_componentwise??
 smooth diff_h_std (2 pixel kernel)
-some way of passing options through to sub-functions in processing pipeline? quick hack now.
 
 easy dask re-running of trench detection on bad_angle frames
 fix detrending? (is this necessary?)
@@ -47,6 +45,10 @@ qgrid data wrapping
 qgrid resize column width to fit data
 qgrid UI to show/hide many columns quickly
 qgrid freeze index/multiindex
+some way of passing options through to sub-functions in processing pipeline? quick hack now.
+bundle up raw intermediate results (e.g., ndarrays) in diag for easy debugging/running steps by hand (shouldn't take any more space to pickle because holoviews objects just wrap this data anyway)
+compression/incremental loading/prefetching for regridded images+animations
+only display/update plots that are open in plot browser
 
 ####################################################################################################################
 
