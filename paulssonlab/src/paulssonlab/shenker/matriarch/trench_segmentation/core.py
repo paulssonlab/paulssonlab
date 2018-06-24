@@ -7,23 +7,6 @@ from trench_detection import get_img_limits
 from util import tqdm_auto, map_collections, iterate_get_collection_value
 
 
-def hessian_eigenvalues(img):
-    I = skimage.filters.gaussian(img, 1.5)
-    I_x = skimage.filters.sobel_h(I)
-    I_y = skimage.filters.sobel_v(I)
-    I_xx = skimage.filters.sobel_h(I_x)
-    I_xy = skimage.filters.sobel_v(I_x)
-    I_yx = skimage.filters.sobel_h(I_y)
-    I_yy = skimage.filters.sobel_v(I_y)
-    kappa_1 = (I_xx + I_yy) / 2
-    kappa_2 = (np.sqrt((I_xx + I_yy) ** 2 - 4 * (I_xx * I_yy - I_xy * I_yx))) / 2
-    k1 = kappa_1 + kappa_2
-    k2 = kappa_1 - kappa_2
-    k1[np.isnan(k1)] = 0
-    k2[np.isnan(k2)] = 0
-    return k1, k2
-
-
 def extract_kymograph(img_series, x0, x1):
     num_timepoints = img_series.shape[0]
     xs, ys = coords_along(x0, x1)
@@ -162,11 +145,3 @@ def positionwise_trenchwise_map(
         return df
     else:
         return obj
-
-
-def image_sharpness(img):
-    # FROM: https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry/7767755#7767755
-    # TODO: vectorize?? normalize?? verify against some kind of ground truth?
-    img_blurred = skimage.filters.gaussian(img, 1)
-    img_lofg = skimage.filters.laplace(img_blurred)
-    return np.percentile(img_lofg, 99.9)
