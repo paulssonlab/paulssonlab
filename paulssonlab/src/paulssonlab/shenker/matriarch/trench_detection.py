@@ -206,13 +206,13 @@ def get_edge_points(theta, x_lim, y_lim):
     return anchor0, anchor1
 
 
-def detect_trench_region(bin_img, theta, margin=3, diagnostics=None):
+def detect_trench_region(
+    bin_img, theta, margin=3, num_region_slices=100, smooth=2, diagnostics=None
+):
     x_lim, y_lim = get_img_limits(bin_img.shape)
     anchor0, anchor1 = get_edge_points(theta, x_lim, y_lim)
     cross_sections = []
-    anchors = list(point_linspace(anchor0, anchor1, 40))[
-        margin:-margin
-    ]  # TODO: parameterize
+    anchors = list(point_linspace(anchor0, anchor1, num_region_slices))[margin:-margin]
     lines = list(
         line_array(anchors, np.pi / 2 + theta, x_lim, y_lim, bidirectional=True)
     )
@@ -231,11 +231,21 @@ def detect_trench_region(bin_img, theta, margin=3, diagnostics=None):
             [hv.Curve(cs) for cs in cross_sections]
         )
     cross_section_vars = np.array([cs.var() for cs in cross_sections])
-    idx = cross_section_vars.argmax()
+    if smooth:
+        cross_section_vars_smoothed = scipy.ndimage.filters.gaussian_filter1d(
+            cross_section_vars, smooth
+        )
+    else:
+        cross_section_vars_smoothed = cross_section_vars
+    idx = cross_section_vars_smoothed.argmax()
     if diagnostics is not None:
-        diagnostics["cross_section_vars"] = hv.Curve(cross_section_vars) * hv.VLine(
-            idx
-        ).options(color="red")
+        cross_section_vars_plot = hv.Curve(cross_section_vars)
+        if smooth:
+            cross_section_vars_plot *= hv.Curve(cross_section_vars_smoothed).options(
+                color="cyan"
+            )
+        cross_section_vars_plot *= hv.VLine(idx).options(color="red")
+        diagnostics["cross_section_vars"] = cross_section_vars_plot
     return anchors[idx]
 
 

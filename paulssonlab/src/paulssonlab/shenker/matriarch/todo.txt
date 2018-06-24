@@ -1,24 +1,32 @@
 ### TODAY
-allow grouping tasks by position or not with a flag (in both get_trenches and gather/to_dataframe step)
-rename get_trenches to detect_trenches
+switch to PSD instead of discrete_periodogram
+find period+offset using intensity hough??
+debug period-finding errors
+debug failures (make function to collect failures as dataframe to send to frame_stream)
+submit workload balancing dask.distributed issue
+    starved workers at the end of get_trenches
+    task serialization (wrapped_diagnostics_to_dataframe)
+    update priority: so that wrapped_diagnostics_to_dataframe run+transfer ASAP
 
 easy dask re-running of trench detection on bad_angle frames
-fix detrending? (is this necessary?)
+    function to re-run dask on a dataframe
+    can use this to throw out out-of-focus frames
+    (join dataframe with focus, debris indicators, find appropriate cuts)
+
+### TOMORROW
+run charles segmentation locally on one frame stack framewide
+then trenchwise
+run my segmentation locally on one frame stack trenchwise
+run my trench detection+segmentation using dask
+
+### TRENCH DETECTION POLISH
+refine rotation using trench ends and RANSAC (if necessary??)
+use 1px*sec(theta) spacing for trench region slices?? (or is there a cleaner way?)
+calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
 intensity hough on hessian k2
 OR upsample before intensity hough
 change angle bounds to +/-40deg (weird aliasing at exactly 45deg)
 run periodicity detection on componentwise normalized image with ALL components, not just selected trench set?
-run charles segmentation locally on one frame stack
-run my segmentation locally on one frame stack
-run my trench detection+segmentation using dask (gather all diags, just using one time point)
-
-### TOMORROW
-calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
-is binary hough more robust to dim debris??
-also throw out out-of-focus frames
-(join dataframe with focus, debris indicators, find appropriate cuts)
-debug period-finding errors (find period using intensity hough??)
-fix remaining trench finding errors
 
 ### NEXT
 run charles segmentation locally on one frame stack
@@ -27,7 +35,7 @@ do the same for charles phase segmentation, compare with fluorescence
 trench finding in phase
 corrupted nd2 reader
 
-###AFTER
+### AFTER
 my trench detection in phase+charles phase segmentation using dask
 first cut of tracking using integer programming (given a good segmentation)
 tracking+segmentation
