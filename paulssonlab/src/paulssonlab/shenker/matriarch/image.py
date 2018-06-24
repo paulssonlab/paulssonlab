@@ -59,18 +59,29 @@ def remove_large_objects(labeled_img, max_size, in_place=False):
 
 
 def normalize_componentwise(
-    img, img_labels, label_index=None, dilation=5, in_place=False, dtype=np.float32
+    img,
+    img_labels,
+    weighted=False,
+    label_index=None,
+    dilation=5,
+    in_place=False,
+    dtype=np.float32,
 ):
     if not in_place:
         img = img.astype(dtype).copy()
     if label_index is None:
         label_index = np.unique(img_labels)
     maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
+    if weighted:
+        median = np.median(maxes)
     img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
     img[img_labels == 0] = 0
     for idx, label in enumerate(label_index):
         mask = img_labels == label
-        img[mask] /= maxes[idx]
+        if weighted:
+            img[mask] *= min(maxes[idx] / median, 1)
+        else:
+            img[mask] /= maxes[idx]
     return img
 
 
