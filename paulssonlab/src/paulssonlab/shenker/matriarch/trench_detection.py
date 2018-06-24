@@ -434,20 +434,23 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
 def label_for_trenches(
     img, min_component_size=30, max_component_size=10**4, diagnostics=None
 ):
-    # img = img_series[::10].max(axis=0)
-    # img = img_series[channel, 30]
-    # TODO: need rotation-invariant detrending
+    img = img.astype(np.float_)
     if diagnostics is not None:
         diagnostics["image"] = RevImage(img)
-    img = img - np.percentile(img, 3, axis=1)[:, np.newaxis]
+    img_lowpass = skimage.filters.gaussian(img, 100)
+    img_highpass = img - img_lowpass
     if diagnostics is not None:
-        diagnostics["detrended_image"] = RevImage(img)
+        diagnostics["lowpass_image"] = RevImage(img_lowpass)
+        diagnostics["highpass_image"] = RevImage(img_highpass)
     threshold = find_trench_threshold(
         img, diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold")
     )
-    img_thresh = img > threshold
+    img_thresh = img_highpass > threshold
     if diagnostics is not None:
         diagnostics["thresholded_image"] = RevImage(img_thresh)
+    # img_thresh = skimage.morphology.binary_erosion(img_thresh)
+    # if diagnostics is not None:
+    #     diagnostics['eroded_image'] = RevImage(img_thresh)
     components, num_components = skimage.morphology.label(img_thresh, return_num=True)
     if diagnostics is not None:
         diagnostics["components"] = RevImage(components)
@@ -465,7 +468,9 @@ def label_for_trenches(
         diagnostics["cleaned_components"] = RevImage(cleaned_components)
         diagnostics["num_cleaned_components"] = num_cleaned_components
     normalized_img = normalize_componentwise(
-        img, cleaned_components, label_index=np.arange(num_cleaned_components) + 1
+        img_highpass,
+        cleaned_components,
+        label_index=np.arange(num_cleaned_components) + 1,
     )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)
