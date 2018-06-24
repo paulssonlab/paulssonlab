@@ -442,18 +442,23 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
 
 
 def label_for_trenches(
-    img, min_component_size=30, max_component_size=10**4, diagnostics=None
+    img,
+    min_component_size=30,
+    max_component_size=10**4,
+    lowpass_radius=100,
+    diagnostics=None,
 ):
     img = img.astype(np.float_)
     if diagnostics is not None:
         diagnostics["image"] = RevImage(img)
-    img_lowpass = skimage.filters.gaussian(img, 100)
+    img_lowpass = skimage.filters.gaussian(img, lowpass_radius)
     img_highpass = img - img_lowpass
     if diagnostics is not None:
         diagnostics["lowpass_image"] = RevImage(img_lowpass)
         diagnostics["highpass_image"] = RevImage(img_highpass)
     threshold = find_trench_threshold(
-        img, diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold")
+        img_highpass,
+        diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold"),
     )
     img_thresh = img_highpass > threshold
     if diagnostics is not None:

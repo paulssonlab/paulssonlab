@@ -41,6 +41,7 @@ trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitr
     “Zoom to Cell” button (in same row as Zoom to Trench) does the same for cell (using bbox for current frame)
 
 ###POLISH
+fit shear in trench detection (this is probably what's limiting trench rotation finding accuracy)
 fix qgrid column name wrapping
 qgrid data wrapping
 qgrid resize column width to fit data
