@@ -75,23 +75,33 @@ def get_img_limits(shape):
 
 
 def find_hough_angle(
-    img, theta=None, hough_func=hough_line_intensity, diagnostics=None
+    img, theta=None, smooth=2, hough_func=hough_line_intensity, diagnostics=None
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
     h, theta, d = hough_func(img, theta=theta)
     diff_h = np.diff(h.astype(np.int_), axis=1)
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
-    theta_idx = diff_h_std.argmax()
+    if smooth:
+        diff_h_std_smoothed = scipy.ndimage.filters.gaussian_filter1d(
+            diff_h_std, smooth
+        )
+    else:
+        diff_h_std_smoothed = diff_h_std
+    theta_idx = diff_h_std_smoothed.argmax()
     angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
         bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
         diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
         # TODO: fix the left-edge vs. right-edge issue for theta bins
-        diagnostics["diff_h_std"] = hv.Curve(
-            (np.rad2deg(theta[:-1]), diff_h_std)
-        ) * hv.VLine(np.rad2deg(angle)).options(color="red")
+        diff_h_plot = hv.Curve((np.rad2deg(theta[:-1]), diff_h_std))
+        if smooth:
+            diff_h_plot *= hv.Curve(
+                (np.rad2deg(theta[:-1]), diff_h_std_smoothed)
+            ).options(color="cyan")
+        diff_h_plot *= hv.VLine(np.rad2deg(angle)).options(color="red")
+        diagnostics["diff_h_std"] = diff_h_plot
         diagnostics["angle"] = np.rad2deg(angle)
     return angle
 

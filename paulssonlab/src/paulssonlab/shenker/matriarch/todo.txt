@@ -1,5 +1,6 @@
 ### TODAY
-smooth diff_h_std (2 pixel kernel)
+allow grouping tasks by position or not with a flag (in both get_trenches and gather/to_dataframe step)
+rename get_trenches to detect_trenches
 
 easy dask re-running of trench detection on bad_angle frames
 fix detrending? (is this necessary?)
