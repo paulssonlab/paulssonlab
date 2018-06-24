@@ -75,7 +75,7 @@ def get_img_limits(shape):
 
 
 def find_hough_angle(
-    img, theta=None, smooth=2, hough_func=hough_line_intensity, diagnostics=None
+    img, theta=None, smooth=4, hough_func=hough_line_intensity, diagnostics=None
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
