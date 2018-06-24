@@ -254,7 +254,7 @@ def stack_jagged(arys, fill=0):
     return np.array(list(zip_longest(*arys, fillvalue=fill))).T
 
 
-def time_series_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
+def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
     periods = np.linspace(period_min, period_max, bins)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
     period_idx = std.argmin()
@@ -294,14 +294,14 @@ def detect_periodic_peaks(
     if max_dist is None:
         max_dist = dxs.max() + 1
     num_periods = 1000
-    period = time_series_periodogram(
+    period = discrete_periodogram(
         xs,
         min_dist,
         max_dist,
         bins=num_periods,
         diagnostics=getattr_if_not_none(diagnostics, "periodogram_1"),
     )
-    period2 = time_series_periodogram(
+    period2 = discrete_periodogram(
         xs,
         period * 0.98,
         period * 1.02,
