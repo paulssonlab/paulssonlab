@@ -1,17 +1,18 @@
 ### TODAY
-switch to PSD instead of discrete_periodogram
-find period+offset using intensity hough??
+switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
+easy dask re-running of trench detection on bad_angle frames
+    function to re-run dask (OR LOCAL?) on a dataframe
+    can use this to throw out out-of-focus frames
+    (join dataframe with focus, debris indicators, find appropriate cuts)
+    functions to convert nested dicts<->dataframe??
+    functions that make it easy to group tasks (arbitrarily?) with a flag
+
 debug period-finding errors
 debug failures (make function to collect failures as dataframe to send to frame_stream)
 submit workload balancing dask.distributed issue
     starved workers at the end of get_trenches
     task serialization (wrapped_diagnostics_to_dataframe)
     update priority: so that wrapped_diagnostics_to_dataframe run+transfer ASAP
-
-easy dask re-running of trench detection on bad_angle frames
-    function to re-run dask on a dataframe
-    can use this to throw out out-of-focus frames
-    (join dataframe with focus, debris indicators, find appropriate cuts)
 
 ### TOMORROW
 run charles segmentation locally on one frame stack framewide
@@ -20,8 +21,11 @@ run my segmentation locally on one frame stack trenchwise
 run my trench detection+segmentation using dask
 
 ### TRENCH DETECTION POLISH
+defaultdict which can filter out hv.ViewableElements so we don't waste memory on plots we'll never pull down
+    benchmark how long constructing holoviews objs takes vs. no holoviews objs for get_trenches_diag
+    benchmark how long it takes to pickle+pull down from a worker vs. re-run get_trenches locally
 refine rotation using trench ends and RANSAC (if necessary??)
-use 1px*sec(theta) spacing for trench region slices?? (or is there a cleaner way?)
+use 1px*sec(theta) spacing for trench region slices?? (or is there a cleaner way? this is basically just a rotation without interpolation)
 calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
 intensity hough on hessian k2
 OR upsample before intensity hough
@@ -39,6 +43,10 @@ corrupted nd2 reader
 my trench detection in phase+charles phase segmentation using dask
 first cut of tracking using integer programming (given a good segmentation)
 tracking+segmentation
+
+### AFTER UI POLISH
+show_plot_browser should work for singleton keys [i.e., single plots] (and make that work correctly with streams)
+feasibility of running regrid off a remote image stored on a worker (is there a way to hook up bokeh to connect directly to worker?)
 synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
 trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitrary callbacks that return (possibly cached) hv ViewableElements to overlay (e.g., can compute segmentation on-the-fly, cache it using cachetools, return an overlayed contour)
     FrameStream <-> TrenchStream <-> CellStream, e.g., updating cellstream updates trench (if needed), which updates frame (if needed)

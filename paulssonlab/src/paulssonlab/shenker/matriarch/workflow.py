@@ -4,6 +4,8 @@ from cytoolz import get_in
 import cachetools
 import nd2reader
 import sys
+from util import zip_dicts, multi_join
+from metadata import parse_nd2_metadata
 
 
 def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
@@ -95,3 +97,30 @@ get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
 
 def get_nd2_frame(filename, position, channel, t, memmap=False, **kwargs):
     return get_nd2_frame_cached(filename, position, channel, t, memmap=memmap)
+
+
+def _get_nd2_frame_list(sizes, channels):
+    all_frames = [
+        (filename, v, channel, t)
+        for filename, file_sizes, file_channels in zip_dicts(sizes, channels)
+        for v in range(file_sizes["v"])
+        for channel in file_channels
+        for t in range(file_sizes["t"])
+    ]
+    all_frames = pd.MultiIndex.from_tuples(all_frames)
+    all_frames.names = ["filename", "position", "channel", "t"]
+    return all_frames
+
+
+def get_nd2_frame_list(filenames):
+    nd2s = {filename: get_nd2_reader(filename, memmap=False) for filename in filenames}
+    sizes = {filename: nd2.sizes for filename, nd2 in nd2s.items()}
+    metadata = {filename: parse_nd2_metadata(nd2) for filename, nd2 in nd2s.items()}
+    parsed_metadata = {filename: nd2.metadata for filename, nd2 in nd2s.items()}
+    channels = {filename: md["channels"] for filename, md in parsed_metadata.items()}
+    all_frames = _get_nd2_frame_list(sizes, channels)
+    positions = get_position_metadata(metadata)
+    channels_to_idx = get_channels_to_indices(channels)
+    all_frames = multi_join(all_frames, positions)
+    all_frames = multi_join(all_frames, channels_to_idx)
+    return all_frames, metadata, parsed_metadata
