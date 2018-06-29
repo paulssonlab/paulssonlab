@@ -15,9 +15,17 @@ import os
 
 # FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 def multi_join(left, right):
+    if isinstance(left, pd.Index):
+        left_mergable = left.to_frame(index=False)
+        left_index = left
+    elif isinstance(left, pd.DataFrame):
+        left_mergable = left.reset_index()
+        left_index = left.index
+    else:
+        raise NotImplementedError
     return pd.merge(
-        left.reset_index(), right.reset_index(), on=right.index.names, how="inner"
-    ).set_index(left.index.names)
+        left_mergable, right.reset_index(), on=right.index.names, how="inner"
+    ).set_index(left_index.names)
 
 
 # TODO: replace with toolz.excepts??
