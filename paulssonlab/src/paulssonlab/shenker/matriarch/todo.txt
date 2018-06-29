@@ -1,14 +1,18 @@
 ### TODAY
-switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
 easy dask re-running of trench detection on bad_angle frames
     function to re-run dask (OR LOCAL?) on a dataframe
+        by making gather a pass-through (?), map_futures with max_level=1 so we don't recurse super deep
+        OR just use local cluster for local testing?
     can use this to throw out out-of-focus frames
     (join dataframe with focus, debris indicators, find appropriate cuts)
-    functions to convert nested dicts<->dataframe??
     functions that make it easy to group tasks (arbitrarily?) with a flag
+        groupby (filename, position) and max group size, submit grouped jobs, then merge results dict (keyed by index) upon gather
+calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
+switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
 
 debug period-finding errors
 debug failures (make function to collect failures as dataframe to send to frame_stream)
+can I fix workload balancing issues by grouping tasks??
 submit workload balancing dask.distributed issue
     starved workers at the end of get_trenches
     task serialization (wrapped_diagnostics_to_dataframe)
@@ -26,7 +30,6 @@ defaultdict which can filter out hv.ViewableElements so we don't waste memory on
     benchmark how long it takes to pickle+pull down from a worker vs. re-run get_trenches locally
 refine rotation using trench ends and RANSAC (if necessary??)
 use 1px*sec(theta) spacing for trench region slices?? (or is there a cleaner way? this is basically just a rotation without interpolation)
-calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
 intensity hough on hessian k2
 OR upsample before intensity hough
 change angle bounds to +/-40deg (weird aliasing at exactly 45deg)

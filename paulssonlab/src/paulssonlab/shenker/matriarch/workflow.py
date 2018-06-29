@@ -109,6 +109,8 @@ def _get_nd2_frame_list(sizes, channels):
     ]
     all_frames = pd.MultiIndex.from_tuples(all_frames)
     all_frames.names = ["filename", "position", "channel", "t"]
+    # TODO: should we sort if we end up sorting below?
+    all_frames, _ = all_frames.sortlevel()
     return all_frames
 
 
@@ -123,4 +125,5 @@ def get_nd2_frame_list(filenames):
     channels_to_idx = get_channels_to_indices(channels)
     all_frames = multi_join(all_frames, positions)
     all_frames = multi_join(all_frames, channels_to_idx)
+    all_frames.sort_index(inplace=True)
     return all_frames, metadata, parsed_metadata
