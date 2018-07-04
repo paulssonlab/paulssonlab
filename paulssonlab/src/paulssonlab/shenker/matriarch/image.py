@@ -3,6 +3,7 @@ import scipy
 import skimage.morphology
 from util import repeat_apply
 import numba
+from cytoolz import compose
 
 
 def _accumulator_dtype(dtype):
@@ -83,6 +84,26 @@ def normalize_componentwise(
         else:
             img[mask] /= maxes[idx]
     return img
+
+
+# FROM: https://stackoverflow.com/questions/21242011/most-efficient-way-to-calculate-radial-profile
+def radial_profile(img, center=None):
+    if center is None:
+        center = (img.shape[0] // 2, img.shape[1] // 2)
+    y, x = np.indices((img.shape))
+    r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+    r = r.astype(np.int_)
+    counts = np.bincount(r.ravel(), img.ravel())
+    bin_sizes = np.bincount(r.ravel())
+    profile = counts / bin_sizes
+    return profile
+
+
+def psd2(img):
+    return np.abs(np.fft.fftshift(np.fft.fft2(img))) ** 2
+
+
+radial_psd2 = compose(image.radial_profile, psd2)
 
 
 def image_sharpness(img):

@@ -426,7 +426,48 @@ def dataframe_browser(stream):
     return widgets.VBox(browsers)
 
 
-def image_viewer(stream, image_callback=get_nd2_frame):
+def viewer(callback, *streams):
+    def callback_wrapper(**kwargs):
+        kwargs.update(
+            {
+                column: kwargs[column]
+                for column in kwargs["_df"].columns
+                if column in kwargs
+            }
+        )
+        del kwargs["_df"]
+        return callback(**kwargs)
+
+    dmap = hv.DynamicMap(callback_wrapper, streams=list(streams))
+    return dmap
+
+
+def dict_viewer(d, *streams, wrapper=None):
+    key0 = next(iter(d.keys()))
+    fields = key0._fields
+    cls = key0.__class__
+
+    def callback(**kwargs):
+        key = cls(*[kwargs[field] for field in fields])
+        val = d.get(key, None)
+        if wrapper:
+            val = wrapper(key, val)
+        return val
+
+    return viewer(callback, *streams)
+
+
+def image_viewer(*streams, image_callback=get_nd2_frame):
+    def callback(x_range, y_range, **kwargs):
+        img = RevImage(image_callback(**kwargs))
+        return datashader.regrid.instance(
+            dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
+        )(img).redim.range(z=(0, img.data.max()))
+
+    return viewer(callback, hv.streams.RangeXY(), *streams)
+
+
+def image_viewer2(*streams, image_callback=get_nd2_frame):
     def callback(x_range, y_range, **kwargs):
         keys = {
             column: kwargs[column]
@@ -438,7 +479,7 @@ def image_viewer(stream, image_callback=get_nd2_frame):
             dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
         )(img).redim.range(z=(0, img.data.max()))
 
-    dmap = hv.DynamicMap(callback, streams=[stream, hv.streams.RangeXY()])
+    dmap = hv.DynamicMap(callback, streams=streams + [hv.streams.RangeXY()])
     return dmap
 
 

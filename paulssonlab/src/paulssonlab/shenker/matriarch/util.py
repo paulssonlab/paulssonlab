@@ -7,8 +7,8 @@ import holoviews as hv
 from functools import reduce, partial, wraps
 from itertools import count
 import wrapt
-from toolz import compose
-import collections
+from cytoolz import compose
+from collections import namedtuple
 from dask.distributed import Future
 import operator
 import os
@@ -26,6 +26,21 @@ def multi_join(left, right):
     return pd.merge(
         left_mergable, right.reset_index(), on=right.index.names, how="inner"
     ).set_index(left_index.names)
+
+
+def iter_index(df):
+    Index = namedtuple(
+        "Index", df.index.names, rename=True
+    )  # TODO: have not tested rename=True
+    for row in df.reset_index().itertuples():
+        idx = Index(*df.index[row.Index])
+        yield idx, row
+
+
+def split_into(ary, max_length):
+    if max_length is None:
+        return ary
+    return np.array_split(ary, max(len(ary) // max_length, 1))
 
 
 # TODO: replace with toolz.excepts??
