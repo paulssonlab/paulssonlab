@@ -29,11 +29,17 @@ def multi_join(left, right):
 
 
 def iter_index(df):
+    if isinstance(df, pd.Index):
+        index = df
+        rows = df.toframe(index=False)
+    else:
+        index = df.index
+        rows = df.reset_index()
     Index = namedtuple(
-        "Index", df.index.names, rename=True
+        "Index", index.names, rename=True
     )  # TODO: have not tested rename=True
-    for row in df.reset_index().itertuples():
-        idx = Index(*df.index[row.Index])
+    for row in rows.itertuples():
+        idx = Index(*index[row.Index])
         yield idx, row
 
 
