@@ -103,7 +103,7 @@ def psd2(img):
     return np.abs(np.fft.fftshift(np.fft.fft2(img))) ** 2
 
 
-radial_psd2 = compose(image.radial_profile, psd2)
+radial_psd2 = compose(radial_profile, psd2)
 
 
 def image_sharpness(img):
