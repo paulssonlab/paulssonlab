@@ -467,22 +467,6 @@ def image_viewer(*streams, image_callback=get_nd2_frame):
     return viewer(callback, hv.streams.RangeXY(), *streams)
 
 
-def image_viewer2(*streams, image_callback=get_nd2_frame):
-    def callback(x_range, y_range, **kwargs):
-        keys = {
-            column: kwargs[column]
-            for column in kwargs["_df"].columns
-            if column in kwargs
-        }
-        img = RevImage(image_callback(**keys))
-        return datashader.regrid.instance(
-            dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
-        )(img).redim.range(z=(0, img.data.max()))
-
-    dmap = hv.DynamicMap(callback, streams=streams + [hv.streams.RangeXY()])
-    return dmap
-
-
 def show_frame_info(df, stream):
     df_noindex = df.reset_index()
     qg = show_grid(
