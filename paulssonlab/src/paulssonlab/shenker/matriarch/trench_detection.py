@@ -17,6 +17,7 @@ from util import getattr_if_not_none
 from diagnostics import wrap_diagnostics
 from ui import RevImage
 from image import hough_line_intensity, remove_large_objects, normalize_componentwise
+from geometry import get_image_limits
 import common
 
 
@@ -61,17 +62,6 @@ def drop_rare_labels(labels):
         if count / total > 0.01:
             good_labels.append(label)
     return good_labels
-
-
-def get_img_limits(shape):
-    x_min = y_min = 0
-    y_max, x_max = shape  # note order
-    # TODO: what convention should we use, should max be inclusive??
-    # x_max = img.shape[0] - 1
-    # y_max = img.shape[1] - 1
-    x_lim = (x_min, x_max)
-    y_lim = (y_min, y_max)
-    return x_lim, y_lim
 
 
 def find_hough_angle(
@@ -209,7 +199,7 @@ def get_edge_points(theta, x_lim, y_lim):
 def detect_trench_region(
     bin_img, theta, margin=3, num_region_slices=100, smooth=2, diagnostics=None
 ):
-    x_lim, y_lim = get_img_limits(bin_img.shape)
+    x_lim, y_lim = get_image_limits(bin_img.shape)
     anchor0, anchor1 = get_edge_points(theta, x_lim, y_lim)
     cross_sections = []
     anchors = list(point_linspace(anchor0, anchor1, num_region_slices))[margin:-margin]
@@ -254,6 +244,7 @@ def stack_jagged(arys, fill=0):
     return np.array(list(zip_longest(*arys, fillvalue=fill))).T
 
 
+# TODO: unused
 def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
     periods = np.linspace(period_min, period_max, bins)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
@@ -270,6 +261,7 @@ def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None
     return period
 
 
+# TODO: unused
 def detect_periodic_peaks(
     signal, threshold=0.2, min_dist=5, period_min=None, max_dist=None, diagnostics=None
 ):
@@ -324,7 +316,7 @@ def detect_periodic_peaks(
 
 
 def detect_trench_anchors(img, t0, theta, diagnostics=None):
-    x_lim, y_lim = get_img_limits(img.shape)
+    x_lim, y_lim = get_image_limits(img.shape)
     x1 = edge_point(t0, theta - np.pi / 2, x_lim, y_lim)
     x2 = edge_point(t0, theta + np.pi / 2, x_lim, y_lim)
     xs, ys = coords_along(x1, x2)
@@ -348,7 +340,7 @@ def detect_trench_anchors(img, t0, theta, diagnostics=None):
 
 
 def _detect_trench_end(img, anchors, theta, margin=15, threshold=0.8, diagnostics=None):
-    x_lim, y_lim = get_img_limits(img.shape)
+    x_lim, y_lim = get_image_limits(img.shape)
     xss = []
     yss = []
     trench_profiles = []

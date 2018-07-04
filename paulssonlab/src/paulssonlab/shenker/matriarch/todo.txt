@@ -1,8 +1,6 @@
 ### TODAY
-iter dfs with namedtuple indices; turn dicts with namedtuple indices into df (??)
-    easy globbing of idx into kwargs?
 locally make df with trench points, bbox; another df with diag
-profile/optimize get_trenches with diag off
+profile/optimize get_trenches
 make trench points df with dask
 get per-timepoint, per-trench focus locally
 per-trench focus with dask
