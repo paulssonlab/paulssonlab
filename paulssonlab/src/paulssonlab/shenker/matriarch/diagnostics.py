@@ -12,7 +12,7 @@ from util import (
 )
 
 
-def wrap_diagnostics(func, ignore_exceptions=False, dataframe=False):
+def wrap_diagnostics(func, ignore_exceptions=False, pandas=False):
     @wraps(func)
     def wrapper(*args, **kwargs):
         diag = tree()
@@ -25,29 +25,20 @@ def wrap_diagnostics(func, ignore_exceptions=False, dataframe=False):
                 err = e
         else:
             result = func(*args, **{"diagnostics": diag, **kwargs})
-        if dataframe:
-            diag = diagnostics_to_dataframe(diag)
+        if pandas:
+            diag = diagnostics_to_series(diag)
         return (result, diag, err)
 
     return wrapper
 
 
-# @wrapt.decorator
-# def wrap_diagnostics(func, instance, args, kwargs):
-#     diag = tree()
-#     return (func(*args, **{'diagnostics': diag, **kwargs}), diag)
-
-
-def diagnostics_to_dataframe(diagnostics):
+def diagnostics_to_series(diagnostics):
     d = flatten_dict(
         diagnostics, predicate=lambda _, x: not isinstance(x, hv.ViewableElement)
     )
     df = pd.Series(d)
     return df
 
-
-# def wrapped_diagnostics_to_dataframe(x):
-#    return expand_diagnostics_by_label(diagnostics_to_dataframe(x[1]))
 
 # TODO: replace with pd.melt??? probably not possible.
 def expand_diagnostics_by_label(df, label="label_", keep_all=True):
@@ -72,7 +63,6 @@ def expand_diagnostics_by_label(df, label="label_", keep_all=True):
                 if keep_all:
                     for label_num in label_nums:
                         d[label_num][column] = row[column]
-        # data.extend(d.values())
         for label_num, dd in d.items():
             if isinstance(df.index, pd.MultiIndex):
                 new_idx = idx + (label_num,)
@@ -84,6 +74,7 @@ def expand_diagnostics_by_label(df, label="label_", keep_all=True):
     return df2
 
 
+# TODO: unused??
 def extract_diagnostics_singleton(diagnostics, keys):
     return wrap_dict_values(
         drop_dict_nones({k: get_in(keys, v) for k, v in diagnostics.items()}),

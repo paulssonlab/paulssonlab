@@ -532,6 +532,4 @@ def get_trenches(img, find_angle_setwise=True, diagnostics=None):
     return trenches
 
 
-get_trenches_diag = wrap_diagnostics(
-    get_trenches, ignore_exceptions=True, dataframe=True
-)
+get_trenches_diag = wrap_diagnostics(get_trenches, ignore_exceptions=True, pandas=True)
