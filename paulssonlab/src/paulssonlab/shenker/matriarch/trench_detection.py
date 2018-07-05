@@ -15,7 +15,12 @@ import holoviews as hv
 import holoviews.operation.datashader as datashader
 from util import getattr_if_not_none
 from ui import RevImage
-from image import hough_line_intensity, remove_large_objects, normalize_componentwise
+from image import (
+    hough_line_intensity,
+    remove_large_objects,
+    normalize_componentwise,
+    gaussian_box_approximation,
+)
 from geometry import get_image_limits
 import common
 from diagnostics import wrap_diagnostics
@@ -448,12 +453,16 @@ def label_for_trenches(
     min_component_size=30,
     max_component_size=10**4,
     lowpass_radius=100,
+    approximate_gaussian_filter=True,
     diagnostics=None,
 ):
     img = img.astype(np.float_)
     if diagnostics is not None:
         diagnostics["image"] = RevImage(img)
-    img_lowpass = skimage.filters.gaussian(img, lowpass_radius)
+    if approximate_gaussian_filter:
+        img_lowpass = gaussian_box_approximation(img, lowpass_radius)
+    else:
+        img_lowpass = skimage.filters.gaussian(img, lowpass_radius)
     img_highpass = img - img_lowpass
     if diagnostics is not None:
         diagnostics["lowpass_image"] = RevImage(img_lowpass)

@@ -129,3 +129,20 @@ def hessian_eigenvalues(img):
     k1[np.isnan(k1)] = 0
     k2[np.isnan(k2)] = 0
     return k1, k2
+
+
+# FROM: Kovesi, Peter. 2010. Fast Almost-Gaussian Filtering.
+# TODO: replace with http://blog.ivank.net/fastest-gaussian-blur.html
+def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
+    w_ideal = np.sqrt((12 * sigma**2 / n) + 1)
+    w_l = int(np.floor(w_ideal))
+    if w_l % 2 == 0:
+        w_l -= 1
+    w_u = w_l + 2
+    m = (12 * sigma**2 - n * w_l**2 - 4 * n * w_l - 3 * n) / (-4 * w_l - 4)
+    m = round(m)
+    for i in range(m):
+        ary = scipy.ndimage.filters.uniform_filter(ary, w_l, mode=mode)
+    for i in range(n - m):
+        ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode)
+    return ary
