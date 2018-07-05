@@ -131,14 +131,14 @@ def get_nd2_frame_list(filenames):
 
 
 def concat_dataframes(dfs):
-    df = pd.concat(dfs)
+    df = pd.concat(dfs, sort=True)
     fields = get_one(dfs.keys())._fields
     df.index.names = fields + df.index.names[len(fields) :]
     return df
 
 
 def concat_series(series):
-    df = pd.concat(series, axis=1).T
+    df = pd.concat(series, axis=1, sort=True).T
     df.index.names = get_one(series.keys())._fields
     return df
 
@@ -162,7 +162,9 @@ def trench_points_to_dataframe(trench_points):
 def unzip_trench_info(trench_info):
     trench_points, trench_diag, trench_err = unzip_dicts(trench_info)
     trench_points = {
-        idx: trench_points_to_dataframe(tp) for idx, tp in trench_points.items()
+        idx: trench_points_to_dataframe(tp)
+        for idx, tp in trench_points.items()
+        if tp is not None
     }
     trench_points = concat_dataframes(trench_points)
     trench_diag = concat_series(trench_diag)
