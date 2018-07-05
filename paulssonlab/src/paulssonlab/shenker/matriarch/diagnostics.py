@@ -22,6 +22,7 @@ def wrap_diagnostics(func, ignore_exceptions=False, pandas=False):
             try:
                 result = func(*args, **{"diagnostics": diag, **kwargs})
             except Exception as e:
+                result = None
                 err = e
         else:
             result = func(*args, **{"diagnostics": diag, **kwargs})
