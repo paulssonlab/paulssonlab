@@ -486,4 +486,5 @@ def show_frame_info(df, stream):
         qg._update_table(triggered_by="cell_change", fire_data_change_event=True)
 
     stream.add_subscriber(update_frame_info)
+    update_frame_info(**stream.contents)
     return qg
