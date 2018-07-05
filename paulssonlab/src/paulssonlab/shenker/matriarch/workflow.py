@@ -4,8 +4,9 @@ from cytoolz import get_in
 import cachetools
 import nd2reader
 import sys
-from util import zip_dicts, multi_join
+from util import zip_dicts, multi_join, array_to_tuples, get_one, unzip_dicts
 from metadata import parse_nd2_metadata
+from diagnostics import expand_diagnostics_by_label
 
 
 def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
@@ -127,3 +128,44 @@ def get_nd2_frame_list(filenames):
     all_frames = multi_join(all_frames, channels_to_idx)
     all_frames.sort_index(inplace=True)
     return all_frames, metadata, parsed_metadata
+
+
+def concat_dataframes(dfs):
+    df = pd.concat(dfs)
+    fields = get_one(dfs.keys())._fields
+    df.index.names = fields + df.index.names[len(fields) :]
+    return df
+
+
+def concat_series(series):
+    df = pd.concat(series, axis=1).T
+    df.index.names = get_one(series.keys())._fields
+    return df
+
+
+def trench_points_to_dataframe(trench_points):
+    df = pd.concat(
+        {
+            trench_set: pd.DataFrame(
+                {
+                    "top": array_to_tuples(trench_set_points[0]),
+                    "bottom": array_to_tuples(trench_set_points[1]),
+                }
+            )
+            for trench_set, trench_set_points in trench_points.items()
+        }
+    )
+    df.index.names = ["trench_set", "trench"]
+    return df
+
+
+def unzip_trench_info(trench_info):
+    trench_points, trench_diag, trench_err = unzip_dicts(trench_info)
+    trench_points = {
+        idx: trench_points_to_dataframe(tp) for idx, tp in trench_points.items()
+    }
+    trench_points = concat_dataframes(trench_points)
+    trench_diag = concat_series(trench_diag)
+    trench_diag = expand_diagnostics_by_label(trench_diag)
+    trench_diag.index.rename("trench_set", level=-1, inplace=True)
+    return trench_points, trench_diag, trench_err

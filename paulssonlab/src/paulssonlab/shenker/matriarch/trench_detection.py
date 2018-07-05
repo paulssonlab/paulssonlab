@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
 from util import getattr_if_not_none
-from diagnostics import wrap_diagnostics
 from ui import RevImage
 from image import hough_line_intensity, remove_large_objects, normalize_componentwise
 from geometry import get_image_limits
 import common
+from diagnostics import wrap_diagnostics
 
 
 def _standardize_cluster_labels(X, fit):
@@ -498,6 +498,19 @@ def label_for_trenches(
     return normalized_img, img_labels, label_index
 
 
+def _get_trench_set(img, img_mask, theta=None, diagnostics=None):
+    img_masked = np.where(
+        skimage.morphology.binary_dilation(img_mask), img, np.percentile(img, 5)
+    )
+    # TODO: should only need to detect rotation once per image, not per trench set
+    if theta is None:
+        theta = detect_rotation(
+            img_masked, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
+        )
+    trench_points = detect_trench_set(img_masked, theta, diagnostics=diagnostics)
+    return trench_points
+
+
 def get_trenches(img, find_angle_setwise=True, diagnostics=None):
     normalized_img, img_labels, label_index = label_for_trenches(
         img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
@@ -519,17 +532,6 @@ def get_trenches(img, find_angle_setwise=True, diagnostics=None):
     return trenches
 
 
-get_trenches_diag = wrap_diagnostics(get_trenches)
-
-
-def _get_trench_set(img, img_mask, theta=None, diagnostics=None):
-    img_masked = np.where(
-        skimage.morphology.binary_dilation(img_mask), img, np.percentile(img, 5)
-    )
-    # TODO: should only need to detect rotation once per image, not per trench set
-    if theta is None:
-        theta = detect_rotation(
-            img_masked, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
-        )
-    trench_points = detect_trench_set(img_masked, theta, diagnostics=diagnostics)
-    return trench_points
+get_trenches_diag = wrap_diagnostics(
+    get_trenches, ignore_exceptions=True, dataframe=True
+)

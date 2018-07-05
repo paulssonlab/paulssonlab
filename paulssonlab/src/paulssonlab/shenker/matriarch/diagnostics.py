@@ -2,22 +2,32 @@ import pandas as pd
 import holoviews as hv
 from collections import defaultdict
 from functools import wraps
-from util import wrap_dict_values, drop_dict_nones, flatten_dict, map_collections, tree
+from util import (
+    wrap_dict_values,
+    drop_dict_nones,
+    flatten_dict,
+    map_collections,
+    tree,
+    get_one,
+)
 
 
-def wrap_diagnostics(func, ignore_exceptions=False):
+def wrap_diagnostics(func, ignore_exceptions=False, dataframe=False):
     @wraps(func)
     def wrapper(*args, **kwargs):
         diag = tree()
         # TODO: replace with util.fail_silently or toolz.excepts??
+        err = None
         if ignore_exceptions:
             try:
                 result = func(*args, **{"diagnostics": diag, **kwargs})
             except Exception as e:
-                return (None, diag, e)
+                err = e
         else:
             result = func(*args, **{"diagnostics": diag, **kwargs})
-        return (result, diag, None)
+        if dataframe:
+            diag = diagnostics_to_dataframe(diag)
+        return (result, diag, err)
 
     return wrapper
 
@@ -32,15 +42,14 @@ def diagnostics_to_dataframe(diagnostics):
     d = flatten_dict(
         diagnostics, predicate=lambda _, x: not isinstance(x, hv.ViewableElement)
     )
-    df = pd.DataFrame.from_dict({0: d}, orient="index")
+    df = pd.Series(d)
     return df
 
 
-def wrapped_diagnostics_to_dataframe(x):
-    return expand_diagnostics_by_label(diagnostics_to_dataframe(x[1]))
+# def wrapped_diagnostics_to_dataframe(x):
+#    return expand_diagnostics_by_label(diagnostics_to_dataframe(x[1]))
 
-
-# TODO: replace with pd.melt???
+# TODO: replace with pd.melt??? probably not possible.
 def expand_diagnostics_by_label(df, label="label_", keep_all=True):
     data = {}
     column_to_label_num = {}
@@ -65,11 +74,13 @@ def expand_diagnostics_by_label(df, label="label_", keep_all=True):
                         d[label_num][column] = row[column]
         # data.extend(d.values())
         for label_num, dd in d.items():
-            data[(idx, label_num)] = dd
+            if isinstance(df.index, pd.MultiIndex):
+                new_idx = idx + (label_num,)
+            else:
+                new_idx = (idx, label_num)
+            data[new_idx] = dd
     df2 = pd.DataFrame.from_dict(data, orient="index")
-    # parent_index = pd.MultiIndex(df.index)
-    # df2.index.rename(parent_index.names, level=parent_index.levels, inplace=True)
-    df2.index.rename([df.index.name, label[:-1]], inplace=True)
+    df2.index.rename(df.index.names + [label[:-1]], inplace=True)
     return df2
 
 

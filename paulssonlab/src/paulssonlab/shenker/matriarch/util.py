@@ -8,6 +8,7 @@ from functools import reduce, partial, wraps
 from itertools import count
 import wrapt
 from cytoolz import compose
+import collections
 from collections import namedtuple
 from dask.distributed import Future
 import operator
@@ -66,6 +67,16 @@ def getattr_if_not_none(obj, key):
         return None
 
 
+def _get_one(obj):
+    if isinstance(obj, Mapping):
+        obj = obj.values()
+    return next(iter(obj))
+
+
+def get_one(obj, level=1):
+    return repeat_apply(_get_one, level)(obj)
+
+
 def iterate_get_collection_value(obj, level):
     for i in range(level):
         if isinstance(obj, Mapping):
@@ -114,6 +125,13 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
 def zip_dicts(*dicts):
     for k in set(dicts[0]).intersection(*dicts[1:]):
         yield (k,) + tuple(d[k] for d in dicts)
+
+
+# simple one-level version of unzip_collection
+def unzip_dicts(d):
+    val0 = next(iter(d.values()))
+    length = len(val0)
+    return [{k: v[idx] for k, v in d.items()} for idx in range(length)]
 
 
 # TODO: used?? made redundant by recursive_map??
@@ -195,6 +213,13 @@ map_futures = partial(recursive_map, shortcircuit=Future)
 getitem_r = lambda b, a: operator.getitem(a, b)
 getattr_r = lambda b, a: operator.getattr(a, b)
 
+# TODO: unused. remove? see unzip_dicts, above
+def unzip_collection(data, **kwargs):
+    for idx in count():
+        yield recursive_map(
+            partial(getitem_r, idx), data, **{"shortcircuit": tuple, **kwargs}
+        )
+
 
 class Pointer:
     def __init__(self, value):
@@ -244,6 +269,10 @@ def collect_futures(data, predicate=lambda f: True):
 finished_futures = partial(collect_futures, predicate=lambda f: f.status == "finished")
 pending_futures = partial(collect_futures, predicate=lambda f: f.status == "pending")
 failed_futures = partial(collect_futures, predicate=lambda f: f.status == "error")
+
+
+def array_to_tuples(ary):
+    return [tuple(a) for a in ary]
 
 
 def repeat_apply(func, n):
