@@ -8,7 +8,6 @@ import holoviews as hv
 import holoviews.operation.datashader as datashader
 
 # TODO: fix imports
-from .core import detect_trench_ends
 from .periodogram import label_for_trenches
 from util import getitem_if_not_none
 from ui import RevImage
@@ -80,7 +79,7 @@ def find_periodic_lines(
     else:
         offset_objective_smoothed = offset_objective
     offset_idx = offset_objective_smoothed.argmax()
-    offset = offsets[offset_idx]
+    offset = offsets[offset_idx]  # + d[0] TODO
     if diagnostics is not None:
         diagnostics["offset"] = offset
         offset_plot = hv.Curve((offsets, offset_objective))
@@ -91,9 +90,9 @@ def find_periodic_lines(
         offset_plot *= hv.VLine(offset).options(color="red")
         diagnostics["offsets"] = offset_plot
         highlighted_points = hv.Scatter(
-            (offset_idxs[offset_idx], profile[offset_idxs[offset_idx]])
+            (d[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])
         ).options(size=5, color="red")
-        diagnostics["profile"] = hv.Curve(profile) * highlighted_points
+        diagnostics["profile"] = hv.Curve((d, profile)) * highlighted_points
     return angle, pitch, offset
 
 
