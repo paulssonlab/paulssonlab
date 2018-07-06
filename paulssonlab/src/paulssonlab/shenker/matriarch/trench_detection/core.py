@@ -13,7 +13,7 @@ from itertools import zip_longest
 import matplotlib.pyplot as plt
 import holoviews as hv
 import holoviews.operation.datashader as datashader
-from util import getattr_if_not_none
+from util import getitem_if_not_none
 from ui import RevImage
 from image import (
     hough_line_intensity,
@@ -23,7 +23,6 @@ from image import (
 )
 from geometry import get_image_limits
 import common
-from diagnostics import wrap_diagnostics
 
 
 def _standardize_cluster_labels(X, fit):
@@ -67,50 +66,6 @@ def drop_rare_labels(labels):
         if count / total > 0.01:
             good_labels.append(label)
     return good_labels
-
-
-def find_hough_angle(
-    img, theta=None, smooth=4, hough_func=hough_line_intensity, diagnostics=None
-):
-    if theta is None:
-        theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
-    h, theta, d = hough_func(img, theta=theta)
-    diff_h = np.diff(h.astype(np.int_), axis=1)
-    diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
-    if smooth:
-        diff_h_std_smoothed = scipy.ndimage.filters.gaussian_filter1d(
-            diff_h_std, smooth
-        )
-    else:
-        diff_h_std_smoothed = diff_h_std
-    theta_idx = diff_h_std_smoothed.argmax()
-    angle = theta[theta_idx]
-    if diagnostics is not None:
-        diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
-        bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
-        diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
-        # TODO: fix the left-edge vs. right-edge issue for theta bins
-        diff_h_plot = hv.Curve((np.rad2deg(theta[:-1]), diff_h_std))
-        if smooth:
-            diff_h_plot *= hv.Curve(
-                (np.rad2deg(theta[:-1]), diff_h_std_smoothed)
-            ).options(color="cyan")
-        diff_h_plot *= hv.VLine(np.rad2deg(angle)).options(color="red")
-        diagnostics["diff_h_std"] = diff_h_plot
-        diagnostics["angle"] = np.rad2deg(angle)
-    return angle
-
-
-def detect_rotation(img, window=np.deg2rad(10), diagnostics=None):
-    angle1 = find_hough_angle(
-        img, diagnostics=getattr_if_not_none(diagnostics, "hough_1")
-    )
-    angle2 = find_hough_angle(
-        img,
-        theta=np.linspace(angle1 - window, angle1 + window, 200),
-        diagnostics=getattr_if_not_none(diagnostics, "hough_2"),
-    )
-    return np.pi / 2 - angle2
 
 
 def point_linspace(anchor0, anchor1, num_points):
@@ -259,7 +214,7 @@ def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None
         diagnostics["search_range"] = (period_min, period_max)
         diagnostics["bins"] = bins
         diagnostics["period"] = period
-        highlighted_point = hv.Points([(period, std[period_idx])]).options(
+        highlighted_point = hv.Scatter([(period, std[period_idx])]).options(
             size=5, color="red"
         )
         diagnostics["periodogram"] = hv.Curve((periods, std)) * highlighted_point
@@ -296,14 +251,14 @@ def detect_periodic_peaks(
         min_dist,
         max_dist,
         bins=num_periods,
-        diagnostics=getattr_if_not_none(diagnostics, "periodogram_1"),
+        diagnostics=getitem_if_not_none(diagnostics, "periodogram_1"),
     )
     period2 = discrete_periodogram(
         xs,
         period * 0.98,
         period * 1.02,
         num_periods,
-        diagnostics=getattr_if_not_none(diagnostics, "periodogram_2"),
+        diagnostics=getitem_if_not_none(diagnostics, "periodogram_2"),
     )
     offsets = np.linspace(0, period2, num_periods)
     offset_idxs = (
@@ -313,7 +268,7 @@ def detect_periodic_peaks(
     offset_idx = objective.argmax()
     offset = offsets[offset_idx]
     if diagnostics is not None:
-        highlighted_point = hv.Points([(offset, objective[offset_idx])]).options(
+        highlighted_point = hv.Scatter([(offset, objective[offset_idx])]).options(
             size=5, color="red"
         )
         diagnostics["offsets"] = hv.Curve((offsets, objective)) * highlighted_point
@@ -387,13 +342,13 @@ def _detect_trench_end(img, anchors, theta, margin=15, threshold=0.8, diagnostic
 
 def detect_trench_ends(img, anchors, theta, diagnostics=None):
     top_points = _detect_trench_end(
-        img, anchors, theta, diagnostics=getattr_if_not_none(diagnostics, "top")
+        img, anchors, theta, diagnostics=getitem_if_not_none(diagnostics, "top")
     )
     bottom_points = _detect_trench_end(
         img,
         anchors,
         theta + np.pi,
-        diagnostics=getattr_if_not_none(diagnostics, "bottom"),
+        diagnostics=getitem_if_not_none(diagnostics, "bottom"),
     )
     if diagnostics is not None:
         anchor_points_plot = hv.Points(anchors).options(size=3, color="white")
@@ -404,141 +359,3 @@ def detect_trench_ends(img, anchors, theta, diagnostics=None):
             RevImage(img) * anchor_points_plot * top_points_plot * bottom_points_plot
         )
     return top_points, bottom_points
-
-
-def detect_trench_set(img, theta, diagnostics=None):
-    t0 = detect_trench_region(
-        img, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_region")
-    )
-    trench_anchors = detect_trench_anchors(
-        img, t0, theta, diagnostics=getattr_if_not_none(diagnostics, "trench_anchors")
-    )
-    trench_points = detect_trench_ends(
-        img,
-        trench_anchors,
-        theta,
-        diagnostics=getattr_if_not_none(diagnostics, "trench_ends"),
-    )
-    return trench_points
-
-
-def find_trench_threshold(img, bins=10, diagnostics=None):
-    if diagnostics is not None:
-        threshold_img_x = np.zeros(img.shape)
-        threshold_img_y = np.zeros(img.shape)
-    thresholds_x = []
-    xs = np.linspace(0, img.shape[1], bins).astype(np.int_)
-    for x0, x1 in zip(xs[:-1], xs[1:]):
-        threshold_x = skimage.filters.threshold_otsu(img[:, x0:x1])
-        if diagnostics is not None:
-            threshold_img_x[:, x0:x1] = threshold_x
-        thresholds_x.append(threshold_x)
-    thresholds_y = []
-    ys = np.linspace(0, img.shape[0], bins).astype(np.int_)
-    for y0, y1 in zip(ys[:-1], ys[1:]):
-        threshold_y = skimage.filters.threshold_otsu(img[y0:y1, :])
-        if diagnostics is not None:
-            threshold_img_y[y0:y1, :] = threshold_y
-        thresholds_y.append(threshold_y)
-    threshold = np.median(thresholds_x)
-    if diagnostics is not None:
-        diagnostics["threshold_img_x"] = RevImage(threshold_img_x)
-        diagnostics["threshold_img_y"] = RevImage(threshold_img_y)
-        diagnostics["threshold"] = threshold
-    return threshold
-
-
-def label_for_trenches(
-    img,
-    min_component_size=30,
-    max_component_size=10**4,
-    lowpass_radius=100,
-    approximate_gaussian_filter=True,
-    diagnostics=None,
-):
-    img = img.astype(np.float_)
-    if diagnostics is not None:
-        diagnostics["image"] = RevImage(img)
-    if approximate_gaussian_filter:
-        img_lowpass = gaussian_box_approximation(img, lowpass_radius)
-    else:
-        img_lowpass = skimage.filters.gaussian(img, lowpass_radius)
-    img_highpass = img - img_lowpass
-    if diagnostics is not None:
-        diagnostics["lowpass_image"] = RevImage(img_lowpass)
-        diagnostics["highpass_image"] = RevImage(img_highpass)
-    threshold = find_trench_threshold(
-        img_highpass,
-        diagnostics=getattr_if_not_none(diagnostics, "find_trench_threshold"),
-    )
-    img_thresh = img_highpass > threshold
-    if diagnostics is not None:
-        diagnostics["thresholded_image"] = RevImage(img_thresh)
-    # img_thresh = skimage.morphology.binary_erosion(img_thresh)
-    # if diagnostics is not None:
-    #     diagnostics['eroded_image'] = RevImage(img_thresh)
-    components, num_components = skimage.morphology.label(img_thresh, return_num=True)
-    if diagnostics is not None:
-        diagnostics["components"] = RevImage(components)
-        diagnostics["num_components"] = num_components
-    cleaned_components = components.copy()
-    skimage.morphology.remove_small_objects(
-        cleaned_components, min_size=min_component_size, in_place=True
-    )
-    remove_large_objects(cleaned_components, max_component_size, in_place=True)
-    cleaned_components, _, inverse_map = skimage.segmentation.relabel_sequential(
-        cleaned_components
-    )
-    num_cleaned_components = len(inverse_map)
-    if diagnostics is not None:
-        diagnostics["cleaned_components"] = RevImage(cleaned_components)
-        diagnostics["num_cleaned_components"] = num_cleaned_components
-    normalized_img = normalize_componentwise(
-        img_highpass,
-        cleaned_components,
-        label_index=np.arange(num_cleaned_components) + 1,
-    )  # TODO: check arange
-    if diagnostics is not None:
-        diagnostics["normalized_image"] = RevImage(normalized_img)
-    img_labels, label_index = label_binary_image(cleaned_components)
-    if diagnostics is not None:
-        diagnostics["labeled_image"] = RevImage(img_labels)
-        diagnostics["label_index"] = tuple(label_index)
-    return normalized_img, img_labels, label_index
-
-
-def _get_trench_set(img, img_mask, theta=None, diagnostics=None):
-    img_masked = np.where(
-        skimage.morphology.binary_dilation(img_mask), img, np.percentile(img, 5)
-    )
-    # TODO: should only need to detect rotation once per image, not per trench set
-    if theta is None:
-        theta = detect_rotation(
-            img_masked, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
-        )
-    trench_points = detect_trench_set(img_masked, theta, diagnostics=diagnostics)
-    return trench_points
-
-
-def get_trenches(img, find_angle_setwise=True, diagnostics=None):
-    normalized_img, img_labels, label_index = label_for_trenches(
-        img, diagnostics=getattr_if_not_none(diagnostics, "labeling")
-    )
-    if find_angle_setwise:
-        theta = None
-    else:
-        theta = detect_rotation(
-            img, diagnostics=getattr_if_not_none(diagnostics, "trench_rotation")
-        )
-    trenches = {}
-    for label in label_index:
-        trenches[label] = _get_trench_set(
-            normalized_img,
-            img_labels == label,
-            theta=theta,
-            diagnostics=getattr_if_not_none(diagnostics, "label_{}".format(label)),
-        )
-    return trenches
-
-
-get_trenches_diag = wrap_diagnostics(get_trenches, ignore_exceptions=True, pandas=True)

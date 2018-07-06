@@ -60,9 +60,16 @@ def fail_silently(func):
         return None
 
 
-def getattr_if_not_none(obj, key):
+def getitem_if_not_none(obj, key):
     if obj is not None:
         return obj[key]
+    else:
+        return None
+
+
+def getattr_if_not_none(obj, key):
+    if obj is not None:
+        return getattr(obj, key)
     else:
         return None
 
