@@ -114,6 +114,7 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
+    print("angle", angle)
     if angle < 0:
         effective_offset = (x_max * np.cos(angle) % pitch) - offset
     else:
@@ -122,9 +123,13 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     #       starting point
     # rhos = (np.arange(-2*pitch, x_max/np.cos(angle)+2*pitch, pitch) + effective_offset)
     # rhos = rhos[(rhos > 0) & (rhos < x_max/np.cos(angle))]
-    abs_angle = np.abs(angle)
-    delta = (y_max - x_max * np.tan(abs_angle)) * np.sin(abs_angle)
-    rhos = np.arange(effective_offset % pitch, x_max / np.cos(angle) + delta, pitch)
+    ####
+    # abs_angle = np.abs(angle)
+    # delta = (y_max - x_max*np.tan(abs_angle))*np.sin(abs_angle)
+    # rhos = np.arange(effective_offset % pitch,
+    #                 x_max/np.cos(angle) + delta, pitch)
+    ####
+    rhos = np.arange((-effective_offset) % pitch, x_max / np.cos(angle), pitch)
     upper_right = np.array((x_max, 0))
     anchors = []
     for rho in rhos:
@@ -212,6 +217,7 @@ def find_trench_ends(
             * bottom_line_plot
             * anchor_points_plot
         )
+    return  # TODO!!!!!!
     stacked_profile_diff = holo_diff(1, stacked_profile)
     # using np.nanargmax/min because we might have an all-nan axis
     top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)

@@ -1,6 +1,7 @@
 ### TODAY
 allow keying into a singleton with show_plot_browser
 detect trenches on non-square frames
+fix off-by-one issue in trench detection offsets
 
 switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
 profile/optimize get_trenches
