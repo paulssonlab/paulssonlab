@@ -68,7 +68,6 @@ def detect_rotation(img, window=np.deg2rad(10), diagnostics=None):
     return np.pi / 2 - angle2
 
 
-# TODO: unused
 def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None):
     periods = np.linspace(period_min, period_max, bins)
     std = scipy.stats.iqr(((xs) % periods[:, np.newaxis]), axis=1) / periods
@@ -85,7 +84,6 @@ def discrete_periodogram(xs, period_min, period_max, bins=1000, diagnostics=None
     return period
 
 
-# TODO: unused
 def detect_periodic_peaks(
     signal, threshold=0.2, min_dist=5, period_min=None, max_dist=None, diagnostics=None
 ):

@@ -76,8 +76,10 @@ def point_linspace(anchor0, anchor1, num_points):
 
 def coords_along(x0, x1):
     length = int(np.sqrt(np.sum((x1 - x0) ** 2)))
-    xs = np.linspace(x0[0], x1[0], length).astype(np.int_)[1:-1]
-    ys = np.linspace(x0[1], x1[1], length).astype(np.int_)[1:-1]
+    # if length == 0:
+    #    length = 1
+    xs = np.linspace(x0[0], x1[0], length).astype(np.int_)  # [1:-1]
+    ys = np.linspace(x0[1], x1[1], length).astype(np.int_)  # [1:-1]
     return xs, ys
 
 
@@ -147,6 +149,7 @@ def line_array(
             yield y0, y1
 
 
+# TODO: obsolete?
 def get_edge_points(theta, x_lim, y_lim):
     x_min = np.array([x_lim[0], y_lim[0]])
     x_max = np.array([x_lim[1], y_lim[1]])
@@ -157,5 +160,12 @@ def get_edge_points(theta, x_lim, y_lim):
 
 
 # FROM: https://stackoverflow.com/questions/23815327/numpy-one-liner-for-combining-unequal-length-np-array-to-a-matrixor-2d-array
-def stack_jagged(arys, fill=0):
+def stack_jagged(arys, fill=np.nan):
     return np.array(list(zip_longest(*arys, fillvalue=fill))).T
+
+
+def stack_jagged_points(arys):
+    length = max(len(points) for points in arys)
+    return np.array(
+        [np.pad(points, [(0, length - len(points)), (0, 0)], "edge") for points in arys]
+    ).swapaxes(0, 1)

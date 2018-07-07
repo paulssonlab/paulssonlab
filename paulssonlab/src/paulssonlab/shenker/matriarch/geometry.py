@@ -5,8 +5,8 @@ def get_image_limits(shape):
     x_min = y_min = 0
     y_max, x_max = shape  # note order
     # TODO: what convention should we use, should max be inclusive??
-    # x_max = img.shape[0] - 1
-    # y_max = img.shape[1] - 1
+    x_max -= 1
+    y_max -= 1
     x_lim = (x_min, x_max)
     y_lim = (y_min, y_max)
     return x_lim, y_lim
