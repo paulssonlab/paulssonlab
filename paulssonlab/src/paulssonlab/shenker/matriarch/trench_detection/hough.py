@@ -135,55 +135,75 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     return anchors
 
 
-def get_trench_profiles(img, anchors, angle, diagnostics=None):
-    x_lim, y_lim = get_image_limits(img.shape)
-    profile_points = []
-    trench_profiles = []
-    for anchor in anchors:
-        x_end = edge_point(anchor, angle, x_lim, y_lim)
-        xs, ys = coords_along(anchor, x_end)
-        points = np.vstack((xs, ys)).T
-        profile_points.append(points)
-        trench_profiles.append(img[ys, xs])
-    if diagnostics is not None:
-        # TODO: make hv.Path??
-        diagnostics["trench_profiles"] = hv.Overlay.from_values(
-            [hv.Curve(tp) for tp in trench_profiles]
-        )
-    return trench_profiles, profile_points
-
-
 def find_trench_ends(
     img, angle, pitch, offset, margin=15, threshold=0.8, smooth=100, diagnostics=None
 ):
     x_lim, y_lim = get_image_limits(img.shape)
     anchors = trench_anchors(angle, pitch, offset, x_lim, y_lim)
-    top_profiles, top_profile_points = get_trench_profiles(
-        img,
-        anchors,
-        3 / 2 * np.pi - angle,
-        diagnostics=getitem_if_not_none(diagnostics, "top"),
+    profiles = []
+    line_points = []
+    offsets = []
+    for anchor in anchors:
+        top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim)
+        bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim)
+        line_length = np.linalg.norm(top_anchor - bottom_anchor)
+        top_length = np.linalg.norm(top_anchor - anchor)
+        bottom_length = np.linalg.norm(bottom_anchor - anchor)
+        xs, ys = coords_along(top_anchor, bottom_anchor)
+        profile = img[ys, xs]
+        points = np.vstack((xs, ys)).T
+        # TODO: precision??
+        if line_length >= max(top_length, bottom_length):
+            # line contains anchor
+            offset = -int(np.ceil(top_length))
+        else:
+            # line is strictly on one side of anchor
+            if top_length <= bottom_length:
+                # line lies below anchor
+                offset = int(np.ceil(top_length))
+            else:
+                # line lies above anchor
+                offset = int(np.ceil(bottom_length))
+        profiles.append(profile)
+        line_points.append(points)
+        offsets.append(offset)
+    min_offset = min(offsets)
+    anchor_idx = -min_offset
+    max_stacked_length = max(
+        [len(profile) - offset for offset, profile in zip(offsets, profiles)]
     )
-    bottom_profiles, bottom_profile_points = get_trench_profiles(
-        img,
-        anchors,
-        np.pi / 2 - angle,
-        diagnostics=getitem_if_not_none(diagnostics, "bottom"),
+    padded_profiles = []
+    padded_line_points = []
+    for profile, points, offset in zip(profiles, line_points, offsets):
+        left_padding = offset - min_offset
+        right_padding = max_stacked_length - left_padding - len(profile)
+        padded_profile = np.pad(
+            profile, (left_padding, right_padding), "constant", constant_values=np.nan
+        )
+        padded_points = np.pad(points, [(left_padding, right_padding), (0, 0)], "edge")
+        padded_profiles.append(padded_profile)
+        padded_line_points.append(padded_points)
+    if diagnostics is not None:
+        # TODO: make hv.Path??
+        diagnostics["profiles"] = hv.Overlay.from_values(
+            [hv.Curve(tp) for tp in padded_profiles]
+        )
+    # stacked_profile = padded_profiles[25]
+    stacked_profile = np.nanpercentile(
+        np.array(padded_profiles), threshold * 100, axis=0
     )
+    stacked_points = np.array(padded_line_points).swapaxes(0, 1)
     if diagnostics is not None:
         diagnostics["threshold"] = threshold
         lines_plot = hv.Path(
-            [
-                [top[-1], bottom[-1]]
-                for top, bottom in zip(top_profile_points, bottom_profile_points)
-            ]
+            [[points[0], points[-1]] for points in line_points]
         ).options(color="blue")
-        top_line_plot = hv.Points([top[-1] for top in top_profile_points]).options(
+        top_line_plot = hv.Points([points[0] for points in line_points]).options(
             color="green"
         )
-        bottom_line_plot = hv.Points(
-            [bottom[-1] for bottom in bottom_profile_points]
-        ).options(color="red")
+        bottom_line_plot = hv.Points([points[-1] for points in line_points]).options(
+            color="red"
+        )
         anchor_points_plot = hv.Points(anchors).options(size=3, color="cyan")
         diagnostics["image_with_lines"] = (
             RevImage(img)
@@ -192,19 +212,12 @@ def find_trench_ends(
             * bottom_line_plot
             * anchor_points_plot
         )
-    stacked_top_profile = np.nanpercentile(
-        stack_jagged(top_profiles), threshold * 100, axis=0
-    )
-    stacked_bottom_profile = np.nanpercentile(
-        stack_jagged(bottom_profiles), threshold * 100, axis=0
-    )
-    anchor_idx = len(stacked_top_profile)
-    stacked_profile = np.concatenate(
-        (stacked_top_profile[:0:-1], stacked_bottom_profile)
-    )
     stacked_profile_diff = holo_diff(1, stacked_profile)
-    top_end = max(stacked_profile_diff.argmax() - margin, 0)
-    bottom_end = min(stacked_profile_diff.argmin() + margin, len(stacked_profile) - 1)
+    # using np.nanargmax/min because we might have an all-nan axis
+    top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)
+    bottom_end = min(
+        np.nanargmin(stacked_profile_diff) + margin, len(stacked_profile) - 1
+    )
     if diagnostics is not None:
         diagnostics["margin"] = margin
         diagnostics["stacked_profile"] = (
@@ -214,18 +227,8 @@ def find_trench_ends(
             * hv.VLine(top_end).options(color="green")
             * hv.VLine(bottom_end).options(color="red")
         )
-    stacked_top_points = stack_jagged_points(top_profile_points)
-    stacked_bottom_points = stack_jagged_points(bottom_profile_points)
-    stacked_points = np.concatenate((stacked_top_points[:0:-1], stacked_bottom_points))
     top_endpoints = stacked_points[top_end]
     bottom_endpoints = stacked_points[bottom_end]
-    print("a", anchors[-1], len(top_profile_points))
-    print("at", top_profile_points[-1])
-    print("ab", bottom_profile_points[-1])
-    print("s", stacked_points.shape, top_end, bottom_end)
-    print("stacked_points", stacked_points[top_end - 2 : top_end + 2])
-    print("hhh", stacked_points[top_end - 100 : bottom_end + 100, -1])
-    print("top", top_endpoints)
     # discard trenches where top endpoint is the same as the bottom endpoint
     mask = ~np.apply_along_axis(np.all, 1, np.equal(top_endpoints, bottom_endpoints))
     top_endpoints = top_endpoints[mask]
