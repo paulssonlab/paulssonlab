@@ -104,7 +104,6 @@ def edge_point(x0, theta, x_lim, y_lim, precision=5):
     elif 3 / 2 * np.pi <= theta:
         corner_x, corner_y = x_min, y_min
     angle_to_corner = np.arctan2(corner_y - x0[1], x0[0] - corner_x) % (2 * np.pi)
-    print(">>", np.rad2deg(angle_to_corner), np.rad2deg(theta))
     if (
         (theta >= angle_to_corner and 0 <= theta < np.pi / 2)
         or (theta < angle_to_corner and np.pi / 2 <= theta < np.pi)
@@ -114,7 +113,6 @@ def edge_point(x0, theta, x_lim, y_lim, precision=5):
         # top/bottom
         x1 = np.array([x0[0] - (corner_y - x0[1]) / np.tan(theta), corner_y])
     else:
-        print("x", (corner_x - x0[0]), np.tan(theta))
         # left/right
         x1 = np.array([corner_x, x0[1] - (corner_x - x0[0]) * np.tan(theta)])
     if precision is not None:
