@@ -1,12 +1,15 @@
 ### TODAY
-ensure lines are aligned with upper-left corner (why should this change for a different pitch/angle??)
+detect trenches on non-square frames
+fix errors (with error display somehow?/at least, way to print current error?)
+errors as dataframe
+run trench detection at scale, assess performance
+
 fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
 
 allow keying into a singleton with show_plot_browser
-detect trenches on non-square frames
 fix off-by-one issue in trench detection offsets
+take entire datasets, rotate by random angles, assess angle detection performance (compare to angle_offset+orig_found_angle)
 
-switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
 profile/optimize get_trenches
     downsample before gaussian?
     reduce bit depth of trench finding images?
@@ -17,7 +20,7 @@ per-trench focus with dask
 my watershed locally
 my watershed with dask
 generate cell segmentation dataframes
-    identify pandas schema for cell lineages
+    decide on pandas schema for cell lineages
 identify transcription errors
 
 multichannel_image_viewer

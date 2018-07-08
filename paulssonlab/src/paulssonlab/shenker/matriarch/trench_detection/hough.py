@@ -70,9 +70,11 @@ def find_periodic_lines(
             color="red"
         )
     offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
-    offset_idxs = (np.arange(0, len(profile), pitch) + offsets[:, np.newaxis]).astype(
-        np.int_
-    )
+    # always leave a period of length `pitch` so we can add offsets
+    # even when we could've fit another period
+    offset_idxs = (
+        np.arange(0, len(profile), pitch)[:-1] + offsets[:, np.newaxis]
+    ).astype(np.int_)
     offset_objective = profile[offset_idxs].sum(axis=1)
     if smooth:
         offset_objective_smoothed = scipy.ndimage.filters.gaussian_filter1d(
