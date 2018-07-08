@@ -114,11 +114,13 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    print("angle", angle)
+    print("angle", np.rad2deg(angle))
     if angle < 0:
-        effective_offset = (x_max * np.cos(angle) % pitch) - offset
+        # effective_offset = (x_max*np.cos(angle) % pitch) - offset
+        effective_offset = x_max * np.cos(angle) - offset  # offset % pitch
     else:
-        effective_offset = ((max_dist * 2) % pitch) + offset
+        # effective_offset = ((max_dist*2) % pitch) + offset
+        effective_offset = 0
     # TODO: the 2*pitch is just so offsets won't push rhos away from
     #       starting point
     # rhos = (np.arange(-2*pitch, x_max/np.cos(angle)+2*pitch, pitch) + effective_offset)
@@ -129,14 +131,19 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     # rhos = np.arange(effective_offset % pitch,
     #                 x_max/np.cos(angle) + delta, pitch)
     ####
-    rhos = np.arange((-effective_offset) % pitch, x_max / np.cos(angle), pitch)
+    # abs_angle = np.abs(angle)
+    # delta = (y_max - x_max*np.tan(abs_angle))*np.sin(abs_angle)
+    delta = 0
+    rhos = np.arange(effective_offset % pitch, x_max / np.cos(angle) + delta, pitch)
+    print("rhos", rhos)
     upper_right = np.array((x_max, 0))
     anchors = []
-    for rho in rhos:
-        anchor = rho * np.array((np.cos(angle), np.sin(angle)))
-        if angle < 0:
-            anchor = upper_right - anchor
-        anchors.append(anchor)
+    anchors = (
+        rhos[:, np.newaxis] * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
+    )
+    if angle < 0:
+        anchors = upper_right - anchors
+    print("anchors", anchors)
     return anchors
 
 
@@ -151,6 +158,7 @@ def find_trench_ends(
     for anchor in anchors:
         top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim)
         bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim)
+        print("a", anchor, "t", top_anchor, "b", bottom_anchor)
         line_length = np.linalg.norm(top_anchor - bottom_anchor)
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
@@ -179,11 +187,23 @@ def find_trench_ends(
     )
     padded_profiles = []
     padded_line_points = []
-    for profile, points, offset in zip(profiles, line_points, offsets):
+    for i, (profile, points, offset) in enumerate(zip(profiles, line_points, offsets)):
         left_padding = offset - min_offset
         right_padding = max_stacked_length - left_padding - len(profile)
         padded_profile = np.pad(
             profile, (left_padding, right_padding), "constant", constant_values=np.nan
+        )
+        print(
+            "left",
+            left_padding,
+            "right",
+            right_padding,
+            "s",
+            points.shape,
+            "prof",
+            profile.shape,
+            "padded_prof",
+            padded_profile.shape,
         )
         padded_points = np.pad(points, [(left_padding, right_padding), (0, 0)], "edge")
         padded_profiles.append(padded_profile)

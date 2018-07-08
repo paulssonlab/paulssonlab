@@ -1,4 +1,7 @@
 ### TODAY
+ensure lines are aligned with upper-left corner (why should this change for a different pitch/angle??)
+fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
+
 allow keying into a singleton with show_plot_browser
 detect trenches on non-square frames
 fix off-by-one issue in trench detection offsets
