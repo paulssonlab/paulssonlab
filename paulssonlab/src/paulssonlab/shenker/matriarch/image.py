@@ -45,6 +45,7 @@ def _hough_line_intensity(accumulator, img, theta, diagonal):
             if img[i, j] == 0:  # optimization for boolean input images
                 continue
             for k in range(num_thetas):
+                # TODO: is round correct here?
                 rho = int(np.round_(i * sin_theta[k] + j * cos_theta[k])) + diagonal
                 accumulator[rho, k] += img[i, j]
 

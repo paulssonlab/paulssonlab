@@ -1,4 +1,5 @@
 ### TODAY
+compare houghs on cropped frames
 detect trenches on non-square frames
 fix errors (with error display somehow?/at least, way to print current error?)
 errors as dataframe
@@ -8,7 +9,7 @@ fix edge_points on boundary/corners (result should be continuous when adding eps
 
 allow keying into a singleton with show_plot_browser
 fix off-by-one issue in trench detection offsets
-take entire datasets, rotate by random angles, assess angle detection performance (compare to angle_offset+orig_found_angle)
+take entire datasets, rotate by random angles, crop slightly in nonsquare aspect ratios, assess angle detection performance (compare to angle_offset+orig_found_angle)
 
 profile/optimize get_trenches
     downsample before gaussian?

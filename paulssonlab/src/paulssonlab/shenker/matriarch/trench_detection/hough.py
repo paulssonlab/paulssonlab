@@ -33,7 +33,7 @@ def find_periodic_lines(
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
-    h, theta, d = hough_func(img, theta=theta)
+    h, theta, rho = hough_func(img, theta=theta)
     diff_h = np.diff(h.astype(np.int_), axis=1)  # TODO: is diff necessary??
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
     if smooth:
@@ -47,7 +47,7 @@ def find_periodic_lines(
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
         diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
-        bounds = (np.rad2deg(theta[0]), d[0], np.rad2deg(theta[-1]), d[-1])
+        bounds = (np.rad2deg(theta[0]), rho[0], np.rad2deg(theta[-1]), rho[-1])
         diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
         # TODO: fix the left-edge vs. right-edge issue for theta bins
         theta_degrees = np.rad2deg(theta[:-1])
@@ -94,9 +94,9 @@ def find_periodic_lines(
         offset_plot *= hv.VLine(offset).options(color="red")
         diagnostics["offsets"] = offset_plot
         highlighted_points = hv.Scatter(
-            (d[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])
+            (rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])
         ).options(size=5, color="red")
-        diagnostics["profile"] = hv.Curve((d, profile)) * highlighted_points
+        diagnostics["profile"] = hv.Curve((rho, profile)) * highlighted_points
     return angle, pitch, offset
 
 
@@ -116,10 +116,11 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
+    # TODO: not totally clear that the signs are right on max_dist, but seem to work
     if angle < 0:
-        effective_offset = x_max * np.cos(angle) - offset
+        effective_offset = max_dist + x_max * np.cos(angle) - offset
     else:
-        effective_offset = offset
+        effective_offset = -max_dist + offset
     abs_angle = np.abs(angle)
     delta = (y_max - x_max * np.tan(abs_angle)) * np.sin(abs_angle)
     rhos = np.arange(effective_offset % pitch, x_max / np.cos(angle) + delta, pitch)
