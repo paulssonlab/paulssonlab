@@ -55,7 +55,6 @@ pyomo = "*"
 "037fc10" = {path = "/home/jqs1/projects/dask", editable = true}
 wrapt = "*"
 "92bd2ca" = {path = "./../holoviews", editable = true}
-"c160678" = {path = "./../holoplot", editable = true}
 colorama = "*"
 "4a8dedc" = {path = "./../pyviz_comms", editable = true}
 pyviz-comms = "*"
@@ -63,6 +62,8 @@ pyviz-comms = "*"
 "925ab16" = {path = "./../qgrid", editable = true}
 notebook = "*"
 cachetools = "*"
+"3ab5c35" = {path = "./../hvplot", editable = true}
+pyct = "*"
 
 [dev-packages]
 
