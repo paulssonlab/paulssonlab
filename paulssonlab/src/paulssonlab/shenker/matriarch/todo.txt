@@ -23,8 +23,8 @@ frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
 plot trench 95% percentile brightness vs. time, click on a plot to show plot in frame_viewer
 
 ### POSTPONED
+fix trench detection with debris in feeding channel (TxnErr002.nd2)
 frame histogram (clustering or thresholding) for frame quality
-
 errors as dataframe
 fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
 allow keying into a singleton with show_plot_browser

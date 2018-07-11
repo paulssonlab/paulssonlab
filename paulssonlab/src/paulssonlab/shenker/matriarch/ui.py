@@ -202,14 +202,20 @@ def show_grid(df, header_height=100, stream=None, **kwargs):
             stream.event(**params)
 
         qg.on("selection_changed", handle_selection_changed)
-        # def update_selection(**kwargs):
-        #     for column in df.index.names:
-        #         if column not in kwargs:
-        #             return # stream is missing columns in index
-        #     idx = df.index.get_loc(tuple(getattr(frame_stream, column) for column in df.index.names))
-        #     qg._selected_rows = [idx]
-        # TODO: need to fire an update event
-        # stream.add_subscriber(update_selection)
+
+        def update_selection(**kwargs):
+            for column in df.index.names:
+                if column not in kwargs:
+                    return  # stream is missing columns in index
+            # idx = df.index.get_loc(tuple(getattr(stream, column) for column in df.index.names))
+            # qg._change_selection([idx], 'api', send_msg_to_js=True)
+            # the following is equivalent to the above
+            idx = tuple(getattr(stream, column) for column in df.index.names)
+            qg.change_selection([idx])
+
+        stream.add_subscriber(update_selection)
+    # TODO: we can't update selection until widget has already been displayed
+    # update_selection(**stream.contents)
     return qg
 
 
