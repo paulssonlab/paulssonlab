@@ -43,7 +43,7 @@ def iter_index(df):
     else:
         if isinstance(df, pd.Index):
             index = df
-            rows = df.toframe(index=False)
+            rows = df.to_frame(index=False)
         else:
             index = df.index
             rows = df.reset_index()
