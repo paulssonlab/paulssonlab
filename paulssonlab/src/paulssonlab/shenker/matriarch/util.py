@@ -24,9 +24,12 @@ def multi_join(left, right):
         left_index = left.index
     else:
         raise NotImplementedError
-    return pd.merge(
+    res = pd.merge(
         left_mergable, right.reset_index(), on=right.index.names, how="inner"
     ).set_index(left_index.names)
+    if isinstance(right, pd.Series):
+        res = res.squeeze()
+    return res
 
 
 def iter_index(df):

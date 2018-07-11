@@ -1,28 +1,23 @@
 ### TODAY
-compare houghs on cropped frames
-detect trenches on non-square frames
-fix errors (with error display somehow?/at least, way to print current error?)
-errors as dataframe
-run trench detection at scale, assess performance
-
-fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
-
-allow keying into a singleton with show_plot_browser
-fix off-by-one issue in trench detection offsets
-take entire datasets, rotate by random angles, crop slightly in nonsquare aspect ratios, assess angle detection performance (compare to angle_offset+orig_found_angle)
-
-profile/optimize get_trenches
-    downsample before gaussian?
-    reduce bit depth of trench finding images?
-    copy in normalize_componentwise (time how long it takes to copy? vs. how long it takes to read off disk?)
+load trench stacks into memory
+my segmentation
+charles segmentation
+pandas schema for cell lineages
 
 get per-timepoint, per-trench focus locally
 per-trench focus with dask
-my watershed locally
-my watershed with dask
-generate cell segmentation dataframes
-    decide on pandas schema for cell lineages
+segmentation with dask
+    keep segmentation masks remote
+    function to easily pull back calculated quantities
+        given mask stack and image stack
+        output dataframe of calculated quantities
+            (like trenchwise/etc.)
 identify transcription errors
+nice UI
+    show trench stacks lined up for selected trenches
+
+segmentation diffing?
+better storage format for trench_points (non-dataframe?)
 
 multichannel_image_viewer
 frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
@@ -30,6 +25,12 @@ plot trench 95% percentile brightness vs. time, click on a plot to show plot in 
 
 ### POSTPONED
 frame histogram (clustering or thresholding) for frame quality
+
+errors as dataframe
+fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
+allow keying into a singleton with show_plot_browser
+fix off-by-one issue in trench detection offsets
+take entire datasets, rotate by random angles, crop slightly in nonsquare aspect ratios, assess angle detection performance (compare to angle_offset+orig_found_angle)
 
 pandas local/dask runner+combiner for both frame quality/trench finding
 dask trench-wise processing for trench-wise focus df
