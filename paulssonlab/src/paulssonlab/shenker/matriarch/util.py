@@ -1,4 +1,5 @@
 import pandas as pd
+import pandas.core.groupby.groupby
 from collections import defaultdict, Sequence, Mapping
 from tqdm import tqdm, tqdm_notebook
 import zarr
@@ -33,18 +34,25 @@ def multi_join(left, right):
 
 
 def iter_index(df):
-    if isinstance(df, pd.Index):
-        index = df
-        rows = df.toframe(index=False)
+    if isinstance(df, pandas.core.groupby.groupby.GroupBy):
+        Index = namedtuple(
+            "Index", df.keys, rename=True
+        )  # TODO: have not tested rename=True
+        for idx, group in df:
+            yield Index(*idx), group
     else:
-        index = df.index
-        rows = df.reset_index()
-    Index = namedtuple(
-        "Index", index.names, rename=True
-    )  # TODO: have not tested rename=True
-    for row in rows.itertuples():
-        idx = Index(*index[row.Index])
-        yield idx, row
+        if isinstance(df, pd.Index):
+            index = df
+            rows = df.toframe(index=False)
+        else:
+            index = df.index
+            rows = df.reset_index()
+        Index = namedtuple(
+            "Index", index.names, rename=True
+        )  # TODO: have not tested rename=True
+        for row in rows.itertuples():
+            idx = Index(*index[row.Index])
+            yield idx, row
 
 
 def split_into(ary, max_length):
