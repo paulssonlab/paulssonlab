@@ -146,11 +146,22 @@ def concat_series(series):
 def trench_points_to_dataframe(trench_points):
     df = pd.concat(
         {
-            trench_set: pd.DataFrame(
+            trench_set: pd.concat(
                 {
-                    "top": array_to_tuples(trench_set_points[0]),
-                    "bottom": array_to_tuples(trench_set_points[1]),
-                }
+                    "top": pd.DataFrame(
+                        {
+                            "x": trench_set_points[0][:, 0],
+                            "y": trench_set_points[0][:, 1],
+                        }
+                    ),
+                    "bottom": pd.DataFrame(
+                        {
+                            "x": trench_set_points[1][:, 0],
+                            "y": trench_set_points[1][:, 1],
+                        }
+                    ),
+                },
+                axis=1,
             )
             for trench_set, trench_set_points in trench_points.items()
         }

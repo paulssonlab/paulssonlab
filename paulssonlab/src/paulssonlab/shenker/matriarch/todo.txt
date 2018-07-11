@@ -17,7 +17,6 @@ nice UI
     show trench stacks lined up for selected trenches
 
 segmentation diffing?
-better storage format for trench_points (non-dataframe?)
 
 multichannel_image_viewer
 frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
