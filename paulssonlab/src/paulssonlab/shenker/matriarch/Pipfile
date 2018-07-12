@@ -64,6 +64,7 @@ notebook = "*"
 cachetools = "*"
 "3ab5c35" = {path = "./../hvplot", editable = true}
 pyct = "*"
+pysize = "*"
 
 [dev-packages]
 
