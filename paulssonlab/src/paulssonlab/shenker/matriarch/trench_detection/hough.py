@@ -60,12 +60,14 @@ def find_periodic_lines(
         diagnostics["diff_h_std"] = diff_h_plot
         diagnostics["angle"] = np.rad2deg(angle)
     profile = h[:, theta_idx]
-    freqs, spectrum = scipy.signal.periodogram(profile, scaling="spectrum")
-    spectrum[:2] = 0  # TODO: ignore two highest frequencies
+    trimmed_profile = np.trim_zeros(profile)
+    freqs, spectrum = scipy.signal.periodogram(trimmed_profile, scaling="spectrum")
+    # spectrum[:2] = 0 # TODO: ignore two lowest frequencies
     pitch_idx = spectrum.argmax()
     pitch = 1 / freqs[pitch_idx]
     if diagnostics is not None:
         diagnostics["pitch"] = pitch
+        diagnostics["trimmed_profile"] = hv.Curve(trimmed_profile)
         diagnostics["spectrum"] = hv.Curve(spectrum) * hv.VLine(pitch_idx).options(
             color="red"
         )
