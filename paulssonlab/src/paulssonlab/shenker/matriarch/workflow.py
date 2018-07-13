@@ -211,25 +211,70 @@ def get_trench_thumbs(trenches, get_frame_func=get_nd2_frame):
     return trench_thumbs
 
 
+def get_filename_image_limits(metadata):
+    return {
+        filename: (
+            (
+                0,
+                get_in(
+                    ("image_attributes", "SLxImageAttributes", "uiHeight"),
+                    file_metadata,
+                )
+                - 1,
+            ),
+            (
+                0,
+                get_in(
+                    ("image_attributes", "SLxImageAttributes", "uiWidth"), file_metadata
+                )
+                - 1,
+            ),
+        )
+        for filename, file_metadata in metadata.items()
+    }
+
+
+def get_trench_bboxes(trenches, x_lim, y_lim):
+    top_points = trenches["top"].values
+    bottom_points = trenches["bottom"].values
+    ary = np.hstack(
+        [
+            get_trench_bbox((top_points, bottom_points), trench_idx, x_lim, y_lim)[
+                :, np.newaxis
+            ]
+            for trench_idx in range(len(top_points))
+        ]
+    )
+    print(ary.shape)
+    return ary
+
+
 def get_trench_stacks(
-    trenches, frames, get_frame_func=get_nd2_frame, transformation=np.array
+    trenches,
+    frames,
+    image_limits,
+    get_frame_func=get_nd2_frame,
+    transformation=np.array,
 ):
     trench_stacks = defaultdict(list)
     for framestack_idx, framestack_group in iter_index(
         trenches.groupby(["filename", "position", "channel"])
     ):
         # t_group_iterator = util.iter_index(framestack_group.groupby(['t', 'trench_set']))
+        x_lim, y_lim = image_limits[framestack_idx.filename]
         current_trenches = next(iter(framestack_group.groupby("t")))[1]
+        # top_points = current_trenches['top'].values
+        # bottom_points = current_trenches['bottom'].values
+        uls, lrs = get_trench_bboxes(current_trenches, x_lim, y_lim)
+        print(uls[2], lrs[2])
+        # print(uls.shape,lrs.shape);0/0
         for t in frames.loc[IDX[framestack_idx]].reset_index()["t"]:
             frame_idx = {"t": t, **framestack_idx._asdict()}
             frame = get_frame_func(**frame_idx)
-            x_lim, y_lim = get_image_limits(frame.shape)
             for trench_idx, _ in iter_index(current_trenches.index.droplevel("t")):
-                top_points = current_trenches["top"].values
-                bottom_points = current_trenches["bottom"].values
-                ul, lr = get_trench_bbox(
-                    (top_points, bottom_points), trench_idx.trench, x_lim, y_lim
-                )
+                ul = uls[trench_idx.trench]
+                lr = lrs[trench_idx.trench]
+                # ul, lr = get_trench_bbox((top_points, bottom_points), trench_idx.trench, x_lim, y_lim)
                 trench_stacks[trench_idx].append(frame[ul[1] : lr[1], ul[0] : lr[0]])
     trench_stacks = {k: list(reversed(v)) for k, v in trench_stacks.items()}
     if transformation is not None:

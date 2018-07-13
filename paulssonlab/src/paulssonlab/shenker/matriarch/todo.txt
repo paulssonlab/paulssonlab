@@ -2,9 +2,12 @@
 channels as categoricals in all_frames
 optimize get_trench_stacks
     check that pickle/unpickling doesn't screw up speed of accessing .values for upper_left/lower_right
+    check that this works for subsets of trenches?
 charles segmentation
 pandas schema for cell lineages
 get_trench_stacks: easy way to load in different channels
+draw trench bboxes on image
+fix low-index trench bboxes (why so big?)
 
 fix trench detection with debris in feeding channel (TxnErr002.nd2)
     angle/pitch finding seems to mostly work
