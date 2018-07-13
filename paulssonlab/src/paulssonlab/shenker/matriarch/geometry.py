@@ -27,10 +27,8 @@ def bounding_box(points):
     upper_left_y = min(point[1] for point in points)
     lower_right_x = max(point[0] for point in points)
     lower_right_y = max(point[1] for point in points)
-    return (
-        np.array([upper_left_x, upper_left_y]),
-        np.array([lower_right_x, lower_right_y]),
-    )
+    # return (np.array([upper_left_x, upper_left_y]), np.array([lower_right_x, lower_right_y]))
+    return np.array([[upper_left_x, upper_left_y], [lower_right_x, lower_right_y]])
 
 
 def crop_point(x, x_lim, y_lim):

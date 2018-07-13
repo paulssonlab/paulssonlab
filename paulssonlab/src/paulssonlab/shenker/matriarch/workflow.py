@@ -4,7 +4,7 @@ from cytoolz import get_in
 import cachetools
 import nd2reader
 import sys
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from util import (
     zip_dicts,
     multi_join,
@@ -217,15 +217,15 @@ def get_filename_image_limits(metadata):
             (
                 0,
                 get_in(
-                    ("image_attributes", "SLxImageAttributes", "uiHeight"),
-                    file_metadata,
+                    ("image_attributes", "SLxImageAttributes", "uiWidth"), file_metadata
                 )
                 - 1,
             ),
             (
                 0,
                 get_in(
-                    ("image_attributes", "SLxImageAttributes", "uiWidth"), file_metadata
+                    ("image_attributes", "SLxImageAttributes", "uiHeight"),
+                    file_metadata,
                 )
                 - 1,
             ),
@@ -234,19 +234,41 @@ def get_filename_image_limits(metadata):
     }
 
 
-def get_trench_bboxes(trenches, x_lim, y_lim):
+def _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
     top_points = trenches["top"].values
     bottom_points = trenches["bottom"].values
-    ary = np.hstack(
+    return np.hstack(
         [
-            get_trench_bbox((top_points, bottom_points), trench_idx, x_lim, y_lim)[
-                :, np.newaxis
-            ]
+            get_trench_bbox(
+                (top_points, bottom_points), trench_idx, x_lim, y_lim, **kwargs
+            )[:, np.newaxis]
             for trench_idx in range(len(top_points))
         ]
     )
-    print(ary.shape)
-    return ary
+
+
+def get_trench_bboxes(trenches, image_limits, **kwargs):
+    def func(x):
+        filename = x.index.get_level_values("filename")[0]
+        x_lim, y_lim = image_limits[filename]
+        upper_left, lower_right = _get_trench_bboxes(x, x_lim, y_lim, **kwargs)
+        df = pd.concat(
+            {
+                "upper_left": pd.DataFrame(
+                    {"x": upper_left[:, 0], "y": upper_left[:, 1]}
+                ),
+                "lower_right": pd.DataFrame(
+                    {"x": lower_right[:, 0], "y": lower_right[:, 1]}
+                ),
+            },
+            axis=1,
+        )
+        df.index.name = "trench"
+        return df
+
+    return trenches.groupby(
+        ["filename", "position", "channel", "t", "trench_set"]
+    ).apply(func)
 
 
 def get_trench_stacks(
@@ -263,18 +285,19 @@ def get_trench_stacks(
         # t_group_iterator = util.iter_index(framestack_group.groupby(['t', 'trench_set']))
         x_lim, y_lim = image_limits[framestack_idx.filename]
         current_trenches = next(iter(framestack_group.groupby("t")))[1]
-        # top_points = current_trenches['top'].values
-        # bottom_points = current_trenches['bottom'].values
-        uls, lrs = get_trench_bboxes(current_trenches, x_lim, y_lim)
-        print(uls[2], lrs[2])
-        # print(uls.shape,lrs.shape);0/0
+        # optimize iter_index by not repeating steps in inner loops
+        current_trenches_index = current_trenches.index.droplevel("t")
+        Index = namedtuple("Index", current_trenches_index.names, rename=True)
+        uls = current_trenches["upper_left"].values
+        lrs = current_trenches["lower_right"].values
         for t in frames.loc[IDX[framestack_idx]].reset_index()["t"]:
             frame_idx = {"t": t, **framestack_idx._asdict()}
             frame = get_frame_func(**frame_idx)
-            for trench_idx, _ in iter_index(current_trenches.index.droplevel("t")):
+            # for trench_idx, _ in iter_index(current_trenches_index):
+            for idx in range(len(current_trenches_index)):
+                trench_idx = Index(*current_trenches_index[idx])
                 ul = uls[trench_idx.trench]
                 lr = lrs[trench_idx.trench]
-                # ul, lr = get_trench_bbox((top_points, bottom_points), trench_idx.trench, x_lim, y_lim)
                 trench_stacks[trench_idx].append(frame[ul[1] : lr[1], ul[0] : lr[0]])
     trench_stacks = {k: list(reversed(v)) for k, v in trench_stacks.items()}
     if transformation is not None:

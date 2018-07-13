@@ -47,6 +47,8 @@ def iter_index(df):
         else:
             index = df.index
             rows = df.reset_index()
+        # the following line will be 4-6x faster in Python 3.7
+        # CF: https://bugs.python.org/issue28638
         Index = namedtuple(
             "Index", index.names, rename=True
         )  # TODO: have not tested rename=True
