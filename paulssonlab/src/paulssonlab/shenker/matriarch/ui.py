@@ -63,11 +63,18 @@ def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
     return browser
 
 
+# FROM: https://stackoverflow.com/questions/50415434/how-to-set-active-tools-in-holoviews
+def _set_active_tool(plot, element):
+    plot.state.toolbar.active_scroll = plot.state.tools[2]
+
+
 def display_plot_browser_item(
     output, obj, path, stream=None, range_xy=None, regrid=True
 ):
     if range_xy is None:
         range_xy = hv.streams.RangeXY()
+    if isinstance(obj, hv.core.dimension.ViewableElement):
+        obj = obj.options(finalize_hooks=[_set_active_tool])
     if stream is None:
         with output:
             if isinstance(obj, hv.core.dimension.ViewableElement):
