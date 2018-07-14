@@ -3,7 +3,7 @@ import pandas as pd
 import zarr
 import skimage
 from functools import partial
-from trench_detection import get_img_limits
+from geometry import get_image_limits
 from util import tqdm_auto, map_collections, iterate_get_collection_value
 
 

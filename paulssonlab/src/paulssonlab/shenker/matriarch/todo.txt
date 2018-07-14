@@ -1,4 +1,6 @@
 ### TODAY
+use only intensity image (maxima finder) or combination of (intensity, k2, distance maxima) to pick seeds for watershed
+
 channels as categoricals in all_frames
 optimize get_trench_stacks
     check that pickle/unpickling doesn't screw up speed of accessing .values for upper_left/lower_right
