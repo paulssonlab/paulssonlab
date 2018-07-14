@@ -83,6 +83,9 @@ def segment_trench(img, diagnostics=None):
     if diagnostics is not None:
         diagnostics["img_blurred"] = _trench_img(img_blurred)
     img_k1 = hessian_eigenvalues(img_blurred)[0]
+    mask = img_blurred > skimage.filters.threshold_otsu(img_blurred)
+    if diagnostics is not None:
+        diagnostics["mask"] = _trench_img(mask)
     if diagnostics is not None:
         diagnostics["img_k1"] = _trench_img(img_k1)
     img_k1_frangi = skimage.filters.frangi(img_k1, scale_range=(1, 3), scale_step=0.5)
@@ -96,13 +99,10 @@ def segment_trench(img, diagnostics=None):
     if diagnostics is not None:
         diagnostics["img_thresh"] = _trench_img(img_thresh)
     clean_seeds = skimage.morphology.label(
-        skimage.morphology.remove_small_objects(img_thresh, 5)
+        skimage.morphology.remove_small_objects(img_thresh * mask, 5)
     )
     if diagnostics is not None:
         diagnostics["clean_seeds"] = _trench_img(clean_seeds)
-    mask = img_blurred > skimage.filters.threshold_otsu(img_blurred)
-    if diagnostics is not None:
-        diagnostics["mask"] = _trench_img(mask)
     watershed_labels = skimage.morphology.watershed(
         img_k1, clean_seeds, mask=mask, watershed_line=True
     )

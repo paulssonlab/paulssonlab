@@ -1,20 +1,22 @@
 ### TODAY
-use only intensity image (maxima finder) or combination of (intensity, k2, distance maxima) to pick seeds for watershed
-
 channels as categoricals in all_frames
-optimize get_trench_stacks
-    check that pickle/unpickling doesn't screw up speed of accessing .values for upper_left/lower_right
-charles segmentation
-pandas schema for cell lineages
-get_trench_stacks: easy way to load in different channels
-draw trench bboxes on image
-use .asof when looking up trench bbox points
+figure out whether image stacks are reversed or not
+ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
+    dataframe_browser with sliders for trench_set, trench, t
+fine-tune trench positions using peakfinder
+    smoothed profile maximum within 5 pixels from predicted periodic peaks
+    return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations
+    dask find bboxes
+    use columns to filter out empty trenches (after finding bboxes!)
 
-fix trench detection with debris in feeding channel (TxnErr002.nd2)
-    angle/pitch finding seems to mostly work
-        debug pitch bias issue (frequencing sampling?)
-        don't count 0 values in offset calculation
-    trench end detection needs to be improve
+get_trench_stacks: easy way to load in different channels
+pandas schema for cell lineages
+
+get segmentation working better with trench normalize? (lower threshold?)
+    or does otsu threshold already work well enough? (for trenches with uneven brightness along axis)
+transcribe charles segmentation
+compare to charles
+    segmentation diffing?
 
 get per-timepoint, per-trench focus locally
 per-trench focus with dask
@@ -28,7 +30,16 @@ identify transcription errors
 nice UI
     show trench stacks lined up for selected trenches
 
-segmentation diffing?
+draw trench bboxes on image
+use .asof when looking up trench bbox points
+optimize get_trench_stacks
+    check that pickle/unpickling doesn't screw up speed of accessing .values for upper_left/lower_right
+
+fix trench detection with debris in feeding channel (TxnErr002.nd2)
+    angle/pitch finding seems to mostly work
+        debug pitch bias issue (frequencing sampling?)
+        don't count 0 values in offset calculation
+    trench end detection needs to be improve
 
 multichannel_image_viewer
 frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
@@ -59,7 +70,6 @@ easy dask re-running of trench detection on bad_angle frames
     (join dataframe with focus, debris indicators, find appropriate cuts)
     functions that make it easy to group tasks (arbitrarily?) with a flag
         groupby (filename, position) and max group size, submit grouped jobs, then merge results dict (keyed by index) upon gather
-switch to PSD instead of discrete_periodogram, find period+offset using intensity hough??
 
 debug period-finding errors
 debug failures (make function to collect failures as dataframe to send to frame_stream)
@@ -69,22 +79,10 @@ submit workload balancing dask.distributed issue
     task serialization (wrapped_diagnostics_to_dataframe)
     update priority: so that wrapped_diagnostics_to_dataframe run+transfer ASAP
 
-### TOMORROW
-run charles segmentation locally on one frame stack framewide
-then trenchwise
-run my segmentation locally on one frame stack trenchwise
-run my trench detection+segmentation using dask
-
 ### TRENCH DETECTION POLISH
 defaultdict which can filter out hv.ViewableElements so we don't waste memory on plots we'll never pull down
     benchmark how long constructing holoviews objs takes vs. no holoviews objs for get_trenches_diag
     benchmark how long it takes to pickle+pull down from a worker vs. re-run get_trenches locally
-refine rotation using trench ends and RANSAC (if necessary??)
-use 1px*sec(theta) spacing for trench region slices?? (or is there a cleaner way? this is basically just a rotation without interpolation)
-intensity hough on hessian k2
-OR upsample before intensity hough
-change angle bounds to +/-40deg (weird aliasing at exactly 45deg)
-run periodicity detection on componentwise normalized image with ALL components, not just selected trench set?
 
 ### NEXT
 run charles segmentation locally on one frame stack
