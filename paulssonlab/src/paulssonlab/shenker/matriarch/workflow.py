@@ -299,7 +299,6 @@ def get_trench_stacks(
                 ul = uls[trench_idx.trench]
                 lr = lrs[trench_idx.trench]
                 trench_stacks[trench_idx].append(frame[ul[1] : lr[1], ul[0] : lr[0]])
-    trench_stacks = {k: list(reversed(v)) for k, v in trench_stacks.items()}
     if transformation is not None:
         trench_stacks = {k: transformation(v) for k, v in trench_stacks.items()}
     else:
