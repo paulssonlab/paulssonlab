@@ -1,4 +1,10 @@
 ### TODAY
+solve RevImage performance problem (how much faster is trench detection? why isn't this a problem for trench detection??)
+    why is hv.Image faster, spit out division warnings?
+    does this have to do with calculating the range of the image? how can I fix this? [no?]
+    or sending in a transposed/reversed numpy array? [no?]
+    strategy for allowing trench_detection, trench_segmentation to return a dataframe of metadata without incurring cost of constructing holoviews objects which will never be used
+        how fast is dask transfer vs recomputing locally?
 channels as categoricals in all_frames
 figure out whether image stacks are reversed or not
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
