@@ -138,6 +138,7 @@ def get_nd2_frame_list(filenames):
     all_frames = multi_join(all_frames, positions)
     all_frames = multi_join(all_frames, channels_to_idx)
     all_frames.sort_index(inplace=True)
+    all_frames["position_name"] = all_frames["position_name"].astype("category")
     return all_frames, metadata, parsed_metadata
 
 
