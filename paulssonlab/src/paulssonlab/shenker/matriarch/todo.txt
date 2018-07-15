@@ -1,9 +1,20 @@
 ### TODAY
+figure out when to pick trench index for first timepoint, drop t from index (trench_bboxes is 10x bigger than it should be)
+    make function to do this, run it before calculating bboxes; do that locally
+    figure out trench_bboxes indexing (sort?)
+dask segment and bring back to calculate regionprops
+dask segment and regionprops remotely
+
+check trench_set in get_trench_stacks (hash to make sure values are different)
 get_trench_stacks: easy way to load in different channels
 pandas schema for cell lineages
 are regionprops objects cheaper to serialize than bringing back partial/full dataframes?
+benchmark get_trench_stacks with memmap
 
+store namedtuple in dataframe for easy groupby/sending series via dask without incurring performance cost of iter_index
+make apply_map_futures gracefully return when nothing matches predicate [real problem: return gracefully when mapping func returns None]
 util.get_random (similar to get_one)
+function for next(iter(framestack_group.groupby('t')))[1]
 
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
     dataframe_browser with sliders for trench_set, trench, t
@@ -103,9 +114,11 @@ first cut of tracking using integer programming (given a good segmentation)
 tracking+segmentation
 
 ### AFTER UI POLISH
+explicit dask retry of failed tasks
 show_plot_browser should work for singleton keys [i.e., single plots] (and make that work correctly with streams)
 feasibility of running regrid off a remote image stored on a worker (is there a way to hook up bokeh to connect directly to worker?)
 synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
+make regrid work better at max zoom level (show actual pixels)
 trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitrary callbacks that return (possibly cached) hv ViewableElements to overlay (e.g., can compute segmentation on-the-fly, cache it using cachetools, return an overlayed contour)
     FrameStream <-> TrenchStream <-> CellStream, e.g., updating cellstream updates trench (if needed), which updates frame (if needed)
     moving TrenchStream also picks the first cell in the trench, Frame picks first trench in frame
