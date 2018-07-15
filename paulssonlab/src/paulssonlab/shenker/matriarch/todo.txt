@@ -1,6 +1,9 @@
 ### TODAY
 get_trench_stacks: easy way to load in different channels
 pandas schema for cell lineages
+are regionprops objects cheaper to serialize than bringing back partial/full dataframes?
+
+util.get_random (similar to get_one)
 
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
     dataframe_browser with sliders for trench_set, trench, t
