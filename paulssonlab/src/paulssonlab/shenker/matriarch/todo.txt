@@ -1,7 +1,4 @@
 ### TODAY
-figure out when to pick trench index for first timepoint, drop t from index (trench_bboxes is 10x bigger than it should be)
-    make function to do this, run it before calculating bboxes; do that locally
-    figure out trench_bboxes indexing (sort?)
 dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
 
