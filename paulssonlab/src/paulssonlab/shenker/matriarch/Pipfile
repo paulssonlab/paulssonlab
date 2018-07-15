@@ -58,13 +58,13 @@ wrapt = "*"
 colorama = "*"
 "4a8dedc" = {path = "./../pyviz_comms", editable = true}
 pyviz-comms = "*"
-"523475f" = {path = "./../parambokeh", editable = true}
 "925ab16" = {path = "./../qgrid", editable = true}
 notebook = "*"
 cachetools = "*"
 "3ab5c35" = {path = "./../hvplot", editable = true}
 pyct = "*"
-pysize = "*"
+parambokeh = "*"
+pysize = {git = "https://github.com/bosswissam/pysize.git"}
 
 [dev-packages]
 
