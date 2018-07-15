@@ -297,8 +297,8 @@ def get_trench_stacks(
             # for trench_idx, _ in iter_index(current_trenches_index):
             for idx in range(len(current_trenches_index)):
                 trench_idx = Index(*current_trenches_index[idx])
-                ul = uls[trench_idx.trench]
-                lr = lrs[trench_idx.trench]
+                ul = uls[idx]
+                lr = lrs[idx]
                 trench_stacks[trench_idx].append(frame[ul[1] : lr[1], ul[0] : lr[0]])
     if transformation is not None:
         trench_stacks = {k: transformation(v) for k, v in trench_stacks.items()}
