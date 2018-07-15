@@ -6,7 +6,7 @@ import zarr
 from datetime import datetime, timezone
 import holoviews as hv
 from functools import reduce, partial, wraps
-from itertools import count
+from itertools import count, zip_longest
 import wrapt
 from cytoolz import compose
 import collections
@@ -61,6 +61,14 @@ def split_into(ary, max_length):
     if max_length is None:
         return ary
     return np.array_split(ary, max(len(ary) // max_length, 1))
+
+
+# TODO: unused
+# FROM: https://docs.python.org/3/library/itertools.html#recipes
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
 
 
 # TODO: replace with toolz.excepts??
