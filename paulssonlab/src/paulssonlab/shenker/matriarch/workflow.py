@@ -156,61 +156,29 @@ def concat_series(series):
     return df
 
 
-def trench_points_to_dataframe(trench_points):
-    df = pd.concat(
-        {
-            trench_set: pd.concat(
-                {
-                    "top": pd.DataFrame(
-                        {
-                            "x": trench_set_points[0][:, 0],
-                            "y": trench_set_points[0][:, 1],
-                        }
-                    ),
-                    "bottom": pd.DataFrame(
-                        {
-                            "x": trench_set_points[1][:, 0],
-                            "y": trench_set_points[1][:, 1],
-                        }
-                    ),
-                },
-                axis=1,
-            )
-            for trench_set, trench_set_points in trench_points.items()
-        }
-    )
-    df.index.names = ["trench_set", "trench"]
-    return df
+def points_dataframe(points):
+    return pd.DataFrame({"x": points[:, 0], "y": points[:, 1]})
 
 
 def unzip_trench_info(trench_info):
     trench_points, trench_diag, trench_err = unzip_dicts(trench_info)
-    trench_points = {
-        idx: trench_points_to_dataframe(tp)
-        for idx, tp in trench_points.items()
-        if tp is not None
-    }
-    trench_points = concat_dataframes(trench_points)
+    trench_points = concat_dataframes(valfilter(lambda x: x is not None, trench_points))
     trench_diag = concat_series(trench_diag)
     trench_diag = expand_diagnostics_by_label(trench_diag)
     trench_diag.index.rename("trench_set", level=-1, inplace=True)
     return trench_points, trench_diag, trench_err
 
 
-def get_trench_thumbs(trenches, get_frame_func=get_nd2_frame):
-    trench_thumbs = {}
-    for idx, group in util.iter_index(
-        trenches.groupby(["filename", "position", "channel", "t", "trench_set"])
-    ):
-        frame = get_frame_func(**idx._asdict())
-        top_points = group["top"].values
-        bottom_points = group["bottom"].values
-        for trench_idx, _ in iter_index(group):
-            ul, lr = geometry.get_trench_bbox(
-                (top_points, bottom_points), trench_idx.trench, x_lim, y_lim
-            )
-            trench_thumbs[trench_idx] = frame[ul[1] : lr[1], ul[0] : lr[0]]
-    return trench_thumbs
+# def get_trench_thumbs(trenches, get_frame_func=get_nd2_frame):
+#     trench_thumbs = {}
+#     for idx, group in util.iter_index(trenches.groupby(['filename', 'position', 'channel', 't', 'trench_set'])):
+#         frame = get_frame_func(**idx._asdict())
+#         top_points = group['top'].values
+#         bottom_points = group['bottom'].values
+#         for trench_idx, _ in iter_index(group):
+#             ul, lr = geometry.get_trench_bbox((top_points, bottom_points), trench_idx.trench, x_lim, y_lim)
+#             trench_thumbs[trench_idx] = frame[ul[1]:lr[1],ul[0]:lr[0]]
+#     return trench_thumbs
 
 
 def get_filename_image_limits(metadata):
