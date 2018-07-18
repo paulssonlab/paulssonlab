@@ -1,5 +1,8 @@
 ### TODAY
 fine-tune trench positions using peakfinder
+    mark endpoints of rho on profile plot (write this formula only once!)
+    refined_points on profile plot
+    pass offset array to trench_anchors/arange correctly
     smoothed (?) profile maximum within 5 pixels from predicted periodic peaks
     return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)
     dask find bboxes
@@ -10,11 +13,12 @@ get bboxes for non-good trenches, then subset to good frames
 dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
 
-make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
-
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
     dataframe_browser with sliders for trench_set, trench, t
+        get_trench_thumb(/get_trench_stack?) function that can be passed to image_viewer
     access dict with future.result(), cache locally
+
+make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
 
 get trench focus, trench brightness, use as quality filters
     only segment good trenches
