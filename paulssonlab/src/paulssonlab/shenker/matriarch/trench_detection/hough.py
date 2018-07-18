@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import scipy
 import skimage
 import skimage.morphology
@@ -20,6 +21,7 @@ from image import (
     gaussian_box_approximation,
 )
 from geometry import get_image_limits
+from workflow import points_dataframe
 import common
 
 
@@ -137,7 +139,15 @@ def trench_anchors(angle, pitch, offset, x_lim, y_lim):
 
 
 def find_trench_ends(
-    img, angle, pitch, offset, margin=15, threshold=0.8, smooth=100, diagnostics=None
+    img,
+    angle,
+    pitch,
+    offset,
+    margin=15,
+    threshold=0.8,
+    smooth=100,
+    refine=True,
+    diagnostics=None,
 ):
     x_lim, y_lim = get_image_limits(img.shape)
     anchors = trench_anchors(angle, pitch, offset, x_lim, y_lim)
@@ -248,14 +258,19 @@ def find_trench_ends(
         diagnostics["image_with_trenches"] = (
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )
-    return top_endpoints, bottom_endpoints
+    df_columns = {
+        "top": points_dataframe(top_endpoints),
+        "bottom": points_dataframe(bottom_endpoints),
+    }
+    df = pd.concat(df_columns, axis=1)
+    return df
 
 
 def find_trenches(img, setwise=True, diagnostics=None):
     img_normalized, img_labels, label_index = label_for_trenches(
         img, diagnostics=getitem_if_not_none(diagnostics, "labeling")
     )
-    trenches = {}
+    trench_sets = {}
     if not setwise:
         img_masked = np.where(
             skimage.morphology.binary_dilation(img_labels != 0),
@@ -278,11 +293,13 @@ def find_trenches(img, setwise=True, diagnostics=None):
                 img_masked,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
-        trenches[label] = find_trench_ends(
+        trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
             pitch,
             offset,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
-    return trenches
+    trenches_df = pd.concat(trench_sets)
+    trenches_df.index.names = ["trench_set", "trench"]
+    return trenches_df

@@ -224,12 +224,8 @@ def get_trench_bboxes(trenches, image_limits, **kwargs):
         upper_left, lower_right = _get_trench_bboxes(x, x_lim, y_lim, **kwargs)
         df = pd.concat(
             {
-                "upper_left": pd.DataFrame(
-                    {"x": upper_left[:, 0], "y": upper_left[:, 1]}
-                ),
-                "lower_right": pd.DataFrame(
-                    {"x": lower_right[:, 0], "y": lower_right[:, 1]}
-                ),
+                "upper_left": points_dataframe(upper_left),
+                "lower_right": points_dataframe(lower_right),
             },
             axis=1,
         )

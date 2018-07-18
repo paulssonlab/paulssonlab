@@ -1,6 +1,23 @@
 ### TODAY
+fine-tune trench positions using peakfinder
+    smoothed (?) profile maximum within 5 pixels from predicted periodic peaks
+    return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)
+    dask find bboxes
+    use columns to filter out empty trenches (after finding bboxes!)
+
+get bboxes for non-good trenches, then subset to good frames
+
 dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
+
+make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
+
+ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
+    dataframe_browser with sliders for trench_set, trench, t
+    access dict with future.result(), cache locally
+
+get trench focus, trench brightness, use as quality filters
+    only segment good trenches
 
 check trench_set in get_trench_stacks (hash to make sure values are different)
 get_trench_stacks: easy way to load in different channels
@@ -8,18 +25,13 @@ pandas schema for cell lineages
 are regionprops objects cheaper to serialize than bringing back partial/full dataframes?
 benchmark get_trench_stacks with memmap
 
+obey regionprops bbox convention: half-open interval [x_min, x_max)
+
 store namedtuple in dataframe for easy groupby/sending series via dask without incurring performance cost of iter_index
 make apply_map_futures gracefully return when nothing matches predicate [real problem: return gracefully when mapping func returns None]
 util.get_random (similar to get_one)
+    equivalents to get N instead of 1, random/first
 function for next(iter(framestack_group.groupby('t')))[1]
-
-ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
-    dataframe_browser with sliders for trench_set, trench, t
-fine-tune trench positions using peakfinder
-    smoothed profile maximum within 5 pixels from predicted periodic peaks
-    return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations
-    dask find bboxes
-    use columns to filter out empty trenches (after finding bboxes!)
 
 strategy for allowing trench_detection, trench_segmentation to return a dataframe of metadata without incurring cost of constructing holoviews objects which will never be used
     how fast is dask transfer vs recomputing locally?
