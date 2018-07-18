@@ -20,6 +20,23 @@ from diagnostics import expand_diagnostics_by_label
 IDX = pd.IndexSlice
 
 
+def _get_position_list(md):
+    return get_in(
+        ["image_metadata", "SLxExperiment", "uLoopPars", "Points", ""], md
+    ) or get_in(
+        [
+            "image_metadata",
+            "SLxExperiment",
+            "ppNextLevelEx",
+            "",
+            "uLoopPars",
+            "Points",
+            "",
+        ],
+        md,
+    )
+
+
 def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
     def position_dataframe(d):
         df = pd.DataFrame.from_dict(d)
@@ -47,23 +64,7 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
 
     positions = pd.concat(
         {
-            filename: position_dataframe(
-                [
-                    p
-                    for p in get_in(
-                        [
-                            "image_metadata",
-                            "SLxExperiment",
-                            "ppNextLevelEx",
-                            "",
-                            "uLoopPars",
-                            "Points",
-                            "",
-                        ],
-                        md,
-                    )
-                ]
-            )
+            filename: position_dataframe(_get_position_list(md))
             for filename, md in metadata.items()
         }
     )
