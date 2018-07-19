@@ -1,11 +1,10 @@
 ### TODAY
 fine-tune trench positions using peakfinder
+    rhos -> anchor_rhos/peak_rhos, rho -> rhos
     pluggable rho_finder given profile (options: periodic, periodic(refine=True), peakfinder)
     make red dots be actual rho values
-    solve out of bounds error
     change sign of -offset when angle<0
     interpolated profile periodogram (upscaling factor as kwarg)
-    pass offset array to trench_anchors/arange correctly (test with constant offsets)
     refined_points on profile plot
     smoothed (?) profile maximum within 5 pixels from predicted periodic peaks
     return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)

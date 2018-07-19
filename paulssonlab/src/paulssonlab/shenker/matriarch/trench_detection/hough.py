@@ -10,6 +10,7 @@ import holoviews.operation.datashader as datashader
 
 # TODO: fix imports
 from holoborodko_diff import holo_diff
+import peakutils
 from .core import edge_point, coords_along, stack_jagged, stack_jagged_points
 from .periodogram import label_for_trenches
 from util import getitem_if_not_none
@@ -25,14 +26,67 @@ from workflow import points_dataframe
 import common
 
 
+def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
+    if diagnostics is not None:
+        diagnostics["threshold"] = 0.2
+        diagnostics["min_dist"] = 5
+    idxs = peakutils.indexes(profile, thres=threshold, min_dist=min_dist)
+    return idxs, None
+
+
+def find_periodic_peaks(
+    profile, refine=True, smooth=4, num_offset_points=200, diagnostics=None
+):
+    freqs, spectrum = scipy.signal.periodogram(profile, scaling="spectrum")
+    pitch_idx = spectrum.argmax()
+    pitch = 1 / freqs[pitch_idx]
+    if diagnostics is not None:
+        diagnostics["pitch"] = pitch
+        diagnostics["spectrum"] = hv.Curve(spectrum) * hv.VLine(pitch_idx).options(
+            color="red"
+        )
+    offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
+    # always leave a period of length `pitch` so we can add offsets
+    # even when we could've fit another period
+    offset_idxs = (
+        np.arange(0, len(profile), pitch)[:-1] + offsets[:, np.newaxis]
+    ).astype(np.int_)
+    # anchor_rho = _anchor_rho(angle, pitch, 0, x_lim, y_lim)
+    # print('$',anchor_rho)
+    # anchor_idxs = np.where(anchor_rho == rho[:,np.newaxis])[0]
+    # print('>',anchor_idxs)
+    # max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
+    # offset_idxs = (max_dist + anchor_rho + offsets[:,np.newaxis]).astype(np.int_)
+    # print('>>',offset_idxs)
+    offset_objective = profile[offset_idxs].sum(axis=1)
+    if smooth:
+        offset_objective_smoothed = scipy.ndimage.filters.gaussian_filter1d(
+            offset_objective, smooth
+        )
+    else:
+        offset_objective_smoothed = offset_objective
+    offset_idx = offset_objective_smoothed.argmax()
+    offset = offsets[offset_idx]
+    if diagnostics is not None:
+        diagnostics["offset"] = offset
+        offset_plot = hv.Curve((offsets, offset_objective))
+        if smooth:
+            offset_plot *= hv.Curve((offsets, offset_objective_smoothed)).options(
+                color="cyan"
+            )
+        offset_plot *= hv.VLine(offset).options(color="red")
+        diagnostics["offsets"] = offset_plot
+        # periodic_points = hv.Scatter((rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])).options(size=5, color='red')
+    return offset_idxs[offset_idx], None
+
+
 def find_periodic_lines(
     img,
     theta=None,
     smooth=4,
+    upscale=None,
     hough_func=hough_line_intensity,
-    num_offset_points=200,
-    interpolate=5,
-    refine=None,
+    peak_func=find_peaks,
     diagnostics=None,
 ):
     if theta is None:
@@ -64,7 +118,6 @@ def find_periodic_lines(
         diagnostics["diff_h_std"] = diff_h_plot
         diagnostics["angle"] = np.rad2deg(angle)
     profile = h[:, theta_idx]
-    # TODO: replace with trim by rhos
     x_lim, y_lim = get_image_limits(img.shape)
     x_min, x_max = x_lim
     y_min, y_max = y_lim
@@ -84,102 +137,67 @@ def find_periodic_lines(
     print("idx_min", idx_min, rho[idx_min], "idx_max", idx_max, rho[idx_max])
     ############
     trimmed_profile = profile[idx_min:idx_max]  # np.trim_zeros(profile)
-    if diagnostics is not None:
-        diagnostics["trimmed_profile"] = hv.Curve(trimmed_profile)
-    if interpolate:
-        interpolated_profile = trimmed_profile
+    trimmed_rho = rho[idx_min:idx_max]
+    trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
+    if upscale:
+        interpolated_func = scipy.interpolate.interp1d(trimmed_rho, trimmed_profile)
+        interpolated_rho = np.linspace(
+            rho[idx_min], rho[idx_max], len(trimmed_rho) * upscale
+        )
+        interpolated_profile = interpolated_func(interpolated_rho)
+        trimmed_profile_plot *= hv.Curve(
+            (interpolated_rho, interpolated_profile)
+        ).options(color="cyan")
     else:
         interpolated_profile = trimmed_profile
-    freqs, spectrum = scipy.signal.periodogram(interpolated_profile, scaling="spectrum")
-    # spectrum[:2] = 0 # TODO: ignore two lowest frequencies
-    pitch_idx = spectrum.argmax()
-    pitch = 1 / freqs[pitch_idx]
     if diagnostics is not None:
-        diagnostics["pitch"] = pitch
-        diagnostics["spectrum"] = hv.Curve(spectrum) * hv.VLine(pitch_idx).options(
-            color="red"
-        )
-    offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
-    # always leave a period of length `pitch` so we can add offsets
-    # even when we could've fit another period
-    offset_idxs = (
-        np.arange(0, len(profile), pitch)[:-1] + offsets[:, np.newaxis]
-    ).astype(np.int_)
-    # anchor_rhos = _anchor_rhos(angle, pitch, 0, x_lim, y_lim)
-    # print('$',anchor_rhos)
-    # anchor_idxs = np.where(anchor_rhos == rho[:,np.newaxis])[0]
-    # print('>',anchor_idxs)
-    # max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    # offset_idxs = (max_dist + anchor_rhos + offsets[:,np.newaxis]).astype(np.int_)
-    # print('>>',offset_idxs)
-    offset_objective = profile[offset_idxs].sum(axis=1)
-    if smooth:
-        offset_objective_smoothed = scipy.ndimage.filters.gaussian_filter1d(
-            offset_objective, smooth
-        )
-    else:
-        offset_objective_smoothed = offset_objective
-    offset_idx = offset_objective_smoothed.argmax()
-    offset = offsets[offset_idx]
+        diagnostics["trimmed_profile"] = trimmed_profile_plot
+    # GET RHOS
+    anchor_idxs, info = peak_func(
+        interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "labeling")
+    )
+    anchor_idxs += idx_min
+    anchor_rho = rho[anchor_idxs]
     if diagnostics is not None:
-        diagnostics["offset"] = offset
-        offset_plot = hv.Curve((offsets, offset_objective))
-        if smooth:
-            offset_plot *= hv.Curve((offsets, offset_objective_smoothed)).options(
-                color="cyan"
-            )
-        offset_plot *= hv.VLine(offset).options(color="red")
-        diagnostics["offsets"] = offset_plot
-
-        periodic_points = hv.Scatter(
-            (rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])
-        ).options(size=5, color="red")
-        profile_plot = hv.Curve((rho, profile)) * periodic_points
+        rho_points = hv.Scatter((anchor_rho, profile[anchor_idxs])).options(
+            size=5, color="cyan"
+        )
+        profile_plot = hv.Curve((rho, profile)) * rho_points
         profile_plot *= hv.VLine(rho_min).options(color="red")
         profile_plot *= hv.VLine(rho_max).options(color="red")
-        if refine:
-            import peakutils
-
-            idxs = peakutils.indexes(trimmed_profile, thres=0.2, min_dist=5)
-            refined_points = hv.Scatter(
-                (rho[idx_min + idxs], profile[idx_min + idxs])
-            ).options(size=5, color="cyan")
-            profile_plot *= refined_points
+        # refined_points = hv.Scatter((rho[idx_min+idxs], profile[idx_min+idxs])).options(size=5, color='cyan')
+        # profile_plot *= refined_points
         diagnostics["profile"] = profile_plot
     # rhos = np.arange(rho_min + offset, rho_max, pitch)
-    print("rho_max", rho_max, "pitch", pitch)
     # rhos = np.arange(0, rho_max, pitch)
-    if refine:
-        rhos = rho[idx_min + idxs]
-    else:
-        rhos = np.arange(0, rho_max, pitch)
-    print("rhos", rhos, "offset", offset)
-    return angle, pitch, (rhos, rho_min, rho_max)
+    # if refine:
+    #    rhos = rho[idx_min+idxs]
+    # else:
+    #    rhos = np.arange(0, rho_max, pitch)
+    print("anchor_rho", anchor_rho)
+    return angle, anchor_rho, rho_min, rho_max, info
 
 
-def find_trench_lines(img, window=np.deg2rad(10), refine=0.5, diagnostics=None):
-    angle1, pitch1, rho_info1 = find_periodic_lines(
-        img, refine=None, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
+def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None):
+    angle1, *_ = find_periodic_lines(
+        img, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
     )
-    angle2, pitch2, rho_info2 = find_periodic_lines(
+    res2 = find_periodic_lines(
         img,
         theta=np.linspace(angle1 - window, angle1 + window, 200),
-        refine=refine,
         diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
     )
-    return angle2, pitch2, rho_info2
+    return res2
 
 
-def trench_anchors(angle, pitch, rho_info, x_lim, y_lim):
-    rhos, rho_min, rho_max = rho_info
+def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     if angle < 0:
-        # print(rhos)
-        rhos = rho_max - rhos
-        # rhos = rhos.max() - rhos
+        anchor_rho = rho_max - anchor_rho
     anchors = (
-        rhos[:, np.newaxis] * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
+        anchor_rho[:, np.newaxis]
+        * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
     )
     if angle < 0:
         upper_right = np.array((x_max, 0))
@@ -187,26 +205,19 @@ def trench_anchors(angle, pitch, rho_info, x_lim, y_lim):
     return anchors
 
 
-def _anchor_rhos2(angle, pitch, offset, x_lim, y_lim):
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    # TODO: not totally clear that the signs are right on max_dist, but seems to work
-    if angle < 0:
-        effective_offset = max_dist + x_max * np.cos(angle) - offset
-    else:
-        effective_offset = -max_dist + offset
-    abs_angle = np.abs(angle)
-    delta = (y_max - x_max * np.tan(abs_angle)) * np.sin(abs_angle)
-    rhos = np.arange(effective_offset % pitch, x_max / np.cos(angle) + delta, pitch)
-    return rhos
-
-
 def find_trench_ends(
-    img, angle, pitch, rho_info, margin=15, threshold=0.8, smooth=100, diagnostics=None
+    img,
+    angle,
+    anchor_rho,
+    rho_min,
+    rho_max,
+    margin=15,
+    threshold=0.8,
+    smooth=100,
+    diagnostics=None,
 ):
     x_lim, y_lim = get_image_limits(img.shape)
-    anchors = trench_anchors(angle, pitch, rho_info, x_lim, y_lim)
+    anchors = trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim)
     profiles = []
     line_points = []
     offsets = []
@@ -333,7 +344,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             img_normalized,
             np.percentile(img_normalized, 5),
         )
-        angle, pitch, rho_info = find_trench_lines(
+        angle, anchor_rho, rho_min, rho_max = find_trench_lines(
             img_masked,
             diagnostics=getitem_if_not_none(diagnostics, "find_trench_lines"),
         )
@@ -345,15 +356,16 @@ def find_trenches(img, setwise=True, diagnostics=None):
             np.percentile(img_normalized, 5),
         )
         if setwise:
-            angle, pitch, rho_info = find_trench_lines(
+            angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
                 img_masked,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
         trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
-            pitch,
-            rho_info,
+            anchor_rho,
+            rho_min,
+            rho_max,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
     trenches_df = pd.concat(trench_sets)
