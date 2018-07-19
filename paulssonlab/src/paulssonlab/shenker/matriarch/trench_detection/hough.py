@@ -163,9 +163,11 @@ def find_periodic_lines(
     trimmed_rho = rho[idx_min:idx_max]
     trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
     if upscale:
-        interpolated_func = scipy.interpolate.interp1d(trimmed_rho, trimmed_profile)
+        interpolated_func = scipy.interpolate.interp1d(
+            trimmed_rho, trimmed_profile, kind="cubic", copy=False, assume_sorted=True
+        )
         interpolated_rho = np.linspace(
-            rho[idx_min], rho[idx_max], len(trimmed_rho) * upscale
+            trimmed_rho[0], trimmed_rho[-1], len(trimmed_rho) * upscale
         )
         interpolated_profile = interpolated_func(interpolated_rho)
         trimmed_profile_plot *= hv.Curve(
@@ -179,8 +181,12 @@ def find_periodic_lines(
     anchor_idxs, info = peak_func(
         interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
     )
+
+    if upscale:
+        anchor_idxs = (anchor_idxs / upscale).astype(np.int_)
     anchor_idxs += idx_min
     anchor_rho = rho[anchor_idxs]
+    # TODO interpolate rho
     if diagnostics is not None:
         rho_points = hv.Scatter((anchor_rho, profile[anchor_idxs])).options(
             size=5, color="cyan"
@@ -235,7 +241,7 @@ def find_trench_ends(
     rho_min,
     rho_max,
     margin=15,
-    threshold=0.8,
+    threshold=0.95,
     smooth=100,
     diagnostics=None,
 ):
