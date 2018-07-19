@@ -27,15 +27,12 @@ import common
 
 
 def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
-    if diagnostics is not None:
-        diagnostics["threshold"] = 0.2
-        diagnostics["min_dist"] = 5
     idxs = peakutils.indexes(profile, thres=threshold, min_dist=min_dist)
     return idxs, None
 
 
 def find_periodic_peaks(
-    profile, refine=True, smooth=4, num_offset_points=200, diagnostics=None
+    profile, refine=5, smooth=4, num_offset_points=200, diagnostics=None
 ):
     freqs, spectrum = scipy.signal.periodogram(profile, scaling="spectrum")
     pitch_idx = spectrum.argmax()
@@ -67,6 +64,7 @@ def find_periodic_peaks(
         offset_objective_smoothed = offset_objective
     offset_idx = offset_objective_smoothed.argmax()
     offset = offsets[offset_idx]
+    idxs = offset_idxs[offset_idx]
     if diagnostics is not None:
         diagnostics["offset"] = offset
         offset_plot = hv.Curve((offsets, offset_objective))
@@ -76,8 +74,33 @@ def find_periodic_peaks(
             )
         offset_plot *= hv.VLine(offset).options(color="red")
         diagnostics["offsets"] = offset_plot
+    if refine:
+        idx_start = np.clip(idxs - refine, 0, len(profile))
+        idx_end = np.clip(idxs + refine, 0, len(profile))
+        print(">", idx_start)
+        print(">>", idx_end)
+        shifts = np.array(
+            [
+                profile[idx_start[i] : idx_end[i]].argmax() - (idxs[i] - idx_start[i])
+                for i in range(len(idxs))
+            ]
+        )
+        print(">>>", shifts.shape, shifts)
+        shifts = np.where(profile[idxs] != profile[idxs + shifts], shifts, 0)
+        print(">>>!!", shifts.shape, shifts)
+        refined_idxs = idxs + shifts
+        if diagnostics is not None:
+            periodic_points = hv.Scatter((idxs, profile[idxs])).options(
+                size=5, color="red"
+            )
+            refined_points = hv.Scatter((refined_idxs, profile[refined_idxs])).options(
+                size=3, color="cyan"
+            )
+            diagnostics["refined_points"] = (
+                hv.Curve(profile) * periodic_points * refined_points
+            )
         # periodic_points = hv.Scatter((rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])).options(size=5, color='red')
-    return offset_idxs[offset_idx], None
+    return refined_idxs, None
 
 
 def find_periodic_lines(
@@ -86,7 +109,7 @@ def find_periodic_lines(
     smooth=4,
     upscale=None,
     hough_func=hough_line_intensity,
-    peak_func=find_peaks,
+    peak_func=find_periodic_peaks,
     diagnostics=None,
 ):
     if theta is None:
@@ -154,7 +177,7 @@ def find_periodic_lines(
         diagnostics["trimmed_profile"] = trimmed_profile_plot
     # GET RHOS
     anchor_idxs, info = peak_func(
-        interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "labeling")
+        interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
     )
     anchor_idxs += idx_min
     anchor_rho = rho[anchor_idxs]
