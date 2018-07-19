@@ -1,7 +1,6 @@
 ### TODAY
 fine-tune trench positions using peakfinder
-    mark endpoints of rho on profile plot (write this formula only once!)
-    use those endpoints to trim profile before periodogram
+    make red dots be actual rho values
     interpolated profile periodogram (upscaling factor as kwarg)
     pass offset array to trench_anchors/arange correctly (test with constant offsets)
     refined_points on profile plot

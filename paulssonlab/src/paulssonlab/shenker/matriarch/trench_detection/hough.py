@@ -143,41 +143,27 @@ def find_periodic_lines(
             ).options(size=5, color="cyan")
             profile_plot *= refined_points
         diagnostics["profile"] = profile_plot
-    return angle, pitch, offset
+    rhos = np.arange(rho_min + offset, rho_max, pitch)
+    print("rhos", rhos, "offset", offset)
+    return angle, pitch, rhos
 
 
 def find_trench_lines(img, window=np.deg2rad(10), refine=0.5, diagnostics=None):
-    angle1, pitch1, offset1 = find_periodic_lines(
+    angle1, pitch1, rhos1 = find_periodic_lines(
         img, refine=None, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
     )
-    angle2, pitch2, offset2 = find_periodic_lines(
+    angle2, pitch2, rhos2 = find_periodic_lines(
         img,
         theta=np.linspace(angle1 - window, angle1 + window, 200),
         refine=refine,
         diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
     )
-    return angle2, pitch2, offset2
+    return angle2, pitch2, rhos2
 
 
-def _anchor_rhos(angle, pitch, offset, x_lim, y_lim):
+def trench_anchors(angle, pitch, rhos, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
-    max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    # TODO: not totally clear that the signs are right on max_dist, but seems to work
-    if angle < 0:
-        effective_offset = max_dist + x_max * np.cos(angle) - offset
-    else:
-        effective_offset = -max_dist + offset
-    abs_angle = np.abs(angle)
-    delta = (y_max - x_max * np.tan(abs_angle)) * np.sin(abs_angle)
-    rhos = np.arange(effective_offset % pitch, x_max / np.cos(angle) + delta, pitch)
-    return rhos
-
-
-def trench_anchors(angle, pitch, offset, x_lim, y_lim):
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    rhos = _anchor_rhos(angle, pitch, offset, x_lim, y_lim)
     anchors = (
         rhos[:, np.newaxis] * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
     )
@@ -216,10 +202,10 @@ def trench_anchors2(angle, pitch, offset, x_lim, y_lim):
 
 
 def find_trench_ends(
-    img, angle, pitch, offset, margin=15, threshold=0.8, smooth=100, diagnostics=None
+    img, angle, pitch, rhos, margin=15, threshold=0.8, smooth=100, diagnostics=None
 ):
     x_lim, y_lim = get_image_limits(img.shape)
-    anchors = trench_anchors(angle, pitch, offset, x_lim, y_lim)
+    anchors = trench_anchors(angle, pitch, rhos, x_lim, y_lim)
     profiles = []
     line_points = []
     offsets = []
@@ -358,7 +344,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             np.percentile(img_normalized, 5),
         )
         if setwise:
-            angle, pitch, offset = find_trench_lines(
+            angle, pitch, rhos = find_trench_lines(
                 img_masked,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
@@ -366,7 +352,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             img_masked,
             angle,
             pitch,
-            offset,
+            rhos,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
     trenches_df = pd.concat(trench_sets)
