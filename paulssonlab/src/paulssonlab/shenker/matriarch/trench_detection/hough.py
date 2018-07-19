@@ -138,32 +138,46 @@ def find_periodic_lines(
         profile_plot *= hv.VLine(rho_min).options(color="red")
         profile_plot *= hv.VLine(rho_max).options(color="red")
         if refine:
+            import peakutils
+
+            idxs = peakutils.indexes(trimmed_profile, thres=0.2, min_dist=5)
             refined_points = hv.Scatter(
-                (rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])
+                (rho[idx_min + idxs], profile[idx_min + idxs])
             ).options(size=5, color="cyan")
             profile_plot *= refined_points
         diagnostics["profile"] = profile_plot
-    rhos = np.arange(rho_min + offset, rho_max, pitch)
+    # rhos = np.arange(rho_min + offset, rho_max, pitch)
+    print("rho_max", rho_max, "pitch", pitch)
+    # rhos = np.arange(0, rho_max, pitch)
+    if refine:
+        rhos = rho[idx_min + idxs]
+    else:
+        rhos = np.arange(0, rho_max, pitch)
     print("rhos", rhos, "offset", offset)
-    return angle, pitch, rhos
+    return angle, pitch, (rhos, rho_min, rho_max)
 
 
 def find_trench_lines(img, window=np.deg2rad(10), refine=0.5, diagnostics=None):
-    angle1, pitch1, rhos1 = find_periodic_lines(
+    angle1, pitch1, rho_info1 = find_periodic_lines(
         img, refine=None, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
     )
-    angle2, pitch2, rhos2 = find_periodic_lines(
+    angle2, pitch2, rho_info2 = find_periodic_lines(
         img,
         theta=np.linspace(angle1 - window, angle1 + window, 200),
         refine=refine,
         diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
     )
-    return angle2, pitch2, rhos2
+    return angle2, pitch2, rho_info2
 
 
-def trench_anchors(angle, pitch, rhos, x_lim, y_lim):
+def trench_anchors(angle, pitch, rho_info, x_lim, y_lim):
+    rhos, rho_min, rho_max = rho_info
     x_min, x_max = x_lim
     y_min, y_max = y_lim
+    if angle < 0:
+        # print(rhos)
+        rhos = rho_max - rhos
+        # rhos = rhos.max() - rhos
     anchors = (
         rhos[:, np.newaxis] * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
     )
@@ -188,24 +202,11 @@ def _anchor_rhos2(angle, pitch, offset, x_lim, y_lim):
     return rhos
 
 
-def trench_anchors2(angle, pitch, offset, x_lim, y_lim):
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    rhos = _anchor_rhos2(angle, pitch, offset, x_lim, y_lim)
-    anchors = (
-        rhos[:, np.newaxis] * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
-    )
-    if angle < 0:
-        upper_right = np.array((x_max, 0))
-        anchors = upper_right - anchors
-    return anchors
-
-
 def find_trench_ends(
-    img, angle, pitch, rhos, margin=15, threshold=0.8, smooth=100, diagnostics=None
+    img, angle, pitch, rho_info, margin=15, threshold=0.8, smooth=100, diagnostics=None
 ):
     x_lim, y_lim = get_image_limits(img.shape)
-    anchors = trench_anchors(angle, pitch, rhos, x_lim, y_lim)
+    anchors = trench_anchors(angle, pitch, rho_info, x_lim, y_lim)
     profiles = []
     line_points = []
     offsets = []
@@ -332,7 +333,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             img_normalized,
             np.percentile(img_normalized, 5),
         )
-        angle, pitch, offset = find_trench_lines(
+        angle, pitch, rho_info = find_trench_lines(
             img_masked,
             diagnostics=getitem_if_not_none(diagnostics, "find_trench_lines"),
         )
@@ -344,7 +345,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             np.percentile(img_normalized, 5),
         )
         if setwise:
-            angle, pitch, rhos = find_trench_lines(
+            angle, pitch, rho_info = find_trench_lines(
                 img_masked,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
@@ -352,7 +353,7 @@ def find_trenches(img, setwise=True, diagnostics=None):
             img_masked,
             angle,
             pitch,
-            rhos,
+            rho_info,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
     trenches_df = pd.concat(trench_sets)

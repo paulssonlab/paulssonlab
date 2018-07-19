@@ -1,6 +1,9 @@
 ### TODAY
 fine-tune trench positions using peakfinder
+    pluggable rho_finder given profile (options: periodic, periodic(refine=True), peakfinder)
     make red dots be actual rho values
+    solve out of bounds error
+    change sign of -offset when angle<0
     interpolated profile periodogram (upscaling factor as kwarg)
     pass offset array to trench_anchors/arange correctly (test with constant offsets)
     refined_points on profile plot
@@ -8,12 +11,14 @@ fine-tune trench positions using peakfinder
     return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)
     dask find bboxes
     use columns to filter out empty trenches (after finding bboxes!)
+    check that non-setwise trench finding works
 
 get bboxes for non-good trenches, then subset to good frames
 
 dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
 
+stream results back to list+cancel immediately (to keep memory free)
 jupyterlab state
 
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
