@@ -1,8 +1,10 @@
 ### TODAY
 fine-tune trench positions using peakfinder
     mark endpoints of rho on profile plot (write this formula only once!)
+    use those endpoints to trim profile before periodogram
+    interpolated profile periodogram (upscaling factor as kwarg)
+    pass offset array to trench_anchors/arange correctly (test with constant offsets)
     refined_points on profile plot
-    pass offset array to trench_anchors/arange correctly
     smoothed (?) profile maximum within 5 pixels from predicted periodic peaks
     return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)
     dask find bboxes
@@ -12,6 +14,8 @@ get bboxes for non-good trenches, then subset to good frames
 
 dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
+
+jupyterlab state
 
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
     dataframe_browser with sliders for trench_set, trench, t
@@ -26,7 +30,6 @@ get trench focus, trench brightness, use as quality filters
 check trench_set in get_trench_stacks (hash to make sure values are different)
 get_trench_stacks: easy way to load in different channels
 pandas schema for cell lineages
-are regionprops objects cheaper to serialize than bringing back partial/full dataframes?
 benchmark get_trench_stacks with memmap
 
 obey regionprops bbox convention: half-open interval [x_min, x_max)
