@@ -106,10 +106,11 @@ def segment_trench(img, diagnostics=None):
     watershed_labels = skimage.morphology.watershed(
         img_k1, clean_seeds, mask=mask, watershed_line=True
     )
+    watershed_labels = watershed_labels.astype(np.uint8)
     if diagnostics is not None:
         diagnostics["watershed_labels"] = _trench_img(watershed_labels)
     # watershed_labels_eroded = repeat_apply(skimage.morphology.erosion, 1)(watershed_labels)
     # if diagnostics is not None:
     #    diagnostics['watershed_labels_eroded'] = _trench_img(watershed_labels_eroded)
     # return watershed_labels_eroded.astype(np.uint8)
-    return watershed_labels.astype(np.uint8)
+    return watershed_labels
