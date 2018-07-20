@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from cytoolz import get_in
+from cytoolz import get_in, valfilter
 import cachetools
 import nd2reader
 import sys

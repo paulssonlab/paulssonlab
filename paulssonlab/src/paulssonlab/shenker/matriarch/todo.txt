@@ -1,16 +1,9 @@
 ### TODAY
-fine-tune trench positions using peakfinder
-    rhos -> anchor_rhos/peak_rhos, rho -> rhos
-    pluggable rho_finder given profile (options: periodic, periodic(refine=True), peakfinder)
-    make red dots be actual rho values
-    change sign of -offset when angle<0
-    interpolated profile periodogram (upscaling factor as kwarg)
-    refined_points on profile plot
-    smoothed (?) profile maximum within 5 pixels from predicted periodic peaks
-    return columns for: smoothed profile value at periodic peak, value at selected peak, pixel offsets between the two locations (angle-corrected?)
-    dask find bboxes
+new trench detection
+    fix errors
+    interpolation
     use columns to filter out empty trenches (after finding bboxes!)
-    check that non-setwise trench finding works
+    dask find bboxes
 
 get bboxes for non-good trenches, then subset to good frames
 
@@ -20,6 +13,11 @@ dask segment and bring back to calculate regionprops
 dask segment and regionprops remotely
 
 stream results back to list+cancel immediately (to keep memory free)
+    asynchronously (!!!)
+    hide exception messages
+    utility func that keeps a dict updated with futures in real-time
+        PIPELINE? that stores intermediate results in dicts? (and update order in a queue?)
+    something that triggers a stream (with rate limit) whenever a future finishes, for use with real-time results coming off the microscope
 jupyterlab state
 
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag

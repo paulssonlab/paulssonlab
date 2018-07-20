@@ -48,13 +48,6 @@ def find_periodic_peaks(
     offset_idxs = (
         np.arange(0, len(profile), pitch)[:-1] + offsets[:, np.newaxis]
     ).astype(np.int_)
-    # anchor_rho = _anchor_rho(angle, pitch, 0, x_lim, y_lim)
-    # print('$',anchor_rho)
-    # anchor_idxs = np.where(anchor_rho == rho[:,np.newaxis])[0]
-    # print('>',anchor_idxs)
-    # max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    # offset_idxs = (max_dist + anchor_rho + offsets[:,np.newaxis]).astype(np.int_)
-    # print('>>',offset_idxs)
     offset_objective = profile[offset_idxs].sum(axis=1)
     if smooth:
         offset_objective_smoothed = scipy.ndimage.filters.gaussian_filter1d(
@@ -74,21 +67,21 @@ def find_periodic_peaks(
             )
         offset_plot *= hv.VLine(offset).options(color="red")
         diagnostics["offsets"] = offset_plot
-    if refine:
+    if not refine:
+        refined_idxs = idxs
+        info = None
+    else:
         idx_start = np.clip(idxs - refine, 0, len(profile))
         idx_end = np.clip(idxs + refine, 0, len(profile))
-        print(">", idx_start)
-        print(">>", idx_end)
         shifts = np.array(
             [
                 profile[idx_start[i] : idx_end[i]].argmax() - (idxs[i] - idx_start[i])
                 for i in range(len(idxs))
             ]
         )
-        print(">>>", shifts.shape, shifts)
         shifts = np.where(profile[idxs] != profile[idxs + shifts], shifts, 0)
-        print(">>>!!", shifts.shape, shifts)
         refined_idxs = idxs + shifts
+        info = pd.DataFrame({"hough_unshifted_value": profile[idxs], "shift": shifts})
         if diagnostics is not None:
             periodic_points = hv.Scatter((idxs, profile[idxs])).options(
                 size=5, color="red"
@@ -99,8 +92,7 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
-        # periodic_points = hv.Scatter((rho[offset_idxs[offset_idx]], profile[offset_idxs[offset_idx]])).options(size=5, color='red')
-    return refined_idxs, None
+    return refined_idxs, info
 
 
 def find_periodic_lines(
@@ -144,7 +136,6 @@ def find_periodic_lines(
     x_lim, y_lim = get_image_limits(img.shape)
     x_min, x_max = x_lim
     y_min, y_max = y_lim
-    ############
     max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
     if angle < 0:
         rho_min = y_max * np.sin(angle)
@@ -152,14 +143,9 @@ def find_periodic_lines(
     else:
         rho_min = 0
         rho_max = max_dist * np.cos(angle - np.pi / 4)
-    print("rho_min", rho_min, "rho_max", rho_max)
     idx_min = np.where(rho_min >= rho)[0][-1]
-    print("M", rho.max())
-    print(rho_max <= rho, rho)
     idx_max = np.where(rho_max <= rho)[0][0]
-    print("idx_min", idx_min, rho[idx_min], "idx_max", idx_max, rho[idx_max])
-    ############
-    trimmed_profile = profile[idx_min:idx_max]  # np.trim_zeros(profile)
+    trimmed_profile = profile[idx_min:idx_max]
     trimmed_rho = rho[idx_min:idx_max]
     trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
     if upscale:
@@ -177,13 +163,13 @@ def find_periodic_lines(
         interpolated_profile = trimmed_profile
     if diagnostics is not None:
         diagnostics["trimmed_profile"] = trimmed_profile_plot
-    # GET RHOS
-    anchor_idxs, info = peak_func(
+    anchor_idxs, anchor_info = peak_func(
         interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
     )
 
     if upscale:
         anchor_idxs = (anchor_idxs / upscale).astype(np.int_)
+    anchor_values = trimmed_profile[anchor_idxs]  # TODO: interpolation
     anchor_idxs += idx_min
     anchor_rho = rho[anchor_idxs]
     # TODO interpolate rho
@@ -194,16 +180,10 @@ def find_periodic_lines(
         profile_plot = hv.Curve((rho, profile)) * rho_points
         profile_plot *= hv.VLine(rho_min).options(color="red")
         profile_plot *= hv.VLine(rho_max).options(color="red")
-        # refined_points = hv.Scatter((rho[idx_min+idxs], profile[idx_min+idxs])).options(size=5, color='cyan')
-        # profile_plot *= refined_points
         diagnostics["profile"] = profile_plot
-    # rhos = np.arange(rho_min + offset, rho_max, pitch)
-    # rhos = np.arange(0, rho_max, pitch)
-    # if refine:
-    #    rhos = rho[idx_min+idxs]
-    # else:
-    #    rhos = np.arange(0, rho_max, pitch)
-    print("anchor_rho", anchor_rho)
+    info = pd.DataFrame({"hough_value": anchor_values})
+    if anchor_info is not None:
+        info = info.join(anchor_info)
     return angle, anchor_rho, rho_min, rho_max, info
 
 
@@ -362,21 +342,11 @@ def find_trench_ends(
     return df
 
 
-def find_trenches(img, setwise=True, diagnostics=None):
+def find_trenches(img, diagnostics=None):
     img_normalized, img_labels, label_index = label_for_trenches(
         img, diagnostics=getitem_if_not_none(diagnostics, "labeling")
     )
     trench_sets = {}
-    if not setwise:
-        img_masked = np.where(
-            skimage.morphology.binary_dilation(img_labels != 0),
-            img_normalized,
-            np.percentile(img_normalized, 5),
-        )
-        angle, anchor_rho, rho_min, rho_max = find_trench_lines(
-            img_masked,
-            diagnostics=getitem_if_not_none(diagnostics, "find_trench_lines"),
-        )
     for label in label_index:
         label_diagnostics = getitem_if_not_none(diagnostics, "label_{}".format(label))
         img_masked = np.where(
@@ -384,11 +354,10 @@ def find_trenches(img, setwise=True, diagnostics=None):
             img_normalized,
             np.percentile(img_normalized, 5),
         )
-        if setwise:
-            angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
-                img_masked,
-                diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
-            )
+        angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
+            img_masked,
+            diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
+        )
         trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
@@ -397,6 +366,9 @@ def find_trenches(img, setwise=True, diagnostics=None):
             rho_max,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
+        if anchor_info is not None:
+            anchor_info.columns = [("info", col) for col in anchor_info.columns]
+            trench_sets[label] = trench_sets[label].join(anchor_info)
     trenches_df = pd.concat(trench_sets)
     trenches_df.index.names = ["trench_set", "trench"]
     return trenches_df
