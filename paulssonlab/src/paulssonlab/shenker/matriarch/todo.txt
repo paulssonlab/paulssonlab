@@ -1,18 +1,33 @@
 ### TODAY
+util.get_random (similar to get_one)
+    equivalents to get N instead of 1, random/first
+
+get_regionprops
+dask segment and bring back to calculate regionprops
+dask segment and regionprops remotely
+
+get trench stacks, then run focus+segmentation
+good trenches filtering using: hough_value, focus
+
+allow keying into a singleton with show_plot_browser
+ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
+    dataframe_browser with sliders for trench_set, trench, t
+        get_trench_thumb(/get_trench_stack?) function that can be passed to image_viewer
+    access dict with future.result(), cache locally
+
+multichannel_image_viewer
+    stacked and side-by-side (use overlays so only update when necessary?)
+frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
+plot trench 95% percentile brightness vs. time, click on a plot to show plot in frame_viewer
+
+### SOON
 new trench detection
     quick way to fix angle? (using symmetry of aliasing? abs val of derivative, smoothed?)
     use columns to filter out empty trenches (after finding bboxes!)
     dask find bboxes
     plot periodogram x-axis as wavelength
 
-allow keying into a singleton with show_plot_browser
-
-get bboxes for non-good trenches, then subset to good frames
-
 fix intermittent trench detection clustering issues
-
-dask segment and bring back to calculate regionprops
-dask segment and regionprops remotely
 
 stream results back to list+cancel immediately (to keep memory free)
     asynchronously (!!!)
@@ -22,17 +37,9 @@ stream results back to list+cancel immediately (to keep memory free)
     something that triggers a stream (with rate limit) whenever a future finishes, for use with real-time results coming off the microscope
 jupyterlab state
 
-ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
-    dataframe_browser with sliders for trench_set, trench, t
-        get_trench_thumb(/get_trench_stack?) function that can be passed to image_viewer
-    access dict with future.result(), cache locally
-
 make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
 
 allow merging filenames (so timepoints are joint)???
-
-get trench focus, trench brightness, use as quality filters
-    only segment good trenches
 
 check trench_set in get_trench_stacks (hash to make sure values are different)
 get_trench_stacks: easy way to load in different channels
@@ -44,8 +51,6 @@ RANSAC to refine angle (e.g., 180405.nd2/pos14/MCHERRY/t0)
 
 store namedtuple in dataframe for easy groupby/sending series via dask without incurring performance cost of iter_index
 make apply_map_futures gracefully return when nothing matches predicate [real problem: return gracefully when mapping func returns None]
-util.get_random (similar to get_one)
-    equivalents to get N instead of 1, random/first
 function for next(iter(framestack_group.groupby('t')))[1]
 
 strategy for allowing trench_detection, trench_segmentation to return a dataframe of metadata without incurring cost of constructing holoviews objects which will never be used
@@ -78,11 +83,6 @@ fix trench detection with debris in feeding channel (TxnErr002.nd2)
     angle/pitch finding seems to mostly work
         debug pitch bias issue (frequencing sampling?)
         don't count 0 values in offset calculation
-    trench end detection needs to be improve
-
-multichannel_image_viewer
-frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
-plot trench 95% percentile brightness vs. time, click on a plot to show plot in frame_viewer
 
 ### POSTPONED
 frame histogram (clustering or thresholding) for frame quality
