@@ -32,26 +32,34 @@ def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
 
 
 def find_periodic_peaks(
-    profile, refine=5, smooth=4, num_offset_points=200, diagnostics=None
+    profile,
+    refine=False,
+    nfft=2**14,
+    smooth_offset=4,
+    num_offset_points=200,
+    diagnostics=None,
 ):
-    freqs, spectrum = scipy.signal.periodogram(profile, scaling="spectrum")
+    freqs, spectrum = scipy.signal.periodogram(
+        profile, window="hann", nfft=nfft, scaling="spectrum"
+    )
     pitch_idx = spectrum.argmax()
     pitch = 1 / freqs[pitch_idx]
     if diagnostics is not None:
         diagnostics["pitch"] = pitch
-        diagnostics["spectrum"] = hv.Curve(spectrum) * hv.VLine(pitch_idx).options(
-            color="red"
-        )
+        spectrum_plot = hv.Curve(spectrum)
+        spectrum_plot *= hv.VLine(pitch_idx).options(color="red")
+        diagnostics["spectrum"] = spectrum_plot
     offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
     # always leave a period of length `pitch` so we can add offsets
     # even when we could've fit another period
+    # TODO: this sometimes results in one trench undetected!
     offset_idxs = (
-        np.arange(0, len(profile), pitch)[:-1] + offsets[:, np.newaxis]
+        np.arange(0, len(profile) - pitch, pitch) + offsets[:, np.newaxis]
     ).astype(np.int_)
     offset_objective = profile[offset_idxs].sum(axis=1)
-    if smooth:
+    if smooth_offset:
         offset_objective_smoothed = scipy.ndimage.filters.gaussian_filter1d(
-            offset_objective, smooth
+            offset_objective, smooth_offset
         )
     else:
         offset_objective_smoothed = offset_objective
@@ -61,7 +69,7 @@ def find_periodic_peaks(
     if diagnostics is not None:
         diagnostics["offset"] = offset
         offset_plot = hv.Curve((offsets, offset_objective))
-        if smooth:
+        if smooth_offset:
             offset_plot *= hv.Curve((offsets, offset_objective_smoothed)).options(
                 color="cyan"
             )
@@ -143,10 +151,14 @@ def find_periodic_lines(
     else:
         rho_min = 0
         rho_max = max_dist * np.cos(angle - np.pi / 4)
-    idx_min = np.where(rho_min >= rho)[0][-1]
-    idx_max = np.where(rho_max <= rho)[0][0]
-    trimmed_profile = profile[idx_min:idx_max]
-    trimmed_rho = rho[idx_min:idx_max]
+    idx_min = np.where(rho_min <= rho)[0][0]
+    idx_max = np.where(rho_max > rho)[0][-1]
+    print("!!!! min", rho_min, rho[idx_min])
+    print("!!!! max", rho_max, rho[idx_max])
+    assert rho_min <= rho[idx_min] >= rho_min
+    assert rho_min <= rho[idx_max] <= rho_max
+    trimmed_profile = profile[idx_min : idx_max + 1]
+    trimmed_rho = rho[idx_min : idx_max + 1]
     trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
     if upscale:
         interpolated_func = scipy.interpolate.interp1d(
@@ -166,7 +178,6 @@ def find_periodic_lines(
     anchor_idxs, anchor_info = peak_func(
         interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
     )
-
     if upscale:
         anchor_idxs = (anchor_idxs / upscale).astype(np.int_)
     anchor_values = trimmed_profile[anchor_idxs]  # TODO: interpolation
@@ -174,7 +185,7 @@ def find_periodic_lines(
     anchor_rho = rho[anchor_idxs]
     # TODO interpolate rho
     if diagnostics is not None:
-        rho_points = hv.Scatter((anchor_rho, profile[anchor_idxs])).options(
+        rho_points = hv.Scatter((anchor_rho, anchor_values)).options(
             size=5, color="cyan"
         )
         profile_plot = hv.Curve((rho, profile)) * rho_points
@@ -227,6 +238,8 @@ def find_trench_ends(
 ):
     x_lim, y_lim = get_image_limits(img.shape)
     anchors = trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim)
+    print(">", angle, anchor_rho, rho_min, rho_max)
+    print(">>", anchors)
     profiles = []
     line_points = []
     offsets = []
@@ -237,7 +250,11 @@ def find_trench_ends(
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
         xs, ys = coords_along(top_anchor, bottom_anchor)
-        profile = img[ys, xs]
+        print("$", anchor, top_anchor, bottom_anchor)
+        try:
+            profile = img[ys, xs]
+        except:
+            continue
         points = np.vstack((xs, ys)).T
         # TODO: precision??
         if line_length >= max(top_length, bottom_length):

@@ -1,9 +1,12 @@
 ### TODAY
 new trench detection
-    fix errors
     interpolation
+    quick way to fix angle? (using symmetry of aliasing? abs val of derivative, smoothed?)
     use columns to filter out empty trenches (after finding bboxes!)
     dask find bboxes
+    plot periodogram x-axis as wavelength
+
+allow keying into a singleton with show_plot_browser
 
 get bboxes for non-good trenches, then subset to good frames
 
@@ -36,6 +39,7 @@ pandas schema for cell lineages
 benchmark get_trench_stacks with memmap
 
 obey regionprops bbox convention: half-open interval [x_min, x_max)
+RANSAC to refine angle (e.g., 180405.nd2/pos14/MCHERRY/t0)
 
 store namedtuple in dataframe for easy groupby/sending series via dask without incurring performance cost of iter_index
 make apply_map_futures gracefully return when nothing matches predicate [real problem: return gracefully when mapping func returns None]
@@ -83,7 +87,6 @@ plot trench 95% percentile brightness vs. time, click on a plot to show plot in 
 frame histogram (clustering or thresholding) for frame quality
 errors as dataframe
 fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
-allow keying into a singleton with show_plot_browser
 fix off-by-one issue in trench detection offsets
 take entire datasets, rotate by random angles, crop slightly in nonsquare aspect ratios, assess angle detection performance (compare to angle_offset+orig_found_angle)
 
