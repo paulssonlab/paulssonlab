@@ -1,6 +1,5 @@
 ### TODAY
 new trench detection
-    interpolation
     quick way to fix angle? (using symmetry of aliasing? abs val of derivative, smoothed?)
     use columns to filter out empty trenches (after finding bboxes!)
     dask find bboxes
@@ -29,6 +28,8 @@ ui function to easily subset keys in diag, show slider to browse timepoints in t
     access dict with future.result(), cache locally
 
 make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
+
+allow merging filenames (so timepoints are joint)???
 
 get trench focus, trench brightness, use as quality filters
     only segment good trenches

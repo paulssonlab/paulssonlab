@@ -33,7 +33,7 @@ def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
 
 def find_periodic_peaks(
     profile,
-    refine=False,
+    refine=True,
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
@@ -153,8 +153,6 @@ def find_periodic_lines(
         rho_max = max_dist * np.cos(angle - np.pi / 4)
     idx_min = np.where(rho_min <= rho)[0][0]
     idx_max = np.where(rho_max > rho)[0][-1]
-    print("!!!! min", rho_min, rho[idx_min])
-    print("!!!! max", rho_max, rho[idx_max])
     assert rho_min <= rho[idx_min] >= rho_min
     assert rho_min <= rho[idx_max] <= rho_max
     trimmed_profile = profile[idx_min : idx_max + 1]
@@ -238,8 +236,6 @@ def find_trench_ends(
 ):
     x_lim, y_lim = get_image_limits(img.shape)
     anchors = trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim)
-    print(">", angle, anchor_rho, rho_min, rho_max)
-    print(">>", anchors)
     profiles = []
     line_points = []
     offsets = []
@@ -250,7 +246,6 @@ def find_trench_ends(
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
         xs, ys = coords_along(top_anchor, bottom_anchor)
-        print("$", anchor, top_anchor, bottom_anchor)
         try:
             profile = img[ys, xs]
         except:
