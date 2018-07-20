@@ -44,10 +44,12 @@ def RevRGB(img, **kwargs):
 
 def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
     if key is not None:
+        if isinstance(key, str):
+            key = key.split(".")
         if stream is None:
-            plots = get_in(key.split("."), plots)
+            plots = get_in(key, plots)
         else:
-            plots = compose(partial(get_in, key.split(".")), plots)
+            plots = compose(partial(get_in, key), plots)
     to_display = {}
     if stream is None:
         initial_plots = plots
