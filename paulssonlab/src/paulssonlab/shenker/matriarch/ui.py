@@ -44,7 +44,7 @@ def RevRGB(img, **kwargs):
 
 def show_plot_stack(diags, keys=None):
     if keys is None:
-        keys = get_one(obj).keys()
+        keys = get_one(diags).keys()
     elif isinstance(keys, str):
         keys = [keys]
     plots = []

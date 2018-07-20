@@ -33,6 +33,16 @@ def wrap_diagnostics(func, ignore_exceptions=False, pandas=False):
     return wrapper
 
 
+def wrap_diagnostics_stack(func, **kwargs):
+    func_diag = wrap_diagnostics(func)
+
+    @wraps(func)
+    def wrapper(img_stack, *args, **kwargs):
+        return zip(*[func_diag(img, *args, **kwargs) for img in img_stack])
+
+    return wrapper
+
+
 def diagnostics_to_series(diagnostics):
     d = flatten_dict(
         diagnostics, predicate=lambda _, x: not isinstance(x, hv.ViewableElement)
