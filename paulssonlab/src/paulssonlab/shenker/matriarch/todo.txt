@@ -1,19 +1,26 @@
 ### TODAY
-util.get_random (similar to get_one)
-    equivalents to get N instead of 1, random/first
-
 get_regionprops
-dask segment and bring back to calculate regionprops
+get_percentiles+get_regionprops in same operation
 dask segment and regionprops remotely
 
-get trench stacks, then run focus+segmentation
-good trenches filtering using: hough_value, focus
+quick segmentation fix
+    use k1/abs derivative of sum of mask along short dimension to split side-by-side cell ends
+
+easy zip/wrap_diagnostics over a trench stack
+easy holomap of segmentation results (use all keys if no key list given; also allow singletons)
+    scroll wheel by default
 
 allow keying into a singleton with show_plot_browser
 ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
     dataframe_browser with sliders for trench_set, trench, t
         get_trench_thumb(/get_trench_stack?) function that can be passed to image_viewer
     access dict with future.result(), cache locally
+
+util.get_random (similar to get_one)
+    equivalents to get N instead of 1, random/first
+
+get trench stacks, then run focus+segmentation
+good trenches filtering using: hough_value, focus
 
 multichannel_image_viewer
     stacked and side-by-side (use overlays so only update when necessary?)

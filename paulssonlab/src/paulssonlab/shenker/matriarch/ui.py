@@ -11,7 +11,7 @@ import qgrid
 from collections.abc import Mapping, Sequence
 from functools import partial, reduce
 import uuid
-from util import summarize_filenames
+from util import summarize_filenames, get_one
 import common
 from workflow import get_nd2_frame
 import numbers
@@ -40,6 +40,20 @@ def _RevImage(cls, img, **kwargs):
 
 def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
+
+
+def show_plot_stack(diags, keys=None):
+    if keys is None:
+        keys = get_one(obj).keys()
+    elif isinstance(keys, str):
+        keys = [keys]
+    plots = []
+    for key in keys:
+        plot = hv.HoloMap({t: diag[key] for t, diag in enumerate(diags)}).options(
+            title_format=key, finalize_hooks=[_set_active_tool]
+        )
+        plots.append(plot)
+    return hv.Layout.from_values(plots).cols(1).options(normalize=False)
 
 
 def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
