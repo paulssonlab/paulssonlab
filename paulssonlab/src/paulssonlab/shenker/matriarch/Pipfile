@@ -8,12 +8,8 @@ apsw = "*"
 "autopep8" = "*"
 blosc = "*"
 bokeh = "*"
-holoviews = "*"
 click = "*"
 cython = "*"
-dask = {extras = ["complete"]}
-distributed = "*"
-ipywidgets = "*"
 ujson = "*"
 jupyter = "*"
 jupyterlab = "*"
@@ -23,7 +19,6 @@ line-profiler = "*"
 lmdb = "*"
 matplotlib = "*"
 natsort = "*"
-"nd2reader" = "*"
 numba = "*"
 numcodecs = "*"
 zarr = "*"
@@ -65,6 +60,11 @@ cachetools = "*"
 pyct = "*"
 parambokeh = "*"
 pysize = {git = "https://github.com/bosswissam/pysize.git"}
+"f99514c" = {path = "./../dask", editable = true}
+"edaa7c3" = {path = "./../distributed"}
+"a2cbe05" = {path = "./../nd2reader", editable = true}
+"46fa3e5" = {path = "./../ipywidgets"}
+ipywidgets = "*"
 
 [dev-packages]
 
