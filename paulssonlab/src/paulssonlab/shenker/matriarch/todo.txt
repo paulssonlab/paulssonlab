@@ -4,6 +4,7 @@ get_percentiles+get_regionprops in same operation
 dask segment and regionprops remotely
 
 quick segmentation fix
+    rank filter (?) to smooth noise in cell interior
     use k1/abs derivative of sum of mask along short dimension to split side-by-side cell ends
 
 easy zip/wrap_diagnostics over a trench stack

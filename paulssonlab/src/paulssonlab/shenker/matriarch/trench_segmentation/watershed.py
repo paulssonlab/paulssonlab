@@ -73,10 +73,11 @@ def segment_trench_old(img, threshold=4e-2, diagnostics=None):
 def segment_trench(img, diagnostics=None):
     if diagnostics is not None:
         diagnostics["img"] = _trench_img(img)
-    # img = normalize_trench_intensity(uniformize_trench_intensity(img))
-    # if diagnostics is not None:
-    #    diagnostics['img_normalized'] = _trench_img(img)
-    # img_scaled = skimage.transform.pyramid_expand(img, upscale=2)
+    img = normalize_trench_intensity(uniformize_trench_intensity(img))
+    if diagnostics is not None:
+        diagnostics["img_normalized"] = _trench_img(img)
+    # img_scaled = skimage.transform.pyramid_expand(img, upscale=2,
+    #                                              multichannel=False)
     # if diagnostics is not None:
     #    diagnostics['img_scaled'] = _trench_img(img_scaled)
     img_blurred = skimage.filters.gaussian(img, 0.5)
