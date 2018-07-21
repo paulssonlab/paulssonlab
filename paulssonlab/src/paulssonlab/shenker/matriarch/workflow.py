@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from cytoolz import get_in, valfilter
 import cachetools
+from numcodecs import Blosc
 import nd2reader
 import sys
 from collections import defaultdict, namedtuple
@@ -16,6 +17,7 @@ from util import (
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox
 from diagnostics import expand_diagnostics_by_label
+from trench_segmentation.watershed import segment_trench
 
 IDX = pd.IndexSlice
 
@@ -270,3 +272,78 @@ def get_trench_stacks(
     else:
         trench_stacks = dict(trench_stacks)  # convert back from a defaultdict
     return trench_stacks
+
+
+def map_trenchwise(func, frame_stacks, trenches, channels=None):
+    results = {}
+    for trench_idx, _ in util.iter_index(trenches):
+        if channels is None:
+            results[trench_idx] = func(frame_stacks[trench_idx])
+        else:
+            results[trench_idx] = func(
+                frame_stacks[trench_idx],
+                *[
+                    frame_stacks[trench_idx._replace(channel=channel)]
+                    for channel in channels
+                ],
+            )
+    return results
+
+
+def do_segment_trench(img_stack):
+    label_stack = np.stack([segment_trench(img) for img in img_stack])
+    return zarr.array(
+        label_stack,
+        compressor=Blosc(cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0),
+    )
+
+
+def map_stack(col_to_funcs, image_stack):
+    ts = range(image_stack.shape[0])
+    columns, funcs = util.unzip_items(col_to_funcs.items())
+    func = juxt(*funcs)
+    res = [func(image_stack[t]) for t in ts]
+    d = {}
+    for col, values in zip(columns, zip(*res)):
+        if not isinstance(col, str):
+            for i, sub_col in enumerate(col):
+                d[sub_col] = [v[i] for v in values]
+        else:
+            d[col] = values
+    df = pd.DataFrame(d, index=ts)
+    df.index.name = "t"
+    return df
+
+
+def map_stack_over_labels(col_to_funcs, label_stack, intensity_stack, labels=None):
+    dfs = {
+        t: map_frame_over_labels(
+            col_to_funcs, label_stack[t], intensity_stack[t], labels=labels
+        )
+        for t in range(label_stack.shape[0])
+    }
+    df = pd.concat(dfs)
+    df.index.set_names("t", level=0, inplace=True)
+    return df
+
+
+# TODO
+# slightly faster alternative to, e.g.,
+# pd.DataFrame({'label': label_image.ravel(), 'value': intensity_image.ravel()}).groupby('label').agg(['mean', 'min', 'max'])
+# OR numpy_indexed.group_by(l0.ravel(), i0.ravel(), reduction=np.mean)
+def map_frame_over_labels(col_to_funcs, label_image, intensity_image, labels=None):
+    if labels is None:
+        labels = range(0, np.max(np.asarray(label_image)) + 1)
+    columns, funcs = util.unzip_items(col_to_funcs.items())
+    func = juxt(*funcs)
+    res = [func(intensity_image[label_image == label]) for label in labels]
+    d = {}
+    for col, values in zip(columns, zip(*res)):
+        if not isinstance(col, str):
+            for i, sub_col in enumerate(col):
+                d[sub_col] = [v[i] for v in values]
+        else:
+            d[col] = values
+    df = pd.DataFrame(d, index=labels)
+    df.index.name = "label"
+    return df

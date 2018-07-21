@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import scipy
 import skimage.morphology
 from util import repeat_apply
@@ -147,3 +148,34 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
     for i in range(n - m):
         ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode)
     return ary
+
+
+DEFAULT_REGIONPROPS = [
+    "area",
+    "centroid",
+    "eccentricity",
+    "min_intensity",
+    "mean_intensity",
+    "max_intensity",
+    "major_axis_length",
+    "minor_axis_length",
+    "orientation",
+    "perimeter",
+    "solidity",
+    "weighted_centroid",
+]
+
+
+def regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS):
+    rps = skimage.measure.regionprops(
+        label_image, intensity_image, coordinates="rc", cache=False
+    )
+    df = pd.concat(
+        {
+            cell: pd.Series({prop: getattr(rp, prop) for prop in properties})
+            for cell, rp in enumerate(rps)
+        },
+        axis=1,
+    ).T
+    df.index.name = "label"
+    return df

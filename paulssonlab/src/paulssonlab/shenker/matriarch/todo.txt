@@ -1,4 +1,19 @@
 ### TODAY
+small demo:
+    segmentation
+    labelwise mean/percentiles
+    regionprops orientation/centroid
+    trenchwise focus/percentiles
+PIPELINING to make mapping frame_stacks over many data easy
+ALLOW ERODING MASK BEFORE PROCESSING (say, only erode for percentile)
+easy way to wrap map_trenchwise (?) results in zarr (postprocess=func)
+    considering workflow is load trench stacks into memory, do some interactive processing (with a subset), then stream+cancel for big analysis
+
+DASK to run all three off the same trench sets, canceling after done
+quick-and-dirty ASYNC(?)
+    that can stream/checkpoint to disk???
+easy way to test dask submit loops locally??
+
 get_regionprops
 get_percentiles+get_regionprops in same operation
 dask segment and regionprops remotely
