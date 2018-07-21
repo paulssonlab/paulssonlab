@@ -5,15 +5,16 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 import holoviews as hv
-from functools import reduce, partial, wraps
-from itertools import count, zip_longest
+from functools import wraps
+from itertools import zip_longest
 import wrapt
-from cytoolz import compose
+from cytoolz import compose, take, reduce, partial, count
 import collections
 from collections import namedtuple
 from dask.distributed import Future
 import operator
 import os
+import random
 
 # FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 def multi_join(left, right):
@@ -95,14 +96,33 @@ def getattr_if_not_none(obj, key):
         return None
 
 
-def _get_one(obj):
+def _get_one(obj, count=1):
     if isinstance(obj, Mapping):
         obj = obj.values()
-    return next(iter(obj))
+    res = list(take(count, iter(obj)))
+    if count == 1:
+        return res[0]
+    else:
+        return res
 
 
-def get_one(obj, level=1):
-    return repeat_apply(_get_one, level)(obj)
+def get_one(obj, count=1, level=1):
+    return _get_one(repeat_apply(_get_one, level - 1)(obj), count=count)
+
+
+get_some = partial(get_one, count=3)
+
+
+def get_random(obj, count=1, level=1):
+    if isinstance(obj, Mapping):
+        obj = obj.values()
+    obj = list(obj)
+    obj = repeat_apply(get_random, level - 1)(obj)
+    res = random.sample(obj, count)
+    if count == 1:
+        return res[0]
+    else:
+        return res
 
 
 def iterate_get_collection_value(obj, level):
