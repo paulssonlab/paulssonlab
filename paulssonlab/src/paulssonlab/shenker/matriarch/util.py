@@ -149,6 +149,10 @@ def flatten_dict(d, parent_key="", sep=".", predicate=None):
     return dict(items)
 
 
+def unzip_items(d):
+    return list(zip(*list(d)))
+
+
 # FROM: https://stackoverflow.com/questions/16458340/python-equivalent-of-zip-for-dictionaries
 def zip_dicts(*dicts):
     for k in set(dicts[0]).intersection(*dicts[1:]):
