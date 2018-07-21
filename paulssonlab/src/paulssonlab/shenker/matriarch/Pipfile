@@ -62,9 +62,9 @@ parambokeh = "*"
 pysize = {git = "https://github.com/bosswissam/pysize.git"}
 "f99514c" = {path = "./../dask", editable = true}
 "edaa7c3" = {path = "./../distributed"}
-"a2cbe05" = {path = "./../nd2reader", editable = true}
 "46fa3e5" = {path = "./../ipywidgets"}
 ipywidgets = "*"
+numpy-indexed = "*"
 
 [dev-packages]
 
