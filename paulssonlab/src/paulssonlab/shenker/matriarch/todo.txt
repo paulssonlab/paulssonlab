@@ -2,6 +2,7 @@
 get_regionprops
 get_percentiles+get_regionprops in same operation
 dask segment and regionprops remotely
+    multiindex columns: (scalar, *) and (centroid, x/y)
 
 quick segmentation fix
     rank filter (?) to smooth noise in cell interior
