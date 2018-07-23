@@ -1,9 +1,25 @@
 ### TODAY
+filename/position/t -> select corresponding trench_bboxes for filename/position
+    -> get MCHERRY -> segment
+                   -> trenchwise focus/percentiles
+    -> get YFP     -> percentiles
+    
+    MCHERRY-segment + YFP -> labelwise mean/percentiles
+                          -> regionprops
+                          
+    trenchwise results -> gather -> concat (both axes)
+    labelwise results -> gather -> concat (both axes)
+
+REPLACE NAMEDTUPLE with attribute-access dict (pickleable?)
+
+BUNDLE TRENCH LOADING/SEGMENTATION/COMPUTATION
+    INTO A SINGLE FUNCTION
+USE STREAMS TO scatter/gather (also for trench finding!)
 small demo:
+    trenchwise focus/percentiles
     segmentation
     labelwise mean/percentiles
     regionprops orientation/centroid
-    trenchwise focus/percentiles
 PIPELINING to make mapping frame_stacks over many data easy
 ALLOW ERODING MASK BEFORE PROCESSING (say, only erode for percentile)
 easy way to wrap map_trenchwise (?) results in zarr (postprocess=func)

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from cytoolz import get_in, valfilter
+from cytoolz import get_in, valfilter, juxt
 import cachetools
 from numcodecs import Blosc
 import nd2reader
@@ -13,11 +13,11 @@ from util import (
     get_one,
     unzip_dicts,
     iter_index,
+    unzip_items,
 )
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox
 from diagnostics import expand_diagnostics_by_label
-from trench_segmentation.watershed import segment_trench
 
 IDX = pd.IndexSlice
 
@@ -266,7 +266,9 @@ def get_trench_stacks(
                 trench_idx = Index(*current_trenches_index[idx])
                 ul = uls[idx]
                 lr = lrs[idx]
-                trench_stacks[trench_idx].append(frame[ul[1] : lr[1], ul[0] : lr[0]])
+                trench_stacks[trench_idx].append(
+                    frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
+                )
     if transformation is not None:
         trench_stacks = {k: transformation(v) for k, v in trench_stacks.items()}
     else:
@@ -276,7 +278,7 @@ def get_trench_stacks(
 
 def map_trenchwise(func, frame_stacks, trenches, channels=None):
     results = {}
-    for trench_idx, _ in util.iter_index(trenches):
+    for trench_idx, _ in iter_index(trenches):
         if channels is None:
             results[trench_idx] = func(frame_stacks[trench_idx])
         else:
@@ -290,17 +292,9 @@ def map_trenchwise(func, frame_stacks, trenches, channels=None):
     return results
 
 
-def do_segment_trench(img_stack):
-    label_stack = np.stack([segment_trench(img) for img in img_stack])
-    return zarr.array(
-        label_stack,
-        compressor=Blosc(cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0),
-    )
-
-
 def map_stack(col_to_funcs, image_stack):
     ts = range(image_stack.shape[0])
-    columns, funcs = util.unzip_items(col_to_funcs.items())
+    columns, funcs = unzip_items(col_to_funcs.items())
     func = juxt(*funcs)
     res = [func(image_stack[t]) for t in ts]
     d = {}
@@ -334,7 +328,7 @@ def map_stack_over_labels(col_to_funcs, label_stack, intensity_stack, labels=Non
 def map_frame_over_labels(col_to_funcs, label_image, intensity_image, labels=None):
     if labels is None:
         labels = range(0, np.max(np.asarray(label_image)) + 1)
-    columns, funcs = util.unzip_items(col_to_funcs.items())
+    columns, funcs = unzip_items(col_to_funcs.items())
     func = juxt(*funcs)
     res = [func(intensity_image[label_image == label]) for label in labels]
     d = {}
@@ -347,3 +341,17 @@ def map_frame_over_labels(col_to_funcs, label_image, intensity_image, labels=Non
     df = pd.DataFrame(d, index=labels)
     df.index.name = "label"
     return df
+
+
+def map_frame(col_to_funcs, image):
+    columns, funcs = unzip_items(col_to_funcs.items())
+    func = juxt(*funcs)
+    res = func(image)
+    d = {}
+    for col, value in zip(columns, res):
+        if not isinstance(col, str):
+            for i, sub_col in enumerate(col):
+                d[sub_col] = value[i]
+        else:
+            d[col] = value
+    return pd.Series(d)
