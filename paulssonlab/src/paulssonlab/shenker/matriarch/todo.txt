@@ -1,4 +1,18 @@
 ### TODAY
+EASY WAY TO RUN ON FIRST k trenches, first n frames?
+    SPECIFY CHANNELS TO ANALYZE BY FRAMES DF?
+        (seg channels always)
+
+get segmentation channel (per file/position) from selected_trenches df
+support arbitrary framewise/trenchwise functions of multiple channels
+    use this support to build segmentation/segmentation+erode
+only pass namedtuple OR kwargs OR tuple, don't bother passing in uls/rls (just look these up without calling .values?)
+
+easily pluggable do_analysis, other functions
+as_completed to stream: emit((key, per_t_df))
+use that to append to master df (use arrow to make fast?)
+
+### TODAYISH
 filename/position/t -> select corresponding trench_bboxes for filename/position
     -> get MCHERRY -> segment
                    -> trenchwise focus/percentiles
