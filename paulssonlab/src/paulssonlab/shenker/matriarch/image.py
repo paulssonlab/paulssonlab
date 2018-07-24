@@ -172,8 +172,8 @@ def regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS):
     )
     df = pd.concat(
         {
-            cell: pd.Series({prop: getattr(rp, prop) for prop in properties})
-            for cell, rp in enumerate(rps)
+            label: pd.Series({prop: getattr(rp, prop) for prop in properties})
+            for label, rp in enumerate(rps, 1)
         },
         axis=1,
     ).T
