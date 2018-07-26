@@ -396,6 +396,7 @@ def _analyze_trench(
                     label_channel_dfs["regionprops"] = regionprops_df
             label_dfs[channel] = pd.concat(label_channel_dfs, axis=1)
         labelwise_df = pd.concat(label_dfs, axis=1)
+        labelwise_df.index.name = "label"
     else:
         labelwise_df = None
     return trenchwise_df, labelwise_df
