@@ -13,7 +13,7 @@ from functools import partial, reduce
 import uuid
 from util import summarize_filenames, get_one
 import common
-from workflow import get_nd2_frame
+from workflow import get_nd2_frame_anyargs
 import numbers
 from cytoolz import get_in, compose
 
@@ -36,6 +36,12 @@ def _RevImage(cls, img, **kwargs):
     return cls(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).options(
         invert_yaxis=True
     )
+
+
+def _trench_img(img):
+    return RevImage(img.T).options(
+        height=120, width=400
+    )  # .options(height=10, width=100)#.options(height=int(img.shape[1]*0.6), width=int(img.shape[0]*0.4))
 
 
 def RevRGB(img, **kwargs):
@@ -486,12 +492,16 @@ def dict_viewer(d, *streams, wrapper=None):
     return viewer(callback, *streams)
 
 
-def image_viewer(*streams, image_callback=get_nd2_frame):
+def image_viewer(*streams, image_callback=get_nd2_frame_anyargs, regrid=True):
     def callback(x_range, y_range, **kwargs):
-        img = RevImage(image_callback(**kwargs))
-        return datashader.regrid.instance(
-            dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
-        )(img).redim.range(z=(0, img.data.max()))
+        img = image_callback(**kwargs)
+        if not isinstance(img, hv.ViewableElement):
+            img = RevImage(img)
+        if regrid:
+            img = datashader.regrid.instance(
+                dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
+            )(img).redim.range(z=(0, img.data.max()))
+        return img
 
     return viewer(callback, hv.streams.RangeXY(), *streams)
 

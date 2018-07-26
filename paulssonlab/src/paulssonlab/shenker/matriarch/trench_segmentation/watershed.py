@@ -4,15 +4,9 @@ import scipy.stats
 import skimage
 import skimage.morphology
 from image import hessian_eigenvalues
-from ui import RevImage
+from ui import RevImage, _trench_img
 from util import repeat_apply
 import common
-
-
-def _trench_img(img):
-    return RevImage(img.T).options(
-        height=120, width=400
-    )  # .options(height=10, width=100)#.options(height=int(img.shape[1]*0.6), width=int(img.shape[0]*0.4))
 
 
 def uniformize_trench_intensity(img):
