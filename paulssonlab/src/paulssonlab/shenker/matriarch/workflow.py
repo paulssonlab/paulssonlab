@@ -99,7 +99,7 @@ def _get_nd2_reader(filename, **kwargs):
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 
 
-def _get_nd2_frame(filename, position, channel, t, memmap=False):
+def get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
@@ -107,11 +107,11 @@ def _get_nd2_frame(filename, position, channel, t, memmap=False):
     return np.array(reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap))
 
 
-get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
+get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
 
-
-def get_nd2_frame(filename, position, channel, t, memmap=False, **kwargs):
-    return get_nd2_frame_cached(filename, position, channel, t, memmap=memmap)
+# TODO: use utility func to drop unneeded kwargs
+# def get_nd2_frame(filename, position, channel, t, memmap=False, **kwargs):
+#    return get_nd2_frame_cached(filename, position, channel, t, memmap=memmap)
 
 
 def _get_nd2_frame_list(sizes, channels):
