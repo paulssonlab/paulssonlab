@@ -170,6 +170,8 @@ def get_regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS
     rps = skimage.measure.regionprops(
         label_image, intensity_image, coordinates="rc", cache=False
     )
+    if not len(rps):
+        return None
     cols = {prop: [getattr(rp, prop) for rp in rps] for prop in properties}
     for col, values in list(cols.items()):
         if isinstance(values[0], tuple):

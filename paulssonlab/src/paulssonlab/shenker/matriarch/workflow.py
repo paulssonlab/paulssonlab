@@ -381,23 +381,21 @@ def _analyze_trench(
         trenchwise_df = None
     if labelwise_funcs or regionprops:
         label_trench_image = segment_func(trench_images[segmentation_channel])
-        labelwise_df = pd.concat(
-            {
-                channel: pd.concat(
-                    {
-                        "labelwise": map_frame_over_labels(
-                            labelwise_funcs, label_trench_image, trench_images[channel]
-                        ),
-                        "regionprops": get_regionprops(
-                            label_trench_image, trench_images[channel]
-                        ),
-                    },
-                    axis=1,
+        label_dfs = {}
+        for channel in readout_channels:
+            label_channel_dfs = {}
+            if labelwise_funcs:
+                label_channel_dfs["labelwise"] = map_frame_over_labels(
+                    labelwise_funcs, label_trench_image, trench_images[channel]
                 )
-                for channel in readout_channels
-            },
-            axis=1,
-        )
+            if regionprops:
+                regionprops_df = get_regionprops(
+                    label_trench_image, trench_images[channel]
+                )
+                if regionprops_df is not None:
+                    label_channel_dfs["regionprops"] = regionprops_df
+            label_dfs[channel] = pd.concat(label_channel_dfs, axis=1)
+        labelwise_df = pd.concat(label_dfs, axis=1)
     else:
         labelwise_df = None
     return trenchwise_df, labelwise_df

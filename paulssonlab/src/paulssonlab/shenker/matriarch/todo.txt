@@ -1,8 +1,4 @@
 ### TODAY
-fix get_nd2_frame cached
-pluggable get_frame
-fix regionprops with no nonzero labels
-
 trench label viewer (outline all labels, bold selected label)
 plot individual labels scatterplot where tapping updates stream running off labelwise_df
 tapping on a histogram bar filters
