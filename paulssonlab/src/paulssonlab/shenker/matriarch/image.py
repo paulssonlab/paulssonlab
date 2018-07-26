@@ -166,16 +166,17 @@ DEFAULT_REGIONPROPS = [
 ]
 
 
-def regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS):
+def get_regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS):
     rps = skimage.measure.regionprops(
         label_image, intensity_image, coordinates="rc", cache=False
     )
-    df = pd.concat(
-        {
-            label: pd.Series({prop: getattr(rp, prop) for prop in properties})
-            for label, rp in enumerate(rps, 1)
-        },
-        axis=1,
-    ).T
+    cols = {prop: [getattr(rp, prop) for rp in rps] for prop in properties}
+    for col, values in list(cols.items()):
+        if isinstance(values[0], tuple):
+            del cols[col]
+            # TODO: store coordinates as multiindex?
+            cols[col + "_x"] = [v[0] for v in values]
+            cols[col + "_y"] = [v[1] for v in values]
+    df = pd.DataFrame(cols, index=range(1, len(rps) + 1))
     df.index.name = "label"
     return df
