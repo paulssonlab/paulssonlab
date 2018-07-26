@@ -8,7 +8,8 @@ import holoviews as hv
 from functools import wraps
 from itertools import zip_longest
 import wrapt
-from cytoolz import compose, take, reduce, partial, count
+from itertools import count
+from cytoolz import compose, take, reduce, partial
 import collections
 from collections import namedtuple
 from dask.distributed import Future
