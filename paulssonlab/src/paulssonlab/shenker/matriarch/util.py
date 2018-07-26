@@ -17,6 +17,15 @@ import operator
 import os
 import random
 
+
+def kwcompose(func1, func2):
+    @wraps(func2)
+    def func(*args, **kwargs):
+        return func1(**func2(*args, **kwargs))
+
+    return func
+
+
 # FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 def multi_join(left, right):
     if isinstance(left, pd.Index):
@@ -124,6 +133,16 @@ def get_random(obj, count=1, level=1):
         return res[0]
     else:
         return res
+
+
+def get_keys(d, *_keys, keys=None):
+    if keys:
+        keys = set(keys)
+        if _keys:
+            raise ValueError("only one of _keys or keys can be specified")
+    else:
+        keys = set(_keys)
+    return {k: v for k, v in d.items() if k in keys}
 
 
 def iterate_get_collection_value(obj, level):
