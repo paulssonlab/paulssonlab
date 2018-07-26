@@ -18,6 +18,7 @@ from util import (
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox
 from diagnostics import expand_diagnostics_by_label
+from image import get_regionprops
 
 IDX = pd.IndexSlice
 
@@ -355,3 +356,144 @@ def map_frame(col_to_funcs, image):
         else:
             d[col] = value
     return pd.Series(d)
+
+
+def _analyze_trench(
+    trench_idx,
+    frames_to_analyze,
+    trench_images,
+    trenchwise_funcs=None,
+    labelwise_funcs=None,
+    regionprops=False,
+    segment_func=None,
+):
+    segmentation_channel = trench_idx.channel
+    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
+    if trenchwise_funcs:
+        trenchwise_df = pd.concat(
+            {
+                channel: map_frame(trenchwise_funcs, trench_images[channel])
+                for channel in readout_channels
+            },
+            axis=0,
+        )
+    else:
+        trenchwise_df = None
+    if labelwise_funcs or regionprops:
+        label_trench_image = segment_func(trench_images[segmentation_channel])
+        labelwise_df = pd.concat(
+            {
+                channel: pd.concat(
+                    {
+                        "labelwise": map_frame_over_labels(
+                            labelwise_funcs, label_trench_image, trench_images[channel]
+                        ),
+                        "regionprops": get_regionprops(
+                            label_trench_image, trench_images[channel]
+                        ),
+                    },
+                    axis=1,
+                )
+                for channel in readout_channels
+            },
+            axis=1,
+        )
+    else:
+        labelwise_df = None
+    return trenchwise_df, labelwise_df
+
+
+def analyze_trenches(
+    trenches,
+    frames_to_analyze,
+    framewise_funcs=None,
+    trenchwise_funcs=None,
+    labelwise_funcs=None,
+    regionprops=False,
+    segment_func=None,
+    get_frame_func=get_nd2_frame,
+):
+    frame_t_idx = tuple([frames_to_analyze.index[0][i] for i in (0, 1, 3)])
+    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
+    channels = {trenches.index.get_level_values("channel")[0], *readout_channels}
+    uls = trenches["upper_left"].values
+    lrs = trenches["lower_right"].values
+    images = {
+        channel: get_frame_func(
+            filename=frame_t_idx[0],
+            position=frame_t_idx[1],
+            channel=channel,
+            t=frame_t_idx[2],
+        )
+        for channel in channels
+    }
+    if framewise_funcs:
+        framewise_df = pd.concat(
+            {
+                channel: map_frame(framewise_funcs, images[channel])
+                for channel in readout_channels
+            },
+            axis=0,
+        )
+    else:
+        framewise_df = None
+    trenchwise_dfs = {}
+    labelwise_dfs = {}
+    for trench_idx, idx in iter_index(trenches.index):
+        ul = uls[idx.Index]
+        lr = lrs[idx.Index]
+        trench_images = {
+            channel: images[channel][ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
+            for channel in images.keys()
+        }
+        trench_trenchwise_df, trench_labelwise_df = _analyze_trench(
+            trench_idx,
+            frames_to_analyze,
+            trench_images,
+            trenchwise_funcs=trenchwise_funcs,
+            labelwise_funcs=labelwise_funcs,
+            regionprops=regionprops,
+            segment_func=segment_func,
+        )
+        result_idx = (*frame_t_idx, trench_idx.trench_set, trench_idx.trench)
+        trenchwise_dfs[result_idx] = trench_trenchwise_df
+        labelwise_dfs[result_idx] = trench_labelwise_df
+    framewise_df = pd.concat({frame_t_idx: framewise_df}, axis=1).T
+    trenchwise_df = pd.concat(trenchwise_dfs, axis=1).T
+    labelwise_df = pd.concat(labelwise_dfs, axis=0)
+    framewise_df.index.names = [
+        "filename",
+        "position",
+        "t",
+        *framewise_df.index.names[3:],
+    ]
+    for df in (trenchwise_df, labelwise_df):
+        df.index.names = [
+            "filename",
+            "position",
+            "t",
+            "trench_set",
+            "trench",
+            *df.index.names[5:],
+        ]
+    return framewise_df, trenchwise_df, labelwise_df
+
+
+def analyze_frames_and_trenches(selected_trenches, frames_to_analyze, func):
+    frames_t = frames_to_analyze.groupby(["filename", "position"])
+    res = []
+    for frame_idx, trenches in iter_index(
+        selected_trenches.groupby(["filename", "position"])
+    ):
+        if not (frame_idx.filename, frame_idx.position) in frames_t.groups:
+            continue
+        fp_frames = frames_t.get_group((frame_idx.filename, frame_idx.position))
+        for t, frames in fp_frames.groupby("t"):
+            res.append(func(trenches, frames))
+    return res
+
+
+def concat_unzip_dataframes(res):
+    return [
+        pd.concat(filter(lambda x: x is not None, dfs), axis=0) for dfs in zip(*res)
+    ]

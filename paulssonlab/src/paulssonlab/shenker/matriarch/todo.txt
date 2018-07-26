@@ -1,7 +1,21 @@
 ### TODAY
-EASY WAY TO RUN ON FIRST k trenches, first n frames?
-    SPECIFY CHANNELS TO ANALYZE BY FRAMES DF?
-        (seg channels always)
+fix get_nd2_frame cached
+pluggable get_frame
+fix regionprops with no nonzero labels
+
+trench label viewer (outline all labels, bold selected label)
+plot individual labels scatterplot where tapping updates stream running off labelwise_df
+tapping on a histogram bar filters
+lasso on scatterplot filters
+
+dask.distributed issue for not cleaning up sockets+IOPub errors/MWE
+
+benchmark memmap
+benchmark
+
+func to replace integer times with real times (joinable?)
+
+analyze_trench should be an analyze frame/labels applied to a given trench instead of whole frame, easily pluggable
 
 get segmentation channel (per file/position) from selected_trenches df
 support arbitrary framewise/trenchwise functions of multiple channels
