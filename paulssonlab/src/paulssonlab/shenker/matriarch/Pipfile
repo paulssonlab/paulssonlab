@@ -65,6 +65,10 @@ pysize = {git = "https://github.com/bosswissam/pysize.git"}
 "46fa3e5" = {path = "./../ipywidgets"}
 ipywidgets = "*"
 numpy-indexed = "*"
+pyarrow = "*"
+pympler = "*"
+objgraph = "*"
+xdot = "*"
 
 [dev-packages]
 
