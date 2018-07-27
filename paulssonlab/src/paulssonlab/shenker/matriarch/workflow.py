@@ -174,19 +174,19 @@ def get_trench_set_overlay(
     lrs -= ul
     selected_style = {"color": "yellow", "line_width": 2, "alpha": 0.7}
     style = {"color": "white", "line_width": 1, "alpha": 0.3}
-    trench_overlays = hv.Overlay.from_values(
+    trench_boxes = hv.Path(
         [
-            hv.Bounds((ul[0], lr[1], lr[0], ul[1])).options(
-                **(selected_style if idx == selected_idx else style)
-            )
+            hv.Bounds((ul[0], lr[1], lr[0], ul[1]))
             for idx, (ul, lr) in enumerate(zip(uls, lrs))
+            if idx != selected_idx
         ]
-    )
-    return (RevImage(img).options(width=700, height=150) * trench_overlays).options(
-        finalize_hooks=[_set_active_tool]
-    )
-    # trench_overlays = hv.Overlay.from_values([hv.Bounds((ul[0], lr[1], lr[0], ul[1])) for idx, (ul, lr) in enumerate(zip(uls, lrs))])
-    # return (RevImage(img) * trench_overlays)
+    ).options(**style)
+    sel_ul = uls[selected_idx]
+    sel_lr = lrs[selected_idx]
+    selected_trench_box = hv.Bounds(
+        (sel_ul[0], sel_lr[1], sel_lr[0], sel_ul[1])
+    ).options(**selected_style)
+    return RevImage(img) * trench_boxes * selected_trench_box
 
 
 def _get_nd2_frame_list(sizes, channels):
