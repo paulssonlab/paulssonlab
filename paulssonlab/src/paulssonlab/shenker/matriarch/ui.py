@@ -370,7 +370,7 @@ FrameChannels = Stream.define(
 )
 
 
-class DataframeStream(Stream):
+class DataFrameStream(Stream):
     @classmethod
     def define(cls, name, df):
         params = {"name": param.Parameter(default=name)}
@@ -378,10 +378,10 @@ class DataframeStream(Stream):
             params[column] = param.Parameter(default=df.iloc[0][column], constant=True)
         params["_df"] = param.Parameter(default=df)
         params["_options"] = {}
-        return type(name, (DataframeStream,), params)
+        return type(name, (DataFrameStream,), params)
 
     def __init__(self, **kwargs):
-        super(DataframeStream, self).__init__(**kwargs)
+        super(DataFrameStream, self).__init__(**kwargs)
         self.transform()  # set self._options
 
     def transform(self):
@@ -406,6 +406,60 @@ class DataframeStream(Stream):
             if k not in ("name", "_df")
         )
         kwargs += ",_df=<DataFrame ({} rows)>".format(len(self._df))
+        if not self._rename:
+            return "%s(%s)" % (cls_name, kwargs)
+        else:
+            return "%s(%r, %s)" % (cls_name, self._rename, kwargs)
+
+
+class MultiIndexStream(Stream):
+    @classmethod
+    def define(cls, name, index):
+        params = {"name": param.Parameter(default=name)}
+        for col_idx, column in enumerate(index.names):
+            default = index.levels[col_idx][index.labels[col_idx][0]]
+            params[column] = param.Parameter(default=default, constant=True)
+        # params['_index'] = param.Parameter(default=index)
+        params["_index"] = index
+        params["_options"] = {}
+        return type(name, (MultiIndexStream,), params)
+
+    def __init__(self, **kwargs):
+        super(MultiIndexStream, self).__init__(**kwargs)
+        self.transform()  # set self._options
+
+    def transform(self):
+        index = self._index
+        # TODO
+        # mask = np.ones(len(df)).astype(np.bool_)
+        index_subset = index
+        new_params = {}
+        for col_idx, column in enumerate(index.names):
+            # TODO
+            # options = df[mask][column].unique().tolist()
+            options = index_subset._get_level_values(col_idx, unique=True).tolist()
+            self._options[column] = options
+            value = getattr(self, column)
+            if value not in options:
+                # TODO
+                # value = df[mask][column].iloc[0]
+                value = options[0]
+                new_params[column] = value
+            # TODO
+            # mask = (df[column] == value) & mask
+            key = (slice(None),) * col_idx + (value,)
+            idxs = index_subset.get_locs(key)
+            index_subset = index_subset[idxs]
+        return new_params
+
+    def __repr__(self):
+        cls_name = self.__class__.__name__
+        kwargs = ",".join(
+            "%s=%r" % (k, v)
+            for (k, v) in self.get_param_values()
+            if k not in ("name", "_index")
+        )
+        kwargs += ",_index=<MultiIndex ({} rows)>".format(len(self._index))
         if not self._rename:
             return "%s(%s)" % (cls_name, kwargs)
         else:
@@ -452,8 +506,11 @@ def column_browser(
 
 def dataframe_browser(stream):
     browsers = []
-    for column, dtype in stream._df.dtypes.iteritems():
-        if issubclass(dtype.type, numbers.Number):
+    # TODO
+    # for column, dtype in stream._df.dtypes.iteritems():
+    #    if issubclass(dtype.type, numbers.Number):
+    for column, options in stream._options.items():
+        if issubclass(options[0].__class__, numbers.Number):
             kwargs = {"widget": widgets.SelectionSlider}
         else:
             kwargs = {}
@@ -463,14 +520,9 @@ def dataframe_browser(stream):
 
 def viewer(callback, *streams):
     def callback_wrapper(**kwargs):
-        kwargs.update(
-            {
-                column: kwargs[column]
-                for column in kwargs["_df"].columns
-                if column in kwargs
-            }
-        )
-        del kwargs["_df"]
+        # TODO???
+        # kwargs.update({column: kwargs[column] for column in kwargs['_df'].columns if column in kwargs})
+        # del kwargs['_df']
         return callback(**kwargs)
 
     dmap = hv.DynamicMap(callback_wrapper, streams=list(streams))
