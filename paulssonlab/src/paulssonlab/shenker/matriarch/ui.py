@@ -13,7 +13,7 @@ from functools import partial, reduce
 import uuid
 from util import summarize_filenames, get_one
 import common
-from workflow import get_nd2_frame_anyargs, get_trench_image
+from workflow import get_nd2_frame_anyargs, get_trench_image, get_trench_set_image
 import numbers
 from cytoolz import get_in, compose
 
@@ -569,6 +569,24 @@ def trench_viewer(
             image_callback(
                 trench_bboxes, filename, position, _channel, t, trench_set, trench
             )
+        )
+
+    return image_viewer(*streams, image_callback=callback, regrid=regrid)
+
+
+def trench_set_viewer(
+    trench_bboxes,
+    *streams,
+    channel=None,
+    image_callback=get_trench_set_image,
+    regrid=True,
+):
+    # TODO: accept trench_bboxes from stream
+    def callback(filename, position, t, trench_set, trench, **kwargs):
+        # accept channel either from stream or from trench_viewer kwargs
+        _channel = kwargs.get("channel", None) or channel
+        return RevImage(
+            image_callback(trench_bboxes, filename, position, _channel, t, trench_set)
         )
 
     return image_viewer(*streams, image_callback=callback, regrid=regrid)

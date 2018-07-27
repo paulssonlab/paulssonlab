@@ -18,7 +18,7 @@ from util import (
     kwcompose,
 )
 from metadata import parse_nd2_metadata
-from geometry import get_image_limits, get_trench_bbox
+from geometry import get_image_limits, get_trench_bbox, bounding_box
 from diagnostics import expand_diagnostics_by_label
 from image import get_regionprops
 
@@ -125,19 +125,22 @@ def get_trench_image(
     t,
     trench_set,
     trench,
+    *,
     get_frame_func=get_nd2_frame,
 ):
     frame = get_frame_func(filename, position, channel, t)
     trench_info = trench_bboxes.loc[
         IDX[filename, position, :, :, trench_set, trench], :
     ]
-    if len([s for s in trench_info.shape if s != 1]) != 1:
-        raise Exception(
-            "trench_bboxes contains either more than one channel or more than one timepoint"
-        )
-    ul = trench_info["upper_left"].values[0]
-    lr = trench_info["lower_right"].values[0]
+    # if len([s for s in trench_info.shape if s != 1]) != 1:
+    #    raise Exception('trench_bboxes contains either more than one channel or more than one timepoint')
+    uls = trench_info["upper_left"].values
+    lrs = trench_info["lower_right"].values
+    ul, lr = bounding_box(np.concatenate((uls, lrs)))
     return frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
+
+
+get_trench_set_image = partial(get_trench_image, trench=slice(None))
 
 
 def _get_nd2_frame_list(sizes, channels):

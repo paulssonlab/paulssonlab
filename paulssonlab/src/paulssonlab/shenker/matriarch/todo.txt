@@ -1,9 +1,13 @@
 ### TODAY
+EVENT: pos 2 t 3 trench_set 1 trench ?
+
 fix increment/decrement
 is get_trench_image really working??
     are time/trench args being mixed up?
 optimize dataframe_browser for large dataframes
     profile
+    
+automatic anyargs decorator/wrapper
 
 trench image viewer
     dict filter function, grab allowed keys from df columns
