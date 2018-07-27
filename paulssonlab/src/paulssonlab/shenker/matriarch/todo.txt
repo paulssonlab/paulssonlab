@@ -1,16 +1,31 @@
 ### TODAY
-trench label viewer (outline all labels, bold selected label)
+fix increment/decrement
+is get_trench_image really working??
+    are time/trench args being mixed up?
+optimize dataframe_browser for large dataframes
+    profile
+
+trench image viewer
+    dict filter function, grab allowed keys from df columns
+    running off dataframe_browser
+    with optional synced frame_viewer
+trench label viewer (optionally outline all labels, bold selected label)
+    func to get segmentation: either a dict, or a func to recompute (cached)
+trench set viewer (optionally outline each bbox)
 plot individual labels scatterplot where tapping updates stream running off labelwise_df
-tapping on a histogram bar filters
-lasso on scatterplot filters
+    specify columns listed in hover
 
 dask.distributed issue for not cleaning up sockets+IOPub errors/MWE
+nd2reader multithreading issues (catch all exceptions?) with localcluster
 
-benchmark memmap
-benchmark
+### NICE THINGS
+fix flicker in dataframe_browser
+allow for erosion before labelwise analysis (take multiple preprocessing functions, analyze result of each; None is identity func, take names)
 
+func to join positions across multi-file experiments (look for identical positions) [put filename/position/t columns in dataframe, put joined_experiment, joined_position, joined_t in index; VICE-VERSA MAY BE BETTER]
 func to replace integer times with real times (joinable?)
 
+### OLD
 analyze_trench should be an analyze frame/labels applied to a given trench instead of whole frame, easily pluggable
 
 get segmentation channel (per file/position) from selected_trenches df

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from cytoolz import get_in, valfilter, juxt
+from cytoolz import get_in, valfilter, juxt, compose, partial
 import cachetools
 from numcodecs import Blosc
 import nd2reader
@@ -14,6 +14,8 @@ from util import (
     unzip_dicts,
     iter_index,
     unzip_items,
+    get_keys,
+    kwcompose,
 )
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox
@@ -108,11 +110,34 @@ def get_nd2_frame(filename, position, channel, t, memmap=False):
     return np.array(reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap))
 
 
+get_nd2_frame_anyargs = kwcompose(
+    get_nd2_frame, partial(get_keys, keys=["filename", "position", "channel", "t"])
+)
+
 get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
 
-# TODO: use utility func to drop unneeded kwargs
-# def get_nd2_frame(filename, position, channel, t, memmap=False, **kwargs):
-#    return get_nd2_frame_cached(filename, position, channel, t, memmap=memmap)
+
+def get_trench_image(
+    trench_bboxes,
+    filename,
+    position,
+    channel,
+    t,
+    trench_set,
+    trench,
+    get_frame_func=get_nd2_frame,
+):
+    frame = get_frame_func(filename, position, channel, t)
+    trench_info = trench_bboxes.loc[
+        IDX[filename, position, :, :, trench_set, trench], :
+    ]
+    if len([s for s in trench_info.shape if s != 1]) != 1:
+        raise Exception(
+            "trench_bboxes contains either more than one channel or more than one timepoint"
+        )
+    ul = trench_info["upper_left"].values[0]
+    lr = trench_info["lower_right"].values[0]
+    return frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
 
 
 def _get_nd2_frame_list(sizes, channels):
