@@ -13,7 +13,12 @@ from functools import partial, reduce
 import uuid
 from util import summarize_filenames, get_one
 import common
-from workflow import get_nd2_frame_anyargs, get_trench_image, get_trench_set_image
+from workflow import (
+    get_nd2_frame_anyargs,
+    get_trench_image,
+    get_trench_set_image,
+    get_trench_set_overlay,
+)
 import numbers
 from cytoolz import get_in, compose
 
@@ -90,6 +95,16 @@ def _set_active_tool(plot, element):
     plot.state.toolbar.active_scroll = plot.state.tools[2]
 
 
+def recursive_regrid(plot, x_range, y_range):
+    plot = plot.map(
+        lambda img: datashader.regrid.instance(
+            dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
+        )(img).redim.range(z=(0, img.data.max())),
+        lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
+    )
+    return plot
+
+
 def display_plot_browser_item(
     output, obj, path, stream=None, range_xy=None, regrid=True
 ):
@@ -118,15 +133,7 @@ def display_plot_browser_item(
             def callback(p, x_range, y_range, **kwargs):
                 plot = recursive_getattr(plots(**kwargs), p)
                 # allow customizable aggregators
-                return plot.map(
-                    lambda img: datashader.regrid.instance(
-                        dynamic=False,
-                        x_range=x_range,
-                        y_range=y_range,
-                        aggregator="first",
-                    )(img).redim.range(z=(0, img.data.max())),
-                    lambda obj: isinstance(obj, (hv.Image, hv.RGB, hv.Raster)),
-                )
+                return recursive_regrid(plot, x_range, y_range)
 
             dmap = hv.DynamicMap(
                 partial(callback, path), streams=[stream, range_xy]
@@ -518,7 +525,7 @@ def dataframe_browser(stream):
     return widgets.VBox(browsers)
 
 
-def viewer(callback, *streams):
+def viewer(callback, *streams, scroll_wheel=True):
     def callback_wrapper(**kwargs):
         # TODO???
         # kwargs.update({column: kwargs[column] for column in kwargs['_df'].columns if column in kwargs})
@@ -526,6 +533,8 @@ def viewer(callback, *streams):
         return callback(**kwargs)
 
     dmap = hv.DynamicMap(callback_wrapper, streams=list(streams))
+    if scroll_wheel:
+        dmap = dmap.options(finalize_hooks=[_set_active_tool])
     return dmap
 
 
@@ -544,22 +553,25 @@ def dict_viewer(d, *streams, wrapper=None):
     return viewer(callback, *streams)
 
 
-def image_viewer(*streams, image_callback=get_nd2_frame_anyargs, regrid=True):
+def image_viewer(*streams, image_callback=get_nd2_frame_anyargs, regrid=True, **kwargs):
     def callback(x_range, y_range, **kwargs):
-        img = image_callback(**kwargs)
-        if not isinstance(img, hv.ViewableElement):
-            img = RevImage(img)
+        plot = image_callback(**kwargs)
+        if not isinstance(plot, hv.ViewableElement):
+            plot = RevImage(plot)
         if regrid:
-            img = datashader.regrid.instance(
-                dynamic=False, x_range=x_range, y_range=y_range, aggregator="first"
-            )(img).redim.range(z=(0, img.data.max()))
-        return img
+            plot = recursive_regrid(plot, x_range, y_range)
+        return plot
 
-    return viewer(callback, hv.streams.RangeXY(), *streams)
+    return viewer(callback, hv.streams.RangeXY(), *streams, **kwargs)
 
 
 def trench_viewer(
-    trench_bboxes, *streams, channel=None, image_callback=get_trench_image, regrid=False
+    trench_bboxes,
+    *streams,
+    channel=None,
+    image_callback=get_trench_image,
+    regrid=False,
+    **kwargs,
 ):
     # TODO: accept trench_bboxes from stream
     def callback(filename, position, t, trench_set, trench, **kwargs):
@@ -571,25 +583,29 @@ def trench_viewer(
             )
         )
 
-    return image_viewer(*streams, image_callback=callback, regrid=regrid)
+    return image_viewer(*streams, image_callback=callback, regrid=regrid, **kwargs)
 
 
 def trench_set_viewer(
     trench_bboxes,
+    trench_stream,
     *streams,
     channel=None,
-    image_callback=get_trench_set_image,
+    image_callback=get_trench_set_overlay,
     regrid=True,
+    **kwargs,
 ):
     # TODO: accept trench_bboxes from stream
-    def callback(filename, position, t, trench_set, trench, **kwargs):
+    def callback(filename, position, t, trench_set, trench=None, **kwargs):
         # accept channel either from stream or from trench_viewer kwargs
         _channel = kwargs.get("channel", None) or channel
-        return RevImage(
-            image_callback(trench_bboxes, filename, position, _channel, t, trench_set)
+        return image_callback(
+            trench_bboxes, filename, position, _channel, t, trench_set, trench=trench
         )
 
-    return image_viewer(*streams, image_callback=callback, regrid=regrid)
+    return image_viewer(
+        trench_stream, *streams, image_callback=callback, regrid=regrid, **kwargs
+    )
 
 
 def show_frame_info(df, stream):

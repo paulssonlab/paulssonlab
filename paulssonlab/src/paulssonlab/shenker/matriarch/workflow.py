@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import holoviews as hv
 from cytoolz import get_in, valfilter, juxt, compose, partial
 import cachetools
 from numcodecs import Blosc
@@ -17,6 +18,7 @@ from util import (
     get_keys,
     kwcompose,
 )
+from ui import RevImage, _set_active_tool
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox, bounding_box
 from diagnostics import expand_diagnostics_by_label
@@ -141,6 +143,50 @@ def get_trench_image(
 
 
 get_trench_set_image = partial(get_trench_image, trench=slice(None))
+
+
+def get_trench_set_overlay(
+    trench_bboxes,
+    filename,
+    position,
+    channel,
+    t,
+    trench_set,
+    trench=None,
+    *,
+    get_frame_func=get_nd2_frame,
+):
+    frame = get_frame_func(filename, position, channel, t)
+    trench_info = trench_bboxes.loc[
+        IDX[filename, position, :, :, trench_set, slice(None)], :
+    ]
+    if trench is not None:
+        selected_idx = trench_info.index.get_locs(
+            IDX[filename, position, :, :, trench_set, trench]
+        )[0]
+    else:
+        selected_idx = None
+    uls = trench_info["upper_left"].values
+    lrs = trench_info["lower_right"].values
+    ul, lr = bounding_box(np.concatenate((uls, lrs)))
+    img = frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
+    uls -= ul
+    lrs -= ul
+    selected_style = {"color": "yellow", "line_width": 2, "alpha": 0.7}
+    style = {"color": "white", "line_width": 1, "alpha": 0.3}
+    trench_overlays = hv.Overlay.from_values(
+        [
+            hv.Bounds((ul[0], lr[1], lr[0], ul[1])).options(
+                **(selected_style if idx == selected_idx else style)
+            )
+            for idx, (ul, lr) in enumerate(zip(uls, lrs))
+        ]
+    )
+    return (RevImage(img).options(width=700, height=150) * trench_overlays).options(
+        finalize_hooks=[_set_active_tool]
+    )
+    # trench_overlays = hv.Overlay.from_values([hv.Bounds((ul[0], lr[1], lr[0], ul[1])) for idx, (ul, lr) in enumerate(zip(uls, lrs))])
+    # return (RevImage(img) * trench_overlays)
 
 
 def _get_nd2_frame_list(sizes, channels):

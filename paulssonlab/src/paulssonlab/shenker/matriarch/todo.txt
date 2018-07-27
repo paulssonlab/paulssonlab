@@ -1,11 +1,14 @@
 ### TODAY
-EVENT: pos 2 t 3 trench_set 1 trench ?
+EVENT: pos 2 t 3 trench_set 1 trench 56
 
-fix increment/decrement
-is get_trench_image really working??
-    are time/trench args being mixed up?
-optimize dataframe_browser for large dataframes
-    profile
+is selected_trenches offset??
+separate overlay and trench_set image dmaps
+debug get_trench_set_overlay performance
+    apply options to overlay in one call? (only override selected trench)
+    get_nd2_frame_cached
+
+get_trench_overlay
+tap to change stream
     
 automatic anyargs decorator/wrapper
 
