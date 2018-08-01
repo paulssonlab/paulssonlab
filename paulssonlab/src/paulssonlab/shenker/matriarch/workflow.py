@@ -189,8 +189,8 @@ def concat_series(series):
     return df
 
 
-def points_dataframe(points):
-    return pd.DataFrame({"x": points[:, 0], "y": points[:, 1]})
+def points_dataframe(points, **kwargs):
+    return pd.DataFrame({"x": points[:, 0], "y": points[:, 1]}, **kwargs)
 
 
 def unzip_trench_info(trench_info):

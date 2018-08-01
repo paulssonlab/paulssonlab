@@ -246,10 +246,7 @@ def find_trench_ends(
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
         xs, ys = coords_along(top_anchor, bottom_anchor)
-        try:
-            profile = img[ys, xs]
-        except:
-            continue
+        profile = img[ys, xs]
         points = np.vstack((xs, ys)).T
         # TODO: precision??
         if line_length >= max(top_length, bottom_length):
@@ -346,15 +343,16 @@ def find_trench_ends(
         diagnostics["image_with_trenches"] = (
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )
+    trench_index = np.arange(len(mask))[mask]
     df_columns = {
-        "top": points_dataframe(top_endpoints),
-        "bottom": points_dataframe(bottom_endpoints),
+        "top": points_dataframe(top_endpoints, index=trench_index),
+        "bottom": points_dataframe(bottom_endpoints, index=trench_index),
     }
     df = pd.concat(df_columns, axis=1)
     return df
 
 
-def find_trenches(img, diagnostics=None):
+def find_trenches(img, reindex=True, diagnostics=None):
     img_normalized, img_labels, label_index = label_for_trenches(
         img, diagnostics=getitem_if_not_none(diagnostics, "labeling")
     )
@@ -380,7 +378,9 @@ def find_trenches(img, diagnostics=None):
         )
         if anchor_info is not None:
             anchor_info.columns = [("info", col) for col in anchor_info.columns]
-            trench_sets[label] = trench_sets[label].join(anchor_info)
+            trench_sets[label] = trench_sets[label].join(anchor_info, how="left")
+            if reindex:
+                trench_sets[label].reset_index(drop=True, inplace=True)
     trenches_df = pd.concat(trench_sets)
     trenches_df.index.names = ["trench_set", "trench"]
     return trenches_df

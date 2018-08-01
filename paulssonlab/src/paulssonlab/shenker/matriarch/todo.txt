@@ -1,14 +1,32 @@
 ### TODAY
+debug multithreading using localcluster
+    we're using the same file object (!!!)
+        we want to open a new file handle, but NOT re-read metadata
+        cached ND2Readers should not have an open file handle (?)
+            .reopen method?
+    check trench finding
+    then check segmentation
+check that trench finding fixes didn't break anything
+redo trench finding
+redo segmentation (no regionprops)
+
+### NEXT
 EVENT: pos 2 t 3 trench_set 1 trench 56
 
-is selected_trenches offset??
-separate overlay and trench_set image dmaps
-debug get_trench_set_overlay performance
-    apply options to overlay in one call? (only override selected trench)
-    get_nd2_frame_cached
+tooltips on trench_boxes, label_outlines, pixel values
+pixel values on image_viewer
+
+have channel specifications in trench_set_viewer override stream
 
 get_trench_overlay
 tap to change stream
+
+is selected_trenches offset??
+    fix hough_value index alignment
+    check shift=False, .join step
+separate overlay and trench_set image dmaps
+debug get_trench_set_overlay performance
+    get_nd2_frame_cached
     
 automatic anyargs decorator/wrapper
 
