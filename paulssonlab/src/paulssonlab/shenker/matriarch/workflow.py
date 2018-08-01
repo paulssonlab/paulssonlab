@@ -145,50 +145,6 @@ def get_trench_image(
 get_trench_set_image = partial(get_trench_image, trench=slice(None))
 
 
-def get_trench_set_overlay(
-    trench_bboxes,
-    filename,
-    position,
-    channel,
-    t,
-    trench_set,
-    trench=None,
-    *,
-    get_frame_func=get_nd2_frame,
-):
-    frame = get_frame_func(filename, position, channel, t)
-    trench_info = trench_bboxes.loc[
-        IDX[filename, position, :, :, trench_set, slice(None)], :
-    ]
-    if trench is not None:
-        selected_idx = trench_info.index.get_locs(
-            IDX[filename, position, :, :, trench_set, trench]
-        )[0]
-    else:
-        selected_idx = None
-    uls = trench_info["upper_left"].values
-    lrs = trench_info["lower_right"].values
-    ul, lr = bounding_box(np.concatenate((uls, lrs)))
-    img = frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
-    uls -= ul
-    lrs -= ul
-    selected_style = {"color": "yellow", "line_width": 2, "alpha": 0.7}
-    style = {"color": "white", "line_width": 1, "alpha": 0.3}
-    trench_boxes = hv.Path(
-        [
-            hv.Bounds((ul[0], lr[1], lr[0], ul[1]))
-            for idx, (ul, lr) in enumerate(zip(uls, lrs))
-            if idx != selected_idx
-        ]
-    ).options(**style)
-    sel_ul = uls[selected_idx]
-    sel_lr = lrs[selected_idx]
-    selected_trench_box = hv.Bounds(
-        (sel_ul[0], sel_lr[1], sel_lr[0], sel_ul[1])
-    ).options(**selected_style)
-    return RevImage(img) * trench_boxes * selected_trench_box
-
-
 def _get_nd2_frame_list(sizes, channels):
     all_frames = [
         (filename, v, channel, t)
