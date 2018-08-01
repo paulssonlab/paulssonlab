@@ -58,6 +58,13 @@ def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
 
 
+def hover_image(hover, img):
+    return img * hv.QuadMesh(img).opts(
+        plot={"tools": [hover]},
+        style={"alpha": 0, "hover_line_alpha": 1, "hover_line_color": "black"},
+    )
+
+
 def show_plot_stack(diags, keys=None):
     if keys is None:
         keys = get_one(diags).keys()
