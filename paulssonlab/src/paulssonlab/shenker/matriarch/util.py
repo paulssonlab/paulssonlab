@@ -135,14 +135,18 @@ def get_random(obj, count=1, level=1):
         return res
 
 
-def get_keys(d, *_keys, keys=None):
+def get_keys(d, *__keys, keys=None):
     if keys:
         keys = set(keys)
-        if _keys:
+        if __keys:
             raise ValueError("only one of _keys or keys can be specified")
     else:
-        keys = set(_keys)
+        keys = set(__keys)
     return {k: v for k, v in d.items() if k in keys}
+
+
+def get_kwargs(*__keys, keys=None, **kwargs):
+    return get_keys(kwargs, *__keys, keys=keys)
 
 
 def iterate_get_collection_value(obj, level):

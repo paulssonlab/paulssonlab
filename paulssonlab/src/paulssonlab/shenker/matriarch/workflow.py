@@ -15,10 +15,9 @@ from util import (
     unzip_dicts,
     iter_index,
     unzip_items,
-    get_keys,
+    get_kwargs,
     kwcompose,
 )
-from ui import RevImage, _set_active_tool
 from metadata import parse_nd2_metadata
 from geometry import get_image_limits, get_trench_bbox, bounding_box
 from diagnostics import expand_diagnostics_by_label
@@ -113,7 +112,7 @@ def get_nd2_frame(filename, position, channel, t, memmap=False):
 
 
 get_nd2_frame_anyargs = kwcompose(
-    get_nd2_frame, partial(get_keys, keys=["filename", "position", "channel", "t"])
+    get_nd2_frame, partial(get_kwargs, keys=["filename", "position", "channel", "t"])
 )
 
 get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
