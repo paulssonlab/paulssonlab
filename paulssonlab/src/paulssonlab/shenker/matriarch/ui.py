@@ -104,7 +104,10 @@ def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
 
 # FROM: https://stackoverflow.com/questions/50415434/how-to-set-active-tools-in-holoviews
 def _set_active_tool(plot, element):
-    plot.state.toolbar.active_scroll = plot.state.tools[2]
+    # plot.state.toolbar.active_scroll = plot.state.tools[2]
+    for tool in plot.state.tools:
+        if isinstance(tool, bokeh.models.tools.WheelZoomTool):
+            plot.state.toolbar.active_scroll = tool
 
 
 def recursive_regrid(plot, x_range, y_range):
