@@ -592,10 +592,8 @@ def trench_viewer(
     def callback(filename, position, t, trench_set, trench, **kwargs):
         # accept channel either from stream or from trench_viewer kwargs
         _channel = kwargs.get("channel", None) or channel
-        return _trench_img(
-            image_callback(
-                trench_bboxes, filename, position, _channel, t, trench_set, trench
-            )
+        return image_callback(
+            trench_bboxes, filename, position, _channel, t, trench_set, trench
         )
 
     return image_viewer(*streams, image_callback=callback, regrid=regrid, **kwargs)
