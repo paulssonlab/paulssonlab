@@ -93,7 +93,7 @@ def get_channels_to_indices(channels):
 
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
-ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**9, getsizeof=sys.getsizeof)
+ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**8, getsizeof=sys.getsizeof)
 
 
 def _get_nd2_reader(filename, **kwargs):
@@ -107,8 +107,9 @@ def get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
     # TODO: should I wrap in ndarray or keep as PIMS Frame?
-    return np.array(reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap))
+    return np.array(ary)
 
 
 get_nd2_frame_anyargs = kwcompose(
