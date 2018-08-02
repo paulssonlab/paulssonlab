@@ -1,5 +1,18 @@
 ### CRITICAL PATH
-easy way to browse all trench/timepoints
+ASK FOR MORE FDS!!!!!
+
+click on t vs. YFP scatterplot to trigger stream
+
+multithreaded file reading
+redo segmentation with regionprops
+allow for multiple mask preprocessing functions
+    erode segmentation masks
+
+async as_completed
+
+### CRITICAL PATH 2
+from trench_bboxes, all_frames:
+    easy way to browse all trench/timepoints
     trench_bboxes only has t=0!
 
 quick way to subset labelwise, trenchwise data to selected trench stream
@@ -9,9 +22,6 @@ click on trench in trench set viewer to trigger stream
 label viewer
 click on label in label viewer
 click on RFP vs. YFP scatterplot to trigger stream
-
-multithreaded file reading
-redo segmentation with regionprops
 
 async as_completed (?)
 
