@@ -1,14 +1,39 @@
-### TODAY
-debug multithreading using localcluster
-    we're using the same file object (!!!)
-        we want to open a new file handle, but NOT re-read metadata
-        cached ND2Readers should not have an open file handle (?)
-            .reopen method?
-    check trench finding
-    then check segmentation
-check that trench finding fixes didn't break anything
-redo trench finding
-redo segmentation (no regionprops)
+### CRITICAL PATH
+easy way to browse all trench/timepoints
+    trench_bboxes only has t=0!
+
+quick way to subset labelwise, trenchwise data to selected trench stream
+quick way to filter trenches, load trenches into multiindex_browser
+
+click on trench in trench set viewer to trigger stream
+label viewer
+click on label in label viewer
+click on RFP vs. YFP scatterplot to trigger stream
+
+multithreaded file reading
+redo segmentation with regionprops
+
+async as_completed (?)
+
+### PERFORMANCE
+30% waiting for read lock
+24% frangi
+
+allow for multithreaded file reading
+    .reopen() gets a new copy with a HHH
+    make sure it works with memmap
+    check performance with memmap
+
+check ulimit on worker nodes
+    run ulimit on workers
+    count fds on workers
+    try proc fix
+
+fast frangi (box blur-style approximation?)
+
+util function for selecting a random subset of control trenches
+    select random subset without replacement from groupby
+        with excluding some keys (treatment group)
 
 ### NEXT
 EVENT: pos 2 t 3 trench_set 1 trench 56
