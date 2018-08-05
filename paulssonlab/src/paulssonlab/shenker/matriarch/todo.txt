@@ -1,29 +1,41 @@
 ### CRITICAL PATH
-ASK FOR MORE FDS!!!!!
-
 click on t vs. YFP scatterplot to trigger stream
+click on trench in trench set viewer to trigger stream
 
 multithreaded file reading
-redo segmentation with regionprops
+    .reopen() to get a deepcopy with different opened file handle
 allow for multiple mask preprocessing functions
     erode segmentation masks
+redo segmentation with regionprops
+   
+batched custom as_completed
 
-async as_completed
+redo segmentation at full scale
+
+label viewer
+click on label in label viewer
+click on RFP vs. YFP scatterplot to trigger stream
+fix slow trench set viewer
+
+RESULTS
+    identify bright trench anomalies/filter out
+    identify bursts
+    count bursts, rough burst rate
+    plot burst YFP vs. time aligned to burst max
+    time-averaged burst rate vs. time
+    first above-threshold label # histogram (mothers vs. daughters)
+
+func to join positions across multi-file experiments (look for identical positions) [put filename/position/t columns in dataframe, put joined_experiment, joined_position, joined_t in index; VICE-VERSA MAY BE BETTER]
+func to replace integer times with real times (joinable?)
 
 ### CRITICAL PATH 2
 from trench_bboxes, all_frames:
     easy way to browse all trench/timepoints
     trench_bboxes only has t=0!
+    just construct a multiindex
 
 quick way to subset labelwise, trenchwise data to selected trench stream
 quick way to filter trenches, load trenches into multiindex_browser
-
-click on trench in trench set viewer to trigger stream
-label viewer
-click on label in label viewer
-click on RFP vs. YFP scatterplot to trigger stream
-
-async as_completed (?)
 
 ### PERFORMANCE
 30% waiting for read lock
@@ -81,9 +93,6 @@ nd2reader multithreading issues (catch all exceptions?) with localcluster
 ### NICE THINGS
 fix flicker in dataframe_browser
 allow for erosion before labelwise analysis (take multiple preprocessing functions, analyze result of each; None is identity func, take names)
-
-func to join positions across multi-file experiments (look for identical positions) [put filename/position/t columns in dataframe, put joined_experiment, joined_position, joined_t in index; VICE-VERSA MAY BE BETTER]
-func to replace integer times with real times (joinable?)
 
 ### OLD
 analyze_trench should be an analyze frame/labels applied to a given trench instead of whole frame, easily pluggable
