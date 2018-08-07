@@ -7,7 +7,7 @@ import ipywidgets as widgets
 # from holoviews.operation.datashader import aggregate, datashade, dynspread, shade, regrid
 from holoviews.operation import datashader
 from IPython.display import display, clear_output, HTML
-from holoviews.streams import Stream, param
+from holoviews.streams import Stream, param, Selection1D
 from matplotlib.colors import hex2color
 import qgrid
 from collections.abc import Mapping, Sequence
@@ -63,6 +63,22 @@ def hover_image(hover, img):
         plot={"tools": [hover]},
         style={"alpha": 0, "hover_line_alpha": 1, "hover_line_color": "black"},
     )
+
+
+def selection_to_stream(plot, stream):
+    selection = Selection1D(source=plot)
+    stream_keys = list(stream.contents.keys())
+    keys = set(stream_keys) & set(plot.data.columns)
+
+    def callback(index=None):
+        if index is None:
+            return
+        index = index[0]
+        params = {key: plot.data.loc[index, key] for key in stream_keys if key in keys}
+        stream.event(**params)
+
+    selection.add_subscriber(callback)
+    return selection
 
 
 def show_plot_stack(diags, keys=None):

@@ -1,6 +1,10 @@
 ### CRITICAL PATH
-click on t vs. YFP scatterplot to trigger stream
+quick way to use current stream values and filter up to a level (take name of level as arg; slice overrides for a level as kwargs)
+    use this to update plot that's subselected to trench (need to select across t!!!)
+
 click on trench in trench set viewer to trigger stream
+
+remove slider index=None workaround
 
 multithreaded file reading
     .reopen() to get a deepcopy with different opened file handle
@@ -16,6 +20,7 @@ label viewer
 click on label in label viewer
 click on RFP vs. YFP scatterplot to trigger stream
 fix slow trench set viewer
+let _index be a param in LabelStream so it can be updated (but watch out for long string in __repr__, performance issue)
 
 RESULTS
     identify bright trench anomalies/filter out
@@ -27,6 +32,14 @@ RESULTS
 
 func to join positions across multi-file experiments (look for identical positions) [put filename/position/t columns in dataframe, put joined_experiment, joined_position, joined_t in index; VICE-VERSA MAY BE BETTER]
 func to replace integer times with real times (joinable?)
+
+### DEPLOYMENT
+stream computed data to parquet on disk
+    use as_completed as source for streamz
+    https://streamz.readthedocs.io/en/latest/async.html
+save segmentation masks as zarr on disk
+    allow loading instead of recomputing in analyze_trenches
+        pluggable segmentation function(?)
 
 ### CRITICAL PATH 2
 from trench_bboxes, all_frames:
