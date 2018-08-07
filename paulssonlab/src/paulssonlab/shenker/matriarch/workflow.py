@@ -526,3 +526,8 @@ def concat_unzip_dataframes(res):
     return [
         pd.concat(filter(lambda x: x is not None, dfs), axis=0) for dfs in zip(*res)
     ]
+
+
+def stream_slice(names, params, **consts):
+    params = {**params, **consts}
+    return tuple([params.get(n, slice(None)) for n in names])

@@ -1,7 +1,4 @@
 ### CRITICAL PATH
-quick way to use current stream values and filter up to a level (take name of level as arg; slice overrides for a level as kwargs)
-    use this to update plot that's subselected to trench (need to select across t!!!)
-
 click on trench in trench set viewer to trigger stream
 
 remove slider index=None workaround
@@ -11,7 +8,7 @@ multithreaded file reading
 allow for multiple mask preprocessing functions
     erode segmentation masks
 redo segmentation with regionprops
-   
+
 batched custom as_completed
 
 redo segmentation at full scale
@@ -21,6 +18,8 @@ click on label in label viewer
 click on RFP vs. YFP scatterplot to trigger stream
 fix slow trench set viewer
 let _index be a param in LabelStream so it can be updated (but watch out for long string in __repr__, performance issue)
+
+FIX CREATE VIEW: https://github.com/pyviz/pyviz_comms/issues/3
 
 RESULTS
     identify bright trench anomalies/filter out
@@ -40,6 +39,8 @@ stream computed data to parquet on disk
 save segmentation masks as zarr on disk
     allow loading instead of recomputing in analyze_trenches
         pluggable segmentation function(?)
+
+fix dumb holoviews init issue; maybe relevant: https://github.com/ioam/holoviews/issues/1801
 
 ### CRITICAL PATH 2
 from trench_bboxes, all_frames:
