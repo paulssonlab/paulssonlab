@@ -100,7 +100,8 @@ def _get_nd2_reader(filename, **kwargs):
     return nd2reader.ND2Reader(filename, **kwargs)
 
 
-get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
+_get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
+get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
 def get_nd2_frame(filename, position, channel, t, memmap=False):
