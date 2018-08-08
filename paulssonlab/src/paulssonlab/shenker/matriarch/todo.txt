@@ -1,15 +1,20 @@
 ### CRITICAL PATH
-click on trench in trench set viewer to trigger stream
+ASK RC ABOUT compute-e-16-181, compute-e-16-186 not having /n/scratch2
 
-remove slider index=None workaround
+report as_completed+stream on https://github.com/dask/distributed/issues/2157
 
-multithreaded file reading
-    .reopen() to get a deepcopy with different opened file handle
-allow for multiple mask preprocessing functions
-    erode segmentation masks
+stream computed data to parquet on disk
+    use as_completed as source for streamz
+    https://streamz.readthedocs.io/en/latest/async.html
+
 redo segmentation with regionprops
 
-batched custom as_completed
+allow for multiple mask preprocessing functions
+    erode segmentation masks
+
+save segmentation masks as zarr on disk
+    allow loading instead of recomputing in analyze_trenches
+        pluggable segmentation function(?)
 
 redo segmentation at full scale
 
@@ -17,6 +22,8 @@ label viewer
 click on label in label viewer
 click on RFP vs. YFP scatterplot to trigger stream
 fix slow trench set viewer
+    cache calls to unique, keyed by labels at higher level?
+    clear cache when _index/_df changes
 let _index be a param in LabelStream so it can be updated (but watch out for long string in __repr__, performance issue)
 
 FIX CREATE VIEW: https://github.com/pyviz/pyviz_comms/issues/3
@@ -33,13 +40,6 @@ func to join positions across multi-file experiments (look for identical positio
 func to replace integer times with real times (joinable?)
 
 ### DEPLOYMENT
-stream computed data to parquet on disk
-    use as_completed as source for streamz
-    https://streamz.readthedocs.io/en/latest/async.html
-save segmentation masks as zarr on disk
-    allow loading instead of recomputing in analyze_trenches
-        pluggable segmentation function(?)
-
 fix dumb holoviews init issue; maybe relevant: https://github.com/ioam/holoviews/issues/1801
 
 ### CRITICAL PATH 2
@@ -50,6 +50,9 @@ from trench_bboxes, all_frames:
 
 quick way to subset labelwise, trenchwise data to selected trench stream
 quick way to filter trenches, load trenches into multiindex_browser
+
+click on trench in trench set viewer to trigger stream
+remove slider index=None workaround
 
 ### PERFORMANCE
 30% waiting for read lock
