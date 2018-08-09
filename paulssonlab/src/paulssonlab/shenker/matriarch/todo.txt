@@ -1,13 +1,13 @@
 ### CRITICAL PATH
-ASK RC ABOUT compute-e-16-181, compute-e-16-186 not having /n/scratch2
+limit size of gather
+    async gather_and_cancel?
+
+async client.submit in analyze_frames_and_trenches
+    NON-BLOCKING CLUSTER JOB LAUNCHING
+
+find memory leakage
 
 report as_completed+stream on https://github.com/dask/distributed/issues/2157
-
-stream computed data to parquet on disk
-    use as_completed as source for streamz
-    https://streamz.readthedocs.io/en/latest/async.html
-
-redo segmentation with regionprops
 
 allow for multiple mask preprocessing functions
     erode segmentation masks
@@ -15,6 +15,7 @@ allow for multiple mask preprocessing functions
 save segmentation masks as zarr on disk
     allow loading instead of recomputing in analyze_trenches
         pluggable segmentation function(?)
+stream pandas to (partitioned) parquet?
 
 redo segmentation at full scale
 
@@ -27,6 +28,8 @@ fix slow trench set viewer
 let _index be a param in LabelStream so it can be updated (but watch out for long string in __repr__, performance issue)
 
 FIX CREATE VIEW: https://github.com/pyviz/pyviz_comms/issues/3
+
+BUG: self.running_jobs[job_id] = self.pending_jobs.pop(job_id); KeyError: '21240606'
 
 RESULTS
     identify bright trench anomalies/filter out
