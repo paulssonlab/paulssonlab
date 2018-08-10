@@ -40,18 +40,18 @@ jdcal = "*"
 jq = "*"
 jmespath = "*"
 xxhash = "*"
-"8ac6f2a" = {path = "/home/jqs1/projects/datashader", editable = true}
+"8ac6f2a" = {editable = true, path = "/home/jqs1/projects/datashader"}
 scikit-image = "*"
 peakutils = "*"
-"1e22951" = {path = "/home/jqs1/projects/dask-jobqueue", editable = true}
+"1e22951" = {editable = true, path = "/home/jqs1/projects/dask-jobqueue"}
 cvxpy = "*"
 picos = "*"
 pyomo = "*"
-"037fc10" = {path = "/home/jqs1/projects/dask", editable = true}
+"037fc10" = {editable = true, path = "/home/jqs1/projects/dask"}
 wrapt = "*"
-"92bd2ca" = {path = "./../holoviews", editable = true}
+"92bd2ca" = {editable = true, path = "./../holoviews"}
 colorama = "*"
-"4a8dedc" = {path = "./../pyviz_comms", editable = true}
+"4a8dedc" = {editable = true, path = "./../pyviz_comms"}
 pyviz-comms = "*"
 "925ab16" = {path = "./../qgrid", editable = true}
 notebook = "*"
@@ -60,8 +60,8 @@ cachetools = "*"
 pyct = "*"
 parambokeh = "*"
 pysize = {git = "https://github.com/bosswissam/pysize.git"}
-"f99514c" = {path = "./../dask", editable = true}
-"edaa7c3" = {path = "./../distributed"}
+"f99514c" = {editable = true, path = "./../dask"}
+"edaa7c3" = {editable = true, path = "./../distributed"}
 "46fa3e5" = {path = "./../ipywidgets"}
 ipywidgets = "*"
 numpy-indexed = "*"
@@ -69,6 +69,7 @@ pyarrow = "*"
 pympler = "*"
 objgraph = "*"
 xdot = "*"
+qgrid = {editable = true, path = "./../hvplot"}
 
 [dev-packages]
 

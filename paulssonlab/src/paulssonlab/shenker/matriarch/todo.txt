@@ -1,3 +1,28 @@
+### PERFORMANCE
+as_completed streamz api
+
+wrapper to map pa.RecordBatch.from_pandas in tasks
+
+PROFILE EVENT LOOP (merge in dask/distributed PRs)
+    gather 20%
+    importlib 40%
+    pa.pandas_compat.convert_columns
+
+FEEDBACK from gather stream into async client.submit
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   343                                           def analyze_frames_and_trenches(selected_trenches, frames_to_analyze, func):
+   344         1       2457.0   2457.0      0.0      frames_t = frames_to_analyze.groupby(['filename', 'position'])
+   345         1          1.0      1.0      0.0      res = []
+   346      5011    4077833.0    813.8     49.6      for frame_idx, trenches in iter_index(selected_trenches.groupby(['filename', 'position'])):
+   347      5010      44002.0      8.8      0.5          if not (frame_idx.filename, frame_idx.position) in frames_t.groups:
+   348      4992       3408.0      0.7      0.0              continue
+   349        18      26339.0   1463.3      0.3          fp_frames = frames_t.get_group((frame_idx.filename, frame_idx.position))
+   350      1488    1351714.0    908.4     16.4          for t, frames in fp_frames.groupby('t'):
+   351      1470    2713643.0   1846.0     33.0              res.append(func(trenches, frames))
+   352         1          1.0      1.0      0.0      return res
+
 ### CRITICAL PATH
 limit size of gather
     async gather_and_cancel?
@@ -6,6 +31,10 @@ async client.submit in analyze_frames_and_trenches
     NON-BLOCKING CLUSTER JOB LAUNCHING
 
 find memory leakage
+
+github issue for streamz:
+    map async funcs
+    gather to await them (as_completed)
 
 report as_completed+stream on https://github.com/dask/distributed/issues/2157
 
