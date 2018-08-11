@@ -509,6 +509,21 @@ def analyze_trenches(
     return framewise_df, trenchwise_df, labelwise_df
 
 
+def analyze_frames_and_trenches_iter(selected_trenches, frames_to_analyze, func):
+    frames_t = frames_to_analyze.groupby(["filename", "position"])
+    res = []
+    for frame_idx, trenches in iter_index(
+        selected_trenches.groupby(["filename", "position"])
+    ):
+        if not (frame_idx.filename, frame_idx.position) in frames_t.groups:
+            continue
+        fp_frames = frames_t.get_group((frame_idx.filename, frame_idx.position))
+        for t, frames in fp_frames.groupby("t"):
+            yield func(trenches, frames)
+    return res
+
+
+# TODO
 def analyze_frames_and_trenches(selected_trenches, frames_to_analyze, func):
     frames_t = frames_to_analyze.groupby(["filename", "position"])
     res = []
