@@ -1,4 +1,10 @@
 ### PERFORMANCE
+monitor task submission progress/task completion progress
+shut off task submission
+cancel futures
+collect errors
+recover from errors/rerun tasks
+
 as_completed streamz api
 
 wrapper to map pa.RecordBatch.from_pandas in tasks
