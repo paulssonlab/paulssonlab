@@ -42,6 +42,8 @@ github issue for streamz:
     map async funcs
     gather to await them (as_completed)
 
+github issue for streamz: buffer to _buffer
+
 report as_completed+stream on https://github.com/dask/distributed/issues/2157
 
 allow for multiple mask preprocessing functions

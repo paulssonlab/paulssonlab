@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import holoviews as hv
+import streamz
+from tornado import gen
+from distributed.client import default_client
 from cytoolz import get_in, valfilter, juxt, compose, partial
 import cachetools
 from numcodecs import Blosc
@@ -547,3 +551,38 @@ def concat_unzip_dataframes(res):
 def stream_slice(names, params, **consts):
     params = {**params, **consts}
     return tuple([params.get(n, slice(None)) for n in names])
+
+
+def sink_to_arrow(batches, sinks, writers, output_func=None):
+    if output_func is None:
+        output_func = lambda i: pa.BufferOutputStream()
+    for i, batch in enumerate(batches):
+        if i not in writers:
+            sinks[i] = output_func(i)
+            writers[i] = pa.RecordBatchStreamWriter(sinks[i], batch.schema)
+        writers[i].write_batch(batch)
+
+
+@streamz.Stream.register_api()
+class gather_and_cancel(streamz.Stream):
+    def __init__(self, upstream, stream_name=None, client=None, cancel=True, loop=None):
+        if client is None:
+            client = default_client()
+        if loop is None:
+            loop = client.loop
+        self.client = client
+        self.cancel = cancel
+        streamz.Stream.__init__(self, upstream, stream_name=stream_name, loop=loop)
+
+    @gen.coroutine
+    def update(self, x, who=None):
+        result = yield self.client.gather(x, asynchronous=True)
+        if self.cancel:
+            yield self.client.cancel(x, asynchronous=True)
+        result2 = yield self._emit(result)
+        raise gen.Return(result2)
+
+
+async def gather_stream(source, as_completed):
+    async for future in as_completed:
+        await source.emit(future)
