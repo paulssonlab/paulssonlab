@@ -1,4 +1,37 @@
 ### PERFORMANCE
+timeout on writes (using register_api)
+
+figure out why sampling profiler is blank
+
+raise github issue!!!
+
+line profile everything
+
+limit size of gathers (limit by size and time window)
+
+make sure we don't add duplicate futures to all_futures when we readd after timeout
+
+stabilize number of processing tasks (only emit if processing tasks # is below num_cores*num_jobs)
+
+compare to single-core workers (only getting 150% CPU usage)
+    do we run into FD limits??
+
+where is worker memory usage coming from??
+    how to reduce size of tasks?
+    ipython into one of the workers, use pympler
+
+### OLD
+
+gather with timeout+unlimited retries
+    if timeout, ac.update?
+
+custom stat to keep track of # of in memory tasks
+
+dial batch size up (hovering 40-60 in memory)
+
+record submit/gather(or error) times for each future
+future explicit retry (dask.distributed github PR)
+
 monitor task submission progress/task completion progress
 shut off task submission
 cancel futures

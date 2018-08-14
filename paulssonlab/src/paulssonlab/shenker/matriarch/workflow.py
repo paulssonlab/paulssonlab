@@ -4,12 +4,14 @@ import pyarrow as pa
 import holoviews as hv
 import streamz
 from tornado import gen
+from tornado.util import TimeoutError
 from distributed.client import default_client
 from cytoolz import get_in, valfilter, juxt, compose, partial
 import cachetools
 from numcodecs import Blosc
 import nd2reader
 import sys
+from datetime import timedelta
 from collections import defaultdict, namedtuple
 from util import (
     zip_dicts,
@@ -565,18 +567,42 @@ def sink_to_arrow(batches, sinks, writers, output_func=None):
 
 @streamz.Stream.register_api()
 class gather_and_cancel(streamz.Stream):
-    def __init__(self, upstream, stream_name=None, client=None, cancel=True, loop=None):
+    def __init__(
+        self,
+        upstream,
+        stream_name=None,
+        client=None,
+        cancel=True,
+        timeout=None,
+        timeout_func=None,
+        loop=None,
+    ):
         if client is None:
             client = default_client()
         if loop is None:
             loop = client.loop
         self.client = client
         self.cancel = cancel
+        if not isinstance(timeout, timedelta):
+            timeout = timedelta(seconds=timeout)
+        self.timeout = timeout
+        self.timeout_func = timeout_func
         streamz.Stream.__init__(self, upstream, stream_name=stream_name, loop=loop)
 
     @gen.coroutine
     def update(self, x, who=None):
-        result = yield self.client.gather(x, asynchronous=True)
+        if self.timeout is not None:
+            try:
+                result = yield gen.with_timeout(
+                    self.timeout, self.client.gather(x, asynchronous=True)
+                )
+            except TimeoutError:
+                if self.timeout_func is not None:
+                    self.timeout_func(x)
+                # TODO: what happens if we get rid of this?
+                raise gen.Return(None)
+        else:
+            result = yield self.client.gather(x, asynchronous=True)
         if self.cancel:
             yield self.client.cancel(x, asynchronous=True)
         result2 = yield self._emit(result)
