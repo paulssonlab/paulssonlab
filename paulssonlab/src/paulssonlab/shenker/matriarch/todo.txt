@@ -1,4 +1,8 @@
 ### PERFORMANCE
+streamz diagnostics
+    track time elapsed at each step in the pipeline
+    list of objects at each step in pipeline
+
 timeout on writes (using register_api)
 
 figure out why sampling profiler is blank
@@ -15,6 +19,7 @@ stabilize number of processing tasks (only emit if processing tasks # is below n
 
 compare to single-core workers (only getting 150% CPU usage)
     do we run into FD limits??
+    why don't we parallelize? (benchmark using localcluster?)
 
 where is worker memory usage coming from??
     how to reduce size of tasks?

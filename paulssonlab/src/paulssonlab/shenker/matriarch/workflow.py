@@ -575,6 +575,7 @@ class gather_and_cancel(streamz.Stream):
         cancel=True,
         timeout=None,
         timeout_func=None,
+        success_func=None,
         loop=None,
     ):
         if client is None:
@@ -587,6 +588,7 @@ class gather_and_cancel(streamz.Stream):
             timeout = timedelta(seconds=timeout)
         self.timeout = timeout
         self.timeout_func = timeout_func
+        self.success_func = success_func
         streamz.Stream.__init__(self, upstream, stream_name=stream_name, loop=loop)
 
     @gen.coroutine
@@ -605,8 +607,48 @@ class gather_and_cancel(streamz.Stream):
             result = yield self.client.gather(x, asynchronous=True)
         if self.cancel:
             yield self.client.cancel(x, asynchronous=True)
+        if self.success_func is not None:
+            self.success_func(x)
         result2 = yield self._emit(result)
         raise gen.Return(result2)
+
+
+@streamz.Stream.register_api()
+class with_timeout(streamz.Stream):
+    def __init__(
+        self,
+        upstream,
+        stream_name=None,
+        timeout=None,
+        retries=1,
+        failure_func=None,
+        loop=None,
+    ):
+        if not isinstance(timeout, timedelta):
+            timeout = timedelta(seconds=timeout)
+        self.timeout = timeout
+        self.retries = retries
+        self.failure_func = failure_func
+        streamz.Stream.__init__(self, upstream, stream_name=stream_name, loop=loop)
+
+    @gen.coroutine
+    def update(self, x, who=None):
+        future = self._emit(x)
+        if self.timeout is not None:
+            future = gen.with_timeout(self.timeout, future)
+        got_result = False
+        for attempt in range(self.retries):
+            try:
+                result = yield future
+                got_result = True
+                break
+            except TimeoutError:
+                continue
+        if got_result:
+            raise gen.Return(result)
+        else:
+            self.failure_func(x)
+            raise gen.Return(None)
 
 
 async def gather_stream(source, as_completed):
