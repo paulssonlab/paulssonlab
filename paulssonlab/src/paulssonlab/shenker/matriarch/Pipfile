@@ -65,14 +65,16 @@ pysize = {git = "https://github.com/bosswissam/pysize.git"}
 "46fa3e5" = {path = "./../ipywidgets"}
 ipywidgets = "*"
 numpy-indexed = "*"
-pyarrow = "*"
+pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
 pympler = "*"
 objgraph = "*"
 xdot = "*"
 qgrid = {editable = true, path = "./../hvplot"}
 async-timeout = "*"
+numpy = "*"
+"a2cbe05" = {editable = true, path = "./../nd2reader"}
 
 [dev-packages]
 
 [requires]
-python_version = "3.6"
+python_version = "3.7"

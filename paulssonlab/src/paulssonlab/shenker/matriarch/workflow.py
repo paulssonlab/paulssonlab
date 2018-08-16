@@ -572,6 +572,7 @@ class gather_and_cancel(streamz.Stream):
         upstream,
         stream_name=None,
         client=None,
+        gather=True,
         cancel=True,
         timeout=None,
         timeout_func=None,
@@ -583,6 +584,7 @@ class gather_and_cancel(streamz.Stream):
         if loop is None:
             loop = client.loop
         self.client = client
+        self.gather = gather
         self.cancel = cancel
         if not isinstance(timeout, timedelta):
             timeout = timedelta(seconds=timeout)
@@ -593,18 +595,21 @@ class gather_and_cancel(streamz.Stream):
 
     @gen.coroutine
     def update(self, x, who=None):
-        if self.timeout is not None:
-            try:
-                result = yield gen.with_timeout(
-                    self.timeout, self.client.gather(x, asynchronous=True)
-                )
-            except TimeoutError:
-                if self.timeout_func is not None:
-                    self.timeout_func(x)
-                # TODO: what happens if we get rid of this?
-                raise gen.Return(None)
+        if self.gather:
+            if self.timeout is not None:
+                try:
+                    result = yield gen.with_timeout(
+                        self.timeout, self.client.gather(x, asynchronous=True)
+                    )
+                except TimeoutError:
+                    if self.timeout_func is not None:
+                        self.timeout_func(x)
+                    # TODO: what happens if we get rid of this?
+                    raise gen.Return(None)
+            else:
+                result = yield self.client.gather(x, asynchronous=True)
         else:
-            result = yield self.client.gather(x, asynchronous=True)
+            result = x
         if self.cancel:
             yield self.client.cancel(x, asynchronous=True)
         if self.success_func is not None:

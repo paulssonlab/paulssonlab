@@ -1,3 +1,44 @@
+### FIX
+submit start_ipython_workers issue
+
+memory profile locally
+
+try turning off nd2reader caching
+
+try to sample dicts/strs again
+
+debug SystemError locally in pdb
+    why was this getting caught?
+
+...
+
+turn off worker/server profiling
+
+in parallel, recompile python 3.7, recompile all modules
+AND
+    launch 10 workers, take pympler memory samples with client.run
+    use ConsoleBrowser to track origin
+
+make sure nthreads is off!
+
+SUBMIT GITHUB ISSUE
+
+distributed.worker - WARNING -  Compute Failed
+Function:  Compose
+args:      (                                                                                     bottom  \
+                                                                                          x   
+filename                                        position channel t trench_set trench          
+/n/scratch2/jqs1/fidelity/all/180405_txnerr.nd2 96       MCHERRY 0 1          0          13   
+                                                                              1          37   
+                                                                              2          61   
+                                                                              3          85   
+                                                                              4         109   
+                                                                              5         133   
+                                                                              6         157   
+                                                 
+kwargs:    {}
+Exception: SystemError('Objects/tupleobject.c:851: bad argument to internal function',)
+
 ### PERFORMANCE
 streamz diagnostics
     track time elapsed at each step in the pipeline
@@ -7,7 +48,9 @@ timeout on writes (using register_api)
 
 figure out why sampling profiler is blank
 
-raise github issue!!!
+raise github issue for help!!!
+
+github issue for broken ipython
 
 line profile everything
 
