@@ -1,4 +1,25 @@
+### NEXT
+have readd on periodic_callback
+
 ### FIX
+1) just load ND2Reader directly
+2) read the same numpy array from disk (no nd2reader, still crop trenches)
+3a) numpy array+_analyze_trench with first frame trench data repeated (just make new iter)
+3b) numpy array+_analyze_trench (labels will be messed-up, but whatever)
+
+SEEMS TO STABILIZE AT 1.05GB
+    pulling trench crops but not analyzing anything
+
+get_nd2_reader without getting frame (directly calling ND2Reader)
+    if this still leaks, try reverting wrapt file class
+
+remove pandas concat (just nested dicts)
+skip processing funcs
+load frame/trench positions from numpy array
+    no pandas/nd2reader
+
+turned off regionprops
+
 submit start_ipython_workers issue
 
 memory profile locally

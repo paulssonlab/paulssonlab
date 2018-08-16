@@ -101,29 +101,33 @@ def get_channels_to_indices(channels):
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**8, getsizeof=sys.getsizeof)
 
-
-def _get_nd2_reader(filename, **kwargs):
+# def _get_nd2_reader(filename, **kwargs):
+def _get_nd2_reader(filename, memmap=False, **kwargs):
     return nd2reader.ND2Reader(filename, **kwargs)
 
 
-_get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
-get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
+# get_nd2_reader = _get_nd2_reader
+
+get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
+# get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
 def get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+    # ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
     # TODO: should I wrap in ndarray or keep as PIMS Frame?
-    return np.array(ary)
+    # return np.array(ary)
+    return ary
 
 
 get_nd2_frame_anyargs = kwcompose(
     get_nd2_frame, partial(get_kwargs, keys=["filename", "position", "channel", "t"])
 )
 
-get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
+# get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
 
 
 def get_trench_image(
@@ -659,3 +663,87 @@ class with_timeout(streamz.Stream):
 async def gather_stream(source, as_completed):
     async for future in as_completed:
         await source.emit(future)
+
+
+### TEST
+import time
+
+
+def _analyze_trench_dummy(
+    trench_idx,
+    frames_to_analyze,
+    trench_images,
+    trenchwise_funcs=None,
+    labelwise_funcs=None,
+    regionprops=False,
+    segment_func=None,
+):
+    segmentation_channel = trench_idx.channel
+    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
+    if trenchwise_funcs:
+        trenchwise_df = {
+            channel: map_frame(trenchwise_funcs, trench_images[channel])
+            for channel in readout_channels
+        }
+    else:
+        trenchwise_df = None
+    if labelwise_funcs or regionprops:
+        label_trench_image = segment_func(trench_images[segmentation_channel])
+        for channel in readout_channels:
+            if labelwise_funcs:
+                _ = map_frame_over_labels(
+                    labelwise_funcs, label_trench_image, trench_images[channel]
+                )
+            if regionprops:
+                regionprops_df = get_regionprops(
+                    label_trench_image, trench_images[channel]
+                )
+    return None
+
+
+def analyze_trenches_dummy(
+    trenches,
+    frames_to_analyze,
+    framewise_funcs=None,
+    trenchwise_funcs=None,
+    labelwise_funcs=None,
+    regionprops=False,
+    segment_func=None,
+):
+    frame_t_idx = tuple([frames_to_analyze.index[0][i] for i in (0, 1, 3)])
+    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
+    channels = {trenches.index.get_level_values("channel")[0], *readout_channels}
+    uls = trenches["upper_left"].values
+    lrs = trenches["lower_right"].values
+    # TEST1
+    # time.sleep(30)
+    # return None
+    images = {}
+    for channel in channels:
+        nd2 = nd2reader.ND2Reader(frame_t_idx[0])
+        c = nd2.metadata["channels"].index(channel)
+        img = nd2.get_frame_2D(v=frame_t_idx[1], c=c, t=frame_t_idx[2])
+        images[channel] = img
+    #     images = {channel: get_frame_func(filename=frame_t_idx[0],
+    #                                       position=frame_t_idx[1],
+    #                                       channel=channel,
+    #                                       t=frame_t_idx[2]) for channel in channels}
+    # TEST2
+    # time.sleep(25)
+    # return None
+    for trench_idx, idx in iter_index(trenches.index):
+        ul = uls[idx.Index]
+        lr = lrs[idx.Index]
+        trench_images = {
+            channel: images[channel][ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
+            for channel in images.keys()
+        }
+        # TEST3
+    #         _analyze_trench_dummy(trench_idx,
+    #                                                                     frames_to_analyze,
+    #                                                                     trench_images,
+    #                                                                     trenchwise_funcs=trenchwise_funcs,
+    #                                                                     labelwise_funcs=labelwise_funcs,
+    #                                                                     regionprops=regionprops,
+    #                                                                     segment_func=segment_func)
+    return None
