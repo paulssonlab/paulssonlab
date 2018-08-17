@@ -73,6 +73,7 @@ qgrid = {editable = true, path = "./../hvplot"}
 async-timeout = "*"
 numpy = "*"
 "a2cbe05" = {editable = true, path = "./../nd2reader"}
+profiling = {git = "https://github.com/what-studio/profiling.git"}
 
 [dev-packages]
 

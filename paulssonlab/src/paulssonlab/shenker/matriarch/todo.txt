@@ -1,9 +1,34 @@
 ### NEXT
 have readd on periodic_callback
 
+### FIRST LIGHT
+STARTED 12:12am
+
+try without buffering (why are gathers not 20s spaced apart?)
+
+why are worker CPUs not saturated?
+
+keep track of gather timeouts
+
+how does direct_to_workers help performance?
+
+### FUTURE SOLUTION
+try streaming mapreduce in ray
+
+what is performance cost of streaming to plasma?
+can we do this in a separate process?
+    call submit in this process
+    pass future to queue
+    gather process runs stream, gathers
+    puts objects in plasma
+    passes obj ids in queue to jupyter, writer pool
+    writer process pool (need more than 1?) takes obj ids from queue and sinks to arrow
+
 ### FIX
-1) just load ND2Reader directly
-2) read the same numpy array from disk (no nd2reader, still crop trenches)
+run without dask
+
+x1) just load ND2Reader directly
+x2) read the same numpy array from disk (no nd2reader, still crop trenches)
 3a) numpy array+_analyze_trench with first frame trench data repeated (just make new iter)
 3b) numpy array+_analyze_trench (labels will be messed-up, but whatever)
 
