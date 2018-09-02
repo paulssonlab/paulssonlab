@@ -24,6 +24,7 @@ from workflow import (
 from geometry import bounding_box
 import numbers
 from cytoolz import get_in, compose
+from cachetools import LRUCache
 
 IDX = pd.IndexSlice
 
@@ -452,14 +453,18 @@ class DataFrameStream(Stream):
 
 class MultiIndexStream(Stream):
     @classmethod
-    def define(cls, name, index):
+    def define(cls, name, index, cache_size=100):
         params = {"name": param.Parameter(default=name)}
         for col_idx, column in enumerate(index.names):
             default = index.levels[col_idx][index.labels[col_idx][0]]
             params[column] = param.Parameter(default=default, constant=True)
+        # TODO: big performance issue in __repr__
+        # if _index is a param
         # params['_index'] = param.Parameter(default=index)
         params["_index"] = index
         params["_options"] = {}
+        params["_options_cache"] = LRUCache(cache_size)
+        params["_index_cache"] = LRUCache(cache_size)
         return type(name, (MultiIndexStream,), params)
 
     def __init__(self, **kwargs):
@@ -468,26 +473,31 @@ class MultiIndexStream(Stream):
 
     def transform(self):
         index = self._index
-        # TODO
-        # mask = np.ones(len(df)).astype(np.bool_)
         index_subset = index
         new_params = {}
         for col_idx, column in enumerate(index.names):
-            # TODO
-            # options = df[mask][column].unique().tolist()
-            options = index_subset._get_level_values(col_idx, unique=True).tolist()
+            cache_key = (id(self._index),) + tuple(
+                new_params.get(column, getattr(self, column))
+                for column in index.names[:col_idx]
+            )
+            if cache_key in self._options_cache:
+                options = self._options_cache[cache_key]
+            else:
+                options = index_subset._get_level_values(col_idx, unique=True).tolist()
+                self._options_cache[cache_key] = options
             self._options[column] = options
             value = getattr(self, column)
             if value not in options:
-                # TODO
-                # value = df[mask][column].iloc[0]
                 value = options[0]
                 new_params[column] = value
-            # TODO
-            # mask = (df[column] == value) & mask
-            key = (slice(None),) * col_idx + (value,)
-            idxs = index_subset.get_locs(key)
-            index_subset = index_subset[idxs]
+            index_cache_key = cache_key + (value,)
+            if index_cache_key in self._index_cache:
+                index_subset = self._index_cache[index_cache_key]
+            else:
+                key = (slice(None),) * col_idx + (value,)
+                idxs = index_subset.get_locs(key)
+                index_subset = index_subset[idxs]
+                self._index_cache[index_cache_key] = index_subset
         return new_params
 
     def __repr__(self):
