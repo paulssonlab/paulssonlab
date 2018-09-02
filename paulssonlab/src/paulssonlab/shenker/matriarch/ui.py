@@ -598,11 +598,21 @@ class MultiIndexStream(Stream):
 
 
 def column_browser(
-    name, stream, widget=widgets.Dropdown, format_function=lambda x: map(str, x)
+    name,
+    stream,
+    widget=widgets.Dropdown,
+    format_function=lambda x: map(str, x),
+    continuous_update=False,
+    **kwargs,
 ):
     left_arrow = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
     right_arrow = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
-    selector = widget(description=name, options=range(1))
+    selector = widget(
+        description=name,
+        options=range(1),
+        continuous_update=continuous_update,
+        **kwargs,
+    )
     browser = widgets.HBox([left_arrow, selector, right_arrow])
 
     def increment(inc, button):
