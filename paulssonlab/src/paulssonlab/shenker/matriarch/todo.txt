@@ -4,13 +4,20 @@ MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (shoul
 pandas observed multiindex groupby dataframe vs series
 
 ### TONIGHT
+flip trench_crops so mother is always to left (or top)
+trench_viewer normalization
+image hovertool without quadmesh? (speedup?)
+load current trench movie (both channels) as holomap
+
 EVENTS
 
 compression+segmentation+zarr (locking+resizing in LMDB)
 get_frame that handles nd2/zarr
 
 label_viewer
-segmentation diff viewer from two zarrs?
+
+auto position-joining; real acq times
+    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
 
 robust streaming to sorted parquet
     incremental parquet writer that sorts, dumps finished+sorted chunks to disk
