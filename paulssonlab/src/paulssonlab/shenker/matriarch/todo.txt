@@ -1,6 +1,9 @@
-### TONIGHT
-git commit
+### ISSUES
+raise taptool issue: should work better on overlays, hvplot with by=col
+MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
+pandas observed multiindex groupby dataframe vs series
 
+### TONIGHT
 EVENTS
 
 compression+segmentation+zarr (locking+resizing in LMDB)
@@ -14,7 +17,6 @@ robust streaming to sorted parquet
 
 fix css height on qgrid/scroll bars
 better show_frame_info
-    fix performance regression when using full key in dataframe.index.get_loc
 
 ...
 
@@ -29,8 +31,6 @@ make multiindexstream._index a param
 
 label_viewer
 fix output_view
-
-raise taptool issue: should work better on overlays, hvplot with by=col
 
 1) VIDEOS
 1.5) auto position-joining; real acq times

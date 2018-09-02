@@ -306,8 +306,16 @@ def show_grid(df, header_height=100, stream=None, **kwargs):
 
 
 def select_dataframe(df, **kwargs):
-    idx = tuple(kwargs[column] for column in df.index.names)
-    result = df.loc[idx, :]
+    idx = tuple(kwargs.get(column, slice(None)) for column in df.index.names)
+    # TODO: omitting any trailing slice(None) yields massive speedup
+    while len(idx) and idx[-1] == slice(None):
+        idx = idx[:-1]
+    if any(isinstance(obj, slice) for obj in idx):
+        # TODO: slices guarantee that we won't drop levels in .loc
+        result = df.loc[idx, :]
+    else:
+        # TODO: .loc would drop levels
+        result = df.xs(idx, drop_level=False)
     if isinstance(result, pd.Series):
         result = result.to_frame(name=0).T
     return result
