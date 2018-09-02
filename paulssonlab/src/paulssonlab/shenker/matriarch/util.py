@@ -74,12 +74,20 @@ def split_into(ary, max_length):
     return np.array_split(ary, max(len(ary) // max_length, 1))
 
 
-# TODO: unused
+UNEVEN_GROUPS = object()
+
 # FROM: https://docs.python.org/3/library/itertools.html#recipes
-def grouper(iterable, n, fillvalue=None):
+def grouper(iterable, n, fillvalue=UNEVEN_GROUPS):
     "Collect data into fixed-length chunks or blocks"
     args = [iter(iterable)] * n
-    return zip_longest(*args, fillvalue=fillvalue)
+    filter_filler = False
+    if fillvalue == UNEVEN_GROUPS:
+        fillvalue = object()
+        filter_filler = True
+    groups = zip_longest(*args, fillvalue=fillvalue)
+    if filter_filler:
+        groups = map(compose(tuple, partial(filter, lambda x: x != fillvalue)), groups)
+    return groups
 
 
 # TODO: replace with toolz.excepts??
