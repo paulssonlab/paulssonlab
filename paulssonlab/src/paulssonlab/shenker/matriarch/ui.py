@@ -66,10 +66,18 @@ def hover_image(hover, img):
     )
 
 
-def selection_to_stream(plot, stream):
+def selection_to_stream(plot, stream, keys=None):
+    # TODO: doesn't work
+    #     if isinstance(plot, (hv.NdOverlay, hv.Overlay, hv.Layout)):
+    #         return [selection_to_stream(p, stream, keys=keys)
+    #                     for p in plot]
     selection = Selection1D(source=plot)
     stream_keys = list(stream.contents.keys())
-    keys = set(stream_keys) & set(plot.data.columns)
+    if keys is None:
+        plot_keys = plot.data.columns
+        keys = set(stream_keys) & set(plot_keys)
+    else:
+        keys = set(keys)
 
     def callback(index=None):
         if index is None:
@@ -258,32 +266,107 @@ def show_grid(df, header_height=100, stream=None, **kwargs):
         },
         precision=1,
     )
-    resize_qgrid_header(qg, header_height)
+    # resize_qgrid_header(qg, header_height)
     if stream is not None:
 
         def handle_selection_changed(event, widget):
-            index_df = df.index.to_frame(index=False)
-            row = index_df.iloc[event["new"][0]]  # use first selected row
-            params = {}
-            for column in stream._df.columns:
-                params[column] = row[column]
+            idx = event["new"][0]  # use first selected row
+            key = qg.df.index[idx]
+            params = {qg.df.index.names[i]: value for i, value in enumerate(key)}
+            # TODO!!!
+            # index_df = qg.df.index.to_frame(index=False)
+            # row = index_df.iloc[event['new'][0]] # use first selected row
+            # params = {}
+            # for column in stream._df.columns:
+            #    params[column] = row[column]
             stream.event(**params)
 
         qg.on("selection_changed", handle_selection_changed)
 
         def update_selection(**kwargs):
-            for column in df.index.names:
+            for column in qg.df.index.names:
                 if column not in kwargs:
                     return  # stream is missing columns in index
-            # idx = df.index.get_loc(tuple(getattr(stream, column) for column in df.index.names))
+            key = tuple(getattr(stream, column) for column in qg.df.index.names)
+            try:
+                idxs = [qg.df.index.get_loc(key)]
+            except:
+                idxs = []
+            # TODO: work around bug in qgrid
+            # where qg._change_selection does not fire if
+            # same row num is selected after df change redraws grid
+            data_to_send = {"type": "change_selection", "rows": idxs}
+            qg.send(data_to_send)
             # qg._change_selection([idx], 'api', send_msg_to_js=True)
-            # the following is equivalent to the above
-            idx = tuple(getattr(stream, column) for column in df.index.names)
-            qg.change_selection([idx])
 
         stream.add_subscriber(update_selection)
     # TODO: we can't update selection until widget has already been displayed
     # update_selection(**stream.contents)
+    return qg
+
+
+def select_dataframe(df, **kwargs):
+    idx = tuple(kwargs[column] for column in df.index.names)
+    result = df.loc[idx, :]
+    if isinstance(result, pd.Series):
+        result = result.to_frame(name=0).T
+    return result
+
+
+def dataframe_viewer(callback, stream, **fixed):
+    df0 = callback(**{**stream.contents, **fixed})
+    # df0 = df0.reset_index()
+    qg = show_grid(
+        df0, stream=stream
+    )  # , header_height=20, defaultColumnWidth=300, forceFitColumns=True)
+
+    def update_frame_info(**kwargs):
+        params = {**kwargs, **fixed}
+        df = callback(**params)
+        if False:  # len(df) == len(qg._unfiltered_df):
+            # TODO: don't need to redraw qgrid when row count is unchanged
+            qg._df = df
+            qg._unfiltered_df = df
+            qg._update_table(triggered_by="cell_change", fire_data_change_event=True)
+        else:
+            if not qg.df.equals(df):
+                qg.df = df
+        # idx = df.index.get_loc(tuple(getattr(stream, column) for column in df.index.names))
+        # new_df = df_noindex.iloc[idx]
+        # TODO: update to use new qgrid API
+        # qg._df.loc[:,0] = new_df
+        # qg._unfiltered_df.loc[:,0] = new_df
+        # qg._update_table(triggered_by='cell_change', fire_data_change_event=True)
+
+    stream.add_subscriber(
+        update_frame_info, precedence=-1
+    )  # run before update_selection callback
+    update_frame_info(**stream.contents)
+    return qg
+
+
+# TODO: implement using dataframe_viewer
+def show_frame_info(df, stream):
+    df_noindex = df.reset_index()
+    qg = show_grid(
+        df_noindex.iloc[0],
+        header_height=20,
+        defaultColumnWidth=300,
+        forceFitColumns=True,
+    )
+
+    def update_frame_info(**kwargs):
+        idx = df.index.get_loc(
+            tuple(getattr(stream, column) for column in df.index.names)
+        )
+        new_df = df_noindex.iloc[idx]
+        # TODO: update to use new qgrid API
+        qg._df.loc[:, 0] = new_df
+        qg._unfiltered_df.loc[:, 0] = new_df
+        qg._update_table(triggered_by="cell_change", fire_data_change_event=True)
+
+    stream.add_subscriber(update_frame_info)
+    update_frame_info(**stream.contents)
     return qg
 
 
@@ -689,26 +772,3 @@ def trench_set_viewer(
     return image_viewer(
         trench_stream, *streams, image_callback=callback, regrid=regrid, **kwargs
     )
-
-
-def show_frame_info(df, stream):
-    df_noindex = df.reset_index()
-    qg = show_grid(
-        df_noindex.iloc[0],
-        header_height=20,
-        defaultColumnWidth=300,
-        forceFitColumns=True,
-    )
-
-    def update_frame_info(**kwargs):
-        idx = df.index.get_loc(
-            tuple(getattr(stream, column) for column in df.index.names)
-        )
-        new_df = df_noindex.iloc[idx]
-        qg._df.loc[:, 0] = new_df
-        qg._unfiltered_df.loc[:, 0] = new_df
-        qg._update_table(triggered_by="cell_change", fire_data_change_event=True)
-
-    stream.add_subscriber(update_frame_info)
-    update_frame_info(**stream.contents)
-    return qg
