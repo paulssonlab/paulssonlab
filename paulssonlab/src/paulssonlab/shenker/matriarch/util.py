@@ -147,7 +147,7 @@ def get_keys(d, *__keys, keys=None):
     if keys:
         keys = set(keys)
         if __keys:
-            raise ValueError("only one of _keys or keys can be specified")
+            raise ValueError("only one of __keys or keys can be specified")
     else:
         keys = set(__keys)
     return {k: v for k, v in d.items() if k in keys}
