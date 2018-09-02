@@ -7,7 +7,6 @@ name = "pypi"
 apsw = "*"
 "autopep8" = "*"
 blosc = "*"
-bokeh = "*"
 click = "*"
 cython = "*"
 ujson = "*"
@@ -15,7 +14,7 @@ jupyter = "*"
 jupyterlab = "*"
 jupyter-nbextensions-configurator = "*"
 jupyter-contrib-nbextensions = "*"
-line-profiler = "*"
+line-profiler = {git = "https://github.com/rkern/line_profiler.git"}
 lmdb = "*"
 matplotlib = "*"
 natsort = "*"
@@ -65,7 +64,6 @@ pysize = {git = "https://github.com/bosswissam/pysize.git"}
 "46fa3e5" = {path = "./../ipywidgets"}
 ipywidgets = "*"
 numpy-indexed = "*"
-pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
 pympler = "*"
 objgraph = "*"
 xdot = "*"
@@ -74,6 +72,9 @@ async-timeout = "*"
 numpy = "*"
 "a2cbe05" = {editable = true, path = "./../nd2reader"}
 profiling = {git = "https://github.com/what-studio/profiling.git"}
+fastparquet = "*"
+python-snappy = "*"
+pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
 
 [dev-packages]
 
