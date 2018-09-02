@@ -1,3 +1,154 @@
+### TONIGHT
+git commit
+
+EVENTS
+
+compression+segmentation+zarr (locking+resizing in LMDB)
+get_frame that handles nd2/zarr
+
+label_viewer
+segmentation diff viewer from two zarrs?
+
+robust streaming to sorted parquet
+    incremental parquet writer that sorts, dumps finished+sorted chunks to disk
+
+fix css height on qgrid/scroll bars
+better show_frame_info
+    fix performance regression when using full key in dataframe.index.get_loc
+
+...
+
+filter labels to cell_size (for plotting and all analysis)
+extra columns in hovertool
+filter out bright trenches
+filter out empty trenches (using trenchwise?)
+area filtering
+add caching to multiindexstream
+fix hvplot ndoverlay?
+make multiindexstream._index a param
+
+label_viewer
+fix output_view
+
+raise taptool issue: should work better on overlays, hvplot with by=col
+
+1) VIDEOS
+1.5) auto position-joining; real acq times
+    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
+2) cli+notebook/dask to compress an .nd2
+3) reimplemented analyis func; transfer mask to master node to be zarr'd
+4) single notebook to analyze an .nd2
+
+3) use skiplist to create a continuously sorted list of in-memory data upon gather
+4) trigged by new data for a filename/position OR periodically, re-run analysis; re-dump masks to zarr (and disk)
+
+a single notebook to take an .nd2 to plots and a SORTED parquet
+    a single command
+
+test gather CPU usage without any writing
+    streaming to parquet
+
+architecture:
+    store RecordBatches in memory (eventually plasma?)
+        in dict keyed by filename/position
+            in kdtree (?) so always sorted
+    every 1min OR every new timepoint
+        rechunk (?) and/or make a new pandas
+            for now, make a new pandas
+        dump to partitioned parquet dataset
+            (write to temp location, then move into place)
+            do we need anything besides folder structure to make pq dataset?
+        ONLY KEEP PANDAS IN MEMORY WHILE THAT POSITION IS BEING ANALYZED
+            can parallelize using dask (serialize pandas dataframe directly)
+
+### DATA CLEANUP
+try to fix parquet with categorical
+
+read_arrow cast to categorical
+copy_arrow cast to dictionary/categorical
+
+cast to categorical in original RecordBatch (use helper func in dask task)
+
+compare read_arrow performance of 3cols vs all
+
+try all performance testing without strings, see if that is the only issue
+
+can we read parquet dictionary to arrow dictionary?
+    why doesn't this work?
+
+round-trip through pandas to rechunk
+
+multiindex from categoricalindex?
+
+### MINIMAL
+try parquet
+
+try to read selected columns with fastparquet off original 
+time reading a single column off original arrow dump
+    write selected columns to a BufferOutputStream
+
+filter bursts
+
+started 11:14pm
+
+parquetify subset
+    how much does it compress
+    how slow vs. initial copying (turn compression off?)
+
+subselect labelwise arrow (~1G)
+    compare many recordbatches vs. monolithic recordbatch vs. parquet
+    figure out why arrow is 100G instead of 10G?
+
+compare reading one column in parquet vs arrow
+
+read selected columns (iter limit) into pandas from disk .arrow
+    re-save as parquet and arrow, compare read/write performance
+    (probably parquet! see http://wesmckinney.com/blog/python-parquet-multithreading/)
+
+time how long it takes to iterate through all 100G (no writing)
+    for trenchwise, time nativefile vs osfile vs memory_map vs in memory
+
+make sure fastparquet can read pyarrow parquet in row groups
+    can pyarrow do this yet?
+
+test arrow read speed off disk
+    read disk file completely into memory, try iterating through recordbatches
+
+profile parquetify, arrow reading
+    why is it slow??
+    does this have to do with IO latency?
+    does memory-mapping make it faster? (!!!)
+
+get burst detection/visualization working on analysis50 parquet
+
+load frame stacks of burst movies
+
+### immediate
+what is gather performance with no writing?
+what is gather performance arrow vs parquet (for different batch sizes)
+what is gather performance for in proc vs. out-of-proc scheduler?
+
+increase recordbatch size by 10x when streaming to arrow on disk
+    not worth streaming to parquet?
+    what is the size of a typical recordbatch?
+
+write out-of-core sorter
+
+profile batch loading
+
+find bursts with batched processing
+    use dask arrays?
+
+use same processing scheme/real-time plots for out-of-core processing and streaming
+
+profile scheduler
+    scheduler in separate process??
+
+try to profile streaming gather
+    what is CPU usage without writing? (store in memory/just throw away)
+
+stream to plasma
+
 ### NEXT
 have readd on periodic_callback
 
