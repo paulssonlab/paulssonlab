@@ -2,22 +2,49 @@
 raise taptool issue: should work better on overlays, hvplot with by=col
 MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
 pandas observed multiindex groupby dataframe vs series
+ENH: holoviews stream with multiple sources
+ENH: holoviews create new view for output
 
 ### TONIGHT
+background-subtraction with label=0
+
+range in column_browser:
+    position ... 63 (1 to 108, 36 values)
+
+stream+ipywidgets to browse dataframe groupby with selection
+    with interactive legends
+
+load in all selected trenches as movies
+    make highlight glyph red
+    DynamicMap using ipywidgets column_browser to scroll between selected trenches
+    HoloMap MCHERRY+YFP+Scatter(MCHERRY/YFP 2 y-axes) plot to scroll through time (VLine on Scatter)
+    show multiple trenches (5?) stacked as vertical column Layout
+    BONUS: background level overlay (taken from another df using stream.key)
+
+key construction method on MultiIndexStream
+
+BUG: create new view from output
+
+debug groupby performance issue (are groups not cached?)
+    try numba-ifying
+        1ms group iteration overhead (workaround??)
+        precompute bright_ts on trenchwise_df for different brightness thresholds
+    flamegraph
+
 flip trench_crops so mother is always to left (or top)
 trench_viewer normalization
 image hovertool without quadmesh? (speedup?)
 load current trench movie (both channels) as holomap
 
-EVENTS
-
 compression+segmentation+zarr (locking+resizing in LMDB)
+    rewritten analyze_trenches func? (spec in diary)
 get_frame that handles nd2/zarr
 
 label_viewer
 
 auto position-joining; real acq times
     KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
+    BONUS: trench identification (+ photobleaching measurement, segmentation diffing!!!)
 
 robust streaming to sorted parquet
     incremental parquet writer that sorts, dumps finished+sorted chunks to disk
