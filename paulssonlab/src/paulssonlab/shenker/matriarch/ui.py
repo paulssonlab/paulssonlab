@@ -11,9 +11,10 @@ from holoviews.streams import Stream, param, Selection1D
 from matplotlib.colors import hex2color
 import qgrid
 from collections.abc import Mapping, Sequence
+import numbers
 from functools import partial, reduce
 import uuid
-from util import summarize_filenames, get_one
+from util import summarize_filenames, get_one, format_number
 import common
 from workflow import (
     get_nd2_frame_anyargs,
@@ -605,23 +606,43 @@ class MultiIndexStream(Stream):
             return "%s(%r, %s)" % (cls_name, self._rename, kwargs)
 
 
+def _format_contents(options, digits=2):
+    if all(isinstance(o, numbers.Number) for o in options):
+        return "({} values, {} to {})".format(
+            len(options),
+            format_number(options[0], digits),
+            format_number(options[-1], digits),
+        )
+    else:
+        return "({} values)".format(len(options))
+
+
 def column_browser(
     name,
     stream,
     widget=widgets.Dropdown,
     format_function=lambda x: map(str, x),
+    contents=True,
     continuous_update=False,
     **kwargs,
 ):
     left_arrow = widgets.Button(description="<", layout=widgets.Layout(width="3%"))
     right_arrow = widgets.Button(description=">", layout=widgets.Layout(width="3%"))
+    if contents:
+        contents_label = widgets.Label(
+            value="(... of ...)", layout=widgets.Layout(width="30%")
+        )
     selector = widget(
         description=name,
         options=range(1),
         continuous_update=continuous_update,
         **kwargs,
     )
-    browser = widgets.HBox([left_arrow, selector, right_arrow])
+    if contents:
+        all_widgets = [left_arrow, selector, contents_label, right_arrow]
+    else:
+        all_widgets = [left_arrow, selector, right_arrow]
+    browser = widgets.HBox(all_widgets)
 
     def increment(inc, button):
         options = stream._options[name]
@@ -642,6 +663,8 @@ def column_browser(
 
     def update_selector(**kwargs):
         options = stream._options[name]
+        if contents:
+            contents_label.value = _format_contents(options)
         options_for_display = dict(zip(format_function(options), options))
         try:
             selector.options = options_for_display

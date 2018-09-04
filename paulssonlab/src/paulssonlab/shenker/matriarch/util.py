@@ -12,10 +12,18 @@ from itertools import count
 from cytoolz import compose, take, reduce, partial
 import collections
 from collections import namedtuple
+import numbers
 from dask.distributed import Future
 import operator
 import os
 import random
+
+
+def format_number(x, digits):
+    if isinstance(x, numbers.Integral):
+        return str(x)
+    else:
+        return "{0:.{1}f}".format(value, digits)
 
 
 def kwcompose(func1, func2):

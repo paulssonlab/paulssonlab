@@ -6,11 +6,6 @@ ENH: holoviews stream with multiple sources
 ENH: holoviews create new view for output
 
 ### TONIGHT
-background-subtraction with label=0
-
-range in column_browser:
-    position ... 63 (1 to 108, 36 values)
-
 stream+ipywidgets to browse dataframe groupby with selection
     with interactive legends
 
@@ -24,12 +19,6 @@ load in all selected trenches as movies
 key construction method on MultiIndexStream
 
 BUG: create new view from output
-
-debug groupby performance issue (are groups not cached?)
-    try numba-ifying
-        1ms group iteration overhead (workaround??)
-        precompute bright_ts on trenchwise_df for different brightness thresholds
-    flamegraph
 
 flip trench_crops so mother is always to left (or top)
 trench_viewer normalization
@@ -51,6 +40,17 @@ robust streaming to sorted parquet
 
 fix css height on qgrid/scroll bars
 better show_frame_info
+
+debug groupby performance issue (are groups not cached?)
+    pd.eval
+    try numba-ifying
+        1ms group iteration overhead (workaround??)
+        precompute bright_ts on trenchwise_df for different brightness thresholds
+    flamegraph
+
+SPARK
+
+MIP segmentation
 
 ...
 
