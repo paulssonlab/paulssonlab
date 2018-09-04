@@ -27,7 +27,7 @@ def kwcompose(func1, func2):
 
 
 # FROM: https://stackoverflow.com/questions/23937433/efficiently-joining-two-dataframes-based-on-multiple-levels-of-a-multiindex?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-def multi_join(left, right):
+def multi_join(left, right, **kwargs):
     if isinstance(left, pd.Index):
         left_mergable = left.to_frame(index=False)
         left_index = left
@@ -37,7 +37,9 @@ def multi_join(left, right):
     else:
         raise NotImplementedError
     res = pd.merge(
-        left_mergable, right.reset_index(), on=right.index.names, how="inner"
+        left_mergable,
+        right.reset_index(),
+        **{"on": right.index.names, "how": "inner", **kwargs},
     ).set_index(left_index.names)
     if isinstance(right, pd.Series):
         res = res.squeeze()
