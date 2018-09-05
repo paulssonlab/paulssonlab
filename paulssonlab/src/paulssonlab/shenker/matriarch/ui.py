@@ -67,6 +67,14 @@ def hover_image(hover, img):
     )
 
 
+def _selection_to_stream_callback(data, keys, stream, index=None):
+    if index is None:
+        return
+    index = index[0]
+    params = {key: data.loc[index, key] for key in keys}
+    stream.event(**params)
+
+
 def selection_to_stream(plot, stream, keys=None):
     # TODO: doesn't work
     #     if isinstance(plot, (hv.NdOverlay, hv.Overlay, hv.Layout)):
@@ -75,19 +83,11 @@ def selection_to_stream(plot, stream, keys=None):
     selection = Selection1D(source=plot)
     stream_keys = list(stream.contents.keys())
     if keys is None:
-        plot_keys = plot.data.columns
-        keys = set(stream_keys) & set(plot_keys)
-    else:
-        keys = set(keys)
-
-    def callback(index=None):
-        if index is None:
-            return
-        index = index[0]
-        params = {key: plot.data.loc[index, key] for key in stream_keys if key in keys}
-        stream.event(**params)
-
-    selection.add_subscriber(callback)
+        keys = plot.data.columns
+    keys = set(keys) & set(stream_keys)
+    selection.add_subscriber(
+        partial(_selection_to_stream_callback, data=plot.data, keys=keys, stream=stream)
+    )
     return selection
 
 

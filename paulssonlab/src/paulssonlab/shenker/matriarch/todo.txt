@@ -23,6 +23,10 @@ load in all selected trenches as movies
 
 key construction method on MultiIndexStream
 
+optimize group_stream, label_stream
+
+turn frame caching back on
+
 BUG: create new view from output
 
 flip trench_crops so mother is always to left (or top)
