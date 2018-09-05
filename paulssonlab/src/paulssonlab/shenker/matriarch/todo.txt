@@ -5,9 +5,14 @@ pandas observed multiindex groupby dataframe vs series
 ENH: holoviews stream with multiple sources
 ENH: holoviews create new view for output
 
+### DEMO
+loweronly_fast: pos87, t73, ts1, t54
+
 ### TONIGHT
 stream+ipywidgets to browse dataframe groupby with selection
     with interactive legends
+
+use transform instead of merge in groupby
 
 load in all selected trenches as movies
     make highlight glyph red
