@@ -112,7 +112,7 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 # get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
-def get_nd2_frame(filename, position, channel, t, memmap=False):
+def _get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
@@ -123,11 +123,11 @@ def get_nd2_frame(filename, position, channel, t, memmap=False):
     return ary
 
 
+get_nd2_frame = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
+
 get_nd2_frame_anyargs = kwcompose(
     get_nd2_frame, partial(get_kwargs, keys=["filename", "position", "channel", "t"])
 )
-
-# get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
 
 
 def get_trench_image(
