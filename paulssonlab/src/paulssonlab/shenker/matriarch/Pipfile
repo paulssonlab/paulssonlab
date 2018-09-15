@@ -67,7 +67,6 @@ numpy-indexed = "*"
 pympler = "*"
 objgraph = "*"
 xdot = "*"
-qgrid = {editable = true, path = "./../hvplot"}
 async-timeout = "*"
 numpy = "*"
 "a2cbe05" = {editable = true, path = "./../nd2reader"}
@@ -75,6 +74,8 @@ profiling = {git = "https://github.com/what-studio/profiling.git"}
 fastparquet = "*"
 python-snappy = "*"
 pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
+snakeviz = {editable = true, path = "./../snakeviz"}
+qgrid = "*"
 
 [dev-packages]
 
