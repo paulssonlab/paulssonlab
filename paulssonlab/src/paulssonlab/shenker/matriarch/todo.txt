@@ -1,18 +1,27 @@
+all cells/mother cell mean brightness over time
+
 ### ISSUES
 raise taptool issue: should work better on overlays, hvplot with by=col
 MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
 pandas observed multiindex groupby dataframe vs series
-ENH: holoviews stream with multiple sources
 ENH: holoviews create new view for output
+ENH: holoviews stream with multiple sources
 
 ### DEMO
 loweronly_fast: pos87, t73, ts1, t54
+big group111, medium group143/136/135, small group178/179/184, double group106
 
 ### TONIGHT
+EL CHEAPO MULTIINDEX PARALLEL GROUPBY
+
+fix snakeviz: add div id to all elements
+    FIX CALLSTACK TOGGLEING
+    ...and call it a day
+
 stream+ipywidgets to browse dataframe groupby with selection
     with interactive legends
 
-use transform instead of merge in groupby
+BUG: create new view from output (TEST IN CHROME)
 
 load in all selected trenches as movies
     make highlight glyph red
@@ -25,9 +34,10 @@ key construction method on MultiIndexStream
 
 optimize group_stream, label_stream
 
-turn frame caching back on
+EVENTS
+    find noise by looking for non-continuous traces
 
-BUG: create new view from output
+turn frame caching back on
 
 flip trench_crops so mother is always to left (or top)
 trench_viewer normalization
