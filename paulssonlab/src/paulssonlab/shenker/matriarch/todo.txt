@@ -1,5 +1,3 @@
-all cells/mother cell mean brightness over time
-
 ### ISSUES
 raise taptool issue: should work better on overlays, hvplot with by=col
 MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
@@ -12,14 +10,48 @@ loweronly_fast: pos87, t73, ts1, t54
 big group111, medium group143/136/135, small group178/179/184, double group106
 
 ### TONIGHT
+compression+segmentation+zarr (locking+resizing in LMDB)
+    rewritten analyze_trenches func? (spec in diary)
+    fast area
+get_frame that handles nd2/zarr
+
+label_viewer
+
+switch to filename/position/trench_set/trench/channel/t/label
+    performance boost???
+    what is trench_key, trench_t_key? (where to put channel?)
+
+flip trench_crops so mother is always to left (or top)
+image hovertool without quadmesh? (speedup?)
+
+all cells/mother cell mean brightness over time
+
+thread to load trenches into trench_image cache (alternating one forward, one back); empty queue every time we make a UI selection that's not time
+
+...
+
+auto position-joining; real acq times
+    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
+    BONUS: trench identification (+ photobleaching measurement, segmentation diffing!!!)
+    easy way to select first of photobleaching timepoints
+
+easy way to filter out trenches adjacent to bright trenches
+
+...
+
+QUICK UPDATE OF DETECTED_BURSTS IN GROUPED SCATTERPLOT
+    GroupedMultiIndexStream
+
 EL CHEAPO MULTIINDEX PARALLEL GROUPBY
 
 fix snakeviz: add div id to all elements
     FIX CALLSTACK TOGGLEING
     ...and call it a day
 
+fast subsetting of labelwise_df according to selected trenches (trench_t_median/trench_median/background)
+
 stream+ipywidgets to browse dataframe groupby with selection
-    with interactive legends
+    with interactive legends (!!!)
 
 BUG: create new view from output (TEST IN CHROME)
 
@@ -39,20 +71,10 @@ EVENTS
 
 turn frame caching back on
 
-flip trench_crops so mother is always to left (or top)
 trench_viewer normalization
-image hovertool without quadmesh? (speedup?)
 load current trench movie (both channels) as holomap
 
-compression+segmentation+zarr (locking+resizing in LMDB)
-    rewritten analyze_trenches func? (spec in diary)
-get_frame that handles nd2/zarr
-
 label_viewer
-
-auto position-joining; real acq times
-    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
-    BONUS: trench identification (+ photobleaching measurement, segmentation diffing!!!)
 
 robust streaming to sorted parquet
     incremental parquet writer that sorts, dumps finished+sorted chunks to disk
