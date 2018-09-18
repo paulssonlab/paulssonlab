@@ -554,11 +554,6 @@ def concat_unzip_dataframes(res):
     ]
 
 
-def stream_slice(names, params, **consts):
-    params = {**params, **consts}
-    return tuple([params.get(n, slice(None)) for n in names])
-
-
 def sink_to_arrow(batches, sinks, writers, output_func=None):
     if output_func is None:
         output_func = lambda i: pa.BufferOutputStream()
@@ -778,3 +773,20 @@ def map_frame_over_labels_dummy(
     # df = pd.DataFrame(d, index=labels)
     # df.index.name = 'label'
     return d
+
+
+def select_dataframe(df, params, **kwargs):
+    params = {**params, **kwargs}
+    idx = tuple(params.get(column, slice(None)) for column in df.index.names)
+    # TODO: omitting any trailing slice(None) yields massive speedup
+    while len(idx) and idx[-1] == slice(None):
+        idx = idx[:-1]
+    if any(isinstance(obj, slice) for obj in idx):
+        # TODO: slices guarantee that we won't drop levels in .loc
+        result = df.loc[idx, :]
+    else:
+        # TODO: .loc would drop levels
+        result = df.xs(idx, drop_level=False)
+    if isinstance(result, pd.Series):
+        result = result.to_frame(name=0).T
+    return result
