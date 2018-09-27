@@ -36,7 +36,6 @@ tifffile = "*"
 deepdiff = "*"
 pendulum = "*"
 jdcal = "*"
-jq = "*"
 jmespath = "*"
 xxhash = "*"
 "8ac6f2a" = {editable = true, path = "/home/jqs1/projects/datashader"}
@@ -77,6 +76,8 @@ pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3
 snakeviz = {editable = true, path = "./../snakeviz"}
 qgrid = "*"
 imageio = "*"
+filelock = "*"
+fasteners = "*"
 
 [dev-packages]
 
