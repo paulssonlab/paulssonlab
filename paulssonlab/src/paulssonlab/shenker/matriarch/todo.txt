@@ -7,16 +7,26 @@ ENH: holoviews stream with multiple sources
 TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. renderer._figure_data)
     bug where options won't apply consistently
 
-TODO: trench_img invert_yaxis issue
+TODO: trench_img invert_yaxis issue with holoviews master
 
-### DEMO
-loweronly_fast: pos87, t73, ts1, t54
-big group111, medium group143/136/135, small group178/179/184, double group106
+### NEXT GOAL
+NEEDS TO SUPPORT SEGMENTATION WORKFLOW
 
-### TONIGHT
-YFP + MCHERRY MOVIE + PLOT (with vline)
+compare performance of segmenting+reading pixels+compute mean of:
+    1) channels bundled in zarr
+    2) channels as separate zarrs
 
-FILTER FOR # OF TIMEPOINTS WITH TWO CELLS ABOVE BACKGROUND (!)
+compress_frames can take either one filename/position (multiple channels) or all_frames
+    use LRU caching to allow compress_frames to iterate over frames without ensuring that we load only once
+    does new iteration order allow this caching?
+    DO WE NEED TO PASS both TRENCHES/FRAMES_TO_ANALYZE??? (make sure this works if we drop channel index from trenches)
+        SHOULD WE DROP trenches FROM selected_trenches??? (yes! this allows for, e.g., using multiple channels in segmentation)
+
+when iterating over all_frames or one frame, should efficiently lock/LMDB
+    one LMDB per filename/position
+    benchmark to see how long it takes to read/recompress upon new timepoint
+
+compress_frames = wrap_trenches_for_frames_iterator(_compress_frames)
 
 compression+segmentation+zarr (locking+resizing in LMDB)
     rewritten analyze_trenches func? (spec in diary)
@@ -33,6 +43,15 @@ label_viewer
 switch to filename/position/trench_set/trench/channel/t/label
     performance boost???
     what is trench_key, trench_t_key? (where to put channel?)
+
+### DEMO
+loweronly_fast: pos87, t73, ts1, t54
+big group111, medium group143/136/135, small group178/179/184, double group106
+
+### TONIGHT
+YFP + MCHERRY MOVIE + PLOT (with vline)
+
+FILTER FOR # OF TIMEPOINTS WITH TWO CELLS ABOVE BACKGROUND (!)
 
 flip trench_crops so mother is always to left (or top)
 image hovertool without quadmesh? (speedup?)
