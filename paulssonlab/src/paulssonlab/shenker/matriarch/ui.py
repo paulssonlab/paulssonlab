@@ -52,7 +52,7 @@ def _RevImage(cls, img, **kwargs):
 
 def _trench_img(img):
     return RevImage(img.T).options(
-        height=120, width=400
+        backend="bokeh", height=120, width=400
     )  # .options(height=10, width=100)#.options(height=int(img.shape[1]*0.6), width=int(img.shape[0]*0.4))
 
 

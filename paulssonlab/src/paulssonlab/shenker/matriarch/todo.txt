@@ -4,15 +4,28 @@ MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (shoul
 pandas observed multiindex groupby dataframe vs series
 ENH: holoviews create new view for output
 ENH: holoviews stream with multiple sources
+TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. renderer._figure_data)
+    bug where options won't apply consistently
+
+TODO: trench_img invert_yaxis issue
 
 ### DEMO
 loweronly_fast: pos87, t73, ts1, t54
 big group111, medium group143/136/135, small group178/179/184, double group106
 
 ### TONIGHT
+YFP + MCHERRY MOVIE + PLOT (with vline)
+
+FILTER FOR # OF TIMEPOINTS WITH TWO CELLS ABOVE BACKGROUND (!)
+
 compression+segmentation+zarr (locking+resizing in LMDB)
     rewritten analyze_trenches func? (spec in diary)
+    record offset in zarr metadata (group-level in lmbd)
+        record quantized overview frame
+        record trench bboxes
+        reconstruct trench crops + overview frame into zarr/TIFF series
     fast area
+    
 get_frame that handles nd2/zarr
 
 label_viewer
@@ -30,6 +43,12 @@ thread to load trenches into trench_image cache (alternating one forward, one ba
 
 ...
 
+QUICK UPDATE OF DETECTED_BURSTS IN GROUPED SCATTERPLOT
+    GroupedMultiIndexStream
+
+fast subsetting of labelwise_df according to selected trenches (trench_t_median/trench_median/background)
+    filter groupby by key only (no iterating over intermediate dfs... since they're slices, would this actually make it faster?)
+
 auto position-joining; real acq times
     KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
     BONUS: trench identification (+ photobleaching measurement, segmentation diffing!!!)
@@ -37,21 +56,21 @@ auto position-joining; real acq times
 
 easy way to filter out trenches adjacent to bright trenches
 
-...
+optimize group_stream, label_stream
+    how much does rearranging key order help?
+    can we make assumptions? (e.g., trench_set is always 1 or 2; t range is usually the same)
+    preemptive caching?
 
-QUICK UPDATE OF DETECTED_BURSTS IN GROUPED SCATTERPLOT
-    GroupedMultiIndexStream
+stream+ipywidgets to browse dataframe groupby with selection
+    with interactive legends (!!!) with solo??
+
+...
 
 EL CHEAPO MULTIINDEX PARALLEL GROUPBY
 
 fix snakeviz: add div id to all elements
     FIX CALLSTACK TOGGLEING
     ...and call it a day
-
-fast subsetting of labelwise_df according to selected trenches (trench_t_median/trench_median/background)
-
-stream+ipywidgets to browse dataframe groupby with selection
-    with interactive legends (!!!)
 
 BUG: create new view from output (TEST IN CHROME)
 
@@ -63,8 +82,6 @@ load in all selected trenches as movies
     BONUS: background level overlay (taken from another df using stream.key)
 
 key construction method on MultiIndexStream
-
-optimize group_stream, label_stream
 
 EVENTS
     find noise by looking for non-continuous traces

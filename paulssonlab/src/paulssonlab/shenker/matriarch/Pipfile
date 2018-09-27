@@ -76,6 +76,7 @@ python-snappy = "*"
 pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
 snakeviz = {editable = true, path = "./../snakeviz"}
 qgrid = "*"
+imageio = "*"
 
 [dev-packages]
 
