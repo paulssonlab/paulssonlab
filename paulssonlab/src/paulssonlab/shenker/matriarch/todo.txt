@@ -12,9 +12,12 @@ TODO: trench_img invert_yaxis issue with holoviews master
 ### NEXT GOAL
 NEEDS TO SUPPORT SEGMENTATION WORKFLOW
 
-compare performance of segmenting+reading pixels+compute mean of:
+compare performance of (a) segmenting/no writing+reading pixels+compute mean of
+                       (b) segmenting+writing masks to zarr+reading pixels+compute mean
+                       (c) reading masks from zarr+reading pixels+compute mean:
     1) channels bundled in zarr
     2) channels as separate zarrs
+    use as guide for analysis_func refactor (!!!)
 
 compress_frames can take either one filename/position (multiple channels) or all_frames
     use LRU caching to allow compress_frames to iterate over frames without ensuring that we load only once
