@@ -78,6 +78,7 @@ qgrid = "*"
 imageio = "*"
 filelock = "*"
 fasteners = "*"
+ipython = "==6.5.0"
 
 [dev-packages]
 
