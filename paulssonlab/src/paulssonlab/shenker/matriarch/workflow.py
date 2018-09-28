@@ -103,7 +103,7 @@ ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**8, getsizeof=sys.getsizeof)
 
 # def _get_nd2_reader(filename, **kwargs):
 def _get_nd2_reader(filename, memmap=False, **kwargs):
-    return nd2reader.ND2Reader(filename, **kwargs)
+    return nd2reader.ND2Reader(filename, memmap=memmap, **kwargs)
 
 
 # get_nd2_reader = _get_nd2_reader
@@ -113,11 +113,11 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 
 
 def _get_nd2_frame(filename, position, channel, t, memmap=False):
-    reader = get_nd2_reader(filename)
+    reader = get_nd2_reader(filename, memmap=memmap)
     # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
-    # ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+    # ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
     # TODO: should I wrap in ndarray or keep as PIMS Frame?
     # return np.array(ary)
     return ary
