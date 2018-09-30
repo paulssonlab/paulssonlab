@@ -294,7 +294,7 @@ def get_trench_stacks(
     ):
         # t_group_iterator = util.iter_index(framestack_group.groupby(['t', 'trench_set']))
         x_lim, y_lim = image_limits[framestack_idx.filename]
-        current_trenches = next(iter(framestack_group.groupby("t")))[1]
+        current_trenches = get_one(framestack_group.groupby("t"))[1]
         # optimize iter_index by not repeating steps in inner loops
         current_trenches_index = current_trenches.index.droplevel("t")
         Index = namedtuple("Index", current_trenches_index.names, rename=True)
