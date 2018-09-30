@@ -10,6 +10,34 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
+compress_frames that can take one incremental frame or all_frames
+harmonize get_trench_stacks with compress_frame
+
+### READY FOR NEW DATA
+offline and online trench compression (today)
+    stop using iter_index
+    commandline tool for doing trench compression (if fast enough to be practical)
+stop using iter_index
+refactored analysis_func that can do trench compression and/or segmentation and/or analysis (today)
+    from ND2 or zarr
+    offline and online (using same/similar strategy as online compression; keep in memory)
+label_viewer (tomorrow)
+
+new dataframe index order for all_frames, trenches, framewise/trenchwise/labelwise
+    eliminate unnecessary index columns for trenches
+trench detection for big snakes (tomorrow)
+frame quality/trench quality/trench debris filtering (monday)
+    scroller widget to scroll through trench detection errors (?)
+simple workflow for trench detection+compression+analysis (monday)
+
+incremental analysis
+    using a chain of dask tasks, each one dumps parquet to disk, keeps sorted dict of arrow in memory
+fast reading of partitioned parquet files
+optimized single-core pandas txn error detection
+    try pandas PRs
+
+...
+
 NEEDS TO SUPPORT SEGMENTATION WORKFLOW
 
 compare performance of (a) segmenting/no writing+reading pixels+compute mean of
