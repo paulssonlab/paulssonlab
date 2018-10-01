@@ -79,6 +79,7 @@ imageio = "*"
 filelock = "*"
 fasteners = "*"
 ipython = "==6.5.0"
+deepmerge = "*"
 
 [dev-packages]
 

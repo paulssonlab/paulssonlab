@@ -168,16 +168,6 @@ def ingest_nd2(
     return raw_group
 
 
-def quantize_frame(arr, bits, random=True):
-    factor = 2**bits
-    if random:
-        return np.floor((arr / factor) + np.random.random(size=arr.shape)).astype(
-            arr.dtype
-        )
-    else:
-        return arr // factor
-
-
 def quantize_frames(
     in_group, out_group, bits, random=True, progress_bar=DEFAULT_PROGRESS_BAR
 ):

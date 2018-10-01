@@ -10,15 +10,24 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
-compress_frames that can take one incremental frame or all_frames
-harmonize get_trench_stacks with compress_frame
+1) test get_trench_crops/get_trench_stacks
+    with one frame, many frames
+    one pos, many pos
+2) quantization/downsampling of whole frame
+
+3) merge_dicts() + write_compressed_trenches(merge_from_disk=False)
+    support in-memory zarr (for masks)
+4) flag to write_compressed_trenches which reads from zarr
+
+5) test (3) without dask
+6) test (3) with dask
+7) commandline trench compression tool
+8) how to do this for segmentation
 
 ### READY FOR NEW DATA
-offline and online trench compression (today)
-    stop using iter_index
-    commandline tool for doing trench compression (if fast enough to be practical)
 stop using iter_index
 refactored analysis_func that can do trench compression and/or segmentation and/or analysis (today)
+    figure out way of using merge_dicts, splitting off writer tasks
     from ND2 or zarr
     offline and online (using same/similar strategy as online compression; keep in memory)
 label_viewer (tomorrow)

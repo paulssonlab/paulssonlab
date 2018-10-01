@@ -7,6 +7,20 @@ import numba
 from cytoolz import compose
 
 
+def quantize(img, bits, random=True):
+    factor = 2**bits
+    if random:
+        return np.floor((img / factor) + np.random.random(size=img.shape)).astype(
+            img.dtype
+        )
+    else:
+        return img // factor
+
+
+def downsample(img, factor):
+    return img[::factor, ::factor]
+
+
 def _accumulator_dtype(dtype):
     if np.issubdtype(dtype, np.bool_):
         return np.uint64
