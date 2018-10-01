@@ -1,181 +1,191 @@
 import numpy as np
-import nd2reader
-from numcodecs import Blosc, Delta
-import operator
-from functools import partial, reduce
-import itertools
-from more_itertools import rstrip
-from collections.abc import Sequence, Iterable
-from copy import deepcopy
-import time
-from natsort import natsorted
-from util import tqdm_auto, open_zarr_group, timestamp_to_isoformat
+import zarr
+import re
+import os
+from cytoolz import partial
+from filelock import SoftFileLock
+from contextlib import contextmanager
+from numcodecs import Blosc
+import wrapt
+from workflow import get_nd2_frame
+from util import get_one
 
-DEFAULT_FRAME_COMPRESSOR = Blosc(
-    cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0
-)
-DEFAULT_FRAME_CHUNKS = (1, 1, 512, 512)
-DEFAULT_PROGRESS_BAR = partial(tqdm_auto, smoothing=0.8)
+DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
+DEFAULT_ORDER = "C"
 
 
-def map_ndarray(func, ary, axis=0, out=None, progress_bar=DEFAULT_PROGRESS_BAR):
-    if not isinstance(axis, Sequence):
-        axis = [axis]
-    iter_shape = [ary.shape[dim] for dim in axis]
-    _iter = itertools.product(*[range(l) for l in iter_shape])
-    if progress_bar is not None:
-        _iter = progress_bar(_iter, total=reduce(operator.mul, iter_shape))
-    for iter_idxs in _iter:
-        idxs = [slice(None)] * len(ary.shape)
-        for dim, iter_idx in zip(axis, iter_idxs):
-            idxs[dim] = iter_idx
-        idxs = tuple(rstrip(idxs, lambda x: x == slice(None)))
-        if out is None:
-            new_ary = func(ary[idxs])
-            iter_shape = tuple(map(lambda dim: ary.shape[dim], axis))
-            new_shape = iter_shape + new_ary.shape
-            out = np.zeros(new_shape, dtype=new_ary.dtype)
-            out[idxs] = new_ary
-        else:
-            out[idxs] = func(ary[idxs])
-    return out
+def iterate_over_groupby(columns):
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs):
+        res = {}
+        for key, group in args[0].groupby(columns):
+            key_kwargs = dict(zip(columns, key))
+            res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
+        return res
+
+    return wrapper
 
 
-def process_positions(
-    func,
-    in_group,
-    out_group,
-    axis=0,
-    compressor=None,
-    chunks=None,
-    order=None,
-    progress_bar=DEFAULT_PROGRESS_BAR,
+def index_dict_to_array(d, array_func=np.zeros):
+    idx_max = max(d.keys())
+    shape0 = get_one(d).shape
+    shape = shape0 + (idx_max + 1,)
+    ary = array_func(shape)
+    for k, v in d.items():
+        ary[..., k] = v
+    return ary
+
+
+@contextmanager
+def locked_zarr(
+    filename, lock_dir=None, lock_suffix=".lock", zarr_store=zarr.LMDBStore
 ):
-    res = None
-    shape = None
-    dtype = None
-    pbar = progress_bar(natsorted(in_group.items(), key=operator.itemgetter(0)))
-    for pos_name, position in pbar:
-        pbar.set_description("position {}".format(pos_name))
-        time_started = time.time()
-        if compressor is None:
-            compressor = position.compressor
-        if order is None:
-            order = position.order
-        if pos_name in out_group:
-            ary = out_group[pos_name]
-            shape = ary.shape
-            dtype = ary.dtype
-            if "processed" and ary.attrs and ary.attrs["processed"]:
-                continue
-        else:
-            if shape is None or dtype is None:
-                res = map_ndarray(
-                    func,
-                    position,
-                    axis=axis,
-                    progress_bar=partial(progress_bar, leave=False),
-                )
-                shape = res.shape
-                dtype = res.dtype
-            if chunks is None and len(shape) == len(position.shape):
-                chunks = position.chunks
-            ary = out_group.zeros(
-                pos_name,
-                shape=shape,
-                dtype=dtype,
-                compressor=compressor,
-                chunks=chunks,
-                order=order,
+    # zarr_store = zarr.ZipStore
+    zarr_store = partial(zarr.LMDBStore, map_async=True)
+    if lock_dir:
+        lock_filename = os.path.join(lock_dir, os.path.basename(filename) + lock_suffix)
+    else:
+        lock_filename = filename + lock_suffix
+    lock_dir = os.path.dirname(lock_filename)
+    if not os.path.isdir(lock_dir):
+        os.makedirs(lock_dir)
+    lock = SoftFileLock(lock_filename)  # TODO: replace with fasteners??
+    with lock:
+        store = zarr_store(filename)
+        try:
+            root = zarr.group(store=store, overwrite=False)
+            yield root
+        except:
+            if hasattr(store, "close"):
+                store.close()
+            raise
+
+
+def _get_trench_crops(
+    trenches,
+    frames,
+    get_frame_func=get_nd2_frame,
+    transformation=None,
+    include_frame=False,
+    frame_transformation=None,
+    filename=None,
+    position=None,
+):
+    # selected_trenches = trenches.groupby(['filename', 'position']).get_group((filename, position)
+    # selected_trenches = trenches.xs((filename, position), drop_level=False)
+    # TODO: here is where we specify logic for finding trenches for a given timepoint
+    selected_trenches = trenches.xs((filename, position, 0), drop_level=False)
+    trench_crops = {}
+    if include_frame:
+        whole_frames = {}
+    for t, channel_frames in frames.groupby("t"):
+        channels = set(channel_frames.index.get_level_values("channel"))
+        channel_images = {
+            channel: get_frame_func(
+                filename=filename, position=position, channel=channel, t=t
             )
-        ary.attrs["processed"] = False
-        ary.attrs["time_started"] = timestamp_to_isoformat(time_started)
-        if res is None:
-            map_ndarray(func, position, axis=axis, out=ary, progress_bar=progress_bar)
-        else:
-            ary[:] = res
-            res = None
-        time_finished = time.time()
-        ary.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
-        ary.attrs["time_elapsed"] = time_finished - time_started
-        ary.attrs["processed"] = True
-    return out_group
+            for channel in channels
+        }
+        if include_frame:
+            for channel, image in channel_images.items():
+                if frame_transformation is not None:
+                    image = frame_transformation(image)
+                whole_frames.setdefault(channel, {})[t] = image
+        channel_crops = _crop_trenches(selected_trenches, channel_images)
+        for trench, trench_channels in channel_crops.items():
+            for channel, crop in trench_channels.items():
+                trench_crops.setdefault(trench, {}).setdefault(channel, {})[t] = crop
+    for trench in trench_crops:
+        if transformation is not None:
+            trench_crops[trench] = {
+                channel: transformation(crops)
+                for channel, crops in trench_crops[trench].items()
+            }
+    if include_frame:
+        for channel, frames in whole_frames.items():
+            trench_crops.setdefault("_frame", {})[channel] = frames
+    return trench_crops
 
 
-def process_attrs(func, in_group, out_group, progress_bar=DEFAULT_PROGRESS_BAR):
-    for pos_name, position in progress_bar(in_group.items()):
-        pos_group = out_group.require_group(pos_name)
-        if "processed" and pos_group.attrs and pos_group.attrs["processed"]:
-            continue
-        pos_group.attrs["processed"] = False
-        time_started = time.time()
-        pos_group.attrs["time_started"] = timestamp_to_isoformat(time_started)
-        res = func(position)
-        pos_group.attrs["result"] = res
-        time_finished = time.time()
-        pos_group.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
-        pos_group.attrs["time_elapsed"] = time_finished - time_started
-        pos_group.attrs["processed"] = True
-    return out_group
+get_trench_crops = iterate_over_groupby(["filename", "position"])(_get_trench_crops)
+_get_trench_stacks = partial(_get_trench_crops, transformation=index_dict_to_array)
+get_trench_stacks = iterate_over_groupby(["filename", "position"])(_get_trench_stacks)
+
+# def crop_trenches(trenches, image, filename=None,
+#                   position=None, t=None):
+#     #selected_trenches = trenches.groupby(['filename', 'position', 't']).get_group((filename, position, t)
+#     # TODO: for now, only select trench definitions for first timepoint
+#     selected_trenches = get_one(trenches.groupby(['filename', 'position']).get_group((filename, position)).groupby('t'))[1]
+#     return _crop_trenches(selected_trenches, image)
 
 
-def ingest_nd2_file(nd2_path, zarr_path, **kwargs):
-    nd2 = nd2reader.ND2Reader(nd2_path)
-    raw_group = open_zarr_group(zarr_path).require_group("raw")
-    return ingest_nd2(nd2, raw_group, **kwargs)
+def _crop_trenches(trenches, images):
+    trench_sets = trenches.index.get_level_values("trench_set")
+    trench_idxs = trenches.index.get_level_values("trench")
+    # this requires re-allocating arrays unless columns were stored next to each other by pandas blockmanager
+    # uls = trenches['upper_left'].values
+    # lrs = trenches['lower_right'].values
+    uls_x = trenches[("upper_left", "x")].values
+    uls_y = trenches[("upper_left", "y")].values
+    lrs_x = trenches[("lower_right", "x")].values
+    lrs_y = trenches[("lower_right", "y")].values
+    trench_crops = {}
+    for i in range(len(uls_x)):
+        ul_x = uls_x[i]
+        ul_y = uls_y[i]
+        lr_x = lrs_x[i]
+        lr_y = lrs_y[i]
+        channel_crops = {
+            channel: channel_image[ul_y : lr_y + 1, ul_x : lr_x + 1]
+            for channel, channel_image in images.items()
+        }
+        trench_crops[(trench_sets[i], trench_idxs[i])] = channel_crops
+    return trench_crops
 
 
-def ingest_nd2(
-    nd2,
-    raw_group,
-    progress_bar=DEFAULT_PROGRESS_BAR,
-    compressor=DEFAULT_FRAME_COMPRESSOR,
-    chunks=DEFAULT_FRAME_CHUNKS,
-    **kwargs,
+@iterate_over_groupby(["filename", "position"])
+def compress_frames(
+    frames,
+    trenches,
+    output_func,
+    get_frame_func=get_nd2_frame,
+    compressor=DEFAULT_COMPRESSOR,
+    order=DEFAULT_ORDER,
+    filename=None,
+    position=None,
 ):
-    meta = deepcopy(nd2.metadata)
-    meta["date"] = meta["date"].isoformat()
-    raw_group.attrs["metadata"] = meta
-    pbar_v = progress_bar(range(nd2.sizes["v"]))
-    for v in pbar_v:
-        pbar_v.set_description("position {}".format(v))
-        ary = raw_group.require_dataset(
-            "{:d}".format(v),
-            shape=[nd2.sizes[n] for n in "ctyx"],
-            chunks=chunks,
-            dtype="u2",
-            order="C",
-            compressor=compressor,
-            **kwargs,
-        )
-        if "ingested" in ary.attrs and ary.attrs["ingested"]:
-            continue
-        ary.attrs["ingested"] = False
-        time_started = time.time()
-        ary.attrs["time_started"] = timestamp_to_isoformat(time_started)
-        ary.attrs["metadata"] = meta
-        pbar_c = progress_bar(range(nd2.sizes["c"]), leave=False)
-        for c in pbar_c:
-            pbar_c.set_description("channel {}".format(c))
-            pbar_t = progress_bar(range(nd2.sizes["t"]), leave=False)
-            for t in pbar_t:
-                pbar_t.set_description("timepoint {}".format(t))
-                ary[c, t, :, :] = nd2.get_frame_2D(c=c, t=t, v=v)
-        time_finished = time.time()
-        ary.attrs["time_finished"] = timestamp_to_isoformat(time_finished)
-        ary.attrs["time_elapsed"] = time_finished - time_started
-        ary.attrs["ingested"] = True
-    return raw_group
-
-
-def quantize_frames(
-    in_group, out_group, bits, random=True, progress_bar=DEFAULT_PROGRESS_BAR
-):
-    out_group.attrs["quantization"] = {"bits": bits, "random": random}
-    out_group.attrs["metadata"] = in_group.attrs["metadata"]
-    return process_positions(
-        lambda frame: quantize_frame(frame, bits, random=random),
-        in_group,
-        out_group,
-        axis=(0),
+    trench_crops = _get_trench_crops(
+        frames, trenches, get_frame_func=get_frame_func, filename=None, position=None
     )
+    with output_func(dict(filename=filename, position=position, t=t)) as root:
+        for (trench_set, trench), trench_crops in trench_crops.items():
+            for channel, trench_crop in trench_crops.items():
+                # TODO
+                if "/" in channel:
+                    raise ValueError('channel name cannot contain "/"')
+                arr_path = f"{trench_set:d}/{trench:d}/{channel:s}"
+                old_arr = root.get(arr_path, None)
+                dtype = get_one(trench_crops).dtype
+                if old_arr is not None:
+                    t_max = max(old_arr.shape[-1] - 1, t)
+                else:
+                    t_max = t
+                shape = trench_crop.shape + (t_max + 1,)
+                chunks = 1  # (1,1,1)
+                new_data = np.zeros(shape)
+                if old_arr is not None:
+                    new_data[:, :, : old_arr.shape[-1] - 1] = old_arr
+                new_data[:, :, t] = trench_crop
+                print(
+                    f"writing array {filename} pos{position} ch:{channel} {trench_set}.{trench}.t{t}"
+                )
+                new_arr = root.create_dataset(
+                    arr_path,
+                    overwrite=True,
+                    data=new_data,
+                    shape=shape,
+                    dtype=dtype,
+                    compressor=compressor,
+                    chunks=chunks,
+                    order=order,
+                )

@@ -10,19 +10,14 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
-1) test get_trench_crops/get_trench_stacks
-    with one frame, many frames
-    one pos, many pos
-2) quantization/downsampling of whole frame
+1) iterate_over_groupby func to write zarrs to disk
+2) have writer func optionally read in/raise exception if file exists/overwrite
+3) dask chaining version with deepmerge (test without dask first)
+4) commandline trench detection+compression
+5) analysis func rewrite that loads from zarr if available
 
-3) merge_dicts() + write_compressed_trenches(merge_from_disk=False)
-    support in-memory zarr (for masks)
-4) flag to write_compressed_trenches which reads from zarr
-
-5) test (3) without dask
-6) test (3) with dask
-7) commandline trench compression tool
-8) how to do this for segmentation
+6) how to do this for segmentation
+7) and analysis
 
 ### READY FOR NEW DATA
 stop using iter_index
