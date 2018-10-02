@@ -213,18 +213,6 @@ def unzip_trench_info(trench_info):
     return trench_points, trench_diag, trench_err
 
 
-# def get_trench_thumbs(trenches, get_frame_func=get_nd2_frame):
-#     trench_thumbs = {}
-#     for idx, group in util.iter_index(trenches.groupby(['filename', 'position', 'channel', 't', 'trench_set'])):
-#         frame = get_frame_func(**idx._asdict())
-#         top_points = group['top'].values
-#         bottom_points = group['bottom'].values
-#         for trench_idx, _ in iter_index(group):
-#             ul, lr = geometry.get_trench_bbox((top_points, bottom_points), trench_idx.trench, x_lim, y_lim)
-#             trench_thumbs[trench_idx] = frame[ul[1]:lr[1],ul[0]:lr[0]]
-#     return trench_thumbs
-
-
 def get_filename_image_limits(metadata):
     return {
         filename: (
@@ -279,43 +267,6 @@ def get_trench_bboxes(trenches, image_limits, **kwargs):
     return trenches.groupby(
         ["filename", "position", "channel", "t", "trench_set"]
     ).apply(func)
-
-
-def get_trench_stacks(
-    trenches,
-    frames,
-    image_limits,
-    get_frame_func=get_nd2_frame,
-    transformation=np.array,
-):
-    trench_stacks = defaultdict(list)
-    for framestack_idx, framestack_group in iter_index(
-        trenches.groupby(["filename", "position", "channel"])
-    ):
-        # t_group_iterator = util.iter_index(framestack_group.groupby(['t', 'trench_set']))
-        x_lim, y_lim = image_limits[framestack_idx.filename]
-        current_trenches = get_one(framestack_group.groupby("t"))[1]
-        # optimize iter_index by not repeating steps in inner loops
-        current_trenches_index = current_trenches.index.droplevel("t")
-        Index = namedtuple("Index", current_trenches_index.names, rename=True)
-        uls = current_trenches["upper_left"].values
-        lrs = current_trenches["lower_right"].values
-        for t in frames.loc[IDX[framestack_idx]].reset_index()["t"]:
-            frame_idx = {"t": t, **framestack_idx._asdict()}
-            frame = get_frame_func(**frame_idx)
-            # for trench_idx, _ in iter_index(current_trenches_index):
-            for idx in range(len(current_trenches_index)):
-                trench_idx = Index(*current_trenches_index[idx])
-                ul = uls[idx]
-                lr = lrs[idx]
-                trench_stacks[trench_idx].append(
-                    frame[ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
-                )
-    if transformation is not None:
-        trench_stacks = {k: transformation(v) for k, v in trench_stacks.items()}
-    else:
-        trench_stacks = dict(trench_stacks)  # convert back from a defaultdict
-    return trench_stacks
 
 
 def map_trenchwise(func, frame_stacks, trenches, channels=None):
@@ -647,121 +598,6 @@ class with_timeout(streamz.Stream):
 async def gather_stream(source, as_completed):
     async for future in as_completed:
         await source.emit(future)
-
-
-### TEST
-import time, gc
-
-
-def _analyze_trench_dummy(
-    trench_idx,
-    frames_to_analyze,
-    trench_images,
-    trenchwise_funcs=None,
-    labelwise_funcs=None,
-    regionprops=False,
-    segment_func=None,
-):
-    segmentation_channel = trench_idx.channel
-    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
-    if trenchwise_funcs:
-        trenchwise_df = {
-            channel: map_frame(trenchwise_funcs, trench_images[channel])
-            for channel in readout_channels
-        }
-    else:
-        trenchwise_df = None
-    # time.sleep(0.01)
-    # return
-    if labelwise_funcs or regionprops:
-        label_trench_image = segment_func(trench_images[segmentation_channel])
-        time.sleep(0.01)
-        return
-        for channel in readout_channels:
-            if labelwise_funcs:
-                _ = map_frame_over_labels_dummy(
-                    labelwise_funcs, label_trench_image, trench_images[channel]
-                )
-            if regionprops:
-                regionprops_df = get_regionprops(
-                    label_trench_image, trench_images[channel]
-                )
-    return None
-
-
-def analyze_trenches_dummy(
-    trenches,
-    frames_to_analyze,
-    framewise_funcs=None,
-    trenchwise_funcs=None,
-    labelwise_funcs=None,
-    regionprops=False,
-    segment_func=None,
-):
-    frame_t_idx = tuple([frames_to_analyze.index[0][i] for i in (0, 1, 3)])
-    readout_channels = set(frames_to_analyze.index.get_level_values("channel"))
-    channels = {trenches.index.get_level_values("channel")[0], *readout_channels}
-    uls = trenches["upper_left"].values
-    lrs = trenches["lower_right"].values
-    # TEST1
-    # time.sleep(30)
-    # return None
-    images = {}
-    for channel in channels:
-        # nd2 = nd2reader.ND2Reader(frame_t_idx[0])
-        # c = nd2.metadata['channels'].index(channel)
-        # img = nd2.get_frame_2D(v=frame_t_idx[1],
-        #                       c=c,
-        #                       t=frame_t_idx[2])
-        img = np.load("/home/jqs1/projects/matriarch/temp/test.npy")
-        images[channel] = img
-    #     images = {channel: get_frame_func(filename=frame_t_idx[0],
-    #                                       position=frame_t_idx[1],
-    #                                       channel=channel,
-    #                                       t=frame_t_idx[2]) for channel in channels}
-    # TEST2
-    # time.sleep(5)
-    # time.sleep(25)
-    # return None
-    for trench_idx, idx in iter_index(trenches.index):
-        ul = uls[idx.Index]
-        lr = lrs[idx.Index]
-        trench_images = {
-            channel: images[channel][ul[1] : lr[1] + 1, ul[0] : lr[0] + 1]
-            for channel in images.keys()
-        }
-        # TEST3
-        _analyze_trench_dummy(
-            trench_idx,
-            frames_to_analyze,
-            trench_images,
-            trenchwise_funcs=trenchwise_funcs,
-            labelwise_funcs=labelwise_funcs,
-            regionprops=regionprops,
-            segment_func=segment_func,
-        )
-    gc.collect()
-    return None
-
-
-def map_frame_over_labels_dummy(
-    col_to_funcs, label_image, intensity_image, labels=None
-):
-    if labels is None:
-        labels = range(0, np.max(np.asarray(label_image)) + 1)
-    columns, funcs = unzip_items(col_to_funcs.items())
-    func = juxt(*funcs)
-    res = [func(intensity_image[label_image == label]) for label in labels]
-    d = {}
-    for col, values in zip(columns, zip(*res)):
-        if not isinstance(col, str):
-            for i, sub_col in enumerate(col):
-                d[sub_col] = [v[i] for v in values]
-        else:
-            d[col] = values
-    # df = pd.DataFrame(d, index=labels)
-    # df.index.name = 'label'
-    return d
 
 
 def select_dataframe(df, params, **kwargs):
