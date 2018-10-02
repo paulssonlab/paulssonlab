@@ -5,10 +5,11 @@ import os
 from cytoolz import partial, compose
 from filelock import SoftFileLock
 from contextlib import contextmanager
+from collections import MutableMapping
 from numcodecs import Blosc
 import wrapt
 from workflow import get_nd2_frame
-from util import get_one, tqdm_auto
+from util import get_one, tqdm_auto, flatten_dict
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
@@ -149,13 +150,66 @@ def locked_zarr(
             raise
 
 
-def _zarr_filename(x):
-    filename_part = re.sub(".nd$", "", x["filename"], flags=re.IGNORECASE) + ".zarr"
+def _zarr_filename(x, prefix=""):
+    filename_part = (
+        re.sub(".nd$", "", x["filename"], flags=re.IGNORECASE) + "." + prefix + ".zarr"
+    )
     pos_part = "pos" + str(x["position"])
     return os.path.join(filename_part, pos_part)
 
 
 DEFAULT_OUTPUT_FUNC = compose(locked_zarr, _zarr_filename)
+
+_values_are_not_dict = lambda x: isinstance(get_one(x), MutableMapping)
+
+
+def write_images_to_zarr(
+    image_data,
+    root,
+    merge=True,
+    overwrite=False,
+    compressor=DEFAULT_COMPRESSOR,
+    order=DEFAULT_ORDER,
+):
+    for key, t_images in flatten_dict(
+        image_data, lookahead=_values_are_not_dict
+    ).items():
+        arr_path = "/".join(map(str, key))
+        dtype = get_one(t_images).dtype
+        shape = get_one(t_images).shape
+        if merge:
+            old_arr = root.get(arr_path, None)
+        else:
+            old_arr = None
+        t_max = max(t_images.keys())
+        if old_arr is not None:
+            t_max = max(old_arr.shape[-1] - 1, t_max)
+        shape = shape + (t_max + 1,)
+        chunks = False  # (1,1,1) # TODO: different for _frame
+        # TODO: copy here is unnecessary unless merging
+        new_data = np.zeros(shape)
+        if old_arr is not None:
+            new_data[:, :, : old_arr.shape[-1]] = old_arr
+        for t, image in t_images.items():
+            new_data[:, :, t] = image
+        # print(f'writing array {filename} pos{position} ch:{channel} {trench_set}.{trench}.t{t}')
+        if merge or overwrite:
+            try:
+                del root[arr_path]
+            except KeyError:
+                pass
+        new_arr = root.create_dataset(
+            arr_path,
+            overwrite=False,
+            data=new_data,
+            shape=shape,
+            dtype=dtype,
+            compressor=compressor,
+            chunks=chunks,
+            order=order,
+        )
+    return image_data
+
 
 # overwrite=True: write to temp path, atomic move into position after write
 # merge=True: read in, slot in
@@ -165,8 +219,8 @@ def compress_frames(
     frames,
     trenches,
     output_func=DEFAULT_OUTPUT_FUNC,
-    overwrite=False,
     merge=True,
+    overwrite=False,
     compressor=DEFAULT_COMPRESSOR,
     order=DEFAULT_ORDER,
     filename=None,
@@ -177,47 +231,12 @@ def compress_frames(
         frames, trenches, filename=filename, position=position, **kwargs
     )
     with output_func(dict(filename=filename, position=position)) as root:
-        for key, channel_images in trench_crops.items():
-            for channel, t_images in channel_images.items():
-                # TODO
-                if "/" in channel:
-                    raise ValueError('channel name cannot contain "/"')
-                if key == "_frame":
-                    arr_path = f"_frame/{channel:s}"
-                else:
-                    trench_set, trench = key
-                    arr_path = f"{trench_set:d}/{trench:d}/{channel:s}"
-                dtype = get_one(t_images).dtype
-                shape = get_one(t_images).shape
-                if merge:
-                    old_arr = root.get(arr_path, None)
-                else:
-                    old_arr = None
-                t_max = max(t_images.keys())
-                if old_arr is not None:
-                    t_max = max(old_arr.shape[-1] - 1, t_max)
-                shape = shape + (t_max + 1,)
-                chunks = False  # (1,1,1) # TODO: different for _frame
-                # TODO: copy here is unnecessary unless merging
-                new_data = np.zeros(shape)
-                if old_arr is not None:
-                    new_data[:, :, : old_arr.shape[-1]] = old_arr
-                for t, image in t_images.items():
-                    new_data[:, :, t] = image
-                # print(f'writing array {filename} pos{position} ch:{channel} {trench_set}.{trench}.t{t}')
-                if merge or overwrite:
-                    try:
-                        del root[arr_path]
-                    except KeyError:
-                        pass
-                new_arr = root.create_dataset(
-                    arr_path,
-                    overwrite=False,
-                    data=new_data,
-                    shape=shape,
-                    dtype=dtype,
-                    compressor=compressor,
-                    chunks=chunks,
-                    order=order,
-                )
+        write_images_to_zarr(
+            trench_crops,
+            root,
+            merge=merge,
+            overwrite=overwrite,
+            compressor=compressor,
+            order=order,
+        )
     return trench_crops

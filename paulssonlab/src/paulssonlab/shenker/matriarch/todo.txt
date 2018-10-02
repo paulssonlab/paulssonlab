@@ -10,15 +10,16 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
-1) iterate_over_groupby func to write zarrs to disk
-    iterate_over_groupby takes progress_bar kwarg
-2) have writer func optionally read in/raise exception if file exists/overwrite
-3) dask chaining version with deepmerge (test without dask first)
-4) commandline trench detection+compression
+easy way to specify prefix for different zarr LMDB's
+write_images_to_zarr accept arbitrarily nested array data
+
+6) how to do this for segmentation (save segmentation in same LMDB)
+7) and analysis
+
 5) analysis func rewrite that loads from zarr if available
 
-6) how to do this for segmentation
-7) and analysis
+3) dask chaining version with deepmerge (test without dask first)
+4) commandline trench detection+compression
 
 ### READY FOR NEW DATA
 stop using iter_index
