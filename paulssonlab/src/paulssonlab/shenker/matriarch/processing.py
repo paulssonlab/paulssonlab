@@ -14,6 +14,13 @@ from util import get_one, tqdm_auto, flatten_dict
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
 
+zarrify = partial(
+    zarr.array,
+    compressor=processing.DEFAULT_COMPRESSOR,
+    order=processing.DEFAULT_ORDER,
+    chunks=False,
+)
+
 
 def iterate_over_groupby(columns, progress_bar=tqdm_auto):
     @wrapt.decorator

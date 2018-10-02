@@ -229,6 +229,23 @@ def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
     return dict(items)
 
 
+# FROM: https://stackoverflow.com/questions/50607128/creating-a-nested-dictionary-from-a-flattened-dictionary
+def unflatten_dict(d, sep=None):
+    output = {}
+    for k, v in source.items():
+        current = output
+        if sep is not None:
+            pieces = k.split(sep)
+        else:
+            pieces = k
+        for piece in pieces[:-1]:
+            if not piece in current:
+                current[piece] = {}
+            current = current[piece]
+        current[pieces[-1]] = v
+    return output
+
+
 def unzip_items(d):
     return list(zip(*list(d)))
 

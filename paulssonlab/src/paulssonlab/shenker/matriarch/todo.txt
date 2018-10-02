@@ -10,9 +10,6 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
-easy way to specify prefix for different zarr LMDB's
-write_images_to_zarr accept arbitrarily nested array data
-
 6) how to do this for segmentation (save segmentation in same LMDB)
 7) and analysis
 
