@@ -11,6 +11,7 @@ TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
 1) iterate_over_groupby func to write zarrs to disk
+    iterate_over_groupby takes progress_bar kwarg
 2) have writer func optionally read in/raise exception if file exists/overwrite
 3) dask chaining version with deepmerge (test without dask first)
 4) commandline trench detection+compression

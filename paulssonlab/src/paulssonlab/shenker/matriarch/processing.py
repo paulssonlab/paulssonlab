@@ -2,24 +2,26 @@ import numpy as np
 import zarr
 import re
 import os
-from cytoolz import partial
+from cytoolz import partial, compose
 from filelock import SoftFileLock
 from contextlib import contextmanager
 from numcodecs import Blosc
 import wrapt
 from workflow import get_nd2_frame
-from util import get_one
+from util import get_one, tqdm_auto
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
 
 
-def iterate_over_groupby(columns):
+def iterate_over_groupby(columns, progress_bar=tqdm_auto):
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
         res = {}
-        for key, group in args[0].groupby(columns):
+        pbar = progress_bar(args[0].groupby(columns))
+        for key, group in pbar:
             key_kwargs = dict(zip(columns, key))
+            pbar.set_postfix(key_kwargs)
             res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
         return res
 
@@ -34,31 +36,6 @@ def index_dict_to_array(d, array_func=np.zeros):
     for k, v in d.items():
         ary[..., k] = v
     return ary
-
-
-@contextmanager
-def locked_zarr(
-    filename, lock_dir=None, lock_suffix=".lock", zarr_store=zarr.LMDBStore
-):
-    # zarr_store = zarr.ZipStore
-    zarr_store = partial(zarr.LMDBStore, map_async=True)
-    if lock_dir:
-        lock_filename = os.path.join(lock_dir, os.path.basename(filename) + lock_suffix)
-    else:
-        lock_filename = filename + lock_suffix
-    lock_dir = os.path.dirname(lock_filename)
-    if not os.path.isdir(lock_dir):
-        os.makedirs(lock_dir)
-    lock = SoftFileLock(lock_filename)  # TODO: replace with fasteners??
-    with lock:
-        store = zarr_store(filename)
-        try:
-            root = zarr.group(store=store, overwrite=False)
-            yield root
-        except:
-            if hasattr(store, "close"):
-                store.close()
-            raise
 
 
 def _get_trench_crops(
@@ -143,45 +120,99 @@ def _crop_trenches(trenches, images):
     return trench_crops
 
 
+@contextmanager
+def locked_zarr(
+    filename, lock_dir=None, lock_suffix=".lock", zarr_store=zarr.LMDBStore
+):
+    # filename = '/tmp/foo.zarr'
+    # zarr_store = zarr.ZipStore
+    zarr_store = partial(zarr.LMDBStore, map_async=True)
+    # zarr_store = zarr.DirectoryStore
+    if lock_dir:
+        lock_filename = os.path.join(lock_dir, os.path.basename(filename) + lock_suffix)
+    else:
+        lock_filename = filename + lock_suffix
+    lock_dir = os.path.dirname(lock_filename)
+    if not os.path.isdir(lock_dir):
+        os.makedirs(lock_dir)
+    lock = SoftFileLock(lock_filename)  # TODO: replace with fasteners??
+    # import contextlib
+    # lock = contextlib.nullcontext()
+    with lock:
+        store = zarr_store(filename)
+        try:
+            root = zarr.group(store=store, overwrite=False)
+            yield root
+        except:
+            if hasattr(store, "close"):
+                store.close()
+            raise
+
+
+def _zarr_filename(x):
+    filename_part = re.sub(".nd$", "", x["filename"], flags=re.IGNORECASE) + ".zarr"
+    pos_part = "pos" + str(x["position"])
+    return os.path.join(filename_part, pos_part)
+
+
+DEFAULT_OUTPUT_FUNC = compose(locked_zarr, _zarr_filename)
+
+# overwrite=True: write to temp path, atomic move into position after write
+# merge=True: read in, slot in
+# overwrite=False: raise error if zarr exists
 @iterate_over_groupby(["filename", "position"])
 def compress_frames(
     frames,
     trenches,
-    output_func,
-    get_frame_func=get_nd2_frame,
+    output_func=DEFAULT_OUTPUT_FUNC,
+    overwrite=False,
+    merge=True,
     compressor=DEFAULT_COMPRESSOR,
     order=DEFAULT_ORDER,
     filename=None,
     position=None,
+    **kwargs,
 ):
     trench_crops = _get_trench_crops(
-        frames, trenches, get_frame_func=get_frame_func, filename=None, position=None
+        frames, trenches, filename=filename, position=position, **kwargs
     )
-    with output_func(dict(filename=filename, position=position, t=t)) as root:
-        for (trench_set, trench), trench_crops in trench_crops.items():
-            for channel, trench_crop in trench_crops.items():
+    with output_func(dict(filename=filename, position=position)) as root:
+        for key, channel_images in trench_crops.items():
+            for channel, t_images in channel_images.items():
                 # TODO
                 if "/" in channel:
                     raise ValueError('channel name cannot contain "/"')
-                arr_path = f"{trench_set:d}/{trench:d}/{channel:s}"
-                old_arr = root.get(arr_path, None)
-                dtype = get_one(trench_crops).dtype
-                if old_arr is not None:
-                    t_max = max(old_arr.shape[-1] - 1, t)
+                if key == "_frame":
+                    arr_path = f"_frame/{channel:s}"
                 else:
-                    t_max = t
-                shape = trench_crop.shape + (t_max + 1,)
-                chunks = 1  # (1,1,1)
+                    trench_set, trench = key
+                    arr_path = f"{trench_set:d}/{trench:d}/{channel:s}"
+                dtype = get_one(t_images).dtype
+                shape = get_one(t_images).shape
+                if merge:
+                    old_arr = root.get(arr_path, None)
+                else:
+                    old_arr = None
+                t_max = max(t_images.keys())
+                if old_arr is not None:
+                    t_max = max(old_arr.shape[-1] - 1, t_max)
+                shape = shape + (t_max + 1,)
+                chunks = False  # (1,1,1) # TODO: different for _frame
+                # TODO: copy here is unnecessary unless merging
                 new_data = np.zeros(shape)
                 if old_arr is not None:
-                    new_data[:, :, : old_arr.shape[-1] - 1] = old_arr
-                new_data[:, :, t] = trench_crop
-                print(
-                    f"writing array {filename} pos{position} ch:{channel} {trench_set}.{trench}.t{t}"
-                )
+                    new_data[:, :, : old_arr.shape[-1]] = old_arr
+                for t, image in t_images.items():
+                    new_data[:, :, t] = image
+                # print(f'writing array {filename} pos{position} ch:{channel} {trench_set}.{trench}.t{t}')
+                if merge or overwrite:
+                    try:
+                        del root[arr_path]
+                    except KeyError:
+                        pass
                 new_arr = root.create_dataset(
                     arr_path,
-                    overwrite=True,
+                    overwrite=False,
                     data=new_data,
                     shape=shape,
                     dtype=dtype,
@@ -189,3 +220,4 @@ def compress_frames(
                     chunks=chunks,
                     order=order,
                 )
+    return trench_crops

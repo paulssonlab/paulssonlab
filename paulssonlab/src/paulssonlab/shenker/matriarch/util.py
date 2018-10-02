@@ -199,12 +199,30 @@ def drop_constant_columns(df):
 
 
 # FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
-def flatten_dict(d, parent_key="", sep=".", predicate=None):
+def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
+    if parent_key is None:
+        if sep is not None:
+            parent_key = ""
+        else:
+            parent_key = ()
     items = []
     for k, v in d.items():
-        new_key = parent_key + sep + str(k) if parent_key else str(k)
-        if isinstance(v, collections.MutableMapping):
-            items.extend(flatten_dict(v, new_key, sep=sep, predicate=predicate).items())
+        if sep is not None:
+            new_key = parent_key + sep + str(k) if parent_key else str(k)
+        else:
+            new_key = parent_key + (k,)
+        if isinstance(v, collections.MutableMapping) and (
+            lookahead is None or lookahead(v)
+        ):
+            items.extend(
+                flatten_dict(
+                    v,
+                    parent_key=new_key,
+                    sep=sep,
+                    predicate=predicate,
+                    lookahead=lookahead,
+                ).items()
+            )
         else:
             if predicate is None or predicate(k, v):
                 items.append((new_key, v))
