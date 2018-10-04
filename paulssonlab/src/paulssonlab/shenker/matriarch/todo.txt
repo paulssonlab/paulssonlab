@@ -10,13 +10,55 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### NEXT GOAL
-6) how to do this for segmentation (save segmentation in same LMDB)
-7) and analysis
+FILENAME/POSITION INDEX COLUMNS
+LOCKING FOR ARROW (common locking command with zarr?)
+shortcircuit groupby in iterate_over_groupby (-> iterate_groupby) with filename/pos not None
+make overwrite=False raise error if file exists in ALL writing funcs
 
-5) analysis func rewrite that loads from zarr if available
+general write func (user-customizable)
+    these call  write_dataframe_to_arrow/write_images_to_zarr
+    take (filename, position) as first level of dict
+    second level of dict is image/measurement
+    handle arrow dictionaryarray
 
-3) dask chaining version with deepmerge (test without dask first)
-4) commandline trench detection+compression
+test run locally
+fast reading arrow into pandas (dictionaryarray)
+full run of dask
+
+get_trench/get_frame that loads from zarr or nd2
+
+label_viewer
+
+new dataframe index order for all_frames, trenches, framewise/trenchwise/labelwise
+    eliminate unnecessary index columns for trenches
+trench detection for big snakes (tomorrow)
+frame quality/trench quality/trench debris filtering (monday)
+    scroller widget to scroll through trench detection errors (?)
+simple workflow for trench detection+compression+analysis (monday)
+
+mask postprocessing function (results are stored in zarr)
+split off _measure into version that can read in calculated mask
+
+...
+
+break out swap first two dict levels as util func
+
+how to pass in tabular_output_func/image_output_func/write_images_to_zarr
+    separate filename-choosing funcs and write strategy
+        how to specify merge/overwrite/other options easily??
+sketch out entire compression+segmentation+measurement notebook
+
+get rid of trench_set (just give trenches unique index??)
+
+and analysis output_func (pass in output type=trenchwise/framewise)
+    keep sorted(?) dict of recordbatches
+    merge (read in, sort, concat, write into temp file, atomic move into place)
+        BUT SOP is to chain/keep in memory!!!
+    handle dictionaryarrays
+    structure in a way so that it is easy to merge_dicts+write (dask chain)
+        and/or gather images(?)+dfs to master
+
+commandline trench detection+compression
 
 ### READY FOR NEW DATA
 stop using iter_index
@@ -25,13 +67,6 @@ refactored analysis_func that can do trench compression and/or segmentation and/
     from ND2 or zarr
     offline and online (using same/similar strategy as online compression; keep in memory)
 label_viewer (tomorrow)
-
-new dataframe index order for all_frames, trenches, framewise/trenchwise/labelwise
-    eliminate unnecessary index columns for trenches
-trench detection for big snakes (tomorrow)
-frame quality/trench quality/trench debris filtering (monday)
-    scroller widget to scroll through trench detection errors (?)
-simple workflow for trench detection+compression+analysis (monday)
 
 incremental analysis
     using a chain of dask tasks, each one dumps parquet to disk, keeps sorted dict of arrow in memory
