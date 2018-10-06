@@ -5,6 +5,7 @@ import skimage.morphology
 from util import repeat_apply
 import numba
 from cytoolz import compose
+import warnings
 
 
 def quantize(img, bits, random=True):
@@ -139,7 +140,9 @@ def hessian_eigenvalues(img):
     I_yx = skimage.filters.sobel_h(I_y)
     I_yy = skimage.filters.sobel_v(I_y)
     kappa_1 = (I_xx + I_yy) / 2
-    kappa_2 = (np.sqrt((I_xx + I_yy) ** 2 - 4 * (I_xx * I_yy - I_xy * I_yx))) / 2
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        kappa_2 = (np.sqrt((I_xx + I_yy) ** 2 - 4 * (I_xx * I_yy - I_xy * I_yx))) / 2
     k1 = kappa_1 + kappa_2
     k2 = kappa_1 - kappa_2
     k1[np.isnan(k1)] = 0
