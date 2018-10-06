@@ -232,7 +232,7 @@ def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
 # FROM: https://stackoverflow.com/questions/50607128/creating-a-nested-dictionary-from-a-flattened-dictionary
 def unflatten_dict(d, sep=None):
     output = {}
-    for k, v in source.items():
+    for k, v in d.items():
         current = output
         if sep is not None:
             pieces = k.split(sep)
@@ -258,7 +258,7 @@ def zip_dicts(*dicts):
 
 # simple one-level version of unzip_collection
 def unzip_dicts(d):
-    val0 = next(iter(d.values()))
+    val0 = get_one(d.values())
     length = len(val0)
     return [{k: v[idx] for k, v in d.items()} for idx in range(length)]
 
