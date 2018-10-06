@@ -19,7 +19,6 @@ from util import (
     array_to_tuples,
     get_one,
     unzip_dicts,
-    iter_index,
     unzip_items,
     get_kwargs,
     kwcompose,
@@ -269,20 +268,15 @@ def get_trench_bboxes(trenches, image_limits, **kwargs):
     ).apply(func)
 
 
-def map_trenchwise(func, frame_stacks, trenches, channels=None):
-    results = {}
-    for trench_idx, _ in iter_index(trenches):
-        if channels is None:
-            results[trench_idx] = func(frame_stacks[trench_idx])
-        else:
-            results[trench_idx] = func(
-                frame_stacks[trench_idx],
-                *[
-                    frame_stacks[trench_idx._replace(channel=channel)]
-                    for channel in channels
-                ],
-            )
-    return results
+# def map_trenchwise(func, frame_stacks, trenches, channels=None):
+#     results = {}
+#     for trench_idx, _ in iter_index(trenches):
+#         if channels is None:
+#             results[trench_idx] = func(frame_stacks[trench_idx])
+#         else:
+#             results[trench_idx] = func(frame_stacks[trench_idx],
+#                                        *[frame_stacks[trench_idx._replace(channel=channel)] for channel in channels])
+#     return results
 
 
 def map_stack(col_to_funcs, image_stack):
