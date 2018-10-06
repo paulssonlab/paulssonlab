@@ -19,6 +19,10 @@ import os
 import random
 
 
+def return_none(*args, **kwargs):
+    return None
+
+
 def format_number(x, digits):
     if isinstance(x, numbers.Integral):
         return str(x)
