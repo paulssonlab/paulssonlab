@@ -111,18 +111,14 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 # get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
-def _get_nd2_frame(filename, position, channel, t, memmap=False):
+def get_nd2_frame(filename, position, channel, t, memmap=False):
     reader = get_nd2_reader(filename, memmap=memmap)
-    # TODO: how slow is the channel lookup?
     channel_idx = reader.metadata["channels"].index(channel)
     ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
-    # ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
-    # TODO: should I wrap in ndarray or keep as PIMS Frame?
-    # return np.array(ary)
     return ary
 
 
-get_nd2_frame = cachetools.cached(cache=ND2_FRAME_CACHE)(_get_nd2_frame)
+get_nd2_frame_cached = cachetools.cached(cache=ND2_FRAME_CACHE)(get_nd2_frame)
 
 get_nd2_frame_anyargs = kwcompose(
     get_nd2_frame, partial(get_kwargs, keys=["filename", "position", "channel", "t"])
@@ -317,7 +313,18 @@ def map_frame_over_labels(col_to_funcs, label_image, intensity_image, labels=Non
         labels = range(0, np.max(np.asarray(label_image)) + 1)
     columns, funcs = unzip_items(col_to_funcs.items())
     func = juxt(*funcs)
-    res = [func(intensity_image[label_image == label]) for label in labels]
+    res = []
+    for label in labels:
+        pixels = intensity_image[label_image == label]
+        if len(pixels):
+            res.append(func(pixels))
+        else:
+            res.append(
+                [
+                    (np.nan,) * len(col) if not isinstance(col, str) else np.nan
+                    for col in columns
+                ]
+            )
     d = {}
     for col, values in zip(columns, zip(*res)):
         if not isinstance(col, str):
