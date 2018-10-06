@@ -271,6 +271,10 @@ def unzip_dicts(d):
     return [{k: v[idx] for k, v in d.items()} for idx in range(length)]
 
 
+def map_dict_levels(func, d):
+    return unflatten_dict(keymap(compose(tuple, func), flatten_dict(d)))
+
+
 # TODO: used?? made redundant by recursive_map??
 def map_collections(func, data, max_level, contents=False):
     # TODO: allow specifying a range of levels
