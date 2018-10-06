@@ -58,28 +58,24 @@ def multi_join(left, right, **kwargs):
     return res
 
 
-def iter_index(df):
-    if isinstance(df, pandas.core.groupby.groupby.GroupBy):
-        Index = namedtuple(
-            "Index", df.keys, rename=True
-        )  # TODO: have not tested rename=True
-        for idx, group in df:
-            yield Index(*idx), group
-    else:
-        if isinstance(df, pd.Index):
-            index = df
-            rows = df.to_frame(index=False)
-        else:
-            index = df.index
-            rows = df.reset_index()
-        # the following line will be 4-6x faster in Python 3.7
-        # CF: https://bugs.python.org/issue28638
-        Index = namedtuple(
-            "Index", index.names, rename=True
-        )  # TODO: have not tested rename=True
-        for row in rows.itertuples():
-            idx = Index(*index[row.Index])
-            yield idx, row
+# def iter_index(df):
+#     if isinstance(df, pandas.core.groupby.groupby.GroupBy):
+#         Index = namedtuple('Index', df.keys, rename=True) # TODO: have not tested rename=True
+#         for idx, group in df:
+#             yield Index(*idx), group
+#     else:
+#         if isinstance(df, pd.Index):
+#             index = df
+#             rows = df.to_frame(index=False)
+#         else:
+#             index = df.index
+#             rows = df.reset_index()
+#         # the following line will be 4-6x faster in Python 3.7
+#         # CF: https://bugs.python.org/issue28638
+#         Index = namedtuple('Index', index.names, rename=True) # TODO: have not tested rename=True
+#         for row in rows.itertuples():
+#             idx = Index(*index[row.Index])
+#             yield idx, row
 
 
 def split_into(ary, max_length):
