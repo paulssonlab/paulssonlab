@@ -1,11 +1,103 @@
 import pyarrow as pa
 import pyarrow.parquet as pq
 import numpy_indexed as npi
-from cytoolz import take
+from cytoolz import partial, take
 import json
+import io
+import os
+import shutil
 from util import grouper, tqdm_auto
 
 DEFAULT_ROW_GROUP_SIZE = 1_000_000
+
+
+def first_index(table):
+    if isinstance(table, pa.RecordBatch):
+        table = pa.Table.from_batches([table])
+    index_columns = json.loads(table.schema.metadata[b"pandas"])["index_columns"]
+    return tuple(table.column(name).data[0].as_py() for name in index_columns)
+
+
+def _write_dataframe(
+    filename,
+    df,
+    merge=True,
+    overwrite=True,
+    makedirs=True,
+    duplicate_batches="keep_new",
+    format="arrow",
+):
+    if makedirs:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+    # convert df to pa.RecordBatch
+    new_batch = pa.RecordBatch.from_pandas(df)
+    new_idx = first_index(new_batch)
+    # open new file with random suffix
+    out_filename = filename + ".new"
+    out_file = pa.OSFile(out_filename, "w")
+    if format == "arrow":
+        writer = pa.RecordBatchFileWriter(out_file, new_batch.schema)
+        write_batch = writer.write_batch
+    elif format == "parquet":
+        writer = pq.ParquetWriter(out_file, new_batch.schema)
+        # row_group_size=None: don't split up batch
+        write_batch = partial(writer.write_table, row_group_size=None)
+        # ParquetWriter.write_table expects pa.Table
+        new_batch = pa.Table.from_batches([new_batch])
+    else:
+        raise ValueError("format must be 'arrow' or 'parquet'")
+    merge = merge and os.path.exists(filename)
+    with writer:
+        # if merge, open old file
+        if merge:
+            in_file = pa.OSFile(filename)
+            if format == "arrow":
+                reader = pa.RecordBatchFileReader(in_file)
+                get_batch = reader.get_batch
+                num_batches = reader.num_record_batches
+            elif format == "parquet":
+                reader = pq.ParquetFile(in_file)
+                get_batch = partial(reader.read_row_group, nthreads=4)
+                num_batches = reader.num_row_groups
+            batch_nums = iter(range(num_batches))
+            leftover = None
+            # read batch, write to new file until we hit df key
+            for batch_num in batch_nums:
+                batch = get_batch(batch_num)
+                idx = first_index(batch)
+                if idx > new_idx:
+                    leftover = batch
+                    break
+                elif idx == new_idx:
+                    if duplicate_batches == "error":
+                        raise ValueError("duplicate batch index", idx)
+                    elif duplicate_batches == "keep_new":
+                        break
+                    elif duplicate_batches == "keep_both":
+                        write_batch(batch)
+                    else:
+                        raise ValueError(
+                            "duplicate_batches needs to be 'error', 'keep_new' or 'keep_both'"
+                        )
+                    break
+                write_batch(batch)
+        # then write df
+        write_batch(new_batch)
+        # if merge, keep writing rest of old file
+        if merge:
+            if leftover is not None:
+                write_batch(leftover)
+            for batch_num in batch_nums:
+                write_batch(batch)
+            # close readers/writers
+            in_file.close()
+    # atomic move new file to old file
+    shutil.move(out_filename, filename)
+    return df
+
+
+write_dataframe_to_arrow = partial(_write_dataframe, format="arrow")
+write_dataframe_to_parquet = partial(_write_dataframe, format="parquet")
 
 
 def read_parquet(
@@ -49,14 +141,6 @@ def read_parquet(
     if progress_bar is not None:
         pbar.close()
     return pa.concat_tables(tables)
-
-
-def first_index(batch):
-    index_columns = json.loads(batch.schema.metadata[b"pandas"])["index_columns"]
-    return tuple(
-        batch.column(batch.schema.get_field_index(name))[0].as_py()
-        for name in index_columns
-    )
 
 
 def sort_arrow_to_parquet(
