@@ -5,11 +5,12 @@ from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
 import holoviews as hv
+import functools
 from functools import wraps
 from itertools import zip_longest
 import wrapt
 from itertools import count
-from cytoolz import compose, take, reduce, partial
+from cytoolz import compose, take, reduce, partial, keymap
 import collections
 from collections import namedtuple
 import numbers
@@ -21,6 +22,13 @@ import random
 
 def return_none(*args, **kwargs):
     return None
+
+
+# FROM: http://louistiao.me/posts/adding-__name__-and-__doc__-attributes-to-functoolspartial-objects/
+def wrapped_partial(func, *args, **kwargs):
+    partial_func = functools.partial(func, *args, **kwargs)
+    functools.update_wrapper(partial_func, func)
+    return partial_func
 
 
 def format_number(x, digits):
