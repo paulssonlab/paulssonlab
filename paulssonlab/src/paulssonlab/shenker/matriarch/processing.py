@@ -7,33 +7,65 @@ from filelock import SoftFileLock
 from contextlib import contextmanager
 from collections import MutableMapping
 from numcodecs import Blosc
-import wrapt
+
+# import wrapt # TODO
+# from decorator import decorator
+import functools
 from workflow import get_nd2_frame
-from util import get_one, tqdm_auto, flatten_dict
+from data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
+from util import get_one, tqdm_auto, flatten_dict, unflatten_dict
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
 
+DEFAULT_LOCK_TIMEOUT = 120  # seconds
+
 zarrify = partial(
-    zarr.array,
-    compressor=processing.DEFAULT_COMPRESSOR,
-    order=processing.DEFAULT_ORDER,
-    chunks=False,
+    zarr.array, compressor=DEFAULT_COMPRESSOR, order=DEFAULT_ORDER, chunks=False
 )
+
+# @functools.decorator
+# def spawn(func, *args, **kwargs):
+#     # TODO: use queues to return results
+#     t = multiprocessing.Process(target=func, args=args, kwargs=kwargs)
+#     t.start()
+#     t.join()
+
+# def iterate_over_groupby(columns, progress_bar=tqdm_auto):
+#     # TODO
+#     @wrapt.decorator
+#     def wrapper(wrapped, instance, args, kwargs):
+#     #@decorator
+#     #@functools.wraps
+#     #def wrapper(wrapped, *args, **kwargs):
+#         res = {}
+#         pbar = progress_bar(args[0].groupby(columns))
+#         for key, group in pbar:
+#             key_kwargs = dict(zip(columns, key))
+#             pbar.set_postfix(key_kwargs)
+#             res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
+#         return res
+#     return wrapper
 
 
 def iterate_over_groupby(columns, progress_bar=tqdm_auto):
-    @wrapt.decorator
-    def wrapper(wrapped, instance, args, kwargs):
-        res = {}
-        pbar = progress_bar(args[0].groupby(columns))
-        for key, group in pbar:
-            key_kwargs = dict(zip(columns, key))
-            pbar.set_postfix(key_kwargs)
-            res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
-        return res
+    def get_wrapper(wrapped):
+        @functools.wraps(wrapped)
+        def wrapper(*args, **kwargs):
+            res = {}
+            pbar = progress_bar(args[0].groupby(columns))
+            for key, group in pbar:
+                key_kwargs = dict(zip(columns, key))
+                pbar.set_postfix(key_kwargs)
+                res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
+            return res
 
-    return wrapper
+        # wrapper.__name__ == wrapped.__name__
+        # wrapper.__doc__ == wrapped.__doc__
+        # wrapper.__module__ == wrapped.__module__
+        return wrapper
+
+    return get_wrapper
 
 
 def index_dict_to_array(d, array_func=np.zeros):
@@ -57,9 +89,9 @@ def _get_trench_crops(
     position=None,
 ):
     # selected_trenches = trenches.groupby(['filename', 'position']).get_group((filename, position)
-    # selected_trenches = trenches.xs((filename, position), drop_level=False)
+    selected_trenches = trenches.xs((filename, position), drop_level=False)
     # TODO: here is where we specify logic for finding trenches for a given timepoint
-    selected_trenches = trenches.xs((filename, position, 0), drop_level=False)
+    # selected_trenches = trenches.xs((filename, position, 0), drop_level=False)
     trench_crops = {}
     if include_frame:
         whole_frames = {}
@@ -125,47 +157,35 @@ def _crop_trenches(trenches, images):
             for channel, channel_image in images.items()
         }
         trench_crops[(trench_sets[i], trench_idxs[i])] = channel_crops
+    # TODO: do we need this?
+    # trench_crops = unflatten_dict(trench_crops)
     return trench_crops
 
 
-@contextmanager
-def locked_zarr(
-    filename, lock_dir=None, lock_suffix=".lock", zarr_store=zarr.LMDBStore
-):
-    # filename = '/tmp/foo.zarr'
-    # zarr_store = zarr.ZipStore
-    zarr_store = partial(zarr.LMDBStore, map_async=True)
-    # zarr_store = zarr.DirectoryStore
+def file_lock(filename, lock_dir=None, lock_suffix=".lock", makedirs=True):
     if lock_dir:
         lock_filename = os.path.join(lock_dir, os.path.basename(filename) + lock_suffix)
     else:
         lock_filename = filename + lock_suffix
-    lock_dir = os.path.dirname(lock_filename)
-    if not os.path.isdir(lock_dir):
-        os.makedirs(lock_dir)
+    if makedirs:
+        lock_dir = os.path.dirname(lock_filename)
+        os.makedirs(lock_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
     lock = SoftFileLock(lock_filename)  # TODO: replace with fasteners??
-    # import contextlib
-    # lock = contextlib.nullcontext()
-    with lock:
-        store = zarr_store(filename)
-        try:
-            root = zarr.group(store=store, overwrite=False)
-            yield root
-        except:
-            if hasattr(store, "close"):
-                store.close()
-            raise
+    return lock
 
 
-def _zarr_filename(x, prefix=""):
-    filename_part = (
-        re.sub(".nd$", "", x["filename"], flags=re.IGNORECASE) + "." + prefix + ".zarr"
-    )
-    pos_part = "pos" + str(x["position"])
-    return os.path.join(filename_part, pos_part)
+@contextmanager
+def open_zarr(filename, store=zarr.LMDBStore):
+    store_ = store(filename)
+    try:
+        root = zarr.group(store=store_, overwrite=False)
+        yield root
+    except:
+        if hasattr(store_, "close"):
+            store_.close()
+        raise
 
-
-DEFAULT_OUTPUT_FUNC = compose(locked_zarr, _zarr_filename)
 
 _values_are_not_dict = lambda x: isinstance(get_one(x), MutableMapping)
 
@@ -218,32 +238,71 @@ def write_images_to_zarr(
     return image_data
 
 
+def write_images_and_measurements(
+    d,
+    filename_func,
+    merge=True,
+    overwrite=True,
+    dataframe_format="arrow",
+    compressor=DEFAULT_COMPRESSOR,
+    order=DEFAULT_ORDER,
+    timeout=DEFAULT_LOCK_TIMEOUT,
+):
+    for key, results in d.items():
+        key_dict = dict(zip(("filename", "position"), key))
+        # write images
+        for name, df in results["measurements"].items():
+            if dataframe_format == "arrow":
+                measurements_filename = filename_func(
+                    kind="measurements", extension="arrow", name=name, **key_dict
+                )
+                write_func = write_dataframe_to_arrow
+            elif dataframe_format == "parquet":
+                measurements_filename = filename_func(
+                    kind="measurements", extension="parquet", name=name, **key_dict
+                )
+                write_func = write_dataframe_to_parquet
+            else:
+                raise ValueError
+            with file_lock(measurements_filename).acquire(timeout=timeout) as lock:
+                write_func(measurements_filename, df, merge=merge, overwrite=overwrite)
+        # write images
+        images_filename = filename_func(kind="images", extension="zarr", **key_dict)
+        with file_lock(images_filename).acquire(timeout=timeout) as lock, open_zarr(
+            images_filename
+        ) as root:
+            write_images_to_zarr(
+                results["images"],
+                root,
+                merge=merge,
+                overwrite=overwrite,
+                compressor=compressor,
+                order=order,
+            )
+    return d
+
+
 # overwrite=True: write to temp path, atomic move into position after write
 # merge=True: read in, slot in
 # overwrite=False: raise error if zarr exists
-@iterate_over_groupby(["filename", "position"])
-def compress_frames(
-    frames,
-    trenches,
-    output_func=DEFAULT_OUTPUT_FUNC,
-    merge=True,
-    overwrite=False,
-    compressor=DEFAULT_COMPRESSOR,
-    order=DEFAULT_ORDER,
-    filename=None,
-    position=None,
-    **kwargs,
-):
-    trench_crops = _get_trench_crops(
-        frames, trenches, filename=filename, position=position, **kwargs
-    )
-    with output_func(dict(filename=filename, position=position)) as root:
-        write_images_to_zarr(
-            trench_crops,
-            root,
-            merge=merge,
-            overwrite=overwrite,
-            compressor=compressor,
-            order=order,
-        )
-    return trench_crops
+# @iterate_over_groupby(['filename', 'position'])
+# def compress_frames(frames, trenches, output_func=DEFAULT_OUTPUT_FUNC,
+#                     merge=True,
+#                     overwrite=False,
+#                     compressor=DEFAULT_COMPRESSOR,
+#                     order=DEFAULT_ORDER,
+#                     filename=None,
+#                     position=None,
+#                     **kwargs):
+#     trench_crops = _get_trench_crops(frames, trenches,
+#                                      filename=filename,
+#                                      position=position,
+#                                      **kwargs)
+#     with output_func(dict(filename=filename, position=position)) as root:
+#         write_images_to_zarr(trench_crops,
+#                              root,
+#                              merge=merge,
+#                              overwrite=overwrite,
+#                              compressor=compressor,
+#                              order=order)
+#     return trench_crops

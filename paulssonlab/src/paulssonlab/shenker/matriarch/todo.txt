@@ -9,7 +9,59 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 
 TODO: trench_img invert_yaxis issue with holoviews master
 
+### PATH TO SHIPPING
+(1d) benchmark with script that only reads in all frames
+    also look at memory usage
+    find which striping is best
+    copy big snakes data into that striping (shell alias to do this)
+
+(1d) trench finding for big snakes
+
+(1d) label_viewer
+
+(2hr) parquet/arrow loading func
+    should we put index columns in dfs???
+        think about dictionary harmonization
+        discoverability: how do we specify filenames/where to find what filename/position?
+
+(2hr) async as_finished/clean up
+(1d) trench detection+save to parquet+quality filtering
+
 ### NEXT GOAL
+DISABLE SPILL-TO-DISK
+    still pausing at 0.8
+
+stale locks
+    add timeout to locking
+
+async as_finished pipeline
+
+memory profile (?)
+    get dask ipykernel working??
+    fix dask memory graph in intermediate regime
+
+DEBUG: killedworkers???
+    just memory
+
+write_dataframe_to_parquet
+
+git commit
+
+DISABLE get_image CACHEING ON WORKERS
+
+FIX WORKER RESTART ISSUE
+DEBUG: ('duplicate batch index', (1, 0, 0, 0))
+    definitely due to retries, right??
+    keep_new duplicates
+
+PERF: figure out why get_nd2_frame is taking 48% time
+    try striping nd2?
+    io.BufferedReader?
+
+figure out how to streaming notify (filename, pos, t) [time is important!] for both batch/timepoint modes
+
+test timepoint submission mode (pretend real-time)
+
 FILENAME/POSITION INDEX COLUMNS
 LOCKING FOR ARROW (common locking command with zarr?)
 shortcircuit groupby in iterate_over_groupby (-> iterate_groupby) with filename/pos not None
@@ -29,6 +81,10 @@ get_trench/get_frame that loads from zarr or nd2
 
 label_viewer
 
+measurement_func improvements:
+    allow computing erosion only once (cache function called on mask, pass in that result instead of label_image)
+    pass in segmentation/intensity channel names into measurement_func
+
 new dataframe index order for all_frames, trenches, framewise/trenchwise/labelwise
     eliminate unnecessary index columns for trenches
 trench detection for big snakes (tomorrow)
@@ -47,6 +103,8 @@ how to pass in tabular_output_func/image_output_func/write_images_to_zarr
     separate filename-choosing funcs and write strategy
         how to specify merge/overwrite/other options easily??
 sketch out entire compression+segmentation+measurement notebook
+
+make key different from filename/position (for using other organizational schemes??)
 
 get rid of trench_set (just give trenches unique index??)
 

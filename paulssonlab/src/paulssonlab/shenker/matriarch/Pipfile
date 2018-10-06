@@ -80,6 +80,7 @@ filelock = "*"
 fasteners = "*"
 ipython = "==6.5.0"
 deepmerge = "*"
+xoutil = "*"
 
 [dev-packages]
 
