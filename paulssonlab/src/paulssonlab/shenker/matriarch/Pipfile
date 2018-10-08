@@ -18,7 +18,7 @@ line-profiler = {git = "https://github.com/rkern/line_profiler.git"}
 lmdb = "*"
 matplotlib = "*"
 natsort = "*"
-numba = "*"
+numba = "==0.39.0"
 numcodecs = "*"
 zarr = "*"
 peewee = "*"
