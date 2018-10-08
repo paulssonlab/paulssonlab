@@ -10,6 +10,12 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### PATH TO SHIPPING
+pluggable clustering/reorg trench finding
+    labeling
+    hough
+    end finding
+clustering to allow for better ()
+
 (1d) benchmark with script that only reads in all frames
     also look at memory usage
     find which striping is best
