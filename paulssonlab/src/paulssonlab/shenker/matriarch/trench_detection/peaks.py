@@ -11,11 +11,14 @@ def find_periodic_peaks(
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
+    max_period=50,
     diagnostics=None,
 ):
     freqs, spectrum = scipy.signal.periodogram(
         profile, window="hann", nfft=nfft, scaling="spectrum"
     )
+    if max_period:
+        spectrum[:max_period] = 0
     pitch_idx = spectrum.argmax()
     pitch = 1 / freqs[pitch_idx]
     if diagnostics is not None:
