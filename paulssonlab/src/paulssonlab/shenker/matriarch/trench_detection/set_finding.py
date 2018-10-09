@@ -1,6 +1,8 @@
 import numpy as np
 import holoviews as hv
 import scipy
+from matplotlib.path import Path
+from scipy.spatial import ConvexHull
 import skimage
 import sklearn
 import sklearn.cluster
@@ -77,6 +79,98 @@ def find_trench_sets_by_cutting(
     profile_quantile=0.95,
     min_length=50,
     smooth=10,
+    threshold=0.05,
+    diagnostics=None,
+):
+    profiles, stacked_points, _ = get_trench_line_profiles(
+        img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
+    )
+    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    if smooth:
+        stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
+            stacked_profile, smooth
+        )
+    else:
+        stacked_profile_smooth = stacked_profile
+    threshold_value = np.nanquantile(stacked_profile_smooth, threshold)
+    profile_mask = stacked_profile_smooth > threshold_value
+    if min_length:
+        skimage.morphology.remove_small_objects(
+            profile_mask, min_size=min_length, in_place=True
+        )
+    profile_labels = skimage.measure.label(profile_mask)
+    endpoints = []
+    for label in range(1, profile_labels.max() + 1):
+        nonzero = np.nonzero(profile_labels == label)[0]
+        endpoints.append((nonzero[0], nonzero[-1]))
+    if diagnostics is not None:
+        diagnostics["profile_quantile"] = profile_quantile
+        diagnostics["threshold"] = threshold
+        diagnostics["threshold_value"] = threshold_value
+        start_lines = hv.Overlay([hv.VLine(x[0]) for x in endpoints]).options(
+            "VLine", color="green"
+        )
+        stop_lines = hv.Overlay([hv.VLine(x[1]) for x in endpoints]).options(
+            "VLine", color="red"
+        )
+        diagnostics["stacked_profile"] = (
+            hv.Curve(stacked_profile)
+            * hv.HLine(threshold_value).options(color="gray")
+            * start_lines
+            * stop_lines
+        )
+    label_index = tuple(range(1, len(endpoints) + 1))
+    img_labels = np.zeros_like(img_mask, dtype=np.int8)
+    width, height = img.shape
+    # x, y = np.mgrid[:height, :width]
+    y, x = np.nonzero(img_mask)
+    coors = np.hstack(
+        (x.reshape(-1, 1), y.reshape(-1, 1))
+    )  # coors.shape is (4000000,2)
+    for label, (top_end, bottom_end) in zip(label_index, endpoints):
+        top_endpoints = stacked_points[top_end]
+        bottom_endpoints = stacked_points[bottom_end]
+        # discard trenches where top endpoint is the same as the bottom endpoint
+        mask = ~np.apply_along_axis(
+            np.all, 1, np.equal(top_endpoints, bottom_endpoints)
+        )
+        top_endpoints = top_endpoints[mask]
+        bottom_endpoints = bottom_endpoints[mask]
+        # (3392, 133, 2)
+        # polygon = [stacked_points[start][0], #stacked_points[start][-1],
+        #           stacked_points[stop][-1], stacked_points[stop][0]]
+        polygon = np.vstack((top_endpoints, bottom_endpoints))
+        hull = ConvexHull(polygon)
+        poly_path = Path(polygon[hull.vertices])
+        # FROM: https://stackoverflow.com/questions/3654289/scipy-create-2d-polygon-mask
+        # mask = poly_path.contains_points(coors).reshape(height, width)
+        mask = poly_path.contains_points(coors)
+        img_labels[y[mask], x[mask]] = label
+        # img_labels[mask] = label
+        # print('!!',img_labels.sum())
+        # break
+        # img_labels[mask] = label
+    img_labels = img_labels  # .T#[:,::-1]
+    if diagnostics is not None:
+        diagnostics["labeled_image"] = RevImage(img_labels)
+        diagnostics["label_index"] = tuple(label_index)
+    #     return find_trench_sets_by_clustering(img, img_mask,
+    #                                           angle, anchor_rho, rho_min, rho_max,
+    #                                           diagnostics=diagnostics)
+    return img_labels, label_index
+
+
+# TODO: WIP
+def find_trench_sets_by_diff_cutting(
+    img,
+    img_mask,
+    angle,
+    anchor_rho,
+    rho_min,
+    rho_max,
+    profile_quantile=0.95,
+    min_length=50,
+    smooth=10,
     threshold=0.7,
     diagnostics=None,
 ):
@@ -117,6 +211,7 @@ def find_trench_sets_by_cutting(
     #     if diagnostics is not None:
     #         diagnostics['labeled_image'] = RevImage(img_labels)
     #         diagnostics['label_index'] = tuple(label_index)
+    raise NotImplementedError
     return find_trench_sets_by_clustering(
         img, img_mask, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
