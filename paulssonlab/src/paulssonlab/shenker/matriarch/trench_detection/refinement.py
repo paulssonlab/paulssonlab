@@ -9,16 +9,8 @@ from .hough import trench_anchors
 from .geometry import edge_point, coords_along
 
 
-def find_trench_ends(
-    img,
-    angle,
-    anchor_rho,
-    rho_min,
-    rho_max,
-    margin=15,
-    threshold=0.95,
-    smooth=100,
-    diagnostics=None,
+def get_trench_line_profiles(
+    img, angle, anchor_rho, rho_min, rho_max, diagnostics=None
 ):
     x_lim, y_lim = get_image_limits(img.shape)
     anchors = trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim)
@@ -70,13 +62,7 @@ def find_trench_ends(
         diagnostics["profiles"] = hv.Overlay.from_values(
             [hv.Curve(tp) for tp in padded_profiles]
         )
-    # stacked_profile = padded_profiles[25]
-    stacked_profile = np.nanpercentile(
-        np.array(padded_profiles), threshold * 100, axis=0
-    )
-    stacked_points = np.array(padded_line_points).swapaxes(0, 1)
     if diagnostics is not None:
-        diagnostics["threshold"] = threshold
         lines_plot = hv.Path(
             [[points[0], points[-1]] for points in line_points]
         ).options(color="blue")
@@ -94,6 +80,25 @@ def find_trench_ends(
             * bottom_line_plot
             * anchor_points_plot
         )
+    profiles = np.array(padded_profiles)
+    stacked_points = np.array(padded_line_points).swapaxes(0, 1)
+    return profiles, stacked_points, anchor_idx
+
+
+def find_trench_ends(
+    img,
+    angle,
+    anchor_rho,
+    rho_min,
+    rho_max,
+    margin=15,
+    profile_quantile=0.95,
+    diagnostics=None,
+):
+    profiles, stacked_points, anchor_idx = get_trench_line_profiles(
+        img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
+    )
+    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
     stacked_profile_diff = holo_diff(1, stacked_profile)
     # using np.nanargmax/min because we might have an all-nan axis
     top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)
@@ -101,6 +106,7 @@ def find_trench_ends(
         np.nanargmin(stacked_profile_diff) + margin, len(stacked_profile) - 1
     )
     if diagnostics is not None:
+        diagnostics["profile_quantile"] = profile_quantile
         diagnostics["margin"] = margin
         diagnostics["stacked_profile"] = (
             hv.Curve(stacked_profile)

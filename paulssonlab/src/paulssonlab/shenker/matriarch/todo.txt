@@ -10,16 +10,19 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master
 
 ### PATH TO SHIPPING
+get profile from intensity image
+
 (2h) find_trenches with hough for all trenches at once/hough per trench set (with one overall)
     split find_trench_ends into cross-section finding and endpoint determination
     use cross-section finding part to split up trench sets
-    
+
 (1d) trench finding for big snakes
+
+(1d) trench detection+save to parquet+quality filtering
 
 (1d) label_viewer
 
 (2hr) async as_finished/clean up
-(1d) trench detection+save to parquet+quality filtering
 
 (1d) benchmark with script that only reads in all frames
     also look at memory usage

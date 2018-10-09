@@ -1,4 +1,4 @@
-import numpys as np
+import numpy as np
 import pandas as pd
 import holoviews as hv
 import scipy.signal

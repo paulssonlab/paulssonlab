@@ -1,9 +1,14 @@
 import numpy as np
+import holoviews as hv
+import scipy
 import skimage
 import sklearn
 import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
+from holoborodko_diff import holo_diff
+import peakutils
+from .refinement import get_trench_line_profiles
 from image import (
     gaussian_box_approximation,
     remove_large_objects,
@@ -37,14 +42,6 @@ def cluster_binary_image(bin_img):
     return X, fit
 
 
-def label_binary_image(bin_img):
-    X, fit = cluster_binary_image(bin_img)
-    label_img = np.zeros_like(bin_img, dtype=np.int8)  # TODO: fixing dtype
-    for i in range(len(fit.labels_)):
-        label_img[X[i, 0], X[i, 1]] = fit.labels_[i] + 1
-    return label_img, np.sort(np.unique(fit.labels_)) + 1
-
-
 def drop_rare_labels(labels):
     counter = Counter(labels)
     total = sum(counter)
@@ -54,6 +51,76 @@ def drop_rare_labels(labels):
         if count / total > 0.01:
             good_labels.append(label)
     return good_labels
+
+
+def find_trench_sets_by_clustering(
+    img, img_mask, angle, anchor_rho, rho_min, rho_max, diagnostics=None
+):
+    X, fit = cluster_binary_image(img_mask)
+    img_labels = np.zeros_like(img_mask, dtype=np.int8)  # TODO: fixing dtype
+    for i in range(len(fit.labels_)):
+        img_labels[X[i, 0], X[i, 1]] = fit.labels_[i] + 1
+    label_index = np.sort(np.unique(fit.labels_)) + 1
+    if diagnostics is not None:
+        diagnostics["labeled_image"] = RevImage(img_labels)
+        diagnostics["label_index"] = tuple(label_index)
+    return img_labels, label_index
+
+
+def find_trench_sets_by_cutting(
+    img,
+    img_mask,
+    angle,
+    anchor_rho,
+    rho_min,
+    rho_max,
+    profile_quantile=0.95,
+    min_length=50,
+    smooth=10,
+    threshold=0.7,
+    diagnostics=None,
+):
+    profiles, _, _ = get_trench_line_profiles(
+        img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
+    )
+    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    if smooth:
+        stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
+            stacked_profile, smooth
+        )
+    else:
+        stacked_profile_smooth = stacked_profile
+    stacked_profile_diff = holo_diff(1, stacked_profile_smooth)
+    stacked_profile_diff[np.isnan(stacked_profile_diff)] = 0
+    start_idxs = peakutils.indexes(
+        stacked_profile_diff, thres=threshold, min_dist=min_length
+    )
+    stop_idxs = peakutils.indexes(
+        -stacked_profile_diff, thres=threshold, min_dist=min_length
+    )
+    if diagnostics is not None:
+        diagnostics["profile_quantile"] = profile_quantile
+        start_lines = hv.Overlay([hv.VLine(x) for x in start_idxs]).options(
+            "VLine", color="green"
+        )
+        stop_lines = hv.Overlay([hv.VLine(x) for x in stop_idxs]).options(
+            "VLine", color="red"
+        )
+        diagnostics["stacked_profile"] = (
+            hv.Curve(stacked_profile)
+            * hv.Curve(stacked_profile_diff).options(color="cyan")
+            * start_lines
+            * stop_lines
+        )
+    #             hv.VLine(start_idxs).options(color='green') * \
+    #             hv.VLine(stop_idxs).options(color='red')
+    #     if diagnostics is not None:
+    #         diagnostics['labeled_image'] = RevImage(img_labels)
+    #         diagnostics['label_index'] = tuple(label_index)
+    return find_trench_sets_by_clustering(
+        img, img_mask, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
+    )
+    return img_labels, label_index
 
 
 def find_trench_threshold(img, bins=10, diagnostics=None):
@@ -82,7 +149,7 @@ def find_trench_threshold(img, bins=10, diagnostics=None):
     return threshold
 
 
-def label_for_trenches(
+def binarize_trench_image(
     img,
     min_component_size=30,
     max_component_size=10**4,
@@ -134,8 +201,11 @@ def label_for_trenches(
     )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)
-    img_labels, label_index = label_binary_image(cleaned_components)
-    if diagnostics is not None:
-        diagnostics["labeled_image"] = RevImage(img_labels)
-        diagnostics["label_index"] = tuple(label_index)
-    return normalized_img, img_labels, label_index
+    return normalized_img, cleaned_components
+
+
+#     img_labels, label_index = label_binary_image(cleaned_components)
+#     if diagnostics is not None:
+#         diagnostics['labeled_image'] = RevImage(img_labels)
+#         diagnostics['label_index'] = tuple(label_index)
+#     return normalized_img, img_labels, label_index

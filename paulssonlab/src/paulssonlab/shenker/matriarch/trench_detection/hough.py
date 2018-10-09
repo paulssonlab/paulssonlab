@@ -11,8 +11,8 @@ import holoviews.operation.datashader as datashader
 # TODO: fix imports
 from holoborodko_diff import holo_diff
 import peakutils
-from .core import edge_point, coords_along, stack_jagged, stack_jagged_points
-from .periodogram import label_for_trenches
+from .geometry import edge_point, coords_along
+from .peaks import find_periodic_peaks
 from util import getitem_if_not_none
 from ui import RevImage
 from image import (

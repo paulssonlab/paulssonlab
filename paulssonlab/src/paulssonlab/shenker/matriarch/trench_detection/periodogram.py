@@ -21,7 +21,6 @@ from image import (
 )
 from geometry import get_image_limits
 import common
-from .core import label_binary_image
 
 
 def find_hough_angle(
