@@ -244,24 +244,26 @@ def _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
     )
 
 
-def get_trench_bboxes(trenches, image_limits, **kwargs):
-    def func(x):
-        filename = x.index.get_level_values("filename")[0]
-        x_lim, y_lim = image_limits[filename]
-        upper_left, lower_right = _get_trench_bboxes(x, x_lim, y_lim, **kwargs)
-        df = pd.concat(
-            {
-                "upper_left": points_dataframe(upper_left),
-                "lower_right": points_dataframe(lower_right),
-            },
-            axis=1,
-        )
-        df.index.name = "trench"
-        return df
+def _get_trench_bboxes_dataframe(trenches, x_lim, y_lim, **kwargs):
+    upper_left, lower_right = _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs)
+    df = pd.concat(
+        {
+            "upper_left": points_dataframe(upper_left),
+            "lower_right": points_dataframe(lower_right),
+        },
+        axis=1,
+    )
+    df.index = trenches.index
+    return df
 
-    return trenches.groupby(
-        ["filename", "position", "channel", "t", "trench_set"]
-    ).apply(func)
+
+def get_trench_bboxes(trenches, image_limits, **kwargs):
+    def func(trenches):
+        filename = trenches.index.get_level_values("filename")[0]
+        x_lim, y_lim = image_limits[filename]
+        return _get_trench_bboxes_dataframe(trenches, x_lim, y_lim, **kwargs)
+
+    return trenches.groupby(["filename", "position"]).apply(func)
 
 
 # def map_trenchwise(func, frame_stacks, trenches, channels=None):
