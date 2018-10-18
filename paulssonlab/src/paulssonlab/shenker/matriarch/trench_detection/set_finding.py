@@ -65,7 +65,9 @@ def find_trench_sets_by_clustering(
     label_index = np.sort(np.unique(fit.labels_)) + 1
     if diagnostics is not None:
         diagnostics["labeled_image"] = RevImage(img_labels)
-        diagnostics["label_index"] = tuple(label_index)
+        # diagnostics['label_index'] = tuple(label_index) # TODO: arrow/parquet nested column
+        diagnostics["label_min"] = label_index[0]
+        diagnostics["label_max"] = label_index[-1]
     return img_labels, label_index
 
 
@@ -153,7 +155,9 @@ def find_trench_sets_by_cutting(
     img_labels = img_labels  # .T#[:,::-1]
     if diagnostics is not None:
         diagnostics["labeled_image"] = RevImage(img_labels)
-        diagnostics["label_index"] = tuple(label_index)
+        # diagnostics['label_index'] = tuple(label_index) # TODO: arrow/parquet nested column
+        diagnostics["label_min"] = label_index[0]
+        diagnostics["label_max"] = label_index[-1]
     #     return find_trench_sets_by_clustering(img, img_mask,
     #                                           angle, anchor_rho, rho_min, rho_max,
     #                                           diagnostics=diagnostics)

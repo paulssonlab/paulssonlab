@@ -70,7 +70,9 @@ def find_periodic_lines(
     angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
-        diagnostics["angle_range"] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
+        # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1])) # TODO: arrow/parquet nested column
+        diagnostics["angle_range_min"] = np.rad2deg(theta[0])
+        diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
         bounds = (np.rad2deg(theta[0]), rho[0], np.rad2deg(theta[-1]), rho[-1])
         diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
         # TODO: fix the left-edge vs. right-edge issue for theta bins
