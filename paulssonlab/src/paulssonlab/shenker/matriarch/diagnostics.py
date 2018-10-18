@@ -43,9 +43,11 @@ def wrap_diagnostics_stack(func, **kwargs):
     return wrapper
 
 
-def diagnostics_to_series(diagnostics):
+def diagnostics_to_series(diagnostics, sep="."):
     d = flatten_dict(
-        diagnostics, predicate=lambda _, x: not isinstance(x, hv.ViewableElement)
+        diagnostics,
+        sep=sep,
+        predicate=lambda _, x: not isinstance(x, hv.ViewableElement),
     )
     df = pd.Series(d)
     return df
