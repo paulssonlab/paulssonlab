@@ -7,18 +7,28 @@ ENH: holoviews stream with multiple sources
 TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. renderer._figure_data)
     bug where options won't apply consistently
 
-TODO: trench_img invert_yaxis issue with holoviews master
+TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
 ### PATH TO SHIPPING
-get profile from intensity image
+save tuples to trenches parquet
+full pipeline
+    check that sorting is set correctly upon initial processing/saving/loading
+zarr get_frame
+label viewer
+columnar data loader
 
-(2h) find_trenches with hough for all trenches at once/hough per trench set (with one overall)
-    split find_trench_ends into cross-section finding and endpoint determination
-    use cross-section finding part to split up trench sets
+update_wrapper to name functions
+iterate_over_groupby should be a map functional, not a decorator
+support frame-by-frame, chunked, or position-by-position tasks
+    batched trench cropping/frame loading (to minimize memory use)???
 
-(1d) trench finding for big snakes
-
+### OLD PATH TO SHIPPING
 (1d) trench detection+save to parquet+quality filtering
+
+(2hr) parquet/arrow loading func
+    should we put index columns in dfs???
+        think about dictionary harmonization
+        discoverability: how do we specify filenames/where to find what filename/position?
 
 (1d) label_viewer
 
@@ -28,11 +38,6 @@ get profile from intensity image
     also look at memory usage
     find which striping is best
     copy big snakes data into that striping (shell alias to do this)
-
-(2hr) parquet/arrow loading func
-    should we put index columns in dfs???
-        think about dictionary harmonization
-        discoverability: how do we specify filenames/where to find what filename/position?
 
 ### NEXT GOAL
 DISABLE SPILL-TO-DISK
