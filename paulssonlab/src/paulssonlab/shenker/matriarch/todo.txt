@@ -11,6 +11,9 @@ TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
 ### PATH TO SHIPPING
 save tuples to trenches parquet
+DISABLE SPILL-TO-DISK
+hung locking issue
+
 full pipeline
     check that sorting is set correctly upon initial processing/saving/loading
 zarr get_frame
