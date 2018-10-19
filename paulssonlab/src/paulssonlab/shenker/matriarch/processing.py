@@ -14,6 +14,7 @@ import functools
 from workflow import get_nd2_frame
 from data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
 from util import get_one, tqdm_auto, flatten_dict, unflatten_dict
+import gc
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
@@ -115,6 +116,8 @@ def _get_trench_crops(
         for trench, trench_channels in channel_crops.items():
             for channel, crop in trench_channels.items():
                 trench_crops.setdefault(trench, {}).setdefault(channel, {})[t] = crop
+        del channel_images
+        gc.collect()
     for trench in trench_crops:
         if transformation is not None:
             trench_crops[trench] = {
