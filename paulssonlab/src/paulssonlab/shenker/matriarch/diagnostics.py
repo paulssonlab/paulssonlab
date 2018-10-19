@@ -54,17 +54,17 @@ def diagnostics_to_series(diagnostics, sep="."):
 
 
 # TODO: replace with pd.melt??? probably not possible.
-def expand_diagnostics_by_label(df, label="label_", keep_all=True):
+def expand_diagnostics_by_label(df, label="label_", sep=".", keep_all=True):
     data = {}
     column_to_label_num = {}
     column_to_flattened_name = {}
     label_nums = set()
     for column in df.columns:
-        column_parts = column.split(".")
+        column_parts = column.split(sep)
         if column_parts[0].startswith(label):
             label_num = int(column_parts[0][len(label) :])
             column_to_label_num[column] = label_num
-            column_to_flattened_name[column] = ".".join(column_parts[1:])
+            column_to_flattened_name[column] = sep.join(column_parts[1:])
             label_nums.add(label_num)
     for idx, row in df.iterrows():
         d = defaultdict(dict)
