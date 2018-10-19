@@ -48,15 +48,18 @@ zarrify = partial(
 #     return wrapper
 
 
-def iterate_over_groupby(columns, progress_bar=tqdm_auto):
+def iterate_over_groupby(columns, progress_bar=None):  # tqdm_auto):
     def get_wrapper(wrapped):
         @functools.wraps(wrapped)
         def wrapper(*args, **kwargs):
             res = {}
-            pbar = progress_bar(args[0].groupby(columns))
-            for key, group in pbar:
+            groups = args[0].groupby(columns)
+            if progress_bar is not None:
+                groups = progress_bar(groups)
+            for key, group in groups:
                 key_kwargs = dict(zip(columns, key))
-                pbar.set_postfix(key_kwargs)
+                if progress_bar is not None:
+                    groups.set_postfix(key_kwargs)
                 res[key] = wrapped(group, *args[1:], **{**kwargs, **key_kwargs})
             return res
 
