@@ -57,7 +57,7 @@ def _write_dataframe(
                 num_batches = reader.num_record_batches
             elif format == "parquet":
                 reader = pq.ParquetFile(in_file)
-                get_batch = partial(reader.read_row_group, nthreads=4)
+                get_batch = partial(reader.read_row_group, use_threads=True)
                 num_batches = reader.num_row_groups
             batch_nums = iter(range(num_batches))
             leftover = None
