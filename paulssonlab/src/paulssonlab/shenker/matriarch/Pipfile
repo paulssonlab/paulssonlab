@@ -1,36 +1,30 @@
 [[source]]
-url = "https://pypi.python.org/simple"
+url = "https://pypi.org/simple"
 verify_ssl = true
 name = "pypi"
 
 [packages]
+numpy = "*"
+scipy = "*"
+numba = "*"
+bokeh = "*"
+matplotlib = "*"
 apsw = "*"
-"autopep8" = "*"
 blosc = "*"
 click = "*"
 cython = "*"
-ujson = "*"
 jupyter = "*"
 jupyterlab = "*"
 jupyter-nbextensions-configurator = "*"
 jupyter-contrib-nbextensions = "*"
-line-profiler = {git = "https://github.com/rkern/line_profiler.git"}
 lmdb = "*"
-matplotlib = "*"
-natsort = "*"
-numba = "==0.39.0"
 numcodecs = "*"
 zarr = "*"
-peewee = "*"
-pillow = "*"
-pytz = "*"
 scikit-learn = "*"
-scipy = "*"
 streamz = "*"
 cytoolz = "*"
 tqdm = "*"
 xarray = "*"
-pandas = "*"
 more-itertools = "*"
 tifffile = "*"
 deepdiff = "*"
@@ -38,49 +32,35 @@ pendulum = "*"
 jdcal = "*"
 jmespath = "*"
 xxhash = "*"
-"8ac6f2a" = {editable = true, path = "/home/jqs1/projects/datashader"}
 scikit-image = "*"
 peakutils = "*"
-"1e22951" = {editable = true, path = "/home/jqs1/projects/dask-jobqueue"}
 cvxpy = "*"
-picos = "*"
-pyomo = "*"
-"037fc10" = {editable = true, path = "/home/jqs1/projects/dask"}
-wrapt = "*"
-"92bd2ca" = {editable = true, path = "./../holoviews"}
-colorama = "*"
-"4a8dedc" = {editable = true, path = "./../pyviz_comms"}
-pyviz-comms = "*"
-"925ab16" = {path = "./../qgrid", editable = true}
-notebook = "*"
-cachetools = "*"
-"3ab5c35" = {path = "./../hvplot", editable = true}
-pyct = "*"
-parambokeh = "*"
-pysize = {git = "https://github.com/bosswissam/pysize.git"}
-"f99514c" = {editable = true, path = "./../dask"}
-"edaa7c3" = {editable = true, path = "./../distributed"}
-"46fa3e5" = {path = "./../ipywidgets"}
-ipywidgets = "*"
-numpy-indexed = "*"
+qgrid = "*"
+python-snappy = "*"
 pympler = "*"
 objgraph = "*"
-xdot = "*"
-async-timeout = "*"
-numpy = "*"
+numpy-indexed = "*"
+ipywidgets = "*"
+parambokeh = "*"
+pyct = "*"
+cachetools = "*"
+notebook = "*"
+pyviz-comms = "*"
+colorama = "*"
+wrapt = "*"
+"f99514c" = {editable = true, path = "./../dask"}
+"99df002" = {editable = true, path = "./../dask-jobqueue"}
+"92bd2ca" = {editable = true, path = "./../holoviews"}
+"391fd0a" = {editable = true, path = "./../pandas"}
+pyarrow = "*"
+"6cfaf2b" = {editable = true, path = "./../datashader"}
+"3ab5c35" = {editable = true, path = "./../hvplot"}
 "a2cbe05" = {editable = true, path = "./../nd2reader"}
-profiling = {git = "https://github.com/what-studio/profiling.git"}
-fastparquet = "*"
-python-snappy = "*"
-pyarrow = {path = "/home/jqs1/software/arrow/python/dist/pyarrow-0.10.1.dev66+g3edfd7c-cp37-cp37m-linux_x86_64.whl"}
-snakeviz = {editable = true, path = "./../snakeviz"}
-qgrid = "*"
-imageio = "*"
-filelock = "*"
-fasteners = "*"
-ipython = "==6.5.0"
 deepmerge = "*"
-xoutil = "*"
+filelock = "*"
+line-profiler = {git = "https://github.com/rkern/line_profiler.git"}
+snakeviz = {editable = true, path = "./../snakeviz"}
+memory-profiler = "*"
 
 [dev-packages]
 
