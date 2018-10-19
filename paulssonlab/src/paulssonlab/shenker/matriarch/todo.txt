@@ -9,10 +9,70 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 
 TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
+### ANALYSIS PROFILE
+trench crops 6%
+get_frame <1%
+segment 26%
+measurement func 39%
+write zarr 16%
+
+MADE DASK PROFILING 10x SLOWER
+
+### FIX
+
+~/.local/share/virtualenvs/matriarch-UZkA4reD/lib/python3.7/site-packages/distributed/cli/dask_worker.py in trench_info_to_dataframe()
+      7 def trench_info_to_dataframe(trench_info):
+      8     trench_points, trench_diag, trench_err = trench_info
+----> 9     trench_diag = trench_diag_to_dataframe(trench_info[1])
+     10     # FROM: https://stackoverflow.com/questions/14744068/prepend-a-level-to-a-pandas-multiindex
+     11     trench_diag = pd.concat([trench_diag], axis=1, keys=['diag'])
+
+~/.local/share/virtualenvs/matriarch-UZkA4reD/lib/python3.7/site-packages/distributed/cli/dask_worker.py in trench_diag_to_dataframe()
+      1 def trench_diag_to_dataframe(trench_diag, sep='.'):
+      2     df = diagnostics.expand_diagnostics_by_label(trench_diag.to_frame().T)
+----> 3     df.index = df.index.droplevel(0)
+      4     df.index.names = [*df.index.names[:-1], 'trench_set']
+      5     return df
+
+~/projects/pandas/pandas/core/indexes/base.py in droplevel()
+   3251             raise ValueError("Cannot remove {} levels from an index with {} "
+   3252                              "levels: at least one level must be "
+-> 3253                              "left.".format(len(level), self.nlevels))
+   3254         # The two checks above guarantee that here self is a MultiIndex
+   3255 
+
+ValueError: Cannot remove 1 levels from an index with 1 levels: at least one level must be left.
+
 ### PATH TO SHIPPING
-save tuples to trenches parquet
-DISABLE SPILL-TO-DISK
-hung locking issue
+trench finding takes 2.5G (not super stable), reading (without analysis) takes 1.4G (stable), goes back to 0.9G upon idle
+    DO I NEED TO DISABLE STORING HOLOVIEWS IN DIAG???
+
+try read with non-striped file (stripe32.64m ~17s; stripe1 ~50s)
+try seg without measure/write
+try seg/measure without write
+try seg/measure/write
+
+support frame-by-frame, chunked, or position-by-position tasks
+
+make file locking resilient to worker restarts
+85% spent in read_chunk
+    striping benchmark??
+        naive load all frames
+        vs. analysis with measurement_func without any segmentation/measurements
+    or is this real?
+figure out why zarr writing causes restarts
+figure out what's eating up all the memory
+    dummy tasks that don't load any frames
+figure out what's eating up all the FD's (just worker-to-worker transfers?)
+
+trench finding priority
+fix dask memory histogram
+exploding worker fd count
+debug sigill killedworker issue
+identify/fix gil-holding funcs
+quiet useless warnings (turned on via flag)
+
+can use pyarrow.serialize(df) to efficiently serialize pandas dfs with object columns
 
 full pipeline
     check that sorting is set correctly upon initial processing/saving/loading
