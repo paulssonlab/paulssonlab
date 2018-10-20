@@ -10,26 +10,56 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
 ### ANALYSIS PROFILE
-trench crops 6%
-get_frame <1%
-segment 26%
-measurement func 39%
-write zarr 16%
+trench crops 5%
+get_frame 3%
+segment 35%
+measurement func 45%
+write zarr 8%
 
 MADE DASK PROFILING 10x SLOWER
 
 ### PATH TO SHIPPING
-NEED TO RECORD RAW trench_diag, trench_errs (only write if trench_err is not None)
+README:
+NUMCODECS NEEDS TO BE COMPILED WITHOUT AVX2 (SSE2 is okay)
+lfs setstripe -c -1 -S 256m
 
+NEED TO RECORD RAW trench_diag, trench_errs (only write if trench_err is not None)
 CATCH non-none trench_err ERRORS
+
+DISABLE TRENCH_DIAG HOLOVIEWS
+    make it possible to turn diag off
+    measure memory usage with diag turned off
+    or just separate metadata from diagnostics, pass both through? (in tuple? decorator to split diagnostics tuple as separate kwargs?)
+    
+HELPER FUNCS TO RECOMPUTE+OVERWRITE/LOAD IN trenches/raw images/segmentations/measurements IF NOT ALREADY COMPUTED (position-by-position)
+    get_frame that handles nd2/zarr
+
+
+
+TRY NESTEDDIRSTORE
+    NESTEDDIRSTORE DOES NOT WORK
+        try rebuilding zarr?? (from master?)
+    if this works: try turning off locking/REBUILD LMDB
 
 trench finding takes 2.5G (not super stable), reading (without analysis) takes 1.4G (stable), goes back to 0.9G upon idle
     DO I NEED TO DISABLE STORING HOLOVIEWS IN DIAG???
 
-try read with non-striped file (stripe32.64m ~17s; stripe1 ~50s)
-try seg without measure/write
-try seg/measure without write
-try seg/measure/write
+try read with non-striped file (stripe32.64m ~17s; stripe1 ~50s; stripe4 ~30s)
+try seg without measure/write (~100s)
+    14% trench crops (8% get_nd2_frame, 4% dask _gc_callback)
+    85% seg (50% frangi, 13% hessian, 7% watershed)
+try seg/measure without write (~250s)
+    7% trench crops
+    39% seg
+    48% measurement_func
+try seg/measure/write parquet only
+    WORKS
+try read/write zarr no seg
+try read/write zarr with seg
+try write all with no locking, filename hardcoded to random tmpfile
+try write all with nested dir zarr store, not lmdb
+
+TURN OFF LMDB LOCKING???
 
 support frame-by-frame, chunked, or position-by-position tasks
 
