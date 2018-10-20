@@ -249,6 +249,8 @@ def write_images_and_measurements(
     filename_func,
     merge=True,
     overwrite=True,
+    write_images=True,
+    write_measurements=True,
     dataframe_format="arrow",
     compressor=DEFAULT_COMPRESSOR,
     order=DEFAULT_ORDER,
@@ -257,34 +259,38 @@ def write_images_and_measurements(
     for key, results in d.items():
         key_dict = dict(zip(("filename", "position"), key))
         # write images
-        for name, df in results["measurements"].items():
-            if dataframe_format == "arrow":
-                measurements_filename = filename_func(
-                    kind="measurements", extension="arrow", name=name, **key_dict
-                )
-                write_func = write_dataframe_to_arrow
-            elif dataframe_format == "parquet":
-                measurements_filename = filename_func(
-                    kind="measurements", extension="parquet", name=name, **key_dict
-                )
-                write_func = write_dataframe_to_parquet
-            else:
-                raise ValueError
-            with file_lock(measurements_filename).acquire(timeout=timeout) as lock:
-                write_func(measurements_filename, df, merge=merge, overwrite=overwrite)
+        if "measurements" in results and write_measurements:
+            for name, df in results["measurements"].items():
+                if dataframe_format == "arrow":
+                    measurements_filename = filename_func(
+                        kind="measurements", extension="arrow", name=name, **key_dict
+                    )
+                    write_func = write_dataframe_to_arrow
+                elif dataframe_format == "parquet":
+                    measurements_filename = filename_func(
+                        kind="measurements", extension="parquet", name=name, **key_dict
+                    )
+                    write_func = write_dataframe_to_parquet
+                else:
+                    raise ValueError
+                with file_lock(measurements_filename).acquire(timeout=timeout) as lock:
+                    write_func(
+                        measurements_filename, df, merge=merge, overwrite=overwrite
+                    )
         # write images
-        images_filename = filename_func(kind="images", extension="zarr", **key_dict)
-        with file_lock(images_filename).acquire(timeout=timeout) as lock, open_zarr(
-            images_filename
-        ) as root:
-            write_images_to_zarr(
-                results["images"],
-                root,
-                merge=merge,
-                overwrite=overwrite,
-                compressor=compressor,
-                order=order,
-            )
+        if "images" in results and write_images:
+            images_filename = filename_func(kind="images", extension="zarr", **key_dict)
+            with file_lock(images_filename).acquire(timeout=timeout) as lock, open_zarr(
+                images_filename
+            ) as root:
+                write_images_to_zarr(
+                    results["images"],
+                    root,
+                    merge=merge,
+                    overwrite=overwrite,
+                    compressor=compressor,
+                    order=order,
+                )
     return d
 
 
