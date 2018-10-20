@@ -61,6 +61,8 @@ filelock = "*"
 line-profiler = {git = "https://github.com/rkern/line_profiler.git"}
 snakeviz = {editable = true, path = "./../snakeviz"}
 memory-profiler = "*"
+nose = "*"
+pytest = "*"
 
 [dev-packages]
 
