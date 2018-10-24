@@ -5,7 +5,6 @@ import os
 from cytoolz import partial, compose
 from filelock import SoftFileLock
 from contextlib import contextmanager
-from collections import MutableMapping
 from numcodecs import Blosc
 
 # import wrapt # TODO
@@ -13,7 +12,13 @@ from numcodecs import Blosc
 import functools
 from workflow import get_nd2_frame
 from data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
-from util import get_one, tqdm_auto, flatten_dict, unflatten_dict
+from util import (
+    get_one,
+    tqdm_auto,
+    flatten_dict,
+    unflatten_dict,
+    mapping_values_are_dict,
+)
 import gc
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
@@ -193,9 +198,6 @@ def open_zarr(filename, store=zarr.LMDBStore):
         raise
 
 
-_values_are_not_dict = lambda x: isinstance(get_one(x), MutableMapping)
-
-
 def write_images_to_zarr(
     image_data,
     root,
@@ -205,7 +207,7 @@ def write_images_to_zarr(
     order=DEFAULT_ORDER,
 ):
     for key, t_images in flatten_dict(
-        image_data, lookahead=_values_are_not_dict
+        image_data, lookahead=mapping_values_are_dict
     ).items():
         arr_path = "/".join(map(str, key))
         dtype = get_one(t_images).dtype

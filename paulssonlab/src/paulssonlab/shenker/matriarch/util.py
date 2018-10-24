@@ -206,6 +206,9 @@ def drop_constant_columns(df):
     return df.loc[:, df.nunique(dropna=False) != 1]
 
 
+# predicate that's useful for flatten_dict
+mapping_values_are_dict = lambda x: isinstance(get_one(x), collections.MutableMapping)
+
 # FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
 def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
     if parent_key is None:
