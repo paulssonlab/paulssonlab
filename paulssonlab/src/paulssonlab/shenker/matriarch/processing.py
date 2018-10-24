@@ -118,17 +118,21 @@ def _get_trench_crops(
                     image = frame_transformation(image)
                 whole_frames.setdefault(channel, {})[t] = image
         channel_crops = _crop_trenches(selected_trenches, channel_images)
-        for trench, trench_channels in channel_crops.items():
+        for trench_key, trench_channels in channel_crops.items():
             for channel, crop in trench_channels.items():
-                trench_crops.setdefault(trench, {}).setdefault(channel, {})[t] = crop
+                trench_crops.setdefault(trench_key, {}).setdefault(channel, {})[
+                    t
+                ] = crop
         del channel_images
         gc.collect()
-    for trench in trench_crops:
+    for trench_key in trench_crops:
         if transformation is not None:
-            trench_crops[trench] = {
+            trench_crops[trench_key] = {
                 channel: transformation(crops)
-                for channel, crops in trench_crops[trench].items()
+                for channel, crops in trench_crops[trench_key].items()
             }
+    # break out
+    trench_crops = unflatten_dict(trench_crops)
     if include_frame:
         for channel, frames in whole_frames.items():
             trench_crops.setdefault("_frame", {})[channel] = frames
@@ -168,8 +172,6 @@ def _crop_trenches(trenches, images):
             for channel, channel_image in images.items()
         }
         trench_crops[(trench_sets[i], trench_idxs[i])] = channel_crops
-    # TODO: do we need this?
-    # trench_crops = unflatten_dict(trench_crops)
     return trench_crops
 
 

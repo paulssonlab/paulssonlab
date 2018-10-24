@@ -29,6 +29,9 @@ NEED TO RECORD RAW trench_diag, trench_errs (only write if trench_err is not Non
 CATCH non-none trench_err ERRORS
 
 change zarr keys to set1/trench500 (?) [seg masks are already correct!]
+    uniformize trench_crops/flattened_crops/segmentation_masks [unflatten]
+
+TODO: add levels kwarg to flatten_dict (!!!)
 
 FIGURE OUT WHY image zarrs are so BIG (is trench cropping a bad idea?)
     what is the compression ratio?
