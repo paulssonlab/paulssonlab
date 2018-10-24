@@ -263,7 +263,8 @@ def get_trench_bboxes(trenches, image_limits, **kwargs):
         x_lim, y_lim = image_limits[filename]
         return _get_trench_bboxes_dataframe(trenches, x_lim, y_lim, **kwargs)
 
-    return trenches.groupby(["filename", "position"]).apply(func)
+    # need to group by trench_set so that first/last trenches in each set are identified properly
+    return trenches.groupby(["filename", "position", "trench_set"]).apply(func)
 
 
 # def map_trenchwise(func, frame_stacks, trenches, channels=None):
