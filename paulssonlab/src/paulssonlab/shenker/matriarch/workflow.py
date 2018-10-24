@@ -245,11 +245,17 @@ def _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
 
 
 def _get_trench_bboxes_dataframe(trenches, x_lim, y_lim, **kwargs):
-    upper_left, lower_right = _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs)
+    if len(trenches) <= 1:
+        upper_left = lower_right = np.full((len(trenches), 2), np.nan)
+    else:
+        upper_left, lower_right = _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs)
+    upper_left = points_dataframe(upper_left)
+    lower_right = points_dataframe(lower_right)
+
     df = pd.concat(
         {
-            "upper_left": points_dataframe(upper_left),
-            "lower_right": points_dataframe(lower_right),
+            "upper_left": upper_left,
+            "lower_right": lower_right,
         },
         axis=1,
     )

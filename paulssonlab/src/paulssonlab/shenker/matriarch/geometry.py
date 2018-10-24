@@ -50,6 +50,8 @@ def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
     separation = 0.5 + overlap
     # trench_points[0][trench_idx], trench_points[1][trench_idx]
     num_trenches = min(len(trench_points[0]), len(trench_points[1]))
+    if num_trenches <= 1:
+        raise ValueError("need at least two trenches to get bboxes")
     if not 0 <= trench_idx < num_trenches:
         raise ValueError("trench index out of bounds")
     points = [trench_points[i][trench_idx] for i in (0, 1)]
