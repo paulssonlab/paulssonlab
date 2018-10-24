@@ -220,6 +220,7 @@ def write_images_to_zarr(
         shape = shape + (t_max + 1,)
         chunks = False  # (1,1,1) # TODO: different for _frame
         # TODO: copy here is unnecessary unless merging
+        # TODO: handle dtype
         new_data = np.zeros(shape)
         if old_arr is not None:
             new_data[:, :, : old_arr.shape[-1]] = old_arr
