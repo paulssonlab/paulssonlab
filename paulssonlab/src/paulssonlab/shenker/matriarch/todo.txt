@@ -9,6 +9,8 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 
 TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
+ENH: make dask memory stats traces longer/customizable
+
 ### ANALYSIS PROFILE
 trench crops 5%
 get_frame 3%
@@ -16,7 +18,7 @@ segment 35%
 measurement func 45%
 write zarr 8%
 
-MADE DASK PROFILING 10x SLOWER
+MADE DASK PROFILING 10x SLOWER (don't know if this helped)
 
 ### PATH TO SHIPPING
 README:
@@ -26,20 +28,34 @@ lfs setstripe -c -1 -S 256m
 NEED TO RECORD RAW trench_diag, trench_errs (only write if trench_err is not None)
 CATCH non-none trench_err ERRORS
 
+change zarr keys to set1/trench500 (?) [seg masks are already correct!]
+
+FIGURE OUT WHY image zarrs are so BIG (is trench cropping a bad idea?)
+    what is the compression ratio?
+write_images_to_zarr fixes
+
 DISABLE TRENCH_DIAG HOLOVIEWS
+    OR JUST STORE USEFUL STUFF IN info INSTEAD OF diag?? (enable/disable with flag)
+        make sure label-specific metadata goes to the right trenches (!!!!!!!!!)
     make it possible to turn diag off
     measure memory usage with diag turned off
     or just separate metadata from diagnostics, pass both through? (in tuple? decorator to split diagnostics tuple as separate kwargs?)
-    
+
+AUTO-SET TRENCH FILTERING THRESHOLDS (calculate thresholds once all positions are aggregated)
+    ('diag', 'find_trench_lines.hough_2.peak_func.pitch')
+    ('info', 'hough_value')
+
+DEBUG WHY SOME FRAMES TAKE FOREVER
+
+USE MIDPOINT FRAME TO FIND TRENCHES (when possible)
+
 HELPER FUNCS TO RECOMPUTE+OVERWRITE/LOAD IN trenches/raw images/segmentations/measurements IF NOT ALREADY COMPUTED (position-by-position)
-    get_frame that handles nd2/zarr
+    get_frame that handles nd2/zar
+    make sure overwrite works correctly
 
+REDUCE MEMORY USAGE IN SEGMENTATION (not measure, probably?)/RUN GC EXPLICITLY
 
-
-TRY NESTEDDIRSTORE
-    NESTEDDIRSTORE DOES NOT WORK
-        try rebuilding zarr?? (from master?)
-    if this works: try turning off locking/REBUILD LMDB
+trench finding priority
 
 trench finding takes 2.5G (not super stable), reading (without analysis) takes 1.4G (stable), goes back to 0.9G upon idle
     DO I NEED TO DISABLE STORING HOLOVIEWS IN DIAG???
@@ -62,22 +78,16 @@ try write all with nested dir zarr store, not lmdb
 TURN OFF LMDB LOCKING???
 
 support frame-by-frame, chunked, or position-by-position tasks
+    store which frames have been inserted in zarr stack metadata??
 
 make file locking resilient to worker restarts
-85% spent in read_chunk
-    striping benchmark??
-        naive load all frames
-        vs. analysis with measurement_func without any segmentation/measurements
-    or is this real?
-figure out why zarr writing causes restarts
+    shell script to rm any .zarr that has a lock+rm the lock, so it can be retried
 figure out what's eating up all the memory
     dummy tasks that don't load any frames
 figure out what's eating up all the FD's (just worker-to-worker transfers?)
 
-trench finding priority
 fix dask memory histogram
 exploding worker fd count
-debug sigill killedworker issue
 identify/fix gil-holding funcs
 quiet useless warnings (turned on via flag)
 
