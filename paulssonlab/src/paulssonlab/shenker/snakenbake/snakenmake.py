@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import gdspy as g
-from gdspy import CellReference, CellArray, Rectangle
+from gdspy import CellReference, CellArray, Rectangle, Polygon
 from geometry import (
     MAX_POINTS,
     ROUND_POINTS,
@@ -369,6 +369,57 @@ def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
     return alignment_cell
 
 
+def cross(width, length, **kwargs):
+    half_width = width / 2
+    points = [
+        (half_width, half_width),
+        (length, half_width),
+        (length, -half_width),
+        (half_width, -half_width),
+        (half_width, -length),
+        (-half_width, -length),
+        (-half_width, -half_width),
+        (-length, -half_width),
+        (-length, half_width),
+        (-half_width, half_width),
+        (-half_width, length),
+        (half_width, length),
+    ]
+    return Polygon(points, **kwargs)
+
+
+@memoize
+def mask_alignment_cross(
+    width=100,
+    cross_length=300,
+    cross_spacing=30,
+    num_crosses=2,
+    bottom_layer=TRENCH_LAYER,
+    top_layer=FEEDING_CHANNEL_LAYER,
+):
+    alignment_cell = Cell("Mask Alignment Cross")
+    offset_unit = 2 * cross_length + cross_spacing
+    box_size = offset_unit * (num_crosses + 1)
+    box_corner = np.array([box_size, box_size])
+    outer_box = Rectangle(-(box_corner + width), box_corner + width)
+    inner_box = Rectangle(-box_corner, box_corner)
+    box = fast_boolean(outer_box, inner_box, "not", layer=top_layer)
+    cross_box_corner = np.array([cross_length, cross_length])
+    base_cross_box = Rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
+    base_cross = cross(width, cross_length, layer=top_layer)
+    base_cross_box = fast_boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
+    alignment_cell.add(base_cross_box)
+    alignment_cell.add(base_cross)
+    for offset_unit_vector in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        offset_vector = np.array(offset_unit_vector) * offset_unit
+        for num_offsets in range(1, num_crosses + 1):
+            offset = offset_vector * num_offsets
+            alignment_cell.add(g.copy(base_cross_box, *offset))
+            alignment_cell.add(g.copy(base_cross, *offset))
+    alignment_cell.add(box)
+    return alignment_cell
+
+
 def wafer(
     chips,
     name,
@@ -409,21 +460,36 @@ def wafer(
             profilometry_cell, 1, 2, profilometry_spacing, -profilometry_spacing / 2
         )
     )
-    alignment_cell = alignment_cross(layer=trench_layer)
-    alignment_spacing = np.array([0, alignment_mark_position * 2])
-    if text:
-        main_cell.add(
-            Text(
-                "bottom",
-                alignment_text_size,
-                position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
-                alignment="centered",
-                layer=trench_layer,
-            )
+    if mask:
+        alignment_cell = mask_alignment_cross(
+            bottom_layer=trench_layer, top_layer=feeding_channel_layer
         )
-    main_cell.add(
-        CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
-    )
+    else:
+        alignment_cell = alignment_cross(layer=trench_layer)
+    if mask:
+        alignment_spacing = np.array([0, alignment_mark_position * 2])
+        main_cell.add(
+            CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+        )
+        alignment_spacing = np.array([alignment_mark_position * 2, 0])
+        main_cell.add(
+            CellArray(alignment_cell, 2, 1, alignment_spacing, -alignment_spacing / 2)
+        )
+    else:
+        alignment_spacing = np.array([0, alignment_mark_position * 2])
+        main_cell.add(
+            CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+        )
+        if text:
+            main_cell.add(
+                Text(
+                    "bottom",
+                    alignment_text_size,
+                    position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
+                    alignment="centered",
+                    layer=trench_layer,
+                )
+            )
     if text:
         if mask:
             mask_text_padding = 30e2
