@@ -127,9 +127,19 @@ def snake(
     if split is None:
         split = 1
     if isinstance(split, numbers.Integral):
-        lanes_per_snake = make_odd(max_lanes // split)
-        remainder_lanes_per_snake = make_odd(max_lanes - (split - 1) * lanes_per_snake)
-        split = (lanes_per_snake,) * (split - 1) + (remainder_lanes_per_snake,)
+        good_split = False
+        for lanes_per_snake in (int(np.around(max_lanes / split)), max_lanes // split):
+            lanes_per_snake = make_odd(lanes_per_snake)
+            remainder_lanes_per_snake = make_odd(
+                max_lanes - (split - 1) * lanes_per_snake
+            )
+            new_split = (lanes_per_snake,) * (split - 1) + (remainder_lanes_per_snake,)
+            if all(s > 1 for s in new_split):
+                good_split = True
+                split = new_split
+                break
+        if not good_split:
+            raise ValueError("bad split: {split}".format(",".join(split)))
     else:
         if isinstance(split[0], numbers.Integral):
             if sum(split) > max_lanes:
