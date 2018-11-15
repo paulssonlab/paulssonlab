@@ -380,6 +380,7 @@ def wafer(
     alignment_text_size=1000,
     label_text_size=2000,
     text=True,
+    mask=False,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
 ):
@@ -423,20 +424,42 @@ def wafer(
     main_cell.add(
         CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
     )
-    # main_cell.add(Text(name, label_text_size, position=text_position, alignment='centered', angle=-np.pi/2, layer=feeding_channel_layer))
-    text_position = (chip_area_corner[0] + label_text_size, 0)
     if text:
-        main_cell.add(
-            Text(
-                name,
-                label_text_size,
-                position=text_position,
-                angle=np.pi / 2,
-                alignment="left",
-                prerotate_alignment="centered",
-                layer=feeding_channel_layer,
+        if mask:
+            mask_text_padding = 30e2
+            fc_text_position = corner - mask_text_padding
+            trench_text_position = fc_text_position * np.array([-1, 1])
+            main_cell.add(
+                Text(
+                    "FC layer\n" + name,
+                    label_text_size,
+                    position=fc_text_position,
+                    alignment="right",
+                    layer=feeding_channel_layer,
+                )
             )
-        )
+            main_cell.add(
+                Text(
+                    "Trench layer\n" + name,
+                    label_text_size,
+                    position=trench_text_position,
+                    alignment="left",
+                    layer=trench_layer,
+                )
+            )
+        else:
+            text_position = (chip_area_corner[0] + label_text_size, 0)
+            main_cell.add(
+                Text(
+                    name,
+                    label_text_size,
+                    position=text_position,
+                    angle=np.pi / 2,
+                    alignment="left",
+                    prerotate_alignment="centered",
+                    layer=feeding_channel_layer,
+                )
+            )
     horizontal_chip_spacing = chip_area_corner[0]
     vertical_chip_spacing = chip_area_corner[1]
     if len(chips) <= 3:
