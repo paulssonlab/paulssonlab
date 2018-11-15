@@ -206,15 +206,15 @@ def snake(
         + (bottom_margin - top_margin) / 2
     )
     split_cum = np.concatenate(((0,), np.cumsum(split)))
-    right_port_lanes = split_cum[1:] - 1
-    left_port_lanes = split_cum[:-1]
-    right_bend_lanes = np.concatenate(
+    left_port_lanes = split_cum[1:] - 1
+    right_port_lanes = split_cum[:-1]
+    left_bend_lanes = np.concatenate(
         [
             np.arange(start, stop - 1, 2)
             for start, stop in zip(split_cum[:-1], split_cum[1:])
         ]
     )
-    left_bend_lanes = right_bend_lanes + 1
+    right_bend_lanes = left_bend_lanes + 1
     snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
     for y in lane_ys:
         snake_fc_cell.add(CellReference(lane_cell, (0, y)))
