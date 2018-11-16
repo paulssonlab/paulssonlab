@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import gdspy as g
-from gdspy import CellReference, CellArray, Rectangle, Polygon
+from gdspy import CellReference, CellArray, Rectangle
 from geometry import (
     MAX_POINTS,
     ROUND_POINTS,
     Cell,
     Round,
+    cross,
     fast_boolean,
     mirror,
     mirror_refs,
@@ -76,6 +77,9 @@ get_uuid = partial(shortuuid.random, length=2)
 # put 1/bottom on bottom align mark
 # mirror all text
 
+# TODO
+# fix duplicate chip memoization
+
 
 @memoize
 def snake(
@@ -93,6 +97,7 @@ def snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    ticks=True,
     tick_length=5,
     tick_margin=5,
     tick_period=50,
@@ -259,14 +264,15 @@ def snake(
             layer=trench_layer,
         )
     )
-    tick_cell = Cell("Tick-{}".format(label))
-    tick_cell.add(
-        Rectangle(
-            (-trench_width / 2, trench_length + tick_margin),
-            (trench_width / 2, trench_length + tick_margin + tick_length),
-            layer=trench_layer,
+    if ticks:
+        tick_cell = Cell("Tick-{}".format(label))
+        tick_cell.add(
+            Rectangle(
+                (-trench_width / 2, trench_length + tick_margin),
+                (trench_width / 2, trench_length + tick_margin + tick_length),
+                layer=trench_layer,
+            )
         )
-    )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
     if draw_trenches:
@@ -290,15 +296,16 @@ def snake(
                     x_reflection=True,
                 )
             )
-            snake_cell.add(
-                CellArray(
-                    tick_cell,
-                    num_ticks,
-                    1,
-                    (tick_period * (trench_width + trench_spacing), 0),
-                    (trench_xs[0], y + feeding_channel_width / 2),
+            if ticks:
+                snake_cell.add(
+                    CellArray(
+                        tick_cell,
+                        num_ticks,
+                        1,
+                        (tick_period * (trench_width + trench_spacing), 0),
+                        (trench_xs[0], y + feeding_channel_width / 2),
+                    )
                 )
-            )
             if tick_labels:
                 for tick_idx, x in enumerate(tick_xs):
                     tick_idx = (
@@ -367,25 +374,6 @@ def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
     alignment_cell.add(Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
     alignment_cell.add(Rectangle((2 * size, -size), (3 * size, size), layer=layer))
     return alignment_cell
-
-
-def cross(width, length, **kwargs):
-    half_width = width / 2
-    points = [
-        (half_width, half_width),
-        (length, half_width),
-        (length, -half_width),
-        (half_width, -half_width),
-        (half_width, -length),
-        (-half_width, -length),
-        (-half_width, -half_width),
-        (-length, -half_width),
-        (-length, half_width),
-        (-half_width, half_width),
-        (-half_width, length),
-        (half_width, length),
-    ]
-    return Polygon(points, **kwargs)
 
 
 @memoize
@@ -467,13 +455,25 @@ def wafer(
     else:
         alignment_cell = alignment_cross(layer=trench_layer)
     if mask:
-        alignment_spacing = np.array([0, alignment_mark_position * 2])
+        vertical_alignment_spacing = np.array([0, alignment_mark_position * 2])
         main_cell.add(
-            CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+            CellArray(
+                alignment_cell,
+                1,
+                2,
+                vertical_alignment_spacing,
+                -vertical_alignment_spacing / 2,
+            )
         )
-        alignment_spacing = np.array([alignment_mark_position * 2, 0])
+        horizontal_alignment_spacing = np.array([alignment_mark_position * 2, 0])
         main_cell.add(
-            CellArray(alignment_cell, 2, 1, alignment_spacing, -alignment_spacing / 2)
+            CellArray(
+                alignment_cell,
+                2,
+                1,
+                horizontal_alignment_spacing,
+                -horizontal_alignment_spacing / 2,
+            )
         )
     else:
         alignment_spacing = np.array([0, alignment_mark_position * 2])
@@ -483,7 +483,7 @@ def wafer(
         if text:
             main_cell.add(
                 Text(
-                    "bottom",
+                    "trench layer",
                     alignment_text_size,
                     position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
                     alignment="centered",
@@ -506,7 +506,7 @@ def wafer(
             )
             main_cell.add(
                 Text(
-                    "Trench layer\n" + name,
+                    "trench layer\n" + name,
                     label_text_size,
                     position=trench_text_position,
                     alignment="left",
@@ -541,6 +541,7 @@ def wafer(
     return main_cell
 
 
+@memoize
 def chip(
     name,
     design_func=snake,

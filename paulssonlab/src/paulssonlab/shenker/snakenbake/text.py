@@ -146,7 +146,11 @@ def character(
     layer=0,
     datatype=0,
 ):
-    cell_name = "~{}~l{}".format(char, layer)
+    if char.isalnum():
+        char_name = char
+    else:
+        char_name = "U+{:06x}".format(ord(char))
+    cell_name = "~{}~l{}".format(char_name, layer)
     if scale_factor != 1:
         cell_name += "s{}".format(scale_factor)
     cell = Cell(cell_name)

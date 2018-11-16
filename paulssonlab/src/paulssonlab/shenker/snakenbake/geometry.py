@@ -1,5 +1,5 @@
 import numpy as np
-from gdspy import Cell, Round, fast_boolean
+from gdspy import Cell, Round, Polygon, fast_boolean
 from functools import partial
 
 MAX_POINTS = 4094  # 8191 # same as LayoutEditor
@@ -8,6 +8,25 @@ ROUND_POINTS = 100
 Cell = partial(Cell, exclude_from_current=True)
 Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
 fast_boolean = partial(fast_boolean, max_points=MAX_POINTS)
+
+
+def cross(width, length, **kwargs):
+    half_width = width / 2
+    points = [
+        (half_width, half_width),
+        (length, half_width),
+        (length, -half_width),
+        (half_width, -half_width),
+        (half_width, -length),
+        (-half_width, -length),
+        (-half_width, -half_width),
+        (-length, -half_width),
+        (-length, half_width),
+        (-half_width, half_width),
+        (-half_width, length),
+        (half_width, length),
+    ]
+    return Polygon(points, **kwargs)
 
 
 def polygon_orientation(polygon):
