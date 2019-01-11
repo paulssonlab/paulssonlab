@@ -6,7 +6,7 @@ import skimage as sk
 import os
 
 from skimage import filters
-from utils import timechunker, multifov
+from .utils import timechunker, multifov
 
 
 class kymograph_timechunker(timechunker):
@@ -764,14 +764,14 @@ class kymograph_multifov(multifov):
         self,
         input_file_prefix,
         all_channels,
-        trench_len_y,
-        padding_y,
-        trench_width_x,
         fov_list,
+        trench_len_y=270,
+        padding_y=20,
+        trench_width_x=30,
         t_subsample_step=1,
         y_percentile=85,
         y_min_edge_dist=50,
-        smoothing_kernel_y=(9, 3),
+        smoothing_kernel_y=(9, 1),
         triangle_nbins=50,
         triangle_scaling=1.0,
         x_percentile=85,
@@ -1019,7 +1019,7 @@ class kymograph_multifov(multifov):
         imported_array_list,
         padding_y,
         trench_len_y,
-        top_orientation=0,
+        top_orientation,
     ):
         """Performs cropping of the images in the y-dimension.
 
@@ -1105,6 +1105,7 @@ class kymograph_multifov(multifov):
             imported_array_list,
             self.padding_y,
             self.trench_len_y,
+            self.top_orientation,
         )
         return cropped_in_y_list
 

@@ -5,7 +5,7 @@ import skimage as sk
 from skimage import filters
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
-from kymograph import kymograph_multifov
+from .kymograph import kymograph_multifov
 
 
 class kymograph_interactive(kymograph_multifov):
@@ -13,14 +13,14 @@ class kymograph_interactive(kymograph_multifov):
         self,
         input_file_prefix,
         all_channels,
-        trench_len_y,
-        padding_y,
-        trench_width_x,
         fov_list,
+        trench_len_y=270,
+        padding_y=20,
+        trench_width_x=30,
         t_subsample_step=1,
         y_percentile=85,
         y_min_edge_dist=50,
-        smoothing_kernel_y=(9, 3),
+        smoothing_kernel_y=(9, 1),
         triangle_nbins=50,
         triangle_scaling=1.0,
         x_percentile=85,
@@ -69,10 +69,10 @@ class kymograph_interactive(kymograph_multifov):
         super(kymograph_interactive, self).__init__(
             input_file_prefix,
             all_channels,
-            trench_len_y,
-            padding_y,
-            trench_width_x,
             fov_list,
+            trench_len_y=trench_len_y,
+            padding_y=padding_y,
+            trench_width_x=trench_width_x,
             t_subsample_step=t_subsample_step,
             y_percentile=y_percentile,
             y_min_edge_dist=y_min_edge_dist,
@@ -91,7 +91,6 @@ class kymograph_interactive(kymograph_multifov):
         imported_array_list,
         y_percentile,
         smoothing_kernel_y_dim_0,
-        smoothing_kernel_y_dim_1,
         triangle_nbins,
         triangle_scaling,
     ):
@@ -99,7 +98,7 @@ class kymograph_interactive(kymograph_multifov):
             self.get_smoothed_y_percentiles,
             imported_array_list,
             y_percentile,
-            (smoothing_kernel_y_dim_0, smoothing_kernel_y_dim_1),
+            (smoothing_kernel_y_dim_0, 1),
         )
 
         thresholds = [
@@ -187,6 +186,7 @@ class kymograph_interactive(kymograph_multifov):
         y_min_edge_dist,
         padding_y,
         trench_len_y,
+        top_orientation,
         vertical_spacing,
     ):
 
@@ -198,7 +198,6 @@ class kymograph_interactive(kymograph_multifov):
             y_min_edge_dist,
         )
         row_num_list = self.map_to_fovs(self.get_row_numbers, trench_edges_y_lists)
-
         cropped_in_y_list = self.map_to_fovs(
             self.crop_y,
             trench_edges_y_lists,
@@ -206,9 +205,14 @@ class kymograph_interactive(kymograph_multifov):
             imported_array_list,
             padding_y,
             trench_len_y,
+            top_orientation,
         )
         self.plot_y_crop(
-            cropped_in_y_list, imported_array_list, self.fov_list, vertical_spacing
+            cropped_in_y_list,
+            imported_array_list,
+            self.fov_list,
+            vertical_spacing,
+            row_num_list,
         )
 
     def plot_y_crop(
@@ -217,18 +221,19 @@ class kymograph_interactive(kymograph_multifov):
         imported_array_list,
         fov_list,
         vertical_spacing,
-        num_rows=2,
+        row_num_list,
     ):
         fig = plt.figure()
         ax = fig.gca(projection="3d")
 
         time_list = range(1, imported_array_list[0].shape[3] + 1)
 
-        nrows = num_rows * len(fov_list)
+        nrows = np.sum(row_num_list)
         ncols = len(time_list)
 
         idx = 0
         for i, cropped_in_y in enumerate(cropped_in_y_list):
+            num_rows = row_num_list[i]
             for j in range(num_rows):
                 for k, t in enumerate(time_list):
                     idx += 1
