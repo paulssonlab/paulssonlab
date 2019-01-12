@@ -9,13 +9,13 @@ from skimage import filters
 from .utils import timechunker, multifov
 
 
-class kymograph_timechunker(timechunker):
+class kychunker(timechunker):
     def __init__(
         self,
-        input_file_prefix,
-        output_path,
-        fov_number,
-        all_channels,
+        input_file_prefix="",
+        output_path="",
+        fov_number=0,
+        all_channels=[""],
         trench_len_y=270,
         padding_y=20,
         trench_width_x=30,
@@ -77,7 +77,7 @@ class kymograph_timechunker(timechunker):
             otsu_scaling (float, optional): Threshold scaling factor for Otsu's method thresholding.
         """
 
-        super(kymograph_timechunker, self).__init__(
+        super(kychunker, self).__init__(
             input_file_prefix, output_path, fov_number, all_channels, t_chunk=t_chunk
         )
 
@@ -742,11 +742,24 @@ class kymograph_timechunker(timechunker):
             cropped_in_y_handle, all_midpoints_list, x_drift_list, self.trench_width_x
         )
 
-    def generate_kymograph(self):
+    def reinit_fov_number(self, fov_number):
+        super(kychunker, self).__init__(
+            self.input_file_prefix,
+            self.output_path,
+            fov_number,
+            self.all_channels,
+            t_chunk=self.t_chunk,
+        )
+        self.output_file_path = (
+            self.output_path + "/kymo_" + str(self.fov_number) + ".hdf5"
+        )
+
+    def generate_kymograph(self, fov_number):
         """Master function for generating kymographs for the set of fovs specified on initialization. Writes an hdf5
         file at self.output_file_path containing kymographs of shape (trench_num,y_dim,x_dim,t_dim) for each
         row,channel combination. Dataset keys follow the convention ["[row_number]/[channel_name]"].
         """
+        self.reinit_fov_number(fov_number)
         self.writedir(self.output_path, overwrite=False)
         self.writedir(self.temp_path, overwrite=True)
         imported_hdf5_handle = self.import_hdf5("imported_hdf5", "data")
