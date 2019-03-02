@@ -1,2 +1,2 @@
-# janelle
-Slack bot to automate microscope scheduling and logistics tasks for the Paulsson lab.
+# lab-helper
+Scripts to automate microscope scheduling and logistics tasks for the Paulsson lab.
