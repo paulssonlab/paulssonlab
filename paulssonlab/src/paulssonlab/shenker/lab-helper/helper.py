@@ -22,8 +22,8 @@ SCOPES = [
 ]
 GENERAL_CALENDAR = "Paulsson Lab General Calendar"
 MICROSCOPE_CALENDAR = "Paulsson Lab Nikon and Accessories"
-GROUP_MEETINGS_SHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
-INDIVIDUAL_MEETINGS_SHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
+GROUP_MEETINGS_SPREADSHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
+INDIVIDUAL_MEETINGS_SPREADSHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
 GOOGLE_USER = "paulssonlab@gmail.com"
 MAX_RESULTS = 2500
 TIMEZONE = "America/New_York"
@@ -157,11 +157,24 @@ def get_syncable_calendar_events(
     return events
 
 
-def get_group_meeting_list():
-    sheets_service = get_sheets_service().spreadsheets()
+def get_sheets_for_spreadsheet(sheets_service, spreadsheet_id):
     res = (
-        sheets_service.values()
-        .get(spreadsheetId=GROUP_MEETINGS_SHEET, range="A:Z")
+        sheets_service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+        .execute()
+    )
+    sheets = {
+        s["properties"]["title"]: s["properties"]["sheetId"] for s in res["sheets"]
+    }
+    return sheets
+
+
+def _get_sheets_group_meetings(spreadsheet_id=GROUP_MEETINGS_SPREADSHEET):
+    sheets_service = get_sheets_service()
+    res = (
+        sheets_service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range="A:Z")
         .execute()
     )
     columns = res["values"][0]
@@ -169,6 +182,57 @@ def get_group_meeting_list():
         {col: d.strip() for col, d in zip_longest(columns, row, fillvalue="")}
         for row in res["values"][1:]
     ]
+    return meetings
+
+
+def get_sheets_group_meetings(spreadsheet_id=GROUP_MEETINGS_SPREADSHEET):
+    meetings = []
+    for m in _get_sheets_group_meetings(spreadsheet_id=spreadsheet_id):
+        summary, description = _format_group_meeting(m)
+        del m["Subject"]
+        del m["Cook"]
+        del m["Notes"]
+        m["summary"] = summary
+        m["description"] = description
+        meetings.append(m)
+    return meetings
+
+
+def get_sheets_individual_meetings(spreadsheet_id=INDIVIDUAL_MEETINGS_SPREADSHEET):
+    sheets_service = get_sheets_service()
+    sheets = get_sheets_for_spreadsheet(sheets_service, spreadsheet_id)
+    meetings = []
+    for sheet_title in sheets:
+        # TODO: get sheet using sheetId not sheet_title
+        # (there might be escaping issues with sheet_title)
+        # SEE: https://stackoverflow.com/questions/43667019/looking-up-google-sheets-values-using-sheet-id-instead-of-sheet-title-google-dr/43837549
+        # SEE: https://stackoverflow.com/questions/43916341/php-google-sheets-api-v4-not-working-with-sheet-names-containing-single-quotes
+        res = (
+            sheets_service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range="'{}'".format(sheet_title),
+                majorDimension="COLUMNS",
+            )
+            .execute()
+        )
+        time_col = res["values"][0]
+        idx = next((i for i, x in enumerate(time_col) if x), None)
+        times = time_col[idx:]
+        dates = [col[idx - 1] for col in res["values"][1:]]
+        for date, col in zip(dates, res["values"][1:]):
+            for time, name in zip(times, col[idx:]):
+                if not name or "overflow" in name:
+                    continue
+                meeting = {
+                    "Date": date,
+                    "Time": time,
+                    "Room": "Johan's office",
+                    "summary": "Johan: {}".format(name),
+                    "description": "",
+                }
+                meetings.append(meeting)
     return meetings
 
 
@@ -222,15 +286,16 @@ def _format_group_meeting(m):
 def sync_meetings(duration):
     calendar_service = get_calendar_service()
     calendar_id = get_calendar_id(calendar_service, GENERAL_CALENDAR)
-    sheets_meetings = get_group_meeting_list()
+    sheets_meetings = []
+    sheets_meetings.extend(get_sheets_group_meetings())
+    sheets_meetings.extend(get_sheets_individual_meetings())
     old_events = get_syncable_calendar_events(calendar_service, calendar_id)
     old_events_by_datetime = {e["start"]["dateTime"]: e for e in old_events}
     event_ids_to_update = set()
     new_events = []
     now = pendulum.now()
     for m in sheets_meetings:
-        summary, description = _format_group_meeting(m)
-        if summary is None and description is None:
+        if m["summary"] is None and m["description"] is None:
             continue
         start_time = parse_date_and_time(
             m["Date"], m["Time"], tz=pendulum.timezone(TIMEZONE)
@@ -240,18 +305,18 @@ def sync_meetings(duration):
             continue
         end_time = start_time.add(hours=duration)
         event = {
-            "summary": summary,
+            "summary": m["summary"],
             "location": m["Room"],
-            "description": description,
+            "description": m["description"],
             "start": {"dateTime": start_time.isoformat()},
             "end": {"dateTime": end_time.isoformat()},
             "extendedProperties": {"shared": {"sync": "lab-helper"}},
         }
         new_events.append(event)
     for new_event in new_events:
-        event_id_to_update = old_events_by_datetime.get(
-            new_event["start"]["dateTime"], None
-        )["id"]
+        event_id_to_update = dict.get(
+            old_events_by_datetime.get(new_event["start"]["dateTime"], None) or {}, "id"
+        )
         if event_id_to_update:
             event_ids_to_update.add(event_id_to_update)
             calendar_service.events().update(
