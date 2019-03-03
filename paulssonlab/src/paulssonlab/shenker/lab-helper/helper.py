@@ -8,8 +8,11 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pendulum
+from datetime import datetime
 from functools import wraps
 from itertools import zip_longest
+from collections import defaultdict
+import re
 from IPython import embed
 
 SCOPES = [
@@ -23,6 +26,22 @@ GROUP_MEETINGS_SHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
 INDIVIDUAL_MEETINGS_SHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
 GOOGLE_USER = "paulssonlab@gmail.com"
 MAX_RESULTS = 2500
+TIMEZONE = "America/New_York"
+
+
+def none_if_exception(func):
+    try:
+        return func()
+    except:
+        return None
+
+
+def parse_date_and_time(date, time, tz=pendulum.timezone("utc")):
+    # date = pendulum.parse(date, exact=True)
+    # time = pendulum.parse(time, exact=True)
+    # FROM: https://github.com/sdispater/pendulum/issues/156
+    # return pendulum.instance(datetime.combine(date, time), tz=tz)
+    return pendulum.parse(date + " " + time, tz=tz, strict=False)
 
 
 def paginator(req_func):
@@ -39,13 +58,6 @@ def paginator(req_func):
                 yield item
 
     return f
-
-
-def none_if_exception(func):
-    try:
-        return func()
-    except:
-        return None
 
 
 def get_creds():
@@ -86,11 +98,17 @@ def parse_time(time):
     return t, all_day
 
 
-def iter_calendar_events(service, calendar_name, max_results=MAX_RESULTS, **kwargs):
+def get_calendar_id(service, calendar_name):
     calendars = service.calendarList().list().execute()["items"]
-    calendarId = next(cal["id"] for cal in calendars if cal["summary"] == calendar_name)
+    calendar_id = next(
+        cal["id"] for cal in calendars if cal["summary"] == calendar_name
+    )
+    return calendar_id
+
+
+def iter_calendar_events(service, calendar_id, max_results=MAX_RESULTS, **kwargs):
     for event in paginator(service.events().list)(
-        calendarId=calendarId,
+        calendarId=calendar_id,
         singleEvents=True,
         orderBy="startTime",
         maxResults=max_results,
@@ -99,9 +117,9 @@ def iter_calendar_events(service, calendar_name, max_results=MAX_RESULTS, **kwar
         yield event
 
 
-def get_calendar_events(service, calendar_name, max_results=MAX_RESULTS, **kwargs):
+def get_calendar_events(service, calendar_id, max_results=MAX_RESULTS, **kwargs):
     events = []
-    for event in iter_calendar_events(service, calendar_name, **kwargs):
+    for event in iter_calendar_events(service, calendar_id, **kwargs):
         start, all_day = parse_time(event["start"])
         end, _ = parse_time(event["end"])
         created = none_if_exception(lambda: pd.to_datetime(event["created"]))
@@ -123,15 +141,15 @@ def get_calendar_events(service, calendar_name, max_results=MAX_RESULTS, **kwarg
 
 
 def get_syncable_calendar_events(
-    service, calendar_name, max_results=MAX_RESULTS, **kwargs
+    service, calendar_id, max_results=MAX_RESULTS, **kwargs
 ):
     now = pendulum.now().isoformat()
     events = []
     for event in iter_calendar_events(
         service,
-        calendar_name,
+        calendar_id,
         timeMin=now,
-        sharedExtendedProperty="sync=janelle",
+        sharedExtendedProperty="sync=lab-helper",
         max_results=max_results,
         **kwargs,
     ):
@@ -148,25 +166,110 @@ def get_group_meeting_list():
     )
     columns = res["values"][0]
     meetings = [
-        {col: d for col, d in zip_longest(columns, row, fillvalue="")}
+        {col: d.strip() for col, d in zip_longest(columns, row, fillvalue="")}
         for row in res["values"][1:]
     ]
     return meetings
 
 
+# @click.group()
+# @click.pass_context
+# def cli(ctx):
+#     service = get_calendar_service()
+#     cfg = {'service': service}
+#     ctx.obj = cfg
+
+# @cli.command()
+# @click.pass_obj
+# def test(cfg):
+#     service = cfg['service']
+#     embed()
+
+
 @click.group()
-@click.pass_context
-def cli(ctx):
-    service = get_calendar_service()
-    cfg = {"service": service}
-    ctx.obj = cfg
+def cli():
+    pass
+
+
+def _format_group_meeting(m):
+    # only create events in the future
+    # TODO: tbd, canceled, czar, empty fields, notes
+    if not m["Speaker"] and not m["Subject"]:
+        return None, None
+    if "canceled" in m["Subject"].casefold():
+        return "CANCELED: group meeting", m["Notes"]
+    if "(czar)" in m["Speaker"].casefold() or "subgroup" in m["Subject"].casefold():
+        # subgroup meeting
+        speaker = re.sub(r"\s*\(?czar\)?\s*", "", m["Speaker"], re.IGNORECASE)
+        summary = "{} (czar: {})".format(m["Subject"], speaker)
+    else:
+        if m["Speaker"]:
+            summary = m["Speaker"]
+            if m["Subject"]:
+                summary += ": {}".format(m["Subject"])
+        else:
+            summary = m["Subject"]
+    descriptions = []
+    if m["Cook"]:
+        descriptions.append("Cook: {}".format(m["Cook"]))
+    descriptions.append(m["Notes"])
+    description = "\n\n".join(descriptions)
+    return summary, description
 
 
 @cli.command()
-@click.pass_obj
-def test(cfg):
-    service = cfg["service"]
-
+def sync_meetings():
+    duration = 2  # TODO
+    calendar_service = get_calendar_service()
+    calendar_id = get_calendar_id(calendar_service, GENERAL_CALENDAR)
+    sheets_meetings = get_group_meeting_list()
+    old_events = get_syncable_calendar_events(calendar_service, calendar_id)
+    old_events_by_datetime = {e["start"]["dateTime"]: e for e in old_events}
+    event_ids_to_update = set()
+    new_events = []
+    now = pendulum.now()
+    for m in sheets_meetings:
+        summary, description = _format_group_meeting(m)
+        if summary is None and description is None:
+            continue
+        # SEE: https://github.com/sdispater/pendulum/issues/156
+        start_time = parse_date_and_time(
+            m["Date"], m["Time"], tz=pendulum.timezone(TIMEZONE)
+        )
+        if start_time < now:
+            # only add/update events in the future
+            continue
+        end_time = start_time.add(hours=duration)
+        event = {
+            "summary": summary,
+            "location": m["Room"],
+            "description": description,
+            "start": {"dateTime": start_time.isoformat()},
+            "end": {"dateTime": end_time.isoformat()},
+            "extendedProperties": {"shared": {"sync": "lab-helper"}},
+        }
+        # calendar_service.events().insert(calendarId=calendar_id,
+        #                                  body=event).execute()
+        new_events.append(event)
+    # print(events)
+    for new_event in new_events:
+        event_id_to_update = old_events_by_datetime.get(
+            new_event["start"]["dateTime"], None
+        )["id"]
+        if event_id_to_update:
+            event_ids_to_update.add(event_id_to_update)
+            calendar_service.events().update(
+                calendarId=calendar_id, eventId=event_id_to_update, body=new_event
+            ).execute()
+        else:
+            calendar_service.events().insert(
+                calendarId=calendar_id, body=new_event
+            ).execute()
+    for event in old_events:
+        if event["id"] not in event_ids_to_update:
+            calendar_service.events().delete(
+                calendarId=calendar_id, eventId=event["id"]
+            ).execute()
     embed()
 
 
