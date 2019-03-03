@@ -15,6 +15,7 @@ from collections import defaultdict
 import re
 from IPython import embed
 
+# TODO: move config to .toml
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
