@@ -218,8 +218,8 @@ def _format_group_meeting(m):
 
 
 @cli.command()
-def sync_meetings():
-    duration = 2  # TODO
+@click.option("--duration", default=2, show_default=True)
+def sync_meetings(duration):
     calendar_service = get_calendar_service()
     calendar_id = get_calendar_id(calendar_service, GENERAL_CALENDAR)
     sheets_meetings = get_group_meeting_list()
@@ -232,7 +232,6 @@ def sync_meetings():
         summary, description = _format_group_meeting(m)
         if summary is None and description is None:
             continue
-        # SEE: https://github.com/sdispater/pendulum/issues/156
         start_time = parse_date_and_time(
             m["Date"], m["Time"], tz=pendulum.timezone(TIMEZONE)
         )
@@ -248,10 +247,7 @@ def sync_meetings():
             "end": {"dateTime": end_time.isoformat()},
             "extendedProperties": {"shared": {"sync": "lab-helper"}},
         }
-        # calendar_service.events().insert(calendarId=calendar_id,
-        #                                  body=event).execute()
         new_events.append(event)
-    # print(events)
     for new_event in new_events:
         event_id_to_update = old_events_by_datetime.get(
             new_event["start"]["dateTime"], None
