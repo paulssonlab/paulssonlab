@@ -1,0 +1,31 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+jupyterlab = "*"
+numpy = "*"
+scipy = "*"
+"a2cbe05" = {editable = true, path = "./../nd2reader"}
+wrapt = "*"
+matplotlib = "*"
+scikit-image = "*"
+tqdm = "*"
+ipywidgets = "*"
+holoviews = "*"
+bokeh = "*"
+pyct = "*"
+dask = "*"
+distributed = "*"
+dask-jobqueue = "*"
+peakutils = "*"
+cytoolz = "*"
+pandas = "*"
+tornado = "==5.1.1"
+numpy-indexed = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.7"
