@@ -24,6 +24,11 @@ cytoolz = "*"
 pandas = "*"
 tornado = "==5.1.1"
 numpy-indexed = "*"
+statsmodels = "*"
+datashader = "*"
+xarray = "*"
+panel = "*"
+param = "*"
 
 [dev-packages]
 
