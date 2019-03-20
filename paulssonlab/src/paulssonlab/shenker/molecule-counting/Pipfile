@@ -29,6 +29,8 @@ datashader = "*"
 xarray = "*"
 panel = "*"
 param = "*"
+matriarch = {editable = true, path = "./../matriarch"}
+cachetools = "*"
 
 [dev-packages]
 
