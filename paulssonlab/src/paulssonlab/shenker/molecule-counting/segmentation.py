@@ -1,5 +1,6 @@
 import numpy as np
 import dask
+from dask import delayed
 import dask.array as da
 import skimage
 from cytoolz import compose
@@ -97,27 +98,42 @@ def segment(img, diagnostics=None):
 
 
 def process_file(
-    client,
     col_to_funcs,
     photobleaching_filename,
     segmentation_filename=None,
     initial_filename=None,
     final_filename=None,
+    flat_field=None,
+    dark_frame=None,
     time_slice=slice(None),
 ):
+    if flat_field is not None and dark_frame is not None:
+        flat_field = flat_field - dark_frame
+
+    def _correct_frame(dark_frame, flat_field, frame):
+        if dark_frame is not None:
+            frame = frame - dark_frame
+        if flat_field is not None:
+            frame = frame / flat_field
+        return frame
+
+    def _get_corrected_nd2_frame(dark_frame, flat_field, *args, **kwargs):
+        return _correct_frame(dark_frame, flat_field, get_nd2_frame(*args, **kwargs))
+
     nd2 = get_nd2_reader(photobleaching_filename)
     num_positions = nd2.sizes.get("v", 1)
     del nd2
     data = {}
     for position in range(num_positions):
         # TODO: why won't dask array work?
-        # photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
-        photobleaching_frames = nd2_to_futures(
-            client, photobleaching_filename, position, 0
+        photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
+        photobleaching_frames = _correct_frame(
+            dark_frame, flat_field, photobleaching_frames
         )
+        # photobleaching_frames = nd2_to_futures(client, photobleaching_filename, position, 0)
         if segmentation_filename:
-            segmentation_frame = client.submit(
-                get_nd2_frame, segmentation_filename, position, 0, 0
+            segmentation_frame = delayed(_get_corrected_nd2_frame)(
+                dark_frame, flat_field, segmentation_filename, position, 0, 0
             )
         else:
             segmentation_filename = photobleaching_filename
@@ -128,11 +144,11 @@ def process_file(
         else:
             segmentation_func = segment
         # TODO: assuming segmenting in phase
-        labels = client.submit(segmentation_func, segmentation_frame)
+        labels = delayed(segmentation_func)(segmentation_frame)
         sandwich_frames = []
         if initial_filename is not None:
-            initial_frame = client.submit(
-                get_nd2_frame, initial_filename, position, 0, 0
+            initial_frame = delayed(_get_corrected_nd2_frame)(
+                dark_frame, flat_field, initial_filename, position, 0, 0
             )
             sandwich_frames.append(initial_frame)
             regionprops_frame = initial_frame
@@ -140,32 +156,26 @@ def process_file(
             regionprops_frame = segmentation_frame
         if final_filename is not None:
             sandwich_frames.append(
-                client.submit(get_nd2_frame, final_filename, position, 0, 0)
+                delayed(_get_corrected_nd2_frame)(final_filename, position, 0, 0)
             )
         sandwich_traces = {
-            col: client.submit(
-                compose(np.transpose, none_to_nans),
+            col: delayed(compose(np.transpose, none_to_nans))(
                 [
-                    client.submit(
-                        short_circuit_none, map_over_labels, func, labels, frame
-                    )
+                    delayed(short_circuit_none)(map_over_labels, func, labels, frame)
                     for frame in sandwich_frames
-                ],
+                ]
             )
             for col, func in col_to_funcs.items()
         }
-        regionprops = client.submit(get_regionprops, labels, regionprops_frame)
+        regionprops = delayed(get_regionprops)(labels, regionprops_frame)
         # traces = {col: client.submit(np.transpose, client.map(partial(map_over_labels, func, labels),
         #                                                      photobleaching_frames[time_slice]))
         traces = {
-            col: client.submit(
-                compose(np.transpose, none_to_nans),
+            col: delayed(compose(np.transpose, none_to_nans))(
                 [
-                    client.submit(
-                        short_circuit_none, map_over_labels, func, labels, frame
-                    )
+                    delayed(short_circuit_none)(map_over_labels, func, labels, frame)
                     for frame in photobleaching_frames[time_slice]
-                ],
+                ]
             )
             for col, func in col_to_funcs.items()
         }

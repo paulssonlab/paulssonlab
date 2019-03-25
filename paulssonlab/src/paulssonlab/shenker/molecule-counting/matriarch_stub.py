@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 import holoviews as hv
+import dask
+from dask import delayed
+import dask.array as da
 import nd2reader
 import skimage.filters
 import skimage.feature
@@ -36,7 +39,7 @@ def nd2_to_dask(filename, position, channel):
     nd2 = get_nd2_reader(filename)
     frame0 = get_nd2_frame(filename, position, channel, 0)
     frames = [
-        dask.delayed(get_nd2_frame)(filename, position, channel, t)
+        delayed(get_nd2_frame)(filename, position, channel, t)
         for t in range(nd2.sizes["t"])
     ]
     arrays = [
