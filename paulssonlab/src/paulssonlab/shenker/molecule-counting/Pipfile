@@ -33,6 +33,7 @@ matriarch = {editable = true, path = "./../matriarch"}
 cachetools = "*"
 cython = "*"
 "51e6b7d" = {editable = true, path = "./../scikit-image"}
+graphviz = "*"
 
 [dev-packages]
 

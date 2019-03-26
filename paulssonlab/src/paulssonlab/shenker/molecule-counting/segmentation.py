@@ -8,15 +8,40 @@ from matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
     get_regionprops,
-    nd2_to_dask,
-    nd2_to_futures,
     map_over_labels,
     repeat_apply,
     gaussian_box_approximation,
     hessian_eigenvalues,
     RevImage,
 )
-from util import short_circuit_none, none_to_nans
+from util import short_circuit_none, none_to_nans, trim_zeros
+
+# TODO: new
+def nd2_to_dask(filename, position, channel):
+    nd2 = get_nd2_reader(filename)
+    frame0 = get_nd2_frame(filename, position, channel, 0)
+    _get_nd2_frame = delayed(get_nd2_frame)
+    frames = [
+        _get_nd2_frame(filename, position, channel, t) for t in range(nd2.sizes["t"])
+    ]
+    arrays = [
+        da.from_delayed(frame, dtype=frame0.dtype, shape=frame0.shape)
+        for frame in frames
+    ]
+    stack = da.stack(arrays, axis=0)
+    stack = stack.rechunk({0: "auto"})
+    return stack
+
+
+# TODO: new
+def nd2_to_futures(client, filename, position, channel):
+    nd2 = get_nd2_reader(filename)
+    frames = [
+        client.submit(get_nd2_frame, filename, position, channel, t)
+        for t in range(nd2.sizes["t"])
+    ]
+    return frames
+
 
 # FROM: http://emmanuelle.github.io/a-tutorial-on-segmentation.html
 def permute_labels(labels):
@@ -63,7 +88,7 @@ def segment(img, diagnostics=None):
     if diagnostics is not None:
         diagnostics["img_k1"] = RevImage(img_k1)
     img_k1_frangi = skimage.filters.frangi(
-        img_k1, sigmas=np.arange(0.1, 1.5, 0.5)
+        img_k1 - img_k1.min(), sigmas=np.arange(0.1, 1.5, 0.5)
     )  # , scale_range=(1,3), scale_step=0.5)
     if diagnostics is not None:
         diagnostics["img_k1_frangi"] = RevImage(img_k1_frangi)
@@ -84,35 +109,25 @@ def segment(img, diagnostics=None):
     return watershed_labels
 
 
-# def segment(img):
-#     img_frangi = skimage.filters.frangi(img, scale_range=(0.1,1.5), scale_step=0.1)
-#     del img
-#     mask = img_frangi < np.percentile(img_frangi, 90)
-#     del img_frangi
-#     mask = skimage.segmentation.clear_border(mask)
-#     mask = repeat_apply(skimage.morphology.erosion, 2)(mask)
-#     mask = skimage.morphology.remove_small_objects(mask, 5)
-#     labels = skimage.measure.label(mask)
-#     # TODO: not even watershedding??
-#     return labels
-
-
 def process_file(
     col_to_funcs,
     photobleaching_filename,
     segmentation_filename=None,
     initial_filename=None,
     final_filename=None,
-    flat_field=None,
+    flat_fields=None,
     dark_frame=None,
     time_slice=slice(None),
+    position_slice=slice(None),
 ):
-    if flat_field is not None and dark_frame is not None:
-        flat_field = flat_field - dark_frame
+    if flat_fields is None:
+        flat_fields = {}
 
     def _correct_frame(dark_frame, flat_field, frame):
         if dark_frame is not None:
             frame = frame - dark_frame
+            if flat_field is not None:
+                flat_field = flat_field - dark_frame
         if flat_field is not None:
             frame = frame / flat_field
         return frame
@@ -120,35 +135,57 @@ def process_file(
     def _get_corrected_nd2_frame(dark_frame, flat_field, *args, **kwargs):
         return _correct_frame(dark_frame, flat_field, get_nd2_frame(*args, **kwargs))
 
+    _get_corrected_nd2_frame = delayed(_get_corrected_nd2_frame, pure=True)
+    regionprops_func = delayed(get_regionprops, pure=True)
+    _none_transpose = delayed(compose(np.transpose, none_to_nans), pure=True)
+    _short_circuit_none = delayed(short_circuit_none, pure=True)
     nd2 = get_nd2_reader(photobleaching_filename)
     num_positions = nd2.sizes.get("v", 1)
+    photobleaching_channel = nd2.metadata["channels"][0]
     del nd2
     data = {}
-    for position in range(num_positions):
+    for position in range(num_positions)[position_slice]:
         # TODO: why won't dask array work?
         photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
+        # TODO: trimming on the client side is hacky
+        #       and won't work nicely for futures, streaming, etc.
+        photobleaching_frames = trim_zeros(photobleaching_frames)
         photobleaching_frames = _correct_frame(
-            dark_frame, flat_field, photobleaching_frames
+            dark_frame, flat_fields.get(photobleaching_channel), photobleaching_frames
         )
         # photobleaching_frames = nd2_to_futures(client, photobleaching_filename, position, 0)
         if segmentation_filename:
-            segmentation_frame = delayed(_get_corrected_nd2_frame)(
-                dark_frame, flat_field, segmentation_filename, position, 0, 0
+            segmentation_frame = _get_corrected_nd2_frame(
+                dark_frame,
+                flat_fields.get(segmentation_channel),
+                segmentation_filename,
+                position,
+                0,
+                0,
             )
         else:
             segmentation_filename = photobleaching_filename
+            segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
+                "channels"
+            ][0]
             segmentation_frame = photobleaching_frames[0]
         segmentation_nd2 = get_nd2_reader(segmentation_filename)
         if segmentation_nd2.metadata["channels"][0] == "BF":
             segmentation_func = compose(segment, invert)
         else:
             segmentation_func = segment
-        # TODO: assuming segmenting in phase
-        labels = delayed(segmentation_func)(segmentation_frame)
+        segmentation_func = delayed(segmentation_func, pure=True)
+        labels = segmentation_func(segmentation_frame)
         sandwich_frames = []
         if initial_filename is not None:
-            initial_frame = delayed(_get_corrected_nd2_frame)(
-                dark_frame, flat_field, initial_filename, position, 0, 0
+            sandwich_channel = get_nd2_reader(initial_filename).metadata["channels"][0]
+            initial_frame = _get_corrected_nd2_frame(
+                dark_frame,
+                flat_fields.get(sandwich_channel),
+                initial_filename,
+                position,
+                0,
+                0,
             )
             sandwich_frames.append(initial_frame)
             regionprops_frame = initial_frame
@@ -156,25 +193,38 @@ def process_file(
             regionprops_frame = segmentation_frame
         if final_filename is not None:
             sandwich_frames.append(
-                delayed(_get_corrected_nd2_frame)(final_filename, position, 0, 0)
+                _get_corrected_nd2_frame(
+                    dark_frame,
+                    flat_fields.get(sandwich_channel),
+                    final_filename,
+                    position,
+                    0,
+                    0,
+                )
             )
         sandwich_traces = {
-            col: delayed(compose(np.transpose, none_to_nans))(
+            col: _none_transpose(
                 [
-                    delayed(short_circuit_none)(map_over_labels, func, labels, frame)
+                    _short_circuit_none(map_over_labels, func, labels, frame)
                     for frame in sandwich_frames
                 ]
             )
             for col, func in col_to_funcs.items()
         }
-        regionprops = delayed(get_regionprops)(labels, regionprops_frame)
+        regionprops = regionprops_func(labels, regionprops_frame)
         # traces = {col: client.submit(np.transpose, client.map(partial(map_over_labels, func, labels),
         #                                                      photobleaching_frames[time_slice]))
+        # traces = {col: _none_transpose([_short_circuit_none(map_over_labels, func, labels, frame)
+        #                                                 for frame in photobleaching_frames[time_slice]])
+        #               for col, func in col_to_funcs.items()}
+        photobleaching_frames = photobleaching_frames[time_slice]
         traces = {
-            col: delayed(compose(np.transpose, none_to_nans))(
+            col: _none_transpose(
                 [
-                    delayed(short_circuit_none)(map_over_labels, func, labels, frame)
-                    for frame in photobleaching_frames[time_slice]
+                    _short_circuit_none(
+                        map_over_labels, func, labels, photobleaching_frames[i]
+                    )
+                    for i in range(len(photobleaching_frames))
                 ]
             )
             for col, func in col_to_funcs.items()

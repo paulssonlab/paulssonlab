@@ -1,4 +1,5 @@
 import numpy as np
+import dask.base
 
 
 def short_circuit_none(func, *args, **kwargs):
@@ -13,6 +14,17 @@ def trim_nones(ary):
     length = len(ary)
     for idx, elem in enumerate(reversed(ary)):
         if elem is not None:
+            length = idx
+            break
+    return ary[: len(ary) - length]
+
+
+def trim_zeros(ary, scheduler="synchronous"):
+    length = len(ary)
+    for idx, elem in enumerate(reversed(ary)):
+        if isinstance(elem, dask.base.DaskMethodsMixin):
+            elem = elem.compute(scheduler=scheduler)
+        if np.any(elem):
             length = idx
             break
     return ary[: len(ary) - length]

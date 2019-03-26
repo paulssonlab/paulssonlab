@@ -34,32 +34,6 @@ def get_nd2_frame(filename, position, channel, t, memmap=False):
     return ary
 
 
-# TODO: new
-def nd2_to_dask(filename, position, channel):
-    nd2 = get_nd2_reader(filename)
-    frame0 = get_nd2_frame(filename, position, channel, 0)
-    frames = [
-        delayed(get_nd2_frame)(filename, position, channel, t)
-        for t in range(nd2.sizes["t"])
-    ]
-    arrays = [
-        da.from_delayed(frame, dtype=frame0.dtype, shape=frame0.shape)
-        for frame in frames
-    ]
-    stack = da.stack(arrays, axis=0)
-    return stack
-
-
-# TODO: new
-def nd2_to_futures(client, filename, position, channel):
-    nd2 = get_nd2_reader(filename)
-    frames = [
-        client.submit(get_nd2_frame, filename, position, channel, t)
-        for t in range(nd2.sizes["t"])
-    ]
-    return frames
-
-
 def RevImage(img, **kwargs):
     return _RevImage(hv.Image, img, **kwargs)
 
