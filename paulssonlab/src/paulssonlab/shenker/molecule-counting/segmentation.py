@@ -133,7 +133,11 @@ def process_file(
         return frame
 
     def _get_corrected_nd2_frame(dark_frame, flat_field, *args, **kwargs):
-        return _correct_frame(dark_frame, flat_field, get_nd2_frame(*args, **kwargs))
+        frame = get_nd2_frame(*args, **kwargs)
+        if np.any(frame):
+            return _correct_frame(dark_frame, flat_field, frame)
+        else:
+            return None
 
     _get_corrected_nd2_frame = delayed(_get_corrected_nd2_frame, pure=True)
     regionprops_func = delayed(get_regionprops, pure=True)
@@ -141,19 +145,24 @@ def process_file(
     _short_circuit_none = delayed(short_circuit_none, pure=True)
     nd2 = get_nd2_reader(photobleaching_filename)
     num_positions = nd2.sizes.get("v", 1)
+    num_timepoints = nd2.sizes.get("t", 1)
     photobleaching_channel = nd2.metadata["channels"][0]
     del nd2
     data = {}
     for position in range(num_positions)[position_slice]:
-        # TODO: why won't dask array work?
-        photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
-        # TODO: trimming on the client side is hacky
-        #       and won't work nicely for futures, streaming, etc.
-        photobleaching_frames = trim_zeros(photobleaching_frames)
-        photobleaching_frames = _correct_frame(
-            dark_frame, flat_fields.get(photobleaching_channel), photobleaching_frames
-        )
-        # photobleaching_frames = nd2_to_futures(client, photobleaching_filename, position, 0)
+        # TODO: map over dask arrays efficiently
+        # photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
+        photobleaching_frames = [
+            _get_corrected_nd2_frame(
+                dark_frame,
+                flat_fields.get(photobleaching_channel),
+                photobleaching_filename,
+                0,
+                0,
+                t,
+            )
+            for t in range(num_timepoints)
+        ]
         if segmentation_filename:
             segmentation_frame = _get_corrected_nd2_frame(
                 dark_frame,
@@ -212,19 +221,12 @@ def process_file(
             for col, func in col_to_funcs.items()
         }
         regionprops = regionprops_func(labels, regionprops_frame)
-        # traces = {col: client.submit(np.transpose, client.map(partial(map_over_labels, func, labels),
-        #                                                      photobleaching_frames[time_slice]))
-        # traces = {col: _none_transpose([_short_circuit_none(map_over_labels, func, labels, frame)
-        #                                                 for frame in photobleaching_frames[time_slice]])
-        #               for col, func in col_to_funcs.items()}
         photobleaching_frames = photobleaching_frames[time_slice]
         traces = {
             col: _none_transpose(
                 [
-                    _short_circuit_none(
-                        map_over_labels, func, labels, photobleaching_frames[i]
-                    )
-                    for i in range(len(photobleaching_frames))
+                    _short_circuit_none(map_over_labels, func, labels, frame)
+                    for frame in photobleaching_frames
                 ]
             )
             for col, func in col_to_funcs.items()
