@@ -66,14 +66,9 @@ def segment_otsuonly(img):
 
 # TODO: modified
 def segment(img, diagnostics=None):
-    img = img.astype(
-        np.float32
-    )  # TODO: automatically cast to float32 if not already float32/64
+    img = skimage.img_as_float(img)
     if diagnostics is not None:
         diagnostics["img"] = RevImage(img)
-    # img = normalize_trench_intensity(uniformize_trench_intensity(img))
-    # if diagnostics is not None:
-    #    diagnostics['img_normalized'] = RevImage(img)
     ##img_scaled = skimage.transform.pyramid_expand(img, upscale=2,
     ##                                              multichannel=False)
     ##if diagnostics is not None:
@@ -81,18 +76,24 @@ def segment(img, diagnostics=None):
     img_blurred = skimage.filters.gaussian(img, 0.5)
     if diagnostics is not None:
         diagnostics["img_blurred"] = RevImage(img_blurred)
-    img_k1 = hessian_eigenvalues(img_blurred)[0]
     mask = img_blurred > skimage.filters.threshold_otsu(img_blurred)
+    mask = skimage.morphology.remove_small_objects(mask, 5)
     if diagnostics is not None:
         diagnostics["mask"] = RevImage(mask)
+    mask_labels = skimage.morphology.label(mask)
+    # img_normalized = normalize_componentwise(img, mask_labels)
+    # if diagnostics is not None:
+    #    diagnostics['img_normalized'] = RevImage(img_normalized)
+    img_k2 = hessian_eigenvalues(img)[1]
     if diagnostics is not None:
-        diagnostics["img_k1"] = RevImage(img_k1)
-    img_k1_frangi = skimage.filters.frangi(
-        img_k1 - img_k1.min(), sigmas=np.arange(0.1, 1.5, 0.5)
+        diagnostics["img_k2"] = RevImage(img_k2)
+    # img_k2_frangi = skimage.filters.frangi(img_k2, sigmas=np.arange(0.1,1.5,0.5))#, scale_range=(1,3), scale_step=0.5)
+    img_k2_frangi = skimage.filters.frangi(
+        img_k2, sigmas=np.arange(0.1, 1.5, 0.2)
     )  # , scale_range=(1,3), scale_step=0.5)
     if diagnostics is not None:
-        diagnostics["img_k1_frangi"] = RevImage(img_k1_frangi)
-    img_thresh = img_k1_frangi > skimage.filters.threshold_otsu(img_k1_frangi)
+        diagnostics["img_k2_frangi"] = RevImage(img_k2_frangi)
+    img_thresh = img_k2_frangi > skimage.filters.threshold_otsu(img_k2_frangi)
     if diagnostics is not None:
         diagnostics["img_thresh"] = RevImage(img_thresh)
     clean_seeds = skimage.morphology.label(
@@ -101,11 +102,14 @@ def segment(img, diagnostics=None):
     if diagnostics is not None:
         diagnostics["clean_seeds"] = RevImage(clean_seeds)
     watershed_labels = skimage.morphology.watershed(
-        img_k1, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
+        img_k2, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
     )
     watershed_labels = watershed_labels  # .astype(np.uint8)
     if diagnostics is not None:
         diagnostics["watershed_labels"] = RevImage(watershed_labels)
+        diagnostics["watershed_labels_permuted"] = RevImage(
+            permute_labels(watershed_labels)
+        )
     return watershed_labels
 
 
