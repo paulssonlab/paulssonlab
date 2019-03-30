@@ -100,30 +100,21 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
     return ary
 
 
+# TODO: modified
 def normalize_componentwise(
-    img,
-    img_labels,
-    weighted=False,
-    label_index=None,
-    dilation=5,
-    in_place=False,
-    dtype=np.float32,
+    img, img_labels, label_index=None, dilation=10, in_place=False
 ):
-    if not in_place:
-        img = img.astype(dtype).copy()
+    img = skimage.img_as_float(img, force_copy=(not in_place))
     if label_index is None:
         label_index = np.unique(img_labels)
-    maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
-    if weighted:
-        median = np.median(maxes[1:])  # exclude background from median
     img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
+    mins, maxes, _, _ = scipy.ndimage.extrema(img, labels=img_labels, index=label_index)
     img[img_labels == 0] = 0
     for idx, label in enumerate(label_index):
+        if label == 0:
+            continue
         mask = img_labels == label
-        if weighted:
-            img[mask] *= min(maxes[idx] / median, 1)
-        else:
-            img[mask] /= maxes[idx]
+        img[mask] = (img[mask] - mins[idx]) / (maxes[idx] - mins[idx])
     return img
 
 
