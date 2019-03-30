@@ -45,6 +45,61 @@ def _RevImage(cls, img, **kwargs):
     )
 
 
+from collections import Sequence, Mapping
+
+# FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
+# TODO: document!!! and replace map_collections
+def recursive_map(
+    func,
+    data,
+    shortcircuit=(),
+    ignore=(),
+    keys=False,
+    max_level=None,
+    predicate=None,
+    key_predicate=None,
+):
+    if max_level is not None and max_level is not False:
+        if max_level == 0:
+            return func(data)
+        max_level -= 1
+    apply = lambda x: recursive_map(
+        func,
+        x,
+        shortcircuit=shortcircuit,
+        ignore=ignore,
+        keys=keys,
+        max_level=max_level,
+        predicate=predicate,
+        key_predicate=key_predicate,
+    )
+    if isinstance(data, shortcircuit):
+        return func(data)
+    # to avoid an infinite recursion error
+    # we need to hardcode that strs are ignored, because str[0] is a str, and hence a Sequence
+    elif isinstance(data, str) or ignore is not True and isinstance(data, ignore):
+        return data
+    elif isinstance(data, Mapping):
+        if keys:
+            values = {apply(k): apply(v) for k, v in data.items()}
+        else:
+            values = {k: apply(v) for k, v in data.items()}
+        if key_predicate is not None:
+            values = {k: v for k, v in values.items() if key_predicate(k)}
+        if predicate is not None:
+            values = {k: v for k, v in values.items() if predicate(v)}
+        return type(data)(values)
+    elif isinstance(data, Sequence):
+        values = [apply(v) for v in data]
+        if predicate is not None:
+            values = [v for v in values if predicate(v)]
+        return type(data)(values)
+    elif ignore is True or True in ignore:
+        return data
+    else:
+        return func(data)
+
+
 # TODO: changed argument order, use in matriarch measure func
 def map_over_labels(func, label_image, intensity_image):
     # assumes are consecutive integers 0,...,N
