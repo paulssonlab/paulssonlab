@@ -4,17 +4,20 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+bokeh = {version = "==1.1.0.dev12", index = "https://pypi.anaconda.org/bokeh/channel/dev/simple"}
+"f2d9c5f" = {editable = true, path = "./../param"}
+"5b0015f" = {editable = true, path = "./../panel"}
+"a2cbe05" = {editable = true, path = "./../nd2reader"}
+"51e6b7d" = {editable = true, path = "./../scikit-image"}
+tornado = "*"
 jupyterlab = "*"
 numpy = "*"
 scipy = "*"
-"a2cbe05" = {editable = true, path = "./../nd2reader"}
 wrapt = "*"
 matplotlib = "*"
-scikit-image = "*"
 tqdm = "*"
 ipywidgets = "*"
 holoviews = "*"
-bokeh = "*"
 pyct = "*"
 dask = "*"
 distributed = "*"
@@ -22,20 +25,24 @@ dask-jobqueue = "*"
 peakutils = "*"
 cytoolz = "*"
 pandas = "*"
-tornado = "==5.1.1"
 numpy-indexed = "*"
 statsmodels = "*"
 datashader = "*"
 xarray = "*"
-panel = "*"
-param = "*"
-matriarch = {editable = true, path = "./../matriarch"}
 cachetools = "*"
 cython = "*"
-"51e6b7d" = {editable = true, path = "./../scikit-image"}
 graphviz = "*"
+notebook = "*"
+pyarrow = "*"
+hvplot = "*"
+astropy = "*"
+matriarch = {editable = true, path = "./../matriarch"}
+"4a8dedc" = {editable = true, path = "./../pyviz_comms"}
 
 [dev-packages]
 
 [requires]
 python_version = "3.7"
+
+[pipenv]
+allow_prereleases = true
