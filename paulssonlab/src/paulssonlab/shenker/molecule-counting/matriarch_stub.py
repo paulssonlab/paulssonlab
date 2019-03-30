@@ -5,6 +5,7 @@ import dask
 from dask import delayed
 import dask.array as da
 import nd2reader
+import skimage
 import skimage.filters
 import skimage.feature
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
@@ -59,8 +60,29 @@ def repeat_apply(func, n):
     return reduce(lambda f1, f2: compose(f1, f2), [func] * n)
 
 
-def hessian_eigenvalues(img):
-    return hessian_matrix_eigvals(hessian_matrix(img.astype(np.float32), order="rc"))
+def hessian_eigenvalues(img, sigma=1.5):
+    return hessian_matrix_eigvals(
+        hessian_matrix(skimage.img_as_float(img), sigma, mode="nearest", order="rc")
+    )
+
+
+# def hessian_eigenvalues(img, sigma=1.5):
+#     I = skimage.filters.gaussian(img, sigma)
+#     I_x = skimage.filters.sobel_h(I)
+#     I_y = skimage.filters.sobel_v(I)
+#     I_xx = skimage.filters.sobel_h(I_x)
+#     I_xy = skimage.filters.sobel_v(I_x)
+#     I_yx = skimage.filters.sobel_h(I_y)
+#     I_yy = skimage.filters.sobel_v(I_y)
+#     kappa_1 = (I_xx + I_yy) / 2
+#     with warnings.catch_warnings():
+#         warnings.simplefilter('ignore', RuntimeWarning)
+#         kappa_2 = (np.sqrt((I_xx + I_yy)**2 - 4*(I_xx*I_yy - I_xy*I_yx))) / 2
+#     k1 = kappa_1 + kappa_2
+#     k2 = kappa_1 - kappa_2
+#     k1[np.isnan(k1)] = 0
+#     k2[np.isnan(k2)] = 0
+#     return k1, k2
 
 
 def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
