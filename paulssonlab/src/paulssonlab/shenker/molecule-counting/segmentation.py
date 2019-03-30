@@ -163,21 +163,20 @@ def process_file(
             )
             for t in range(num_timepoints)
         ]
-        if segmentation_filename:
-            segmentation_frame = _get_corrected_nd2_frame(
-                dark_frame,
-                flat_fields.get(segmentation_channel),
-                segmentation_filename,
-                position,
-                0,
-                0,
-            )
-        else:
+        if not segmentation_filename:
             segmentation_filename = photobleaching_filename
-            segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
-                "channels"
-            ][0]
-            segmentation_frame = photobleaching_frames[0]
+        segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
+            "channels"
+        ][0]
+        # segmentation_frame = photobleaching_frames[0]
+        segmentation_frame = _get_corrected_nd2_frame(
+            dark_frame,
+            flat_fields.get(segmentation_channel),
+            segmentation_filename,
+            position,
+            0,
+            0,
+        )
         segmentation_nd2 = get_nd2_reader(segmentation_filename)
         if segmentation_nd2.metadata["channels"][0] == "BF":
             segmentation_func = compose(segment, invert)
