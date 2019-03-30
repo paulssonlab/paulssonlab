@@ -84,8 +84,8 @@ def hessian_eigenvalues(img, sigma=1.5):
 #     k2[np.isnan(k2)] = 0
 #     return k1, k2
 
-
-def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
+# TODO: modified
+def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
     w_ideal = np.sqrt((12 * sigma**2 / n) + 1)
     w_l = int(np.floor(w_ideal))
     if w_l % 2 == 0:
@@ -94,9 +94,9 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
     m = (12 * sigma**2 - n * w_l**2 - 4 * n * w_l - 3 * n) / (-4 * w_l - 4)
     m = round(m)
     for i in range(m):
-        ary = scipy.ndimage.filters.uniform_filter(ary, w_l, mode=mode)
+        ary = scipy.ndimage.filters.uniform_filter(ary, w_l, mode=mode, cval=0)
     for i in range(n - m):
-        ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode)
+        ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode, cval=0)
     return ary
 
 
