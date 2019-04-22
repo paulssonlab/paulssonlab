@@ -90,7 +90,6 @@ class kychunker(timechunker):
             img_chunk_size=128,
         )
         self.t_range = t_range
-        self.ipynb_sysout = sys.stdout
 
         self.output_file_path = (
             self.output_path + "/kymo_" + str(self.fov_number) + ".hdf5"
@@ -187,7 +186,7 @@ class kychunker(timechunker):
             "data",
             y_percentile,
             t_range_tuple=(self.t_range,),
-        )  # THIS IS THE BOTTLENECK; just convert to using keys for colors
+        )
         y_percentiles_smoothed_handle = self.chunk_t(
             (y_percentiles_handle["data"],),
             (1,),
@@ -894,9 +893,6 @@ class kychunker(timechunker):
         self.midpoints_file_path = (
             self.output_path + "/midpoints_" + str(self.fov_number) + ".pkl"
         )
-        sys.stdout = open(
-            self.output_path + "/output_" + str(self.fov_number) + ".out", "w"
-        )
 
     def generate_kymograph(self, fov_number):
         """Master function for generating kymographs for the set of fovs specified on initialization. Writes an hdf5
@@ -915,8 +911,6 @@ class kychunker(timechunker):
         for cropped_in_y_handle in cropped_in_y_handles:
             self.delete_hdf5(cropped_in_y_handle)
         shutil.rmtree(self.temp_path)
-        sys.stdout = self.ipynb_sysout
-        os.remove(self.output_path + "/output_" + str(self.fov_number) + ".out")
 
 
 class kymograph_multifov(multifov):
