@@ -2,7 +2,7 @@ import pandas as pd
 import holoviews as hv
 from collections import defaultdict
 from functools import wraps
-from util import (
+from .util import (
     wrap_dict_values,
     drop_dict_nones,
     flatten_dict,

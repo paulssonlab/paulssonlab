@@ -6,7 +6,7 @@ import json
 import io
 import os
 import shutil
-from util import grouper, tqdm_auto
+from .util import grouper, tqdm_auto
 
 DEFAULT_ROW_GROUP_SIZE = 1_000_000
 

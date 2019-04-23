@@ -13,7 +13,7 @@ import nd2reader
 import sys
 from datetime import timedelta
 from collections import defaultdict, namedtuple
-from util import (
+from .util import (
     zip_dicts,
     multi_join,
     array_to_tuples,
@@ -23,10 +23,10 @@ from util import (
     get_kwargs,
     kwcompose,
 )
-from metadata import parse_nd2_metadata
-from geometry import get_image_limits, get_trench_bbox, bounding_box
-from diagnostics import expand_diagnostics_by_label
-from image import get_regionprops
+from .metadata import parse_nd2_metadata
+from .geometry import get_image_limits, get_trench_bbox, bounding_box
+from .diagnostics import expand_diagnostics_by_label
+from .image import get_regionprops
 
 IDX = pd.IndexSlice
 
@@ -313,7 +313,7 @@ def map_stack_over_labels(col_to_funcs, label_stack, intensity_stack, labels=Non
     return df
 
 
-# TODO
+# TODO: on a full 2048x2048 frame, numpy_indexed: 532 ms; pandas: 1.2 s; this: 9.53 s
 # slightly faster alternative to, e.g.,
 # pd.DataFrame({'label': label_image.ravel(), 'value': intensity_image.ravel()}).groupby('label').agg(['mean', 'min', 'max'])
 # OR numpy_indexed.group_by(l0.ravel(), i0.ravel(), reduction=np.mean)

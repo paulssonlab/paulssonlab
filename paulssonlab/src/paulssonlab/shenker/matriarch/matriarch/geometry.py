@@ -12,16 +12,6 @@ def get_image_limits(shape):
     return x_lim, y_lim
 
 
-# TODO: obsolete
-def extract_kymograph(img_series, x0, x1):
-    num_timepoints = img_series.shape[0]
-    xs, ys = coords_along(x0, x1)
-    kymo = np.zeros((len(xs), num_timepoints))
-    for t in range(num_timepoints):
-        kymo[:, t] = img_series[t, ys, xs][::-1]
-    return kymo
-
-
 def bounding_box(points):
     upper_left_x = min(point[0] for point in points)
     upper_left_y = min(point[1] for point in points)

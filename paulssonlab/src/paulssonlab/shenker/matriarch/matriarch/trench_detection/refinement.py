@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
 import holoviews as hv
-from holoborodko_diff import holo_diff
-from geometry import get_image_limits
-from ui import RevImage
-from workflow import points_dataframe
+from ..misc.holoborodko_diff import holo_diff
+from ..geometry import get_image_limits
+from ..ui import RevImage
+from ..workflow import points_dataframe
 from .hough import trench_anchors
 from .geometry import edge_point, coords_along
 

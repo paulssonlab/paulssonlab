@@ -10,9 +10,9 @@ from numcodecs import Blosc
 # import wrapt # TODO
 # from decorator import decorator
 import functools
-from workflow import get_nd2_frame
-from data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
-from util import (
+from .workflow import get_nd2_frame
+from .data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
+from .util import (
     get_one,
     tqdm_auto,
     flatten_dict,

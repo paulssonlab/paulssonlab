@@ -8,16 +8,16 @@ import sklearn
 import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
-from holoborodko_diff import holo_diff
+from ..misc.holoborodko_diff import holo_diff
 import peakutils
 from .refinement import get_trench_line_profiles
-from image import (
+from ..image import (
     gaussian_box_approximation,
     remove_large_objects,
     normalize_componentwise,
 )
-from ui import RevImage
-from util import getitem_if_not_none
+from ..ui import RevImage
+from ..util import getitem_if_not_none
 
 
 def _standardize_cluster_labels(X, fit):

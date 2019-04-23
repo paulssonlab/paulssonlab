@@ -2,10 +2,10 @@ import numpy as np
 import pandas as pd
 import scipy
 import skimage.morphology
-from util import repeat_apply
+from skimage.feature import hessian_matrix, hessian_matrix_eigvals
+from .util import repeat_apply
 import numba
 from cytoolz import compose
-import warnings
 
 
 def quantize(img, bits, random=True):
@@ -91,7 +91,7 @@ def normalize_componentwise(
         label_index = np.unique(img_labels)
     maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
     if weighted:
-        median = np.median(maxes)
+        median = np.median(maxes[1:])  # exclude background from median
     img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
     img[img_labels == 0] = 0
     for idx, label in enumerate(label_index):
@@ -131,8 +131,9 @@ def sharpness(img, q=0.999, radius=1):
     return np.percentile(img_lofg, 100 * q)
 
 
-def hessian_eigenvalues(img):
-    I = skimage.filters.gaussian(img, 1.5)
+# TODO: use skimage.filters.ridge.compute_hessian_eigenvalues?
+def hessian_eigenvalues(img, sigma=1.5):
+    I = skimage.filters.gaussian(img, sigma)
     I_x = skimage.filters.sobel_h(I)
     I_y = skimage.filters.sobel_v(I)
     I_xx = skimage.filters.sobel_h(I_x)

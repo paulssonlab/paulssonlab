@@ -6,7 +6,7 @@ import zarr
 from numcodecs import Blosc
 import xmltodict
 import xml
-from util import recursive_map
+from .util import recursive_map
 
 DEFAULT_METADATA_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0

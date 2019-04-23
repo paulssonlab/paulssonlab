@@ -9,21 +9,21 @@ import holoviews as hv
 import holoviews.operation.datashader as datashader
 
 # TODO: fix imports
-from holoborodko_diff import holo_diff
+from ..misc.holoborodko_diff import holo_diff
 import peakutils
 from .geometry import edge_point, coords_along
 from .peaks import find_periodic_peaks
-from util import getitem_if_not_none
-from ui import RevImage
-from image import (
+from ..util import getitem_if_not_none
+from ..ui import RevImage
+from ..image import (
     hough_line_intensity,
     remove_large_objects,
     normalize_componentwise,
     gaussian_box_approximation,
 )
-from geometry import get_image_limits
-from workflow import points_dataframe
-import common
+from ..geometry import get_image_limits
+from ..workflow import points_dataframe
+from .. import common
 
 
 def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):

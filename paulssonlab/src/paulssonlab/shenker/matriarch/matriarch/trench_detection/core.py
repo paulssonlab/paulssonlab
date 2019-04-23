@@ -4,8 +4,8 @@ import skimage.morphology
 from .set_finding import binarize_trench_image, find_trench_sets_by_cutting
 from .hough import find_trench_lines
 from .refinement import find_trench_ends
-from util import getitem_if_not_none
-import common
+from ..util import getitem_if_not_none
+from .. import common
 
 # FROM: https://stackoverflow.com/questions/23815327/numpy-one-liner-for-combining-unequal-length-np-array-to-a-matrixor-2d-array
 def stack_jagged(arys, fill=np.nan):

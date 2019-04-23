@@ -14,15 +14,15 @@ from collections.abc import Mapping, Sequence
 import numbers
 from functools import partial, reduce
 import uuid
-from util import summarize_filenames, get_one, format_number
-import common
-from workflow import (
+from .util import summarize_filenames, get_one, format_number
+from . import common
+from .workflow import (
     get_nd2_frame_anyargs,
     get_trench_image,
     get_nd2_frame,
     get_trench_set_image,
 )
-from geometry import bounding_box
+from .geometry import bounding_box
 import numbers
 from cytoolz import get_in, compose
 from cachetools import LRUCache
