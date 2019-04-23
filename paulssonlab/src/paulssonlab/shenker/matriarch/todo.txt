@@ -1,4 +1,6 @@
 ### ISSUES
+%%output on plots_browser doubles outputs
+
 raise taptool issue: should work better on overlays, hvplot with by=col
 MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
 pandas observed multiindex groupby dataframe vs series
@@ -10,6 +12,49 @@ TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. render
 TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
 
 ENH: make dask memory stats traces longer/customizable
+
+### IMMEDIATE
+
+FIX TRENCH FINDING FOR TrErr.nd2 (look at trench length; add as filter criterion?)
+    pos0: bad crops
+
+FIX ERRORS
+{('/n/scratch2/jqs1/fidelity/all/TrErr.stripe-1.256m.nd2',
+  37): <Future: status: error, key: do_measure_and_write-b6ed4cd097d970fee66df862014802af>,
+ ('/n/scratch2/jqs1/fidelity/all/TrErr.stripe-1.256m.nd2',
+  231): <Future: status: error, key: do_measure_and_write-67f21db56906a1674e54e362c57093e1>}
+
+{('/n/scratch2/jqs1/fidelity/all/181010_rpos_bigsnake.stripe-1.64m.nd2',
+  385): <Future: status: error, key: do_measure_and_write-8a0f00ec9b8239f5817039ed4d9f6f45>}
+
+try 10 timepoints at a time, 1 timepoint at a time
+compress trench crops (with transform) upon load (factor of 2?)
+
+allow to crop BF without analyzing BF; pass in analysis channel to _measurement_func
+consensus filtering (pitch, angle)
+    need trench finding straggler handling
+restart from partially-finished run
+    store finished timepoints in zarr metadata
+    use func to slice into trenches parquet if available
+    check for positions without file or with lock file
+        rm lock file, rm positions
+DEBUG ANALYSIS STRAGGLERS
+priority: save trenches/errs first
+    LIMITED BY STRAGGLERS (dynamically timeout and retry? use new retry feature!)
+merge_parquet (with sort)
+load dataframes
+    concat different positions
+    concat mask alongside labelwise
+    use threadpoolexecutor?
+find txn errors
+label_viewer
+
+RAM usage during trench finding
+    don't save holoviews in diag/separate info and diag
+
+RAM usage during analysis
+    flag to load in trench set by trench set (?)
+    handle case with few positions, many timepoints/channels (TrErr.nd2)
 
 ### ANALYSIS PROFILE
 trench crops 5%
