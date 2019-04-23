@@ -63,6 +63,9 @@ snakeviz = {editable = true, path = "./../snakeviz"}
 memory-profiler = "*"
 nose = "*"
 pytest = "*"
+aiofiles = "*"
+aiofile = "*"
+tornado = "==5.1.1"
 
 [dev-packages]
 
