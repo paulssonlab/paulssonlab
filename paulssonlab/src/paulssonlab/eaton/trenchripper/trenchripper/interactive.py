@@ -102,10 +102,10 @@ class kymograph_interactive(kymograph_multifov):
             y_percentile,
             (smoothing_kernel_y_dim_0, 1),
         )
-
         thresholds = [
-            sk.filters.threshold_triangle(y_percentiles_smoothed, nbins=triangle_nbins)
-            * triangle_scaling
+            self.triangle_threshold(
+                y_percentiles_smoothed, triangle_nbins, triangle_scaling
+            )[1]
             for y_percentiles_smoothed in y_percentiles_smoothed_list
         ]
         self.plot_y_precentiles(y_percentiles_smoothed_list, self.fov_list, thresholds)
@@ -159,7 +159,10 @@ class kymograph_interactive(kymograph_multifov):
                 axis=1,
             ).T.flatten()
             thr_y = np.repeat(np.add.accumulate(np.ones(y_len, dtype=int)), x_len)
-            thr_z = np.repeat(thresholds[j], x_len * y_len)
+            #
+            thr_z = np.concatenate(
+                [np.repeat(threshold, x_len) for threshold in thresholds[j]], axis=0
+            )
             for i in range(0, x_len * y_len, x_len):
                 ax.plot(
                     thr_x[i : i + x_len],
