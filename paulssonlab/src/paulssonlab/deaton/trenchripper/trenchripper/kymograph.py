@@ -234,7 +234,7 @@ class kychunker(timechunker):
             )
             * triangle_scaling
         )
-        mask = img_arr > all_thresholds
+        triangle_mask = img_arr > all_thresholds
         return triangle_mask
 
     def remove_out_of_frame(self, edges, start_above, end_above):
