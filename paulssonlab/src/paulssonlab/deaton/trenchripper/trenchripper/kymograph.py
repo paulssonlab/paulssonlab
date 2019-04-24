@@ -546,7 +546,7 @@ class kychunker(timechunker):
         cropped_in_y_handles = []
         for channel in self.all_channels:
             cropped_in_y_handle = self.chunk_t(
-                (imported_hdf5_handle[self.seg_channel], y_drift),
+                (imported_hdf5_handle[channel], y_drift),
                 (2, 0),
                 3,
                 self.crop_y,
@@ -590,6 +590,7 @@ class kychunker(timechunker):
             x_smooth_filtered = self.median_filter_2d(
                 (x_background_filtered,), smoothing_kernel_x
             )
+            x_smooth_filtered[x_smooth_filtered < 0.0] = 0.0
             x_percentiles_smoothed.append(x_smooth_filtered)
         x_percentiles_smoothed = np.array(x_percentiles_smoothed)
         return x_percentiles_smoothed
@@ -1428,59 +1429,6 @@ class kymograph_multifov(multifov):
             cropped_in_y = np.moveaxis(cropped_in_y, (0, 1, 2, 3, 4), (4, 0, 1, 2, 3))
             return cropped_in_y
 
-    # def crop_y(self,i,trench_edges_y_lists,row_num_list,imported_array_list,padding_y,trench_len_y,top_orientation):
-    #     """Performs cropping of the images in the y-dimension.
-
-    #     Args:
-    #         i (int): Specifies the current fov index.
-    #         trench_edges_y_list (list): List containing, for each fov entry, a list of time-sorted edge arrays.
-    #         row_num_list (list): List containing The number of trench rows detected in each fov.
-    #         imported_array_list (list): A list containing numpy arrays containing the hdf5 file image
-    #         data of shape (channel,y,x,t).
-    #         padding_y (int): Padding to be used when cropping in the y-dimension.
-    #         trench_len_y (int): Length from the end of the tenches to be used when cropping in the
-    #         y-dimension.
-    #         top_orientation (int, optional): The orientation of the top-most row where 0 corresponds to a trench with
-    #         a downward-oriented trench opening and 1 corresponds to a trench with an upward-oriented trench opening.
-    #     Returns:
-    #         array: A y-cropped array of shape (rows,channels,x,y,t).
-    #     """
-    #     trench_edges_y_list = trench_edges_y_lists[i]
-    #     imported_array = imported_array_list[i]
-    #     trench_row_num = row_num_list[i]
-
-    #     time_list = []
-    #     for t in range(imported_array.shape[3]):
-    #         trench_edges_y = trench_edges_y_list[t]
-    #         orientation = top_orientation
-
-    #         top_bottom_list = []
-    #         for r in range(0,trench_row_num):
-    #             if orientation == 0:
-    #                 trench_edge_y = trench_edges_y[2*r]
-    #                 upper = max(trench_edge_y-padding_y,0)
-    #                 lower = min(trench_edge_y+trench_len_y,imported_array.shape[1])
-    #             else:
-    #                 trench_edge_y = trench_edges_y[(2*r)+1]
-    #                 upper = max(trench_edge_y-trench_len_y,0)
-    #                 lower = min(trench_edge_y+padding_y,imported_array.shape[1])
-
-    #             orientation = (orientation+1)%2
-
-    #             channel_list = []
-    #             for c in range(imported_array.shape[0]):
-    #                 output_array = imported_array[c,upper:lower,:,t]
-    #                 channel_list.append(output_array)
-    #             top_bottom_list.append(channel_list)
-    #         time_list.append(top_bottom_list)
-
-    #     cropped_in_y = np.array(time_list)
-    #     if len(cropped_in_y.shape) != 5:
-    #         return None
-    #     else:
-    #         cropped_in_y = np.moveaxis(cropped_in_y,(0,1,2,3,4),(4,0,1,2,3))
-    #         return cropped_in_y
-
     def crop_trenches_in_y(self, imported_array_list):
         """Master function for cropping the input hdf5 file in the y-dimension.
 
@@ -1577,6 +1525,7 @@ class kymograph_multifov(multifov):
             x_smooth_filtered = self.median_filter_2d(
                 x_background_filtered, smoothing_kernel_x
             )
+            x_smooth_filtered[x_smooth_filtered < 0.0] = 0.0
             x_percentiles_smoothed_rows.append(x_smooth_filtered)
         x_percentiles_smoothed_rows = np.array(x_percentiles_smoothed_rows)
         return x_percentiles_smoothed_rows
@@ -1621,7 +1570,7 @@ class kymograph_multifov(multifov):
         )
         x_mask = x_percentiles_t > otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
-        return midpoints
+        return midpoints, otsu_threshold
 
     def get_all_midpoints(
         self, i, x_percentiles_smoothed_list, otsu_nbins, otsu_scaling
@@ -1643,14 +1592,14 @@ class kymograph_multifov(multifov):
         for j in range(x_percentiles_smoothed_row.shape[0]):
             x_percentiles_smoothed = x_percentiles_smoothed_row[j]
             all_midpoints = []
-            midpoints = self.get_midpoints(
+            midpoints, _ = self.get_midpoints(
                 x_percentiles_smoothed[:, 0], otsu_nbins, otsu_scaling
             )
             if len(midpoints) == 0:
                 return None
             all_midpoints.append(midpoints)
             for t in range(1, x_percentiles_smoothed.shape[1]):
-                midpoints = self.get_midpoints(
+                midpoints, _ = self.get_midpoints(
                     x_percentiles_smoothed[:, t], otsu_nbins, otsu_scaling
                 )
                 if len(midpoints) / (len(all_midpoints[-1]) + 1) < 0.5:
