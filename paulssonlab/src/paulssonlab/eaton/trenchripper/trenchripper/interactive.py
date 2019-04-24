@@ -111,6 +111,7 @@ class kymograph_interactive(kymograph_multifov):
             for y_percentiles_smoothed in y_percentiles_smoothed_list
         ]
         self.plot_y_precentiles(y_percentiles_smoothed_list, self.fov_list, thresholds)
+        return y_percentiles_smoothed_list
 
     def plot_y_precentiles(self, y_percentiles_smoothed_list, fov_list, thresholds):
         fig = plt.figure()
@@ -193,9 +194,9 @@ class kymograph_interactive(kymograph_multifov):
         y_min_edge_dist,
         padding_y,
         trench_len_y,
-        orientation_detection,
         vertical_spacing,
-    ):  #### NEED TO UPDATE ARGS
+        orientation_detection,
+    ):
 
         ## imported_array_list,y_percentiles_smoothed_list -> cropped_in_y_list
 
@@ -248,6 +249,7 @@ class kymograph_interactive(kymograph_multifov):
             vertical_spacing,
             trench_orientations_list,
         )
+        return cropped_in_y_list
 
     def plot_y_crop(
         self,
@@ -303,9 +305,9 @@ class kymograph_interactive(kymograph_multifov):
         thresholds = []
         for smoothed_x_percentiles_row in smoothed_x_percentiles_list:
             for smoothed_x_percentiles in smoothed_x_percentiles_row:
+                x_percentiles_t = smoothed_x_percentiles[:, t]
                 thresholds.append(
-                    sk.filters.threshold_otsu(smoothed_x_percentiles, nbins=otsu_nbins)
-                    * otsu_scaling
+                    self.get_midpoints(x_percentiles_t, otsu_nbins, otsu_scaling)[1]
                 )
         self.plot_x_percentiles(
             smoothed_x_percentiles_list,
@@ -315,6 +317,7 @@ class kymograph_interactive(kymograph_multifov):
             vertical_spacing,
             num_rows=2,
         )
+        return smoothed_x_percentiles_list
 
     def plot_x_percentiles(
         self,
@@ -331,12 +334,8 @@ class kymograph_interactive(kymograph_multifov):
         nrow = len(smoothed_x_percentiles_list)
 
         idx = 0
-        for i, smoothed_x_percentiles_top_bottom in enumerate(
-            smoothed_x_percentiles_list
-        ):
-            for j, smoothed_x_percentiles in enumerate(
-                smoothed_x_percentiles_top_bottom
-            ):
+        for i, smoothed_x_percentiles_lanes in enumerate(smoothed_x_percentiles_list):
+            for j, smoothed_x_percentiles in enumerate(smoothed_x_percentiles_lanes):
                 idx += 1
                 data = smoothed_x_percentiles[:, t]
                 ax = fig.add_subplot(ncol, nrow, idx)
@@ -345,7 +344,7 @@ class kymograph_interactive(kymograph_multifov):
                 current_threshold = thresholds[idx - 1]
                 threshold_data = np.repeat(current_threshold, len(data))
                 ax.plot(threshold_data, c="r")
-                ax.set_title("FOV: " + str(fov_list[j]))
+                ax.set_title("FOV: " + str(fov_list[i]) + " Lane: " + str(j))
                 ax.set_xlabel("x position")
                 ax.set_ylabel("intensity")
 
@@ -361,6 +360,8 @@ class kymograph_interactive(kymograph_multifov):
             otsu_scaling,
         )
         self.plot_midpoints(all_midpoints_list, self.fov_list, vertical_spacing)
+        x_drift_list = self.map_to_fovs(self.get_x_drift, all_midpoints_list)
+        return all_midpoints_list, x_drift_list
 
     def plot_midpoints(self, all_midpoints_list, fov_list, vertical_spacing):
         fig = plt.figure()
