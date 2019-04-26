@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import skimage as sk
+import h5py
 
 from skimage import filters
 from mpl_toolkits.mplot3d import Axes3D
@@ -89,6 +90,17 @@ class kymograph_interactive(kymograph_multifov):
             otsu_nbins=otsu_nbins,
             otsu_scaling=otsu_scaling,
         )
+
+    def get_image_params(self, fov_idx):
+        hdf5_handle = h5py.File(self.input_file_prefix + str(fov_idx) + ".hdf5", "a")
+        channels = list(hdf5_handle.keys())
+        data = hdf5_handle[self.all_channels[0]]
+        return channels, data.shape
+
+    def view_image(self, fov_idx, t, channel):
+        hdf5_handle = h5py.File(self.input_file_prefix + str(fov_idx) + ".hdf5", "a")
+        plt.imshow(hdf5_handle[channel][:, :, t])
+        hdf5_handle.close()
 
     def preview_y_precentiles(
         self,
@@ -197,8 +209,6 @@ class kymograph_interactive(kymograph_multifov):
         vertical_spacing,
         orientation_detection,
     ):
-
-        ## imported_array_list,y_percentiles_smoothed_list -> cropped_in_y_list
 
         trench_edges_y_lists = self.map_to_fovs(
             self.get_trench_edges_y,
