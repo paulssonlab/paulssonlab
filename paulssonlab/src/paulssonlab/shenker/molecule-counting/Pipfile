@@ -1,45 +1,47 @@
 [[source]]
+name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
-name = "pypi"
+
+[[source]]
+url = "https://pypi.anaconda.org/bokeh/channel/dev/simple"
+verify_ssl = true
+name = "bokeh"
+
+[dev-packages]
 
 [packages]
-bokeh = {version = "==1.1.0.dev12", index = "https://pypi.anaconda.org/bokeh/channel/dev/simple"}
-"f2d9c5f" = {editable = true, path = "./../param"}
-"5b0015f" = {editable = true, path = "./../panel"}
-"a2cbe05" = {editable = true, path = "./../nd2reader"}
-"51e6b7d" = {editable = true, path = "./../scikit-image"}
-tornado = "*"
-jupyterlab = "*"
+panel = {editable = true,path = "./../panel"}
+jupyterlab = "==0.35.4"
+ipywidgets = "*"
+bokeh = {version = "==1.1.0rc1",index = "bokeh"}
+numba = "*"
+distributed = {path = "./../distributed"}
+holoviews = "*"
+pyviz-comms = "*"
+param = "*"
 numpy = "*"
 scipy = "*"
-wrapt = "*"
-matplotlib = "*"
-tqdm = "*"
-ipywidgets = "*"
-holoviews = "*"
-pyct = "*"
-dask = "*"
-distributed = "*"
-dask-jobqueue = "*"
-peakutils = "*"
-cytoolz = "*"
-pandas = "*"
 numpy-indexed = "*"
-statsmodels = "*"
-datashader = "*"
+pandas = "*"
+cytoolz = "*"
+peakutils = "*"
+tqdm = "*"
+matplotlib = "*"
+dask = {editable = true,path = "./../dask"}
+dask-jobqueue = {editable = true,path = "./../dask-jobqueue"}
+nd2reader = {editable = true,path = "./../nd2reader"}
+wrapt = "*"
 xarray = "*"
+zarr = "*"
+datashader = "*"
 cachetools = "*"
-cython = "*"
-graphviz = "*"
-notebook = "*"
 pyarrow = "*"
 hvplot = "*"
 astropy = "*"
-matriarch = {editable = true, path = "./../matriarch"}
-"4a8dedc" = {editable = true, path = "./../pyviz_comms"}
-
-[dev-packages]
+lmdb = "*"
+ae640ee = {editable = true,path = "./../numcodecs"}
+numcodecs = {editable = true,path = "./../numcodecs"}
 
 [requires]
 python_version = "3.7"

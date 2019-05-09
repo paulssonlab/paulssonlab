@@ -10,11 +10,20 @@ import skimage.filters
 import skimage.feature
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 import scipy.ndimage
-from cytoolz import reduce, compose
+from cytoolz import reduce, compose, partial
 import numpy_indexed
 import cachetools
 from numbers import Integral
 import warnings
+import zarr
+from numcodecs import Blosc
+from collections import Sequence, Mapping
+
+DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
+DEFAULT_ORDER = "C"
+zarrify = partial(
+    zarr.array, compressor=DEFAULT_COMPRESSOR, order=DEFAULT_ORDER, chunks=False
+)
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
@@ -45,10 +54,21 @@ def _RevImage(cls, img, **kwargs):
     )
 
 
-from collections import Sequence, Mapping
+# TODO: new. incorporate into recursive_map?
+def recursive_sequence_map(func, data, max_level=0):
+    if max_level == 0:
+        return func(data)
+    else:
+        values = type(data)(
+            [recursive_sequence_map(func, d, max_level=max_level - 1) for d in data]
+        )
+        values = func(values)
+        return values
+
 
 # FROM: https://stackoverflow.com/questions/42095393/python-map-a-function-over-recursive-iterables/42095505
 # TODO: document!!! and replace map_collections
+# TODO: incorporate recursive_sequence_map?
 def recursive_map(
     func,
     data,

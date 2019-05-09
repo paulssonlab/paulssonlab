@@ -3,7 +3,7 @@ import dask
 from dask import delayed
 import dask.array as da
 import skimage
-from cytoolz import compose
+from cytoolz import compose, partial
 from matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
@@ -13,11 +13,12 @@ from matriarch_stub import (
     gaussian_box_approximation,
     hessian_eigenvalues,
     RevImage,
+    zarrify,
 )
 from util import short_circuit_none, none_to_nans, trim_zeros
 
 # TODO: new
-def nd2_to_dask(filename, position, channel):
+def nd2_to_dask(filename, position, channel, rechunk=True):
     nd2 = get_nd2_reader(filename)
     frame0 = get_nd2_frame(filename, position, channel, 0)
     _get_nd2_frame = delayed(get_nd2_frame)
@@ -29,7 +30,8 @@ def nd2_to_dask(filename, position, channel):
         for frame in frames
     ]
     stack = da.stack(arrays, axis=0)
-    stack = stack.rechunk({0: "auto"})
+    if rechunk:
+        stack = stack.rechunk({0: "auto"})
     return stack
 
 
@@ -65,7 +67,7 @@ def segment_otsuonly(img):
 
 
 # TODO: modified
-def segment(img, diagnostics=None):
+def segment(img, dtype=np.uint16, diagnostics=None):
     img = skimage.img_as_float(img)
     if diagnostics is not None:
         diagnostics["img"] = RevImage(img)
@@ -84,27 +86,55 @@ def segment(img, diagnostics=None):
     # img_normalized = normalize_componentwise(img, mask_labels)
     # if diagnostics is not None:
     #    diagnostics['img_normalized'] = RevImage(img_normalized)
-    img_k2 = hessian_eigenvalues(img)[1]
+    img_k1 = hessian_eigenvalues(img)[0]
+    # TODO: necessary?
+    img_k1 -= img_k1.min()
+    img_k1 /= img_k1.max()
     if diagnostics is not None:
-        diagnostics["img_k2"] = RevImage(img_k2)
-    # img_k2_frangi = skimage.filters.frangi(img_k2, sigmas=np.arange(0.1,1.5,0.5))#, scale_range=(1,3), scale_step=0.5)
-    img_k2_frangi = skimage.filters.frangi(
-        img_k2, sigmas=np.arange(0.1, 1.5, 0.2)
+        diagnostics["img_k1"] = RevImage(img_k1)
+    # img_k1_frangi = skimage.filters.frangi(img_k1, sigmas=np.arange(0.1,1.5,0.5))#, scale_range=(1,3), scale_step=0.5)
+    img_k1_frangi = skimage.filters.frangi(
+        img_k1, sigmas=np.arange(0.1, 1.5, 0.2)
     )  # , scale_range=(1,3), scale_step=0.5)
     if diagnostics is not None:
-        diagnostics["img_k2_frangi"] = RevImage(img_k2_frangi)
-    img_thresh = img_k2_frangi > skimage.filters.threshold_otsu(img_k2_frangi)
+        diagnostics["img_k1_frangi"] = RevImage(img_k1_frangi)
+    # # TODO: necessary?
+    # img_k1_frangi -= img_k1_frangi.min()
+    # img_k1_frangi /= img_k1_frangi.max()
+    img_k1_frangi_uint = skimage.img_as_uint(img_k1_frangi)
+    if diagnostics is not None:
+        diagnostics["img_k1_frangi_uint"] = RevImage(img_k1_frangi_uint)
+    # selem = skimage.morphology.disk(20)
+    # img_k1_frangi_thresh = skimage.filters.rank.otsu(img_k1_frangi_uint, selem)
+    img_k1_frangi_thresh = skimage.filters.threshold_local(
+        img_k1_frangi, block_size=23, mode="nearest"
+    )
+    if diagnostics is not None:
+        diagnostics["img_k1_frangi_thresh"] = RevImage(img_k1_frangi_thresh)
+    # img_k1_frangi_thresh_blurred = skimage.filters.gaussian(img_k1_frangi_thresh, 0)
+    # if diagnostics is not None:
+    #     diagnostics['img_k1_frangi_thresh_blurred'] = RevImage(img_k1_frangi_thresh_blurred)
+    # img_thresh = img_k1_frangi > img_k1_frangi_thresh_blurred
+    img_thresh = img_k1_frangi > img_k1_frangi_thresh
+    # img_thresh = img_k1_frangi > skimage.filters.threshold_otsu(img_k1_frangi)
     if diagnostics is not None:
         diagnostics["img_thresh"] = RevImage(img_thresh)
+    img_thresh_masked = img_thresh * mask
+    if diagnostics is not None:
+        diagnostics["img_thresh_masked"] = RevImage(img_thresh_masked)
+    # img_thresh_eroded = repeat_apply(skimage.morphology.erosion, 0)(img_thresh_masked)
+    # if diagnostics is not None:
+    #     diagnostics['img_thresh_eroded'] = RevImage(img_thresh_eroded)
+    # clean_seeds = skimage.morphology.label(skimage.morphology.remove_small_objects(img_thresh_eroded, 5))
     clean_seeds = skimage.morphology.label(
-        skimage.morphology.remove_small_objects(img_thresh * mask, 5)
+        skimage.morphology.remove_small_objects(img_thresh_masked, 5)
     )
     if diagnostics is not None:
         diagnostics["clean_seeds"] = RevImage(clean_seeds)
     watershed_labels = skimage.morphology.watershed(
-        img_k2, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
+        img_k1, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
     )
-    watershed_labels = watershed_labels  # .astype(np.uint8)
+    watershed_labels = watershed_labels.astype(dtype)
     if diagnostics is not None:
         diagnostics["watershed_labels"] = RevImage(watershed_labels)
         diagnostics["watershed_labels_permuted"] = RevImage(
@@ -123,6 +153,7 @@ def process_file(
     dark_frame=None,
     time_slice=slice(None),
     position_slice=slice(None),
+    array_func=zarrify,
 ):
     if flat_fields is None:
         flat_fields = {}
@@ -145,7 +176,13 @@ def process_file(
 
     _get_corrected_nd2_frame = delayed(_get_corrected_nd2_frame, pure=True)
     regionprops_func = delayed(get_regionprops, pure=True)
-    _none_transpose = delayed(compose(np.transpose, none_to_nans), pure=True)
+    _transpose = partial(short_circuit_none, np.transpose)
+    if array_func is not None:
+        _none_array_func = partial(short_circuit_none, array_func)
+        _array_func = delayed(_none_array_func, pure=True)
+        _transpose = compose(_none_array_func, _transpose)
+    _none_transpose = compose(_transpose, none_to_nans)
+    _none_transpose = delayed(_none_transpose, pure=True)
     _short_circuit_none = delayed(short_circuit_none, pure=True)
     nd2 = get_nd2_reader(photobleaching_filename)
     num_positions = nd2.sizes.get("v", 1)
@@ -161,7 +198,7 @@ def process_file(
                 dark_frame,
                 flat_fields.get(photobleaching_channel),
                 photobleaching_filename,
-                0,
+                position,
                 0,
                 t,
             )
@@ -186,6 +223,9 @@ def process_file(
             segmentation_func = compose(segment, invert)
         else:
             segmentation_func = segment
+        # TODO: if we zarrify labels, we need to turn back into ndarray before map_over_labels
+        # if array_func is not None:
+        #     segmentation_func = compose(array_func, segmentation_func)
         segmentation_func = delayed(segmentation_func, pure=True)
         labels = segmentation_func(segmentation_frame)
         sandwich_frames = []
@@ -234,6 +274,9 @@ def process_file(
             )
             for col, func in col_to_funcs.items()
         }
+        if array_func is not None:
+            segmentation_frame = _array_func(segmentation_frame)
+            labels = _array_func(labels)
         data[position] = {
             "regionprops": regionprops,
             "sandwich_traces": sandwich_traces,
