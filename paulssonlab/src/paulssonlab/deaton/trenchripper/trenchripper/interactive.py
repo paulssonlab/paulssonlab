@@ -26,6 +26,7 @@ class kymograph_interactive(kymograph_multifov):
         triangle_nbins=50,
         triangle_scaling=1.0,
         orientation_detection=0,
+        expected_num_rows=None,
         x_percentile=85,
         background_kernel_x=(301, 1),
         smoothing_kernel_x=(9, 1),
@@ -84,6 +85,7 @@ class kymograph_interactive(kymograph_multifov):
             triangle_nbins=triangle_nbins,
             triangle_scaling=triangle_scaling,
             orientation_detection=orientation_detection,
+            expected_num_rows=expected_num_rows,
             x_percentile=x_percentile,
             background_kernel_x=background_kernel_x,
             smoothing_kernel_x=smoothing_kernel_x,
@@ -207,6 +209,7 @@ class kymograph_interactive(kymograph_multifov):
         padding_y,
         trench_len_y,
         vertical_spacing,
+        expected_num_rows,
         orientation_detection,
     ):
 
@@ -219,15 +222,16 @@ class kymograph_interactive(kymograph_multifov):
         )
         y_midpoints_list = self.map_to_fovs(self.get_y_midpoints, trench_edges_y_lists)
         y_drift_list = self.map_to_fovs(self.get_y_drift, y_midpoints_list)
-        valid_edges_y_lists = self.map_to_fovs(
-            self.keep_in_frame_kernels,
-            trench_edges_y_lists,
-            y_drift_list,
-            imported_array_list,
-            padding_y,
-        )
 
         if orientation_detection == "phase":
+            valid_edges_y_output = self.map_to_fovs(
+                self.keep_in_frame_kernels,
+                trench_edges_y_lists,
+                y_drift_list,
+                imported_array_list,
+                padding_y,
+            )
+            valid_edges_y_lists = [item[0] for item in valid_edges_y_output]
             trench_orientations_list = self.map_to_fovs(
                 self.get_phase_orientations,
                 y_percentiles_smoothed_list,
@@ -236,8 +240,24 @@ class kymograph_interactive(kymograph_multifov):
 
         elif orientation_detection == 0 or orientation_detection == 1:
             trench_orientations_list = self.map_to_fovs(
-                self.get_manual_orientations, valid_edges_y_lists, orientation_detection
+                self.get_manual_orientations,
+                trench_edges_y_lists,
+                expected_num_rows,
+                orientation_detection,
             )
+            valid_edges_y_output = self.map_to_fovs(
+                self.keep_in_frame_kernels,
+                trench_edges_y_lists,
+                y_drift_list,
+                imported_array_list,
+                padding_y,
+            )
+            valid_edges_y_lists = [item[0] for item in valid_edges_y_output]
+            valid_orientation_lists = [item[1] for item in valid_edges_y_output]
+            trench_orientations_list = [
+                np.array(item)[valid_orientation_lists[i]].tolist()
+                for i, item in enumerate(trench_orientations_list)
+            ]
 
         else:
             print("Orientation detection value invalid!")
