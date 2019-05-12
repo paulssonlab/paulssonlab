@@ -356,7 +356,7 @@ class pandas_hdf5_handler:
                 store.get_storer(key).attrs.metadata = metadata
 
     def read_df(self, key, read_metadata=False):
-        with pd.HDFStore(self.hdf5_path) as store:
+        with pd.HDFStore(self.hdf5_path, "r") as store:
             df = store.get(key)
             if read_metadata:
                 df.metadata = store.get_storer(key).attrs.metadata
