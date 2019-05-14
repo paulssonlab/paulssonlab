@@ -1,5 +1,5 @@
 import nd2reader
-from tifffile import TiffFile
+from skimage.external.tifffile import TiffFile
 import PIL
 import array
 import zarr
