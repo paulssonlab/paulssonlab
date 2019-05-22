@@ -151,11 +151,11 @@ def display_plot_browser_item(
 ):
     if range_xy is None:
         range_xy = hv.streams.RangeXY()
-    if isinstance(obj, hv.core.dimension.ViewableElement):
+    if isinstance(obj, hv.core.ViewableElement):
         obj = obj.options(finalize_hooks=[_set_active_tool])
     if stream is None:
         with output:
-            if isinstance(obj, hv.core.dimension.ViewableElement):
+            if isinstance(obj, hv.core.ViewableElement):
                 if regrid:
                     obj = obj.map(
                         lambda img: datashader.regrid(
@@ -168,7 +168,7 @@ def display_plot_browser_item(
             display(obj)
     else:
         if isinstance(
-            obj, hv.core.dimension.ViewableElement
+            obj, hv.core.ViewableElement
         ):  # TODO: is this the right comparison?
 
             def callback(p, x_range, y_range, **kwargs):
@@ -705,7 +705,7 @@ def dict_viewer(d, *streams, wrapper=None):
 def image_viewer(*streams, image_callback=get_nd2_frame_anyargs, regrid=True, **kwargs):
     def callback(x_range, y_range, **kwargs):
         plot = image_callback(**kwargs)
-        if not isinstance(plot, hv.ViewableElement):
+        if not isinstance(plot, hv.core.ViewableElement):
             plot = RevImage(plot)
         if regrid:
             plot = recursive_regrid(plot, x_range, y_range)

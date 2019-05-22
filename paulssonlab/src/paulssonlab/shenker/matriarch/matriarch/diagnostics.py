@@ -47,7 +47,7 @@ def diagnostics_to_series(diagnostics, sep="."):
     d = flatten_dict(
         diagnostics,
         sep=sep,
-        predicate=lambda _, x: not isinstance(x, hv.ViewableElement),
+        predicate=lambda _, x: not isinstance(x, hv.core.ViewableElement),
     )
     df = pd.Series(d)
     return df
