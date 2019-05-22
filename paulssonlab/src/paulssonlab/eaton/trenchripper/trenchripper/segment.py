@@ -18,8 +18,8 @@ class fluo_segmentation:
         cell_otsu_scaling=1.0,
         local_otsu_r=15,
         edge_threshold_scaling=1.0,
-        threshold_range=20,
-        threshold_step=5,
+        threshold_step_perc=0.1,
+        threshold_perc_num_steps=2,
         convex_threshold=0.8,
     ):
 
@@ -31,8 +31,8 @@ class fluo_segmentation:
         self.cell_otsu_scaling = cell_otsu_scaling
         self.local_otsu_r = local_otsu_r
         self.edge_threshold_scaling = edge_threshold_scaling
-        self.threshold_range = threshold_range
-        self.threshold_step = threshold_step
+        self.threshold_step_perc = threshold_step_perc
+        self.threshold_perc_num_steps = threshold_perc_num_steps
         self.convex_threshold = convex_threshold
 
     def to_8bit(self, img_arr):
@@ -80,7 +80,9 @@ class fluo_segmentation:
             cell_local_mask = img_arr > local_otsu
             del img_arr
 
-            cell_region_threshold = sk.filters.threshold_otsu(local_otsu)
+            cell_region_threshold = (
+                sk.filters.threshold_otsu(local_otsu) * cell_otsu_scaling
+            )
             cell_region_mask = local_otsu > cell_region_threshold
             del local_otsu
 
@@ -140,12 +142,12 @@ class fluo_segmentation:
 
     def get_image_weights(self, conn_comp, padding=1):
         objects = np.unique(conn_comp)[1:]
-        weights = []
+        conv_weights = []
         for obj_idx in objects:
             curr_obj = self.crop_object(conn_comp, obj_idx, padding=padding)
-            weight = self.compute_convexity(curr_obj)
-            weights.append(weight)
-        return np.array(weights)
+            conv_weight = self.compute_convexity(curr_obj)
+            conv_weights.append(conv_weight)
+        return np.array(conv_weights)
 
     def make_weight_arr(self, conn_comp, weights):
         weight_arr = np.zeros(conn_comp.shape)
@@ -171,30 +173,33 @@ class fluo_segmentation:
         mid_threshold_arr = edge_thr_kymo.return_unwrap(padding=padding)
         return mid_threshold_arr
 
-    def get_convex_scores(
+    def get_scores(
         self,
         cell_mask,
         min_eigvals,
         mid_threshold_arr,
-        threshold_range=20,
-        threshold_step=5,
+        threshold_step_perc=0.05,
+        threshold_perc_num_steps=2,
     ):
-        edge_thresholds = [
-            mid_threshold_arr + i
-            for i in range(-threshold_range, threshold_range, threshold_step)
+        threshold_percs = [
+            1.0 + threshold_step_perc * step
+            for step in range(-threshold_perc_num_steps, threshold_perc_num_steps + 1)
         ]
-        weight_arrs = []
+        edge_thresholds = [
+            mid_threshold_arr * threshold_perc for threshold_perc in threshold_percs
+        ]
+        conv_weight_arrs = []
         for edge_threshold in edge_thresholds:
             composite_mask = self.find_mask(
                 cell_mask, min_eigvals, edge_threshold, min_size=30
             )
             conn_comp = sk.measure.label(composite_mask, neighbors=4, connectivity=2)
-            weights = self.get_image_weights(conn_comp)
-            weight_arr = self.make_weight_arr(conn_comp, weights)
-            weight_arrs.append(weight_arr)
-        weight_arrs = np.array(weight_arrs)
-        max_merged = np.max(weight_arrs, axis=0)
-        return max_merged
+            conv_weights = self.get_image_weights(conn_comp)
+            conv_weight_arr = self.make_weight_arr(conn_comp, conv_weights)
+            conv_weight_arrs.append(conv_weight_arr)
+        conv_weight_arrs = np.array(conv_weight_arrs)
+        conv_max_merged = np.max(conv_weight_arrs, axis=0)
+        return conv_max_merged
 
     def segment(self, img_arr):
         input_kymo = kymo_handle()
@@ -228,12 +233,14 @@ class fluo_segmentation:
         )
         del wrap_eig
 
-        convex_scores = self.get_convex_scores(
+        convex_scores = self.get_scores(
             cell_mask,
             min_eigvals,
             mid_threshold_arr,
-            threshold_range=self.threshold_range,
-            threshold_step=self.threshold_step,
+            threshold_step_perc=self.threshold_step_perc,
+            threshold_perc_num_steps=self.threshold_perc_num_steps,
+            mjr_axis_range=self.mjr_axis_range,
+            mnr_axis_range=self.mnr_axis_range,
         )
         del cell_mask
         del min_eigvals
@@ -260,8 +267,8 @@ class fluo_segmentation_cluster(fluo_segmentation):
         cell_otsu_scaling=1.0,
         local_otsu_r=15,
         edge_threshold_scaling=1.0,
-        threshold_range=20,
-        threshold_step=5,
+        threshold_step_perc=0.1,
+        threshold_perc_num_steps=2,
         convex_threshold=0.8,
     ):
         super(fluo_segmentation_cluster, self).__init__(
@@ -273,8 +280,8 @@ class fluo_segmentation_cluster(fluo_segmentation):
             cell_otsu_scaling=cell_otsu_scaling,
             local_otsu_r=local_otsu_r,
             edge_threshold_scaling=edge_threshold_scaling,
-            threshold_range=threshold_range,
-            threshold_step=threshold_step,
+            threshold_step_perc=threshold_step_perc,
+            threshold_perc_num_steps=threshold_perc_num_steps,
             convex_threshold=convex_threshold,
         )
 

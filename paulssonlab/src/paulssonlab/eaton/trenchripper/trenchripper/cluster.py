@@ -77,5 +77,13 @@ class dask_controller:  # adapted from Charles' code
             fov for fov, future in self.futures.items() if future.status != "finished"
         ]
         self.daskclient.restart()
-        time.sleep(8)
+        time.sleep(5)
         self.mapfovs(self.function, self.failed_fovs, retries=self.retries)
+
+    def retry_processing(self):
+        self.proc_fovs = [
+            fov for fov, future in self.futures.items() if future.status == "pending"
+        ]
+        self.daskclient.restart()
+        time.sleep(5)
+        self.mapfovs(self.function, self.proc_fovs, retries=self.retries)
