@@ -31,6 +31,7 @@ class kychunker(timechunker):
         triangle_scaling=1.0,
         orientation_detection=0,
         expected_num_rows=None,
+        orientation_on_fail=None,
         x_percentile=85,
         background_kernel_x=(301, 1),
         smoothing_kernel_x=(9, 1),
@@ -125,7 +126,7 @@ class kychunker(timechunker):
         ###
         self.orientation_detection = orientation_detection
         self.expected_num_rows = expected_num_rows
-
+        self.orientation_on_fail = orientation_on_fail
         #### params for x
         ## parameter for reducing signal to one dim
         self.x_percentile = x_percentile
@@ -334,11 +335,22 @@ class kychunker(timechunker):
         return trench_edges_y_list
 
     def get_manual_orientations(
-        self, trench_edges_y_list, expected_num_rows, top_orientation
+        self,
+        trench_edges_y_list,
+        expected_num_rows,
+        top_orientation,
+        orientation_on_fail,
     ):
-        orientation = top_orientation
         orientations = []
         if trench_edges_y_list[0].shape[0] // 2 == expected_num_rows:
+            orientation = top_orientation
+            for row in range(trench_edges_y_list[0].shape[0] // 2):
+                orientations.append(orientation)
+                orientation = (orientation + 1) % 2
+        elif (
+            trench_edges_y_list[0].shape[0] // 2 < expected_num_rows
+        ) and orientation_on_fail is not None:
+            orientation = orientation_on_fail
             for row in range(trench_edges_y_list[0].shape[0] // 2):
                 orientations.append(orientation)
                 orientation = (orientation + 1) % 2
@@ -579,6 +591,7 @@ class kychunker(timechunker):
                     trench_edges_y_list,
                     self.expected_num_rows,
                     self.orientation_detection,
+                    self.orientation_on_fail,
                 )
                 with h5py_cache.File(
                     self.input_path, "r", chunk_cache_mem_size=self.chunk_cache_mem_size
@@ -1161,7 +1174,7 @@ class kychunker(timechunker):
 class kymograph_multifov(multifov):
     def __init__(
         self,
-        input_file_prefix,
+        headpath,
         all_channels,
         fov_list,
         trench_len_y=270,
@@ -1176,6 +1189,7 @@ class kymograph_multifov(multifov):
         triangle_scaling=1.0,
         orientation_detection=0,
         expected_num_rows=None,
+        orientation_on_fail=None,
         x_percentile=85,
         background_kernel_x=(301, 1),
         smoothing_kernel_x=(9, 1),
@@ -1224,9 +1238,11 @@ class kymograph_multifov(multifov):
             otsu_nbins (int): Number of bins to use when applying Otsu's method to x-dimension signal.
             otsu_scaling (float): Threshold scaling factor for Otsu's method thresholding.
         """
-        super(kymograph_multifov, self).__init__(
-            input_file_prefix, all_channels, fov_list
-        )
+        super(kymograph_multifov, self).__init__(fov_list)
+
+        self.input_file_prefix = headpath + "/hdf5/fov_"
+        self.all_channels = all_channels
+        self.seg_channel = all_channels[0]
 
         #### For prieviewing
         self.t_subsample_step = t_subsample_step
@@ -1249,6 +1265,7 @@ class kymograph_multifov(multifov):
         ###
         self.orientation_detection = orientation_detection
         self.expected_num_rows = expected_num_rows
+        self.orientation_on_fail = orientation_on_fail
 
         #### params for x
         ## parameter for reducing signal to one dim
@@ -1442,12 +1459,24 @@ class kymograph_multifov(multifov):
         return trench_edges_y_list
 
     def get_manual_orientations(
-        self, i, trench_edges_y_lists, expected_num_rows, top_orientation
+        self,
+        i,
+        trench_edges_y_lists,
+        expected_num_rows,
+        top_orientation,
+        orientation_on_fail,
     ):
         trench_edges_y_list = trench_edges_y_lists[i]
-        orientation = top_orientation
         orientations = []
         if trench_edges_y_list[0].shape[0] // 2 == expected_num_rows:
+            orientation = top_orientation
+            for row in range(trench_edges_y_list[0].shape[0] // 2):
+                orientations.append(orientation)
+                orientation = (orientation + 1) % 2
+        elif (
+            trench_edges_y_list[0].shape[0] // 2 < expected_num_rows
+        ) and orientation_on_fail is not None:
+            orientation = orientation_on_fail
             for row in range(trench_edges_y_list[0].shape[0] // 2):
                 orientations.append(orientation)
                 orientation = (orientation + 1) % 2
@@ -1716,6 +1745,7 @@ class kymograph_multifov(multifov):
                 trench_edges_y_lists,
                 self.expected_num_rows,
                 self.orientation_detection,
+                self.orientation_on_fail,
             )
             valid_edges_y_output = self.map_to_fovs(
                 self.keep_in_frame_kernels,

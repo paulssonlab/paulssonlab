@@ -7,12 +7,14 @@ from skimage import filters
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
 from .kymograph import kymograph_multifov
+from .segment import fluo_segmentation
+from .utils import kymo_handle
 
 
 class kymograph_interactive(kymograph_multifov):
     def __init__(
         self,
-        input_file_prefix,
+        headpath,
         all_channels,
         fov_list,
         trench_len_y=270,
@@ -27,6 +29,7 @@ class kymograph_interactive(kymograph_multifov):
         triangle_scaling=1.0,
         orientation_detection=0,
         expected_num_rows=None,
+        orientation_on_fail=None,
         x_percentile=85,
         background_kernel_x=(301, 1),
         smoothing_kernel_x=(9, 1),
@@ -71,7 +74,7 @@ class kymograph_interactive(kymograph_multifov):
             otsu_scaling (float): Threshold scaling factor for Otsu's method thresholding.
         """
         super(kymograph_interactive, self).__init__(
-            input_file_prefix,
+            headpath,
             all_channels,
             fov_list,
             trench_len_y=trench_len_y,
@@ -86,12 +89,15 @@ class kymograph_interactive(kymograph_multifov):
             triangle_scaling=triangle_scaling,
             orientation_detection=orientation_detection,
             expected_num_rows=expected_num_rows,
+            orientation_on_fail=orientation_on_fail,
             x_percentile=x_percentile,
             background_kernel_x=background_kernel_x,
             smoothing_kernel_x=smoothing_kernel_x,
             otsu_nbins=otsu_nbins,
             otsu_scaling=otsu_scaling,
         )
+
+        self.final_params = {}
 
     def get_image_params(self, fov_idx):
         hdf5_handle = h5py.File(self.input_file_prefix + str(fov_idx) + ".hdf5", "a")
@@ -112,6 +118,9 @@ class kymograph_interactive(kymograph_multifov):
         triangle_nbins,
         triangle_scaling,
     ):
+
+        self.final_params["Y Percentile"] = y_percentile
+        self.final_params["Y Smoothing Kernel"] = smoothing_kernel_y_dim_0
         y_percentiles_smoothed_list = self.map_to_fovs(
             self.get_smoothed_y_percentiles,
             imported_array_list,
@@ -211,7 +220,21 @@ class kymograph_interactive(kymograph_multifov):
         vertical_spacing,
         expected_num_rows,
         orientation_detection,
+        orientation_on_fail,
     ):
+
+        self.final_params["Triangle Trheshold Bins"] = triangle_nbins
+        self.final_params["Triangle Threshold Scaling"] = triangle_scaling
+        self.final_params["Minimum Trench Length"] = y_min_edge_dist
+        self.final_params["Y Padding"] = padding_y
+        self.final_params["Trench Length"] = trench_len_y
+        self.final_params["Orientation Detection Method"] = orientation_detection
+        self.final_params[
+            "Expected Number of Rows (Manual Orientation Detection)"
+        ] = expected_num_rows
+        self.final_params[
+            "Top Orientation when Row Drifts Out (Manual Orientation Detection)"
+        ] = orientation_on_fail
 
         trench_edges_y_lists = self.map_to_fovs(
             self.get_trench_edges_y,
@@ -244,6 +267,7 @@ class kymograph_interactive(kymograph_multifov):
                 trench_edges_y_lists,
                 expected_num_rows,
                 orientation_detection,
+                orientation_on_fail,
             )
             valid_edges_y_output = self.map_to_fovs(
                 self.keep_in_frame_kernels,
@@ -325,6 +349,10 @@ class kymograph_interactive(kymograph_multifov):
         vertical_spacing,
     ):
 
+        self.final_params["X Percentile"] = x_percentile
+        self.final_params["X Background Kernel"] = background_kernel_x
+        self.final_params["X Smoothing Kernel"] = smoothing_kernel_x
+
         smoothed_x_percentiles_list = self.map_to_fovs(
             self.get_smoothed_x_percentiles,
             cropped_in_y_list,
@@ -383,6 +411,9 @@ class kymograph_interactive(kymograph_multifov):
     def preview_midpoints(
         self, smoothed_x_percentiles_list, otsu_nbins, otsu_scaling, vertical_spacing
     ):
+        self.final_params["Otsu Trheshold Bins"] = otsu_nbins
+        self.final_params["Otsu Threshold Scaling"] = otsu_scaling
+
         all_midpoints_list = self.map_to_fovs(
             self.get_all_midpoints,
             smoothed_x_percentiles_list,
@@ -428,6 +459,8 @@ class kymograph_interactive(kymograph_multifov):
         trench_width_x,
         vertical_spacing,
     ):
+        self.final_params["Trench Width"] = trench_width_x
+
         cropped_in_x_list = self.map_to_fovs(
             self.get_crop_in_x,
             cropped_in_y_list,
@@ -475,3 +508,232 @@ class kymograph_interactive(kymograph_multifov):
         list_in_t = [kymograph[:, :, t] for t in range(kymograph.shape[2])]
         img_arr = np.concatenate(list_in_t, axis=1)
         ax.imshow(img_arr)
+
+    def print_results(self):
+        for key, value in self.final_params.items():
+            print(key + " " + str(value))
+
+
+class fluo_segmentation_interactive(fluo_segmentation):
+    def __init__(
+        self,
+        headpath,
+        seg_channel,
+        smooth_sigma=0.75,
+        wrap_pad=3,
+        hess_pad=4,
+        min_obj_size=30,
+        cell_mask_method="local",
+        cell_otsu_scaling=1.0,
+        local_otsu_r=15,
+        edge_threshold_scaling=1.0,
+        threshold_step_perc=0.1,
+        threshold_perc_num_steps=2,
+        convex_threshold=0.8,
+    ):
+
+        fluo_segmentation.__init__(
+            self,
+            smooth_sigma=smooth_sigma,
+            wrap_pad=wrap_pad,
+            hess_pad=hess_pad,
+            min_obj_size=min_obj_size,
+            cell_mask_method=cell_mask_method,
+            cell_otsu_scaling=cell_otsu_scaling,
+            local_otsu_r=local_otsu_r,
+            edge_threshold_scaling=edge_threshold_scaling,
+            threshold_step_perc=threshold_step_perc,
+            threshold_perc_num_steps=threshold_perc_num_steps,
+            convex_threshold=convex_threshold,
+        )
+
+        self.headpath = headpath
+        self.seg_channel = seg_channel
+        self.input_path = headpath + "/kymo"
+        self.input_file_prefix = self.input_path + "/kymo_"
+        self.metapath = headpath + "/metadata.hdf5"
+
+        self.final_params = {}
+
+    def plot_img_list(self, img_list):
+        nrow = (len(img_list) + 1) // 2
+        fig, axes = plt.subplots(nrows=nrow, ncols=2, figsize=self.fig_size)
+        for i in range(len(img_list)):
+            img = img_list[i]
+            if nrow < 2:
+                axes[i % 2].imshow(img)
+            else:
+                axes[i // 2, i % 2].imshow(img)
+        if len(img_list) % 2 == 1:
+            if nrow < 2:
+                axes[-1].axis("off")
+            else:
+                axes[-1, -1].axis("off")
+        plt.tight_layout()
+        plt.show()
+
+    def import_array(
+        self,
+        fov_idx,
+        n_trenches,
+        t_range=(0, -1),
+        t_subsample_step=1,
+        fig_size_y=9,
+        fig_size_x=6,
+    ):
+        self.fig_size = (fig_size_y, fig_size_x)
+        with h5py.File(
+            self.input_file_prefix + str(fov_idx) + ".hdf5", "r"
+        ) as hdf5_handle:
+            lanes = list(hdf5_handle.keys())
+            array = np.concatenate(
+                [hdf5_handle[lane + "/" + self.seg_channel][:] for lane in lanes],
+                axis=0,
+            )
+            ttl_trenches = array.shape[0]
+            chosen_trenches = np.random.choice(
+                np.array(list(range(0, ttl_trenches))), size=n_trenches, replace=False
+            )
+            output_array = array[
+                chosen_trenches, :, :, t_range[0] : t_range[1] : t_subsample_step
+            ]
+            self.t_tot = output_array.shape[3]
+        self.plot_kymographs(output_array)
+        return output_array
+
+    def plot_kymographs(self, kymo_arr):
+        input_kymo = kymo_handle()
+        img_list = []
+        for k in range(kymo_arr.shape[0]):
+            input_kymo.import_wrap(kymo_arr[k])
+            img_list.append(input_kymo.return_unwrap(padding=self.wrap_pad))
+        self.plot_img_list(img_list)
+        return img_list
+
+    def plot_scaled(self, kymo_arr, scale, scaling_percentile):
+        self.final_params["Scale Fluorescence?"] = scale
+        self.final_params["Scaling Percentile:"] = scaling_percentile
+        input_kymo = kymo_handle()
+        scaled_list = []
+        for k in range(kymo_arr.shape[0]):
+            input_kymo.import_wrap(
+                kymo_arr[k], scale=scale, scale_perc=scaling_percentile
+            )
+            scaled_list.append(input_kymo.return_unwrap(padding=self.wrap_pad))
+        self.plot_img_list(scaled_list)
+        return scaled_list
+
+    def plot_processed(self, scaled_list, smooth_sigma):
+        self.final_params["Gaussian Kernel Sigma:"] = smooth_sigma
+        proc_list = []
+        for scaled in scaled_list:
+            proc_img = self.preprocess_img(scaled, sigma=smooth_sigma)
+            proc_list.append(proc_img)
+        self.plot_img_list(proc_list)
+        return proc_list
+
+    def plot_eigval(self, proc_list):
+        eigval_list = []
+        for proc in proc_list:
+            inverted = sk.util.invert(proc)
+            min_eigvals = self.to_8bit(
+                self.hessian_contrast_enc(inverted, self.hess_pad)
+            )
+            eigval_list.append(min_eigvals)
+        self.plot_img_list(eigval_list)
+        return eigval_list
+
+    def plot_cell_mask(
+        self, proc_list, cell_mask_method, cell_otsu_scaling, local_otsu_r
+    ):
+        self.final_params["Cell Mask Thresholding Method:"] = cell_mask_method
+        self.final_params["Cell Threshold Scaling:"] = cell_otsu_scaling
+        self.final_params["Local Otsu Radius:"] = local_otsu_r
+
+        cell_mask_list = []
+        for proc in proc_list:
+            cell_mask = self.cell_region_mask(
+                proc,
+                method=cell_mask_method,
+                cell_otsu_scaling=cell_otsu_scaling,
+                t_tot=self.t_tot,
+                local_otsu_r=local_otsu_r,
+            )
+            cell_mask_list.append(cell_mask)
+        self.plot_img_list(cell_mask_list)
+        return cell_mask_list
+
+    def plot_threshold_result(
+        self, eigval_list, cell_mask_list, edge_threshold_scaling
+    ):
+        composite_mask_list = []
+        edge_mask_list = []
+        for i, min_eigvals in enumerate(eigval_list):
+            cell_mask = cell_mask_list[i]
+
+            eig_kymo = kymo_handle()
+            eig_kymo.import_unwrap(min_eigvals, self.t_tot, padding=self.wrap_pad)
+            wrap_eig = eig_kymo.return_wrap()
+            edge_threshold = self.get_mid_threshold_arr(
+                wrap_eig,
+                edge_threshold_scaling=edge_threshold_scaling,
+                padding=self.wrap_pad,
+            )
+
+            composite_mask = self.find_mask(
+                cell_mask, min_eigvals, edge_threshold, min_size=30
+            )
+            composite_mask_list.append(composite_mask)
+
+        self.plot_img_list(composite_mask_list)
+        return composite_mask_list
+
+    def plot_scores(
+        self,
+        eigval_list,
+        cell_mask_list,
+        edge_threshold_scaling,
+        threshold_step_perc,
+        threshold_perc_num_steps,
+    ):
+        self.final_params["Edge Threshold Scaling:"] = edge_threshold_scaling
+        self.final_params["Threshold Step Percent:"] = threshold_step_perc
+        self.final_params["Number of Threshold Steps:"] = threshold_perc_num_steps
+
+        conv_scores_list = []
+        for i, min_eigvals in enumerate(eigval_list):
+            cell_mask = cell_mask_list[i]
+
+            eig_kymo = kymo_handle()
+            eig_kymo.import_unwrap(min_eigvals, self.t_tot, padding=self.wrap_pad)
+            wrap_eig = eig_kymo.return_wrap()
+            mid_threshold_arr = self.get_mid_threshold_arr(
+                wrap_eig,
+                edge_threshold_scaling=edge_threshold_scaling,
+                padding=self.wrap_pad,
+            )
+
+            conv_scores = self.get_scores(
+                cell_mask,
+                min_eigvals,
+                mid_threshold_arr,
+                threshold_step_perc=threshold_step_perc,
+                threshold_perc_num_steps=threshold_perc_num_steps,
+            )
+            conv_scores_list.append(conv_scores)
+        self.plot_img_list(conv_scores_list)
+        return conv_scores_list
+
+    def plot_final_mask(self, conv_scores_list, convex_threshold):
+        self.final_params["Convexity Threshold:"] = convex_threshold
+
+        final_mask_list = []
+        for conv_scores in conv_scores_list:
+            final_mask = conv_scores > convex_threshold
+            final_mask_list.append(final_mask)
+        self.plot_img_list(final_mask_list)
+        return final_mask_list
+
+    def print_results(self):
+        for key, value in self.final_params.items():
+            print(key + " " + str(value))
