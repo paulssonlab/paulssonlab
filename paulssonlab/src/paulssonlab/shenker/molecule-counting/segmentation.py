@@ -154,7 +154,12 @@ def process_file(
     time_slice=slice(None),
     position_slice=slice(None),
     array_func=zarrify,
+    delayed=True,
 ):
+    if delayed is True:
+        delayed = dask.delayed
+    elif delayed is False:
+        delayed = lambda func, **kwargs: func
     if flat_fields is None:
         flat_fields = {}
 
