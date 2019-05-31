@@ -9,4 +9,5 @@ echo "conda activate fp-analysis" > .envrc
 direnv allow
 pre-commit install
 nbstripout --install
+jupyter labextension install @jupyter-widgets/jupyterlab-manager @pyviz/jupyterlab_pyviz
 ```
