@@ -189,7 +189,7 @@ def file_lock(filename, lock_dir=None, lock_suffix=".lock", makedirs=True):
 
 
 @contextmanager
-def open_zarr(filename, store=zarr.LMDBStore):
+def open_zarr(filename, store=partial(zarr.LMDBStore, lock=False)):
     store_ = store(filename)
     try:
         root = zarr.group(store=store_, overwrite=False)
