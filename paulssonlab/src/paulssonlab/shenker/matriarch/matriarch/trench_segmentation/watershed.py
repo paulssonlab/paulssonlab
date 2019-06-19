@@ -3,10 +3,10 @@ import holoviews as hv
 import scipy.stats
 import skimage
 import skimage.morphology
-from image import hessian_eigenvalues
-from ui import RevImage, _trench_img
-from util import repeat_apply
-import common
+from ..image import hessian_eigenvalues, permute_labels
+from ..ui import RevImage, _trench_img
+from ..util import repeat_apply
+from .. import common
 
 
 def uniformize_trench_intensity(img):

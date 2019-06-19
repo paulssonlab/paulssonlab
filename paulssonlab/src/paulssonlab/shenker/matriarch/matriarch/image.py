@@ -6,6 +6,7 @@ from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 from .util import repeat_apply
 import numba
 from cytoolz import compose
+import warnings
 
 
 def quantize(img, bits, random=True):

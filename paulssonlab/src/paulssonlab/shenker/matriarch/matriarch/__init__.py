@@ -1,4 +1,4 @@
-from . import common, trench_detection, util, data_io, processing
+from . import common, trench_detection, trench_segmentation, util, data_io, processing
 from . import ui, diagnostics, metadata
 from . import workflow, image, geometry
 
