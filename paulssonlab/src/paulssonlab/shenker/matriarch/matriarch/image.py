@@ -132,25 +132,30 @@ def sharpness(img, q=0.999, radius=1):
     return np.percentile(img_lofg, 100 * q)
 
 
-# TODO: use skimage.filters.ridge.compute_hessian_eigenvalues?
 def hessian_eigenvalues(img, sigma=1.5):
-    I = skimage.filters.gaussian(img, sigma)
-    I_x = skimage.filters.sobel_h(I)
-    I_y = skimage.filters.sobel_v(I)
-    I_xx = skimage.filters.sobel_h(I_x)
-    I_xy = skimage.filters.sobel_v(I_x)
-    I_yx = skimage.filters.sobel_h(I_y)
-    I_yy = skimage.filters.sobel_v(I_y)
-    kappa_1 = (I_xx + I_yy) / 2
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        kappa_2 = (np.sqrt((I_xx + I_yy) ** 2 - 4 * (I_xx * I_yy - I_xy * I_yx))) / 2
-    k1 = kappa_1 + kappa_2
-    k2 = kappa_1 - kappa_2
-    k1[np.isnan(k1)] = 0
-    k2[np.isnan(k2)] = 0
-    return k1, k2
+    return hessian_matrix_eigvals(
+        hessian_matrix(skimage.img_as_float(img), sigma, mode="nearest", order="rc")
+    )
 
+
+# TODO: use skimage.filters.ridge.compute_hessian_eigenvalues?
+# def hessian_eigenvalues(img, sigma=1.5):
+#     I = skimage.filters.gaussian(img, sigma)
+#     I_x = skimage.filters.sobel_h(I)
+#     I_y = skimage.filters.sobel_v(I)
+#     I_xx = skimage.filters.sobel_h(I_x)
+#     I_xy = skimage.filters.sobel_v(I_x)
+#     I_yx = skimage.filters.sobel_h(I_y)
+#     I_yy = skimage.filters.sobel_v(I_y)
+#     kappa_1 = (I_xx + I_yy) / 2
+#     with warnings.catch_warnings():
+#         warnings.simplefilter('ignore', RuntimeWarning)
+#         kappa_2 = (np.sqrt((I_xx + I_yy)**2 - 4*(I_xx*I_yy - I_xy*I_yx))) / 2
+#     k1 = kappa_1 + kappa_2
+#     k2 = kappa_1 - kappa_2
+#     k1[np.isnan(k1)] = 0
+#     k2[np.isnan(k2)] = 0
+#     return k1, k2
 
 # FROM: Kovesi, Peter. 2010. Fast Almost-Gaussian Filtering.
 # TODO: replace with http://blog.ivank.net/fastest-gaussian-blur.html
@@ -201,3 +206,9 @@ def get_regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS
     df = pd.DataFrame(cols, index=range(1, len(rps) + 1))
     df.index.name = "label"
     return df
+
+
+# FROM: http://emmanuelle.github.io/a-tutorial-on-segmentation.html
+def permute_labels(labels):
+    label_map = np.concatenate(((0,), np.random.permutation(labels.max()) + 1))
+    return label_map[labels]
