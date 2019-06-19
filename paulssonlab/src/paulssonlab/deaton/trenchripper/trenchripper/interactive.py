@@ -35,6 +35,7 @@ class kymograph_interactive(kymograph_multifov):
         smoothing_kernel_x=(9, 1),
         otsu_nbins=50,
         otsu_scaling=1.0,
+        trench_present_thr=0.0,
     ):
         """The kymograph class is used to generate and visualize kymographs. The central function of this
         class is the method 'generate_kymograph', which takes an hdf5 file of images from a single fov and
@@ -95,6 +96,7 @@ class kymograph_interactive(kymograph_multifov):
             smoothing_kernel_x=smoothing_kernel_x,
             otsu_nbins=otsu_nbins,
             otsu_scaling=otsu_scaling,
+            trench_present_thr=trench_present_thr,
         )
 
         self.final_params = {}
@@ -451,15 +453,39 @@ class kymograph_interactive(kymograph_multifov):
         plt.subplots_adjust(top=vertical_spacing)
         plt.show()
 
+    def preview_corrected_midpoints(
+        self,
+        all_midpoints_list,
+        x_drift_list,
+        trench_width_x,
+        trench_present_thr,
+        vertical_spacing,
+    ):
+        self.final_params["Trench Width"] = trench_width_x
+        self.final_params["Trench Presence Threshold"] = trench_present_thr
+
+        corrected_midpoints_list = self.map_to_fovs(
+            self.get_corrected_midpoints,
+            all_midpoints_list,
+            x_drift_list,
+            trench_width_x,
+            trench_present_thr,
+        )
+        self.plot_midpoints(corrected_midpoints_list, self.fov_list, vertical_spacing)
+
+        return corrected_midpoints_list
+
     def preview_kymographs(
         self,
         cropped_in_y_list,
         all_midpoints_list,
         x_drift_list,
         trench_width_x,
+        trench_present_thr,
         vertical_spacing,
     ):
         self.final_params["Trench Width"] = trench_width_x
+        self.final_params["Trench Presence Threshold"] = trench_present_thr
 
         cropped_in_x_list = self.map_to_fovs(
             self.get_crop_in_x,
@@ -467,6 +493,7 @@ class kymograph_interactive(kymograph_multifov):
             all_midpoints_list,
             x_drift_list,
             trench_width_x,
+            trench_present_thr,
         )
         self.plot_kymographs(cropped_in_x_list, self.fov_list, vertical_spacing)
 
@@ -524,6 +551,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         hess_pad=4,
         min_obj_size=30,
         cell_mask_method="local",
+        global_otsu_scaling=1.0,
         cell_otsu_scaling=1.0,
         local_otsu_r=15,
         edge_threshold_scaling=1.0,
@@ -539,6 +567,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
             hess_pad=hess_pad,
             min_obj_size=min_obj_size,
             cell_mask_method=cell_mask_method,
+            global_otsu_scaling=global_otsu_scaling,
             cell_otsu_scaling=cell_otsu_scaling,
             local_otsu_r=local_otsu_r,
             edge_threshold_scaling=edge_threshold_scaling,
@@ -585,18 +614,20 @@ class fluo_segmentation_interactive(fluo_segmentation):
         with h5py.File(
             self.input_file_prefix + str(fov_idx) + ".hdf5", "r"
         ) as hdf5_handle:
-            lanes = list(hdf5_handle.keys())
-            array = np.concatenate(
-                [hdf5_handle[lane + "/" + self.seg_channel][:] for lane in lanes],
-                axis=0,
-            )
-            ttl_trenches = array.shape[0]
+            ttl_trenches = len(hdf5_handle.keys())
             chosen_trenches = np.random.choice(
                 np.array(list(range(0, ttl_trenches))), size=n_trenches, replace=False
             )
-            output_array = array[
-                chosen_trenches, :, :, t_range[0] : t_range[1] : t_subsample_step
+            chosen_trench_keys = np.array(list(hdf5_handle.keys()))[
+                chosen_trenches
+            ].tolist()
+            array_list = [
+                hdf5_handle[trench_key + "/" + self.seg_channel][
+                    :, :, t_range[0] : t_range[1] : t_subsample_step
+                ]
+                for trench_key in chosen_trench_keys
             ]
+            output_array = np.concatenate(np.expand_dims(array_list, axis=0), axis=0)
             self.t_tot = output_array.shape[3]
         self.plot_kymographs(output_array)
         return output_array
@@ -644,9 +675,15 @@ class fluo_segmentation_interactive(fluo_segmentation):
         return eigval_list
 
     def plot_cell_mask(
-        self, proc_list, cell_mask_method, cell_otsu_scaling, local_otsu_r
+        self,
+        proc_list,
+        global_otsu_scaling,
+        cell_mask_method,
+        cell_otsu_scaling,
+        local_otsu_r,
     ):
         self.final_params["Cell Mask Thresholding Method:"] = cell_mask_method
+        self.final_params["Global Threshold Scaling:"] = global_otsu_scaling
         self.final_params["Cell Threshold Scaling:"] = cell_otsu_scaling
         self.final_params["Local Otsu Radius:"] = local_otsu_r
 
@@ -655,6 +692,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
             cell_mask = self.cell_region_mask(
                 proc,
                 method=cell_mask_method,
+                global_otsu_scaling=global_otsu_scaling,
                 cell_otsu_scaling=cell_otsu_scaling,
                 t_tot=self.t_tot,
                 local_otsu_r=local_otsu_r,
@@ -664,7 +702,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         return cell_mask_list
 
     def plot_threshold_result(
-        self, eigval_list, cell_mask_list, edge_threshold_scaling
+        self, eigval_list, cell_mask_list, edge_threshold_scaling, min_obj_size
     ):
         composite_mask_list = []
         edge_mask_list = []
@@ -681,7 +719,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
             )
 
             composite_mask = self.find_mask(
-                cell_mask, min_eigvals, edge_threshold, min_size=30
+                cell_mask, min_eigvals, edge_threshold, min_obj_size=min_obj_size
             )
             composite_mask_list.append(composite_mask)
 
@@ -695,10 +733,12 @@ class fluo_segmentation_interactive(fluo_segmentation):
         edge_threshold_scaling,
         threshold_step_perc,
         threshold_perc_num_steps,
+        min_obj_size,
     ):
         self.final_params["Edge Threshold Scaling:"] = edge_threshold_scaling
         self.final_params["Threshold Step Percent:"] = threshold_step_perc
         self.final_params["Number of Threshold Steps:"] = threshold_perc_num_steps
+        self.final_params["Minimum Object Size:"] = min_obj_size
 
         conv_scores_list = []
         for i, min_eigvals in enumerate(eigval_list):
@@ -719,6 +759,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
                 mid_threshold_arr,
                 threshold_step_perc=threshold_step_perc,
                 threshold_perc_num_steps=threshold_perc_num_steps,
+                min_obj_size=min_obj_size,
             )
             conv_scores_list.append(conv_scores)
         self.plot_img_list(conv_scores_list)

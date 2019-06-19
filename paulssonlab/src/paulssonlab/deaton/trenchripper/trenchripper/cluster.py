@@ -18,6 +18,7 @@ class dask_controller:  # adapted from Charles' code
         cores=1,
         processes=1,
         memory="6GB",
+        job_extra=[],
     ):
         self.local = local
         self.n_workers = n_workers
@@ -26,6 +27,7 @@ class dask_controller:  # adapted from Charles' code
         self.processes = processes
         self.memory = memory
         self.cores = cores
+        self.job_extra = job_extra
 
     def writedir(self, directory):
         if not os.path.exists(directory):
@@ -42,6 +44,7 @@ class dask_controller:  # adapted from Charles' code
                 processes=self.processes,
                 memory=self.memory,
                 cores=self.cores,
+                job_extra=self.job_extra,
             )
             self.workers = self.daskcluster.start_workers(self.n_workers)
             self.daskclient = Client(self.daskcluster)
