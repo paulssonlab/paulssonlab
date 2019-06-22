@@ -295,11 +295,7 @@ for mn in range(len(arr_m)):
 
     count_d2 = 0
     for i in range(len(labels_arr[mn - 1])):
-        print(
-            mn,
-            i,
-            "popopoo",
-        )
+        print(mn, i, "popopoo")
 
         # if (i+count_d2) > len(labels_arr[mn])-1:
         #   count_d2 = 0
