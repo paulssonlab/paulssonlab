@@ -5,7 +5,7 @@ Cell tracking for mother machine imaging.
 After cloning this repository, run the following:
 ```
 conda env create -n tracking -f environment.yml
-echo "conda activate tracking > .envrc
+echo "conda activate tracking" > .envrc
 direnv allow
 pre-commit install
 nbstripout --install
