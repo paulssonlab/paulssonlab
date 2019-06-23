@@ -33,7 +33,7 @@ def make_ellipse(image, x, y, dx, dy, next_1, color):
     ell2 = dr.ellipse((x + next_1, y, dx + next_1, dy), color)
     img1 = Image.new("RGB", (next_1, dy - y + 1), color=color)
     image.paste(img1, ((x + int((dx - x) / 2), int(y))))
-    return ell, ell2, img
+    return ell, ell2, img1
 
 
 def halo(image, x, y, dx, dy, color):
