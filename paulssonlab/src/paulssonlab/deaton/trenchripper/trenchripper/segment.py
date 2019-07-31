@@ -3,6 +3,7 @@ import skimage as sk
 import h5py
 import os
 import copy
+import pickle
 
 from skimage import measure, feature, segmentation, future, util, morphology, filters
 from .utils import kymo_handle, pandas_hdf5_handler
@@ -11,6 +12,8 @@ from .utils import kymo_handle, pandas_hdf5_handler
 class fluo_segmentation:
     def __init__(
         self,
+        scale_timepoints=False,
+        scaling_percentage=0.9,
         smooth_sigma=0.75,
         wrap_pad=3,
         hess_pad=4,
@@ -25,6 +28,8 @@ class fluo_segmentation:
         convex_threshold=0.8,
     ):
 
+        self.scale_timepoints = scale_timepoints
+        self.scaling_percentage = scaling_percentage
         self.smooth_sigma = smooth_sigma
         self.wrap_pad = wrap_pad
         self.hess_pad = hess_pad
@@ -217,7 +222,9 @@ class fluo_segmentation:
 
     def segment(self, img_arr):
         input_kymo = kymo_handle()
-        input_kymo.import_wrap(img_arr, scale=True, scale_perc=95)
+        input_kymo.import_wrap(
+            img_arr, scale=self.scale_timepoints, scale_perc=self.scaling_percentage
+        )
         t_tot = input_kymo.kymo_arr.shape[-1]
 
         working_img = self.preprocess_img(
@@ -272,9 +279,12 @@ class fluo_segmentation_cluster(fluo_segmentation):
     def __init__(
         self,
         headpath,
-        seg_channel,
+        paramfile=True,
+        seg_channel="",
+        scale_timepoints=False,
+        scaling_percentage=0.9,
         smooth_sigma=0.75,
-        wrap_pad=3,
+        wrap_pad=0,
         hess_pad=4,
         min_obj_size=30,
         cell_mask_method="local",
@@ -286,7 +296,29 @@ class fluo_segmentation_cluster(fluo_segmentation):
         threshold_perc_num_steps=2,
         convex_threshold=0.8,
     ):
+
+        if paramfile:
+            parampath = headpath + "/fluorescent_segmentation.par"
+            with open(parampath, "rb") as infile:
+                param_dict = pickle.load(infile)
+
+            scale_timepoints = param_dict["Scale Fluorescence?"]
+            scaling_percentage = param_dict["Scaling Percentile:"]
+            seg_channel = param_dict["Segmentation Channel:"]
+            smooth_sigma = param_dict["Gaussian Kernel Sigma:"]
+            min_obj_size = param_dict["Minimum Object Size:"]
+            cell_mask_method = param_dict["Cell Mask Thresholding Method:"]
+            global_otsu_scaling = param_dict["Global Threshold Scaling:"]
+            cell_otsu_scaling = param_dict["Cell Threshold Scaling:"]
+            local_otsu_r = param_dict["Local Otsu Radius:"]
+            edge_threshold_scaling = param_dict["Edge Threshold Scaling:"]
+            threshold_step_perc = param_dict["Threshold Step Percent:"]
+            threshold_perc_num_steps = param_dict["Number of Threshold Steps:"]
+            convex_threshold = param_dict["Convexity Threshold:"]
+
         super(fluo_segmentation_cluster, self).__init__(
+            scale_timepoints=scale_timepoints,
+            scaling_percentage=scaling_percentage,
             smooth_sigma=smooth_sigma,
             wrap_pad=wrap_pad,
             hess_pad=hess_pad,
@@ -357,6 +389,21 @@ class fluo_segmentation_cluster(fluo_segmentation):
                         str(trenchid), data=self.segment(trench_array), dtype=bool
                     )
 
+    def dask_segment(self, dask_controller, fov_list=None):
+        if fov_list == None:
+            meta_handle = pandas_hdf5_handler(self.metapath)
+            df_in = meta_handle.read_df("kymo")
+            fov_list = df_in.index.get_level_values(0).unique().tolist()
+        dask_controller.futures = {}
+
+        def seg(fov, function=self.generate_segmentation):
+            function(fov)
+            return fov
+
+        for fov in fov_list:
+            future = dask_controller.daskclient.submit(seg, fov, retries=1)
+            dask_controller.futures["generate_segmentation: " + str(fov)] = future
+
 
 #             for lane in input_file.keys():
 #                 lane_array = input_file[lane+"/"+self.seg_channel] #kyxt
@@ -376,10 +423,10 @@ class fluo_segmentation_cluster(fluo_segmentation):
 #                     else:
 #                         hdf5_dataset = h5pyfile.create_dataset(str(trenchid), lane_array.shape[1:], dtype=bool)
 #                     kymo_arr = lane_array[trench]
-#                     hdf5_dataset = self.segment(kymo_arr)
+# #                     hdf5_dataset = self.segment(kymo_arr)
 
-from matplotlib import pyplot as plt
-import copy
+# from matplotlib import pyplot as plt
+# import copy
 
 
 class phase_segmentation:
