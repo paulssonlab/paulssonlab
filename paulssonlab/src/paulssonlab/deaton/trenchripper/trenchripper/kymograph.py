@@ -10,6 +10,7 @@ import sys
 import h5py_cache
 
 from skimage import filters
+from .cluster import hdf5lock
 from .utils import timechunker, multifov, pandas_hdf5_handler
 
 
@@ -143,7 +144,8 @@ class kychunker(timechunker):
         #### important paramaters to set
         self.trench_len_y = trench_len_y
         self.padding_y = padding_y
-        self.ttl_len_y = trench_len_y + padding_y
+        ttl_len_y = trench_len_y + padding_y
+        self.ttl_len_y = ttl_len_y
         self.trench_width_x = trench_width_x
 
         #### params for y
@@ -169,6 +171,27 @@ class kychunker(timechunker):
         self.otsu_scaling = otsu_scaling
         ## New
         self.trench_present_thr = trench_present_thr
+
+        self.kymograph_params = {
+            "trench_len_y": trench_len_y,
+            "padding_y": padding_y,
+            "ttl_len_y": ttl_len_y,
+            "trench_width_x": trench_width_x,
+            "y_percentile": y_percentile,
+            "y_min_edge_dist": y_min_edge_dist,
+            "smoothing_kernel_y": smoothing_kernel_y,
+            "triangle_nbins": triangle_nbins,
+            "triangle_scaling": triangle_scaling,
+            "orientation_detection": orientation_detection,
+            "expected_num_rows": expected_num_rows,
+            "orientation_on_fail": orientation_on_fail,
+            "x_percentile": x_percentile,
+            "background_kernel_x": background_kernel_x,
+            "smoothing_kernel_x": smoothing_kernel_x,
+            "otsu_nbins": otsu_nbins,
+            "otsu_scaling": otsu_scaling,
+            "trench_present_thr": trench_present_thr,
+        }
 
     def median_filter_2d(self, array, smoothing_kernel):
         """Two-dimensional median filter, with average smoothing at the signal edges in
@@ -1225,9 +1248,11 @@ class kychunker(timechunker):
         df_out["trenchid"] = idx_df["index"]
 
         meta_out_handle = pandas_hdf5_handler(self.metapath)
-        meta_out_handle.write_df(
-            "kymo", df_out, metadata={"attempted_fov_list": fov_list}
-        )
+        kymograph_metadata = {
+            "attempted_fov_list": fov_list,
+            "kymograph_params": self.kymograph_params,
+        }
+        meta_out_handle.write_df("kymo", df_out, metadata=kymograph_metadata)
 
         successful_fovs = set(df_out.index.get_level_values(0).unique().tolist())
 
