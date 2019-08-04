@@ -4,9 +4,12 @@ import h5py
 import os
 import copy
 import pickle
+import shutil
 
 from skimage import measure, feature, segmentation, future, util, morphology, filters
 from .utils import kymo_handle, pandas_hdf5_handler
+from .cluster import hdf5lock
+from time import sleep
 
 
 class fluo_segmentation:
@@ -382,51 +385,57 @@ class fluo_segmentation_cluster(fluo_segmentation):
         self.removefile(self.output_file_path)
 
         with h5py.File(self.input_file_path, "r") as input_file:
-            with h5py.File(self.output_file_path, "w") as h5pyfile:
-                for trenchid in input_file.keys():
-                    trench_array = input_file[trenchid + "/" + self.seg_channel]
+            for trenchid in input_file.keys():
+                trench_array = input_file[trenchid + "/" + self.seg_channel][:]
+                trench_array = self.segment(trench_array)
+                with h5py.File(self.output_file_path, "a") as h5pyfile:
                     hdf5_dataset = h5pyfile.create_dataset(
-                        str(trenchid), data=self.segment(trench_array), dtype=bool
+                        str(trenchid), data=trench_array, dtype=bool
                     )
+            return "Done"
+
+    def get_trench_arr(self, input_file, trenchid):
+        trench_array = input_file[str(trenchid) + "/" + self.seg_channel][:]
+        return trench_array
+
+    def write_trench_arr(self, output_file, trenchid, trench_array):
+        if str(trenchid) in output_file:
+            output_file[str(trenchid)][...] = trench_array
+        else:
+            hdf5_dataset = output_file.create_dataset(
+                str(trenchid), data=trench_array, dtype=bool
+            )
 
     def dask_segment(self, dask_controller, fov_list=None):
+        self.writedir(self.output_path, overwrite=True)
+
         if fov_list == None:
             meta_handle = pandas_hdf5_handler(self.metapath)
             df_in = meta_handle.read_df("kymo")
             fov_list = df_in.index.get_level_values(0).unique().tolist()
+        trenchid_dict = {
+            fov: df_in.loc[fov]["trenchid"].unique().tolist() for fov in fov_list
+        }
         dask_controller.futures = {}
 
-        def seg(fov, function=self.generate_segmentation):
-            function(fov)
-            return fov
+        def seg(fov, trenchid):
+            input_file_path = self.input_path + "/kymo_" + str(fov) + ".hdf5"
+            input_lock = hdf5lock(input_file_path, updateperiod=0.1)
+            output_file_path = self.output_path + "/seg_" + str(fov) + ".hdf5"
+            output_lock = hdf5lock(output_file_path, updateperiod=0.1)
+
+            trench_array = input_lock.lockedfn(self.get_trench_arr, "r", trenchid)
+            trench_array = self.segment(trench_array)
+            output_lock.lockedfn(self.write_trench_arr, "a", trenchid, trench_array)
 
         for fov in fov_list:
-            future = dask_controller.daskclient.submit(seg, fov, retries=1)
-            dask_controller.futures["generate_segmentation: " + str(fov)] = future
-
-
-#             for lane in input_file.keys():
-#                 lane_array = input_file[lane+"/"+self.seg_channel] #kyxt
-#                 with h5py.File(self.output_file_path, "w") as h5pyfile:
-#                     for trench in range(lane_array.shape[0]):
-#                         trenchid = kymo_meta.loc[int(fov_number),int(lane),int(trench),0]["trenchid"]
-#                         hdf5_dataset = h5pyfile.create_dataset(str(trenchid), lane_array.shape[1:], dtype=bool)
-#                         kymo_arr = lane_array[trench]
-#                         hdf5_dataset = self.segment(kymo_arr)
-
-
-#             with h5py.File(self.output_file_path, "a") as h5pyfile:
-#                 for trench in range(lane_array.shape[0]):
-#                     trenchid = kymo_meta.loc[int(fov_number),int(lane),int(trench),0]["trenchid"]
-#                     if str(trenchid) in list(h5pyfile.keys()):
-#                         hdf5_dataset = h5pyfile[str(trenchid)]
-#                     else:
-#                         hdf5_dataset = h5pyfile.create_dataset(str(trenchid), lane_array.shape[1:], dtype=bool)
-#                     kymo_arr = lane_array[trench]
-# #                     hdf5_dataset = self.segment(kymo_arr)
-
-# from matplotlib import pyplot as plt
-# import copy
+            for trenchid in trenchid_dict[fov]:
+                future = dask_controller.daskclient.submit(
+                    seg, fov, trenchid, retries=2
+                )
+                dask_controller.futures[
+                    "generate_segmentation: " + str(fov) + "," + str(trenchid)
+                ] = future
 
 
 class phase_segmentation:
