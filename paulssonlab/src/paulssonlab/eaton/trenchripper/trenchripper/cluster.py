@@ -87,16 +87,14 @@ class dask_controller:  # adapted from Charles' code
         self.failed_fovs = [
             fov for fov, future in self.futures.items() if future.status != "finished"
         ]
-        self.daskclient.restart()
-        time.sleep(5)
+        out = self.daskclient.restart()
         self.mapfovs(self.function, self.failed_fovs, retries=self.retries)
 
     def retry_processing(self):
         self.proc_fovs = [
             fov for fov, future in self.futures.items() if future.status == "pending"
         ]
-        self.daskclient.restart()
-        time.sleep(5)
+        out = self.daskclient.restart()
         self.mapfovs(self.function, self.proc_fovs, retries=self.retries)
 
 
@@ -115,8 +113,7 @@ class hdf5lock:
 
     def _apply_fn(self, function, iomode, *args, **kwargs):
         try:
-            with h5py.File(self.filepath, iomode) as input_file:
-                fn_output = function(input_file, *args, **kwargs)
+            fn_output = function(self.filepath, iomode, *args, **kwargs)
             os.remove(self.lockfile)
             return fn_output
         except:
