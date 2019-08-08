@@ -78,14 +78,13 @@ class fluo_segmentation:
         cell_threshold_kymo = []
         for t in range(t_tot):
             cell_threshold = (
-                sk.filters.threshold_otsu(wrap_img[:, :, t]) * global_otsu_scaling
+                sk.filters.threshold_otsu(wrap_img[t, :, :]) * global_otsu_scaling
             )
             cell_thr_arr = cell_threshold * np.ones(
-                wrap_img[:, :, t].shape, dtype="uint8"
+                wrap_img[t, :, :].shape, dtype="uint8"
             )
             cell_threshold_kymo.append(cell_thr_arr)
         cell_threshold_kymo = np.array(cell_threshold_kymo)
-        cell_threshold_kymo = np.moveaxis(cell_threshold_kymo, (0, 1, 2), (2, 0, 1))
 
         thr_kymo = kymo_handle()
         thr_kymo.import_wrap(cell_threshold_kymo)
@@ -228,7 +227,7 @@ class fluo_segmentation:
         input_kymo.import_wrap(
             img_arr, scale=self.scale_timepoints, scale_perc=self.scaling_percentage
         )
-        t_tot = input_kymo.kymo_arr.shape[-1]
+        t_tot = input_kymo.kymo_arr.shape[0]
 
         working_img = self.preprocess_img(
             input_kymo.return_unwrap(padding=self.wrap_pad), sigma=self.smooth_sigma
