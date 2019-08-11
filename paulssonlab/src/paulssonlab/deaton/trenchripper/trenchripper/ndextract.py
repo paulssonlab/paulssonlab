@@ -6,6 +6,7 @@ import h5py_cache
 import pickle as pkl
 import numpy as np
 import pandas as pd
+import ipywidgets as ipyw
 
 from nd2reader import ND2Reader
 from tifffile import imsave
@@ -58,6 +59,36 @@ class hdf5_fov_extractor:
         outdf["Image Index"] = img_idx
         return outdf
 
+    def get_notes(self, organism, microscope, notes):
+        self.organism = organism
+        self.microscope = microscope
+        self.notes = notes
+
+    def inter_get_notes(self):
+        selection = ipyw.interactive(
+            self.get_notes,
+            {"manual": True},
+            organism=ipyw.Textarea(
+                value="",
+                placeholder="Organism imaged in this experiment.",
+                description="Organism:",
+                disabled=False,
+            ),
+            microscope=ipyw.Textarea(
+                value="",
+                placeholder="Microscope used in this experiment.",
+                description="Microscope:",
+                disabled=False,
+            ),
+            notes=ipyw.Textarea(
+                value="",
+                placeholder="General experiment notes.",
+                description="Notes:",
+                disabled=False,
+            ),
+        )
+        display(selection)
+
     def writemetadata(self):
         ndmeta_handle = nd_metadata_handler(self.nd2filename)
         exp_metadata, fov_metadata = ndmeta_handle.get_metadata()
@@ -69,6 +100,11 @@ class hdf5_fov_extractor:
         exp_metadata["chunk_shape"], exp_metadata["chunk_cache_mem_size"] = (
             self.chunk_shape,
             self.chunk_cache_mem_size,
+        )
+        exp_metadata["Organism"], exp_metadata["Microscope"], exp_metadata["Notes"] = (
+            self.organism,
+            self.microscope,
+            self.notes,
         )
         self.meta_handle = pandas_hdf5_handler(self.metapath)
 
