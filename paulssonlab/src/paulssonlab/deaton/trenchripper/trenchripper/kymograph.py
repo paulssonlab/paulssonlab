@@ -192,6 +192,13 @@ class kymograph_cluster:
                 img_arr, y_percentile, axis=2, interpolation="lower"
             )
             y_percentiles_smoothed = self.median_filter_2d(perc_arr, smoothing_kernel_y)
+            min_qth_percentile = y_percentiles_smoothed.min(axis=1)
+            max_qth_percentile = y_percentiles_smoothed.max(axis=1)
+            min_qth_percentile = min_qth_percentile[:, np.newaxis]
+            max_qth_percentile = max_qth_percentile[:, np.newaxis]
+            y_percentiles_smoothed = (y_percentiles_smoothed - min_qth_percentile) / (
+                max_qth_percentile - min_qth_percentile
+            )
         return y_percentiles_smoothed
 
     def triangle_threshold(
@@ -684,7 +691,8 @@ class kymograph_cluster:
             sk.filters.threshold_otsu(x_percentiles_t[:, np.newaxis], nbins=otsu_nbins)
             * otsu_scaling
         )
-        x_mask = x_percentiles_t > otsu_threshold
+        x_mask = x_percentiles_t < otsu_threshold
+        # x_mask = x_percentiles_t>otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints
 
@@ -1659,6 +1667,12 @@ class kymograph_multifov(multifov):
         y_percentiles_smoothed = self.median_filter_2d(
             y_percentiles, smoothing_kernel_y
         )
+        # Normalize (scale by range and subtract minimum) to make scaling of thresholds make more sense
+        min_qth_percentile = y_percentiles_smoothed.min(axis=0)
+        max_qth_percentile = y_percentiles_smoothed.max(axis=0)
+        y_percentiles_smoothed = (y_percentiles_smoothed - min_qth_percentile) / (
+            max_qth_percentile - min_qth_percentile
+        )
         return y_percentiles_smoothed
 
     def triangle_threshold(
@@ -2207,7 +2221,8 @@ class kymograph_multifov(multifov):
             sk.filters.threshold_otsu(x_percentiles_t[:, np.newaxis], nbins=otsu_nbins)
             * otsu_scaling
         )
-        x_mask = x_percentiles_t > otsu_threshold
+        x_mask = x_percentiles_t < otsu_threshold
+        # x_mask = x_percentiles_t>otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints, otsu_threshold
 
