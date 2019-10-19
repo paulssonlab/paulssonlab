@@ -25,6 +25,7 @@ class kymograph_cluster:
         padding_y=20,
         trench_width_x=30,
         t_range=(0, None),
+        invert=False,
         y_percentile=85,
         y_min_edge_dist=50,
         smoothing_kernel_y=(1, 9),
@@ -53,6 +54,7 @@ class kymograph_cluster:
             padding_y = param_dict["Y Padding"]
             trench_width_x = param_dict["Trench Width"]
             t_range = param_dict["Time Range"]
+            invert = param_dict["Invert"]
             y_percentile = param_dict["Y Percentile"]
             y_min_edge_dist = param_dict["Minimum Trench Length"]
             smoothing_kernel_y = (1, param_dict["Y Smoothing Kernel"])
@@ -84,6 +86,7 @@ class kymograph_cluster:
         self.trenches_per_file = trenches_per_file
 
         self.t_range = t_range
+        self.invert = invert
 
         #### important paramaters to set
         self.trench_len_y = trench_len_y
@@ -130,6 +133,7 @@ class kymograph_cluster:
             "ttl_len_y": ttl_len_y,
             "trench_width_x": trench_width_x,
             "y_percentile": y_percentile,
+            "invert": invert,
             "y_min_edge_dist": y_min_edge_dist,
             "smoothing_kernel_y": smoothing_kernel_y,
             "triangle_nbins": triangle_nbins,
@@ -188,6 +192,8 @@ class kymograph_cluster:
             chunk_cache_mem_size=self.metadata["chunk_cache_mem_size"],
         ) as imported_hdf5_handle:
             img_arr = imported_hdf5_handle[self.seg_channel][:]  # t x y
+            if self.invert:
+                img_arr = sk.util.invert(img_arr)
             perc_arr = np.percentile(
                 img_arr, y_percentile, axis=2, interpolation="lower"
             )
@@ -710,6 +716,8 @@ class kymograph_cluster:
             file_idx, drift_orientation_and_initend_future, padding_y, trench_len_y
         )
         cropped_in_y = channel_arr_list[0]
+        if self.invert:
+            cropped_in_y = sk.util.invert(cropped_in_y)
         #         cropped_in_y = y_crop_future[0][0] # t x row x y x x     # (24, 1, 330, 2048)
 
         x_percentiles_smoothed = []
@@ -1700,10 +1708,12 @@ class kymograph_multifov(multifov):
                     ]
             channel_list.append(np.concatenate(file_list, axis=2))
         channel_array = np.array(channel_list)
+        if self.invert:
+            channel_array = sk.util.invert(channel_array)
         return channel_array
 
     def import_hdf5_files(
-        self, all_channels, seg_channel, fov_list, t_range, t_subsample_step
+        self, all_channels, seg_channel, invert, fov_list, t_range, t_subsample_step
     ):
         seg_channel_idx = all_channels.index(seg_channel)
         all_channels.insert(0, all_channels.pop(seg_channel_idx))
@@ -1712,6 +1722,7 @@ class kymograph_multifov(multifov):
         self.fov_list = fov_list
         self.t_range = (t_range[0], t_range[1] + 1)
         self.t_subsample_step = t_subsample_step
+        self.invert = invert
 
         super(kymograph_multifov, self).__init__(fov_list)
 
