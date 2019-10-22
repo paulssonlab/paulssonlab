@@ -1021,7 +1021,7 @@ class phase_segmentation_cluster(phase_segmentation):
                 )
                 seg_props = seg_props.drop("bbox", axis=1)
             if "centroid" in props_to_grab:
-                seg_props[["centx", "centy"]] = pd.DataFrame(
+                seg_props[["centy", "centx"]] = pd.DataFrame(
                     seg_props["centroid"].tolist(), index=seg_props.index
                 )
                 seg_props = seg_props.drop("centroid", axis=1)
@@ -1121,7 +1121,7 @@ class phase_segmentation_cluster(phase_segmentation):
                     trench_loadings,
                     props_to_grab,
                     metadata,
-                    priority=random_priorities[k, 0],
+                    priority=random_priorities[k, 1] * 8,
                 )
 
     def extract_cell_data(
