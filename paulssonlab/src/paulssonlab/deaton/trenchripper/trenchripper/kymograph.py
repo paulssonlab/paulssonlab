@@ -705,7 +705,6 @@ class kymograph_cluster:
         Returns:
             array: A smoothed and background subtracted percentile array of shape (rows,x,t)
         """
-
         channel_arr_list, _ = self.crop_y(
             file_idx, drift_orientation_and_initend_future, padding_y, trench_len_y
         )
@@ -768,8 +767,8 @@ class kymograph_cluster:
             sk.filters.threshold_otsu(x_percentiles_t[:, np.newaxis], nbins=otsu_nbins)
             * otsu_scaling
         )
-        x_mask = x_percentiles_t < otsu_threshold
-        # x_mask = x_percentiles_t>otsu_threshold
+        #         x_mask = x_percentiles_t<otsu_threshold
+        x_mask = x_percentiles_t > otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints
 
@@ -2345,8 +2344,8 @@ class kymograph_multifov(multifov):
             sk.filters.threshold_otsu(x_percentiles_t[:, np.newaxis], nbins=otsu_nbins)
             * otsu_scaling
         )
-        x_mask = x_percentiles_t < otsu_threshold
-        # x_mask = x_percentiles_t>otsu_threshold
+        #         x_mask = x_percentiles_t<otsu_threshold
+        x_mask = x_percentiles_t > otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints, otsu_threshold
 
