@@ -292,10 +292,10 @@ class kymograph_cluster:
 
     def repair_out_of_frame(self, trench_edges_y, start_above, end_above):
         if start_above:
-            trench_edges_y = np.array([0] + [trench_edges_y.tolist()])
+            trench_edges_y = np.array([0] + trench_edges_y.tolist())
         if end_above:
             trench_edges_y = np.array(
-                [trench_edges_y.tolist()] + [int(self.metadata["height"])]
+                trench_edges_y.tolist() + [int(self.metadata["height"])]
             )
         return trench_edges_y
 
@@ -1585,7 +1585,10 @@ class kymograph_cluster:
         outputdf = trenchiddf.drop(columns=["File Index", "Image Index"])
         num_tpts = len(outputdf.index.get_level_values("timepoints").unique().tolist())
         chunk_size = self.trenches_per_file * num_tpts
-        num_files = (len(trenchid_list) // self.trenches_per_file) + 1
+        if len(trenchid_list) % self.trenches_per_file == 0:
+            num_files = len(trenchid_list) // self.trenches_per_file
+        else:
+            num_files = (len(trenchid_list) // self.trenches_per_file) + 1
 
         file_indices = np.repeat(np.array(range(num_files)), chunk_size)[
             : len(outputdf)
@@ -1866,10 +1869,10 @@ class kymograph_multifov(multifov):
 
     def repair_out_of_frame(self, trench_edges_y, start_above, end_above):
         if start_above:
-            trench_edges_y = np.array([0] + [trench_edges_y.tolist()])
+            trench_edges_y = np.array([0] + trench_edges_y.tolist())
         if end_above:
             trench_edges_y = np.array(
-                [trench_edges_y.tolist()] + [int(self.metadata["height"])]
+                trench_edges_y.tolist() + [int(self.metadata["height"])]
             )
         return trench_edges_y
 
