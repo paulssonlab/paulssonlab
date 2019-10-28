@@ -80,9 +80,11 @@ class hdf5_fov_extractor:
         )
         display(selection)
 
-    def writemetadata(self):
+    def writemetadata(self, manual_num_frames=None, manual_num_fovs=None):
         ndmeta_handle = nd_metadata_handler(self.nd2filename)
-        exp_metadata, fov_metadata = ndmeta_handle.get_metadata()
+        exp_metadata, fov_metadata = ndmeta_handle.get_metadata(
+            manual_num_frames=manual_num_frames, manual_num_fovs=manual_num_fovs
+        )
         print(exp_metadata)
         self.chunk_shape = (1, exp_metadata["height"], exp_metadata["width"])
         chunk_bytes = 2 * np.multiply.accumulate(np.array(self.chunk_shape))[-1]
@@ -113,9 +115,11 @@ class hdf5_fov_extractor:
 
         self.meta_handle.write_df("global", assignment_metadata, metadata=exp_metadata)
 
-    def extract(self, dask_controller):
+    def extract(self, dask_controller, manual_num_frames=None, manual_num_fovs=None):
         writedir(self.hdf5path, overwrite=True)
-        self.writemetadata()
+        self.writemetadata(
+            manual_num_frames=manual_num_frames, manual_num_fovs=manual_num_fovs
+        )
 
         dask_controller.futures = {}
         metadf = self.meta_handle.read_df("global", read_metadata=True)
@@ -126,7 +130,7 @@ class hdf5_fov_extractor:
         )
         metadf = metadf.sort_index()
 
-        def writehdf5(fovnum, num_entries, timepoint_list, file_idx):
+        def writehdf5(fovnum, num_entries, timepoint_list, file_idx, num_fovs):
             with ND2Reader(self.nd2filename) as nd2file:
                 y_dim = self.metadata["height"]
                 x_dim = self.metadata["width"]
@@ -142,13 +146,22 @@ class hdf5_fov_extractor:
                             chunks=self.chunk_shape,
                             dtype="uint16",
                         )
-
-                        for j in range(len(timepoint_list)):
-                            frame = timepoint_list[j]
-                            #                             frame = dataframe[j:j+1]["timepoints"].values[0]
-                            #                         frame = self.metadf['frames'][timepoint] #not sure if this is necessary...
-                            nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
-                            hdf5_dataset[j, :, :] = nd2_image
+                        if self.metadata["failed_file"]:
+                            for j in range(len(timepoint_list)):
+                                frame = timepoint_list[j]
+                                #                             frame = dataframe[j:j+1]["timepoints"].values[0]
+                                #                         frame = self.metadf['frames'][timepoint] #not sure if this is necessary...
+                                nd2_image = nd2file.get_frame_2D(
+                                    c=i, t=0, v=fovnum + frame * num_fovs
+                                )
+                                hdf5_dataset[j, :, :] = nd2_image
+                        else:
+                            for j in range(len(timepoint_list)):
+                                frame = timepoint_list[j]
+                                #                             frame = dataframe[j:j+1]["timepoints"].values[0]
+                                #                         frame = self.metadf['frames'][timepoint] #not sure if this is necessary...
+                                nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
+                                hdf5_dataset[j, :, :] = nd2_image
             return "Done."
 
         file_list = metadf.index.get_level_values("File Index").unique().values
@@ -169,6 +182,7 @@ class hdf5_fov_extractor:
                 num_entries,
                 timepoint_list,
                 file_idx,
+                self.metadata["num_fovs"],
                 retries=1,
                 priority=priority,
             )
@@ -238,20 +252,43 @@ class nd_metadata_handler:
         return imaging_settings
 
     def make_fov_df(
-        self, nd2file
+        self, nd2file, exp_metadata
     ):  # only records values for single timepoints, does not seperate between channels....
         img_metadata = nd2file.parser._raw_metadata
+        num_fovs = exp_metadata["num_fovs"]
+        num_frames = exp_metadata["num_frames"]
+        num_images_expected = num_fovs * num_frames
 
-        num_fovs = len(nd2file.parser.metadata["fields_of_view"])
-        x = np.reshape(img_metadata.x_data, (-1, num_fovs)).T
-        y = np.reshape(img_metadata.y_data, (-1, num_fovs)).T
-        z = np.reshape(img_metadata.z_data, (-1, num_fovs)).T
+        if img_metadata.x_data is not None:
+            x = np.reshape(img_metadata.x_data, (-1, num_fovs)).T
+            y = np.reshape(img_metadata.y_data, (-1, num_fovs)).T
+            z = np.reshape(img_metadata.z_data, (-1, num_fovs)).T
+        else:
+            positions = img_metadata.image_metadata[b"SLxExperiment"][b"ppNextLevelEx"][
+                b""
+            ][b"uLoopPars"][b"Points"][b""]
+            x = []
+            y = []
+            z = []
+            for position in positions:
+                x.append([position[b"dPosX"]] * num_frames)
+                y.append([position[b"dPosY"]] * num_frames)
+                z.append([position[b"dPosZ"]] * num_frames)
+            x = np.array(x)
+            y = np.array(y)
+            z = np.array(z)
 
         time_points = x.shape[1]
-        acq_times = np.reshape(
-            np.array(list(img_metadata.acquisition_times)), (-1, num_fovs)
-        ).T  # quick fix for inconsistancies beteen the number of timepoints recorded in acquisition times and the x/y/z positions
-        acq_times = acq_times[:, :time_points]
+        if img_metadata.x_data is not None:
+            acq_times = np.reshape(
+                np.array(list(img_metadata.acquisition_times)), (-1, num_fovs)
+            ).T  # quick fix for inconsistancies beteen the number of timepoints recorded in acquisition times and the x/y/z positions
+            acq_times = acq_times[:, :time_points]
+        else:
+            acq_times = np.reshape(
+                np.array(list(img_metadata.acquisition_times)[:num_images_expected]),
+                (-1, num_fovs),
+            ).T
         pos_label = np.repeat(
             np.expand_dims(np.add.accumulate(np.ones(num_fovs, dtype=int)) - 1, 1),
             time_points,
@@ -295,7 +332,7 @@ class nd_metadata_handler:
 
         return output
 
-    def get_metadata(self):
+    def get_metadata(self, manual_num_frames=None, manual_num_fovs=None):
         nd2file = ND2Reader(self.nd2filename)
         exp_metadata = copy.copy(nd2file.metadata)
         wanted_keys = [
@@ -314,8 +351,17 @@ class nd_metadata_handler:
         exp_metadata = dict(
             [(k, exp_metadata[k]) for k in wanted_keys if k in exp_metadata]
         )
+        exp_metadata["failed_file"] = False
+        if manual_num_frames is not None:
+            exp_metadata["frames"] = list(range(manual_num_frames))
+            exp_metadata["num_frames"] = len(exp_metadata["frames"])
+            exp_metadata["failed_file"] = True
+        if manual_num_fovs is not None:
+            exp_metadata["fields_of_view"] = list(range(manual_num_fovs))
+            exp_metadata["failed_file"] = True
         exp_metadata["num_fovs"] = len(exp_metadata["fields_of_view"])
         exp_metadata["settings"] = self.get_imaging_settings(nd2file)
-        fov_metadata = self.make_fov_df(nd2file)
+
+        fov_metadata = self.make_fov_df(nd2file, exp_metadata)
         nd2file.close()
         return exp_metadata, fov_metadata
