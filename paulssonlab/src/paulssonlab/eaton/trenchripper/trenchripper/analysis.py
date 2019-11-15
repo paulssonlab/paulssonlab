@@ -65,7 +65,7 @@ class regionprops_extractor:
             column_list = [
                 "File Index",
                 "File Trench Index",
-                "Timepoint",
+                "timepoints",
                 "Objectid",
                 "Intensity Channel",
             ] + self.props
@@ -74,13 +74,13 @@ class regionprops_extractor:
             column_list = [
                 "File Index",
                 "File Trench Index",
-                "Timepoint",
+                "timepoints",
                 "Objectid",
             ] + self.props
             df_out = pd.DataFrame(all_props_list, columns=column_list).reset_index()
 
         df_out = df_out.set_index(
-            ["File Index", "File Trench Index", "Timepoint", "Objectid"],
+            ["File Index", "File Trench Index", "timepoints", "Objectid"],
             drop=True,
             append=False,
             inplace=False,
@@ -123,7 +123,18 @@ class regionprops_extractor:
             df_out.append(temp_df)
             os.remove(temp_df_path)
         df_out = pd.concat(df_out)
-        df_out.to_pickle(self.analysispath)
+
+        kymo_meta = kymo_meta.reset_index(inplace=False)
+        kymo_meta = kymo_meta.set_index(
+            ["File Index", "File Trench Index", "timepoints"],
+            drop=True,
+            append=False,
+            inplace=False,
+        )
+        kymo_meta = kymo_meta.sort_index()
+        mergeddf = df_out.join(kymo_meta.reindex(df_out.index))
+
+        mergeddf.to_pickle(self.analysispath)
 
     def export_all_data(self, n_workers=20, memory="4GB"):
 
