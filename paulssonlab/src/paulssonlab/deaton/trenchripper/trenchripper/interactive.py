@@ -522,6 +522,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
     def __init__(
         self,
         headpath,
+        scale_timepoints=False,
+        scaling_percentage=0.9,
         smooth_sigma=0.75,
         wrap_pad=0,
         hess_pad=6,
@@ -538,6 +540,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         fluo_segmentation.__init__(
             self,
+            scale_timepoints=scale_timepoints,
+            scaling_percentage=scaling_percentage,
             smooth_sigma=smooth_sigma,
             wrap_pad=wrap_pad,
             hess_pad=hess_pad,
@@ -647,31 +651,34 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.plot_img_list(img_list)
         return img_list
 
-    def plot_scaled(self, kymo_arr, scale, scaling_percentile):
-        self.final_params["Scale Fluorescence?"] = scale
-        self.final_params["Scaling Percentile:"] = scaling_percentile
-        input_kymo = kymo_handle()
-        scaled_list = []
-        for k in range(kymo_arr.shape[0]):
-            input_kymo.import_wrap(
-                kymo_arr[k], scale=scale, scale_perc=scaling_percentile
-            )
-            scaled_list.append(input_kymo.return_unwrap(padding=self.wrap_pad))
-        self.plot_img_list(scaled_list)
-        return scaled_list
+    #     def plot_scaled(self,kymo_arr,scale,scaling_percentile):
+    #         self.final_params['Scale Fluorescence?'] = scale
+    #         self.final_params["Scaling Percentile:"] = scaling_percentile
+    #         input_kymo = kymo_handle()
+    #         scaled_list = []
+    #         for k in range(kymo_arr.shape[0]):
+    #             input_kymo.import_wrap(kymo_arr[k],scale=scale,scale_perc=scaling_percentile)
+    #             scaled_list.append(input_kymo.return_unwrap(padding=self.wrap_pad))
+    #         self.plot_img_list(scaled_list)
+    #         return scaled_list
 
-    def plot_processed(self, scaled_list, smooth_sigma, bit_max):
+    def plot_processed(
+        self, kymo_arr, smooth_sigma, bit_max, scale, scaling_percentile
+    ):
         self.final_params["Gaussian Kernel Sigma:"] = smooth_sigma
         self.final_params["8 Bit Maximum:"] = bit_max
+        self.final_params["Scale Fluorescence?"] = scale
+        self.final_params["Scaling Percentile:"] = scaling_percentile
+
         proc_list = []
         unwrap_proc_list = []
-        for scaled in scaled_list:
-            scaled_kymo = kymo_handle()
-            scaled_kymo.import_unwrap(scaled, self.t_tot, padding=self.wrap_pad)
-            wrap_scaled = scaled_kymo.return_wrap()
-
+        for k in range(kymo_arr.shape[0]):
             proc_img = self.preprocess_img(
-                wrap_scaled, sigma=smooth_sigma, bit_max=bit_max
+                kymo_arr[k],
+                sigma=smooth_sigma,
+                bit_max=bit_max,
+                scale_timepoints=scale,
+                scaling_percentage=scaling_percentile,
             )
 
             proc_kymo = kymo_handle()
@@ -681,10 +688,29 @@ class fluo_segmentation_interactive(fluo_segmentation):
             unwrap_proc_list.append(unwrap_proc)
         self.plot_img_list(unwrap_proc_list)
 
-        plt.hist(np.array(scaled_list).flatten(), bins=50)
+        plt.hist(kymo_arr.flatten(), bins=50)
         plt.show()
 
         return proc_list
+
+    #         for scaled in scaled_list:
+    #             scaled_kymo = kymo_handle()
+    #             scaled_kymo.import_unwrap(scaled,self.t_tot,padding=self.wrap_pad)
+    #             wrap_scaled = scaled_kymo.return_wrap()
+
+    #             proc_img = self.preprocess_img(wrap_scaled,sigma=smooth_sigma,bit_max=bit_max)
+
+    #             proc_kymo = kymo_handle()
+    #             proc_kymo.import_wrap(proc_img)
+    #             unwrap_proc = proc_kymo.return_unwrap(padding=0)
+    #             proc_list.append(proc_img)
+    #             unwrap_proc_list.append(unwrap_proc)
+    #         self.plot_img_list(unwrap_proc_list)
+
+    #         plt.hist(np.array(scaled_list).flatten(),bins=50)
+    #         plt.show()
+
+    #         return proc_list
 
     def plot_eigval(self, proc_list):
         eigval_list = []
@@ -831,6 +857,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         final_mask_list = []
         for conv_scores in conv_scores_list:
             final_mask = conv_scores > convex_threshold
+            final_mask = sk.measure.label(final_mask)
             final_mask_list.append(final_mask)
         self.plot_img_list(final_mask_list)
         return final_mask_list
