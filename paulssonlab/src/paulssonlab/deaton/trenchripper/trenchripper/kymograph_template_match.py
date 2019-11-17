@@ -1408,7 +1408,6 @@ class kymograph_cluster:
             future = dask_controller.daskclient.submit(
                 self.crop_x,
                 file_idx,
-                drift_future,
                 orientation_and_initend_future,
                 in_bounds_future,
                 self.padding_y,
