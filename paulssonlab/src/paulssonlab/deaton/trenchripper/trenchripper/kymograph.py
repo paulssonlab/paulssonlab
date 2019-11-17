@@ -28,6 +28,7 @@ class kymograph_cluster:
         padding_y=20,
         trench_width_x=30,
         t_range=(0, None),
+        invert=False,
         y_percentile=85,
         y_min_edge_dist=50,
         smoothing_kernel_y=(1, 9),
@@ -56,6 +57,7 @@ class kymograph_cluster:
             padding_y = param_dict["Y Padding"]
             trench_width_x = param_dict["Trench Width"]
             t_range = param_dict["Time Range"]
+            invert = param_dict["Invert"]
             y_percentile = param_dict["Y Percentile"]
             y_min_edge_dist = param_dict["Minimum Trench Length"]
             smoothing_kernel_y = (1, param_dict["Y Smoothing Kernel"])
@@ -87,6 +89,7 @@ class kymograph_cluster:
         self.trenches_per_file = trenches_per_file
 
         self.t_range = t_range
+        self.invert = invert
 
         #### important paramaters to set
         self.trench_len_y = trench_len_y
@@ -133,6 +136,7 @@ class kymograph_cluster:
             "ttl_len_y": ttl_len_y,
             "trench_width_x": trench_width_x,
             "y_percentile": y_percentile,
+            "invert": invert,
             "y_min_edge_dist": y_min_edge_dist,
             "smoothing_kernel_y": smoothing_kernel_y,
             "triangle_nbins": triangle_nbins,
@@ -191,6 +195,8 @@ class kymograph_cluster:
             chunk_cache_mem_size=self.metadata["chunk_cache_mem_size"],
         ) as imported_hdf5_handle:
             img_arr = imported_hdf5_handle[self.seg_channel][:]  # t x y
+            if self.invert:
+                img_arr = sk.util.invert(img_arr)
             perc_arr = np.percentile(
                 img_arr, y_percentile, axis=2, interpolation="lower"
             )
@@ -670,6 +676,9 @@ class kymograph_cluster:
             file_idx, drift_orientation_and_initend_future, padding_y, trench_len_y
         )
         cropped_in_y = channel_arr_list[0]
+        if self.invert:
+            cropped_in_y = sk.util.invert(cropped_in_y)
+        #         cropped_in_y = y_crop_future[0][0] # t x row x y x x     # (24, 1, 330, 2048)
 
         x_percentiles_smoothed = []
         for row_num in range(cropped_in_y.shape[1]):
@@ -1093,15 +1102,24 @@ class kymograph_cluster:
         scaled_y_coords = y_coords * pixel_microns
         t_len = scaled_y_coords.shape[0]
         fs = np.repeat([fov_idx], t_len)
-        global_x, global_y, ts, file_indices, img_indices = (
-            fovdf["x"].values,
-            fovdf["y"].values,
-            fovdf["t"].values,
-            fovdf["File Index"].values,
-            fovdf["Image Index"].values,
-        )
-        tpts = np.array(range(ts.shape[0]))
         orit_dict = {0: "top", 1: "bottom"}
+        tpts = np.array(range(t_len))
+
+        missing_metadata = "x" not in fovdf.columns
+
+        if not missing_metadata:
+            global_x, global_y, ts, file_indices, img_indices = (
+                fovdf["x"].values,
+                fovdf["y"].values,
+                fovdf["t"].values,
+                fovdf["File Index"].values,
+                fovdf["Image Index"].values,
+            )
+        else:
+            file_indices, img_indices = (
+                fovdf["File Index"].values,
+                fovdf["Image Index"].values,
+            )
 
         pd_output = []
 
@@ -1109,64 +1127,103 @@ class kymograph_cluster:
             scaled_x_coord = x_coord * pixel_microns
             yt = scaled_y_coords[:, l]
             orit = np.repeat([orit_dict[orientations[l]]], t_len)
-            global_yt = yt + global_y
+            if not missing_metadata:
+                global_yt = yt + global_y
             ls = np.repeat([l], t_len)
             for k in range(scaled_x_coord.shape[0]):
                 xt = scaled_x_coord[k]
-                global_xt = xt + global_x
+                if not missing_metadata:
+                    global_xt = xt + global_x
                 ks = np.repeat([k], t_len)
-                pd_output.append(
-                    np.array(
-                        [
-                            fs,
-                            ls,
-                            ks,
-                            tpts,
-                            file_indices,
-                            img_indices,
-                            ts,
-                            orit,
-                            yt,
-                            xt,
-                            global_yt,
-                            global_xt,
-                        ]
-                    ).T
-                )
+                if not missing_metadata:
+                    pd_output.append(
+                        np.array(
+                            [
+                                fs,
+                                ls,
+                                ks,
+                                tpts,
+                                file_indices,
+                                img_indices,
+                                ts,
+                                orit,
+                                yt,
+                                xt,
+                                global_yt,
+                                global_xt,
+                            ]
+                        ).T
+                    )
+                else:
+                    pd_output.append(
+                        np.array(
+                            [fs, ls, ks, tpts, file_indices, img_indices, orit, yt, xt]
+                        ).T
+                    )
+
         pd_output = np.concatenate(pd_output, axis=0)
-        df = pd.DataFrame(
-            pd_output,
-            columns=[
-                "fov",
-                "row",
-                "trench",
-                "timepoints",
-                "File Index",
-                "Image Index",
-                "time (s)",
-                "lane orientation",
-                "y (local)",
-                "x (local)",
-                "y (global)",
-                "x (global)",
-            ],
-        )
-        df = df.astype(
-            {
-                "fov": int,
-                "row": int,
-                "trench": int,
-                "timepoints": int,
-                "File Index": int,
-                "Image Index": int,
-                "time (s)": float,
-                "lane orientation": str,
-                "y (local)": float,
-                "x (local)": float,
-                "y (global)": float,
-                "x (global)": float,
-            }
-        )
+        if not missing_metadata:
+            df = pd.DataFrame(
+                pd_output,
+                columns=[
+                    "fov",
+                    "row",
+                    "trench",
+                    "timepoints",
+                    "File Index",
+                    "Image Index",
+                    "time (s)",
+                    "lane orientation",
+                    "y (local)",
+                    "x (local)",
+                    "y (global)",
+                    "x (global)",
+                ],
+            )
+            df = df.astype(
+                {
+                    "fov": int,
+                    "row": int,
+                    "trench": int,
+                    "timepoints": int,
+                    "File Index": int,
+                    "Image Index": int,
+                    "time (s)": float,
+                    "lane orientation": str,
+                    "y (local)": float,
+                    "x (local)": float,
+                    "y (global)": float,
+                    "x (global)": float,
+                }
+            )
+        else:
+            df = pd.DataFrame(
+                pd_output,
+                columns=[
+                    "fov",
+                    "row",
+                    "trench",
+                    "timepoints",
+                    "File Index",
+                    "Image Index",
+                    "lane orientation",
+                    "y (local)",
+                    "x (local)",
+                ],
+            )
+            df = df.astype(
+                {
+                    "fov": int,
+                    "row": int,
+                    "trench": int,
+                    "timepoints": int,
+                    "File Index": int,
+                    "Image Index": int,
+                    "lane orientation": str,
+                    "y (local)": float,
+                    "x (local)": float,
+                }
+            )
         temp_meta_handle = pandas_hdf5_handler(
             self.kymographpath + "/temp_metadata_" + str(fov_idx) + ".hdf5"
         )
@@ -1194,20 +1251,18 @@ class kymograph_cluster:
         ### smoothed y percentiles ###
 
         for k, file_idx in enumerate(file_list):
-
             future = dask_controller.daskclient.submit(
                 self.get_smoothed_y_percentiles,
                 file_idx,
                 self.y_percentile,
                 self.smoothing_kernel_y,
                 retries=1,
-            )  # ,priority=priority)
+            )
             dask_controller.futures["Smoothed Y Percentiles: " + str(file_idx)] = future
 
         ### get trench row edges, y midpoints ###
 
         for k, file_idx in enumerate(file_list):
-
             smoothed_y_future = dask_controller.futures[
                 "Smoothed Y Percentiles: " + str(file_idx)
             ]
@@ -1220,14 +1275,13 @@ class kymograph_cluster:
                 self.triangle_min_threshold,
                 self.y_min_edge_dist,
                 retries=1,
-            )  # ,priority=priority)
+            )
 
             dask_controller.futures["Y Trench Edges: " + str(file_idx)] = future
 
         ### get y drift, orientations, init edges ###
 
         for k, fov_idx in enumerate(fov_list):
-
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
             edges_futures = [
@@ -1245,7 +1299,7 @@ class kymograph_cluster:
                 self.padding_y,
                 self.trench_len_y,
                 retries=1,
-            )  # ,priority=priority)
+            )
             dask_controller.futures[
                 "Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)
             ] = future
@@ -1258,7 +1312,6 @@ class kymograph_cluster:
             drift_orientation_and_initend_future = dask_controller.futures[
                 "Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)
             ]
-
             future = dask_controller.daskclient.submit(
                 self.get_smoothed_x_percentiles,
                 file_idx,
@@ -1269,13 +1322,12 @@ class kymograph_cluster:
                 self.background_kernel_x,
                 self.smoothing_kernel_x,
                 retries=1,
-            )  # ,priority=priority)
+            )
             dask_controller.futures["Smoothed X Percentiles: " + str(file_idx)] = future
 
         ### get x midpoints ###
 
         for k, file_idx in enumerate(file_list):
-
             smoothed_x_future = dask_controller.futures[
                 "Smoothed X Percentiles: " + str(file_idx)
             ]
@@ -1285,7 +1337,7 @@ class kymograph_cluster:
                 self.otsu_nbins,
                 self.otsu_scaling,
                 retries=1,
-            )  # ,priority=priority)
+            )
             dask_controller.futures["X Midpoints: " + str(file_idx)] = future
 
         ### get x drift ###
@@ -1299,13 +1351,12 @@ class kymograph_cluster:
             ]
             future = dask_controller.daskclient.submit(
                 self.get_x_drift, midpoint_futures, retries=1
-            )  # ,priority=priority)
+            )
             dask_controller.futures["X Drift: " + str(fov_idx)] = future
 
         ### get kymograph masks ###
 
         for k, fov_idx in enumerate(fov_list):
-
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
             midpoint_futures = [
@@ -1320,7 +1371,7 @@ class kymograph_cluster:
                 self.trench_width_x,
                 self.trench_present_thr,
                 retries=1,
-            )  # ,priority=priority)
+            )
             dask_controller.futures["X In Bounds: " + str(fov_idx)] = future
 
         ### crop in x ###
@@ -1341,7 +1392,7 @@ class kymograph_cluster:
                 self.padding_y,
                 self.trench_len_y,
                 retries=0,
-            )  # ,priority=priority)
+            )
             dask_controller.futures["X Crop: " + str(file_idx)] = future
 
         ### get coords ###
@@ -1368,7 +1419,7 @@ class kymograph_cluster:
             )  # ,priority=priority)
             dask_controller.futures["Coords: " + str(fov_idx)] = future
 
-    def collect_metadata(self, dask_controller):
+    def collect_metadata(self):
         fovdf = self.meta_handle.read_df("global", read_metadata=True)
         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0], self.t_range[1])), :]
         fov_list = fovdf.index.get_level_values("fov").unique().values
@@ -1550,7 +1601,7 @@ class kymograph_cluster:
 
     def post_process(self, dask_controller):
         dask_controller.daskclient.restart()
-        self.collect_metadata(dask_controller)
+        self.collect_metadata()
         self.reorg_all_kymographs(dask_controller)
 
     def kymo_report(self):
@@ -1629,10 +1680,12 @@ class kymograph_multifov(multifov):
                     ]
             channel_list.append(np.concatenate(file_list, axis=2))
         channel_array = np.array(channel_list)
+        if self.invert:
+            channel_array = sk.util.invert(channel_array)
         return channel_array
 
     def import_hdf5_files(
-        self, all_channels, seg_channel, fov_list, t_range, t_subsample_step
+        self, all_channels, seg_channel, invert, fov_list, t_range, t_subsample_step
     ):
         seg_channel_idx = all_channels.index(seg_channel)
         all_channels.insert(0, all_channels.pop(seg_channel_idx))
@@ -1641,6 +1694,7 @@ class kymograph_multifov(multifov):
         self.fov_list = fov_list
         self.t_range = (t_range[0], t_range[1] + 1)
         self.t_subsample_step = t_subsample_step
+        self.invert = invert
 
         super(kymograph_multifov, self).__init__(fov_list)
 
