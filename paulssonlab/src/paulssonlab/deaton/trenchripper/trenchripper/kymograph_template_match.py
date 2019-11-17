@@ -549,8 +549,8 @@ class kymograph_cluster:
         orientations,
         drop_first_row,
         drop_last_row,
-        trench_len_y,
         padding_y,
+        trench_len_y,
     ):
         trench_edges_y_list = (
             np.tile(seed_trench_edges_y, (y_drifts.shape[0], 1)) + y_drifts[:, None]
