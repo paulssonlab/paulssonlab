@@ -179,6 +179,15 @@ class kymograph_cluster:
             )
         return seed_index, template, top_left
 
+    def find_median_outliers(self, points, thresh=3.5):
+        if len(points.shape) == 1:
+            points = points[:, None]
+        median = np.nanmedian(points, axis=0)
+        diff = np.sqrt(np.sum((points - median) ** 2, axis=-1))
+        med_abs_deviation = np.nanmedian(diff)
+        modified_z_score = 0.6745 * diff / med_abs_deviation
+        return modified_z_score > thresh
+
     def get_drifts_template(
         self, file_idx, seed_image_and_template_future, max_sqdiff=0.1
     ):
@@ -202,6 +211,8 @@ class kymograph_cluster:
             )
             if min_sqdiff > max_sqdiff:
                 drifts[i, :] = [np.nan, np.nan]
+        outliers = self.find_median_outliers(drifts)
+        drifts[outliers, :] = [np.nan, np.nan]
         for i in range(img_arr.shape[0]):
             if np.isnan(drifts[i, 0]):
                 if i == 0:
@@ -259,6 +270,8 @@ class kymograph_cluster:
                 drifts[i, :] = [np.nan, np.nan]
             else:
                 drifts[i, :] = find_drift_poi(points1, points2)
+        outliers = self.find_median_outliers(drifts)
+        drifts[outliers, :] = [np.nan, np.nan]
         for i in range(img_arr.shape[0]):
             if np.isnan(drifts[i, 0]):
                 if i == 0:
