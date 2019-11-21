@@ -844,11 +844,16 @@ class kymograph_cluster:
         """Performs cropping of the images in the y-dimension.
 
         Args:
-            file_idx (int):
+            file_idx (int): hdf5 archive index
             orientation_and_initend_future (tuple): tuple of valid_orientations, valid_y_ends
+            valid_orientations (list, int): orientations for each valid trench row
+            valid_y_ends (list of t x row arrays): dead end y-position for each valid trench row in each time
+            padding_y (int): amount of space to leave beyond the ends of the trench
+            trench_len_y (int): length of trenches to cut
         Returns:
-            array: A y-cropped array of shape (rows,channels,x,y,t).
+            channel_arr_list: A y-cropped array of shape (channels,t,rows,y,x).
         """
+        # Obtain metadata for file index
         fovdf = self.meta_handle.read_df("global", read_metadata=False)
         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0], self.t_range[1])), :]
         filedf = fovdf.reset_index(inplace=False)
@@ -868,7 +873,9 @@ class kymograph_cluster:
         drift_corrected_edges = valid_y_ends
 
         channel_arr_list = []
+        # Loop through channels
         for c, channel in enumerate(self.all_channels):
+            # Load all timepoints for all images in the file
             with h5py_cache.File(
                 self.hdf5path + "/hdf5_" + str(file_idx) + ".hdf5",
                 "r",
@@ -879,18 +886,22 @@ class kymograph_cluster:
                 ]
             time_list = []
             lane_y_coords_list = []
+            # Loop through times
             for t in range(img_arr.shape[0]):
                 trench_ends_y = drift_corrected_edges[t]
                 row_list = []
                 lane_y_coords = []
+                # Loop through rows
                 for r, orientation in enumerate(valid_orientations):
                     trench_end = trench_ends_y[r]
+                    # Cut from trench end
                     if orientation == 0:
                         upper = max(trench_end - padding_y, 0)
                         lower = min(trench_end + trench_len_y, img_arr.shape[1])
                     else:
                         upper = max(trench_end - trench_len_y, 0)
                         lower = min(trench_end + padding_y, img_arr.shape[1])
+                    # Cut image and save dead end coords
                     lane_y_coords.append(upper)
                     output_array = img_arr[t, upper:lower, :]
                     row_list.append(output_array)
@@ -912,6 +923,18 @@ class kymograph_cluster:
         padding_y,
         trench_len_y,
     ):
+        """Crop a single field of view at a single timepoint on the segmentation channel for x segmentation
+
+        Args:
+            file_idx (int): hdf5 archive index
+            seed_image_index(int): seed timepoint for this file idx
+            orientation_and_initend_future (tuple): tuple of valid_orientations, valid_y_ends
+            valid_orientations (list, int): orientations for each valid trench row
+            valid_y_ends (list of t x row arrays): dead end y-position for each valid trench row in each time
+            padding_y (int): amount of space to leave beyond the ends of the trench
+            trench_len_y (int): length of trenches to cut
+        """
+        # load segmentation channel and seed timepoint
         with h5py_cache.File(
             self.hdf5path + "/hdf5_" + str(file_idx) + ".hdf5",
             "r",
@@ -919,15 +942,14 @@ class kymograph_cluster:
         ) as imported_hdf5_handle:
             seed_image = imported_hdf5_handle[self.seg_channel][seed_image_idx]
 
-        time_list = []
-        lane_y_coords_list = []
         valid_orientations, valid_y_ends = orientation_and_initend_future
 
         trench_ends_y = valid_y_ends[seed_image_idx]
+        # Iterate through rows
         row_list = []
-        lane_y_coords = []
         for r, orientation in enumerate(valid_orientations):
             trench_end = trench_ends_y[r]
+            # Cut from dead end
             if orientation == 0:
                 upper = max(trench_end - padding_y, 0)
                 lower = min(trench_end + trench_len_y, seed_image.shape[0])
@@ -955,15 +977,22 @@ class kymograph_cluster:
         """Summary
 
         Args:
-            array_tuple (tuple): A singleton tuple containing the y-cropped hdf5 array of shape (rows,x,y,t).
-            background_kernel_x (tuple): Two-entry tuple specifying a kernel size for performing background subtraction
-            on xt signal when cropping in the x-dimension. Dim_1 (time) should be set to 1.
-            smoothing_kernel_x (tuple): Two-entry tuple specifying a kernel size for performing smoothing
-            on xt signal when cropping in the x-dimension. Dim_1 (time) should be set to 1.
+            file_idx (int): hdf5 archive index
+            seed_image_index(int): seed timepoint for this file idx
+            orientation_and_initend_future (tuple): tuple of valid_orientations, valid_y_ends
+            valid_orientations (list, int): orientations for each valid trench row
+            valid_y_ends (list of t x row arrays): dead end y-position for each valid trench row in each time
+            padding_y (int): amount of space to leave beyond the ends of the trench
+            trench_len_y (int): length of trenches to cut
+            x_percentile (int): intensity percentile to use to find x positions of trenches
+            background_kernel_x (int): kernel size to use for background subtraction
+            smoothing_kernel_x (int): kernel size to use for smoothing x intensity signal
 
         Returns:
-            array: A smoothed and background subtracted percentile array of shape (rows,x,t)
+            x_percentiles_smoothed: A smoothed and background subtracted percentile array of shape (rows,x) for the seed image
         """
+
+        # crop seed image in y direction
         cropped_in_y = self.crop_y_single(
             file_idx,
             seed_image_idx,
@@ -975,6 +1004,7 @@ class kymograph_cluster:
         x_percentiles_smoothed = []
         for row_num in range(cropped_in_y.shape[0]):
             cropped_in_y_seg = cropped_in_y[row_num]  # t x y x x
+            # Get percentiles, subtract median, smooth
             x_percentiles = np.percentile(
                 cropped_in_y_seg, x_percentile, axis=0
             )  # t x x
@@ -1035,7 +1065,7 @@ class kymograph_cluster:
 
     def get_x_midpoints(self, x_percentiles_smoothed, otsu_nbins, otsu_scaling):
         """Given an x percentile array of shape (rows,x), determines the trench midpoints of each row array
-        at each time.
+        for the seed index
 
         Args:
             x_percentiles_smoothed_array (array): A smoothed and background subtracted percentile array of shape (rows,x)
@@ -1092,32 +1122,21 @@ class kymograph_cluster:
         valid_mask = stays_in_frame * no_overlap
         in_bounds = np.array([midpoints_up[:, valid_mask], midpoints_dn[:, valid_mask]])
         k_tot = in_bounds.shape[2]
-        #         counting_arr = self.init_counting_arr(self.metadata["width"])
-
-        #         kymo_mask = self.get_trench_mask(in_bounds,counting_arr)
         x_coords = in_bounds[0].T
         return in_bounds, x_coords, k_tot
 
     def get_all_in_bounds(
-        self,
-        seed_image_idx,
-        midpoint_futures,
-        drift_future,
-        trench_width_x,
-        trench_present_thr,
+        self, midpoint_futures, drift_future, trench_width_x, trench_present_thr
     ):
         """Generates complete kymograph arrays for all trenches in the fov in every channel listed in 'self.all_channels'.
         Writes hdf5 files containing datasets of shape (trench_num,y_dim,x_dim,t_dim) for each row,channel combination.
         Dataset keys follow the convention ["[row_number]/[channel_name]"].
 
         Args:
-            cropped_in_y_handle (h5py.File): Hdf5 file handle corresponding to the y-cropped hdf5 dataset
-            "data" of shape (rows,channels,x,y,t).
-            all_midpoints_list (list): A nested list of the form [row_list,[time_list,[midpoint_array]]] containing
-            the trench midpoints.
-            x_drift_list (list): A nested list of the form [row_list,[time_list,[x_drift_int]]] containing the computed
-            drift in the x dimension.
-            trench_width_x (int): Width to be used when cropping in the x-dimension.
+            midpoint_futures (list of list of trenches): x midpoints for each trench in the seed image for a field of view
+            drift_future (np.ndarray (t x 2)): x and y drift for each field of view
+            trench_width_x (int): Width to use for trench cropping
+            trench_present_thr (float): ???
         """
 
         x_drift = drift_future[:, 0]
@@ -1396,6 +1415,11 @@ class kymograph_cluster:
         temp_meta_handle.write_df("temp", df)
 
     def generate_kymographs(self, dask_controller):
+        """Generate kymographs from hdf5 archives of images
+
+        Args:
+            dask_controller: Dask controller for parallel processing
+        """
         writedir(self.kymographpath, overwrite=True)
 
         dask_controller.futures = {}
@@ -1564,7 +1588,6 @@ class kymograph_cluster:
             ]
             future = dask_controller.daskclient.submit(
                 self.get_all_in_bounds,
-                seed_image_future,
                 midpoint_futures,
                 drift_future,
                 self.trench_width_x,
