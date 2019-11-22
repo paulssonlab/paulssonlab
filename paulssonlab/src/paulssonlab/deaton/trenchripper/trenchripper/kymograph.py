@@ -2548,6 +2548,8 @@ class kymograph_multifov(multifov):
 
 
 class tiff_sequence_kymograph:
+    """Class for getting kymographs from tiff stack (see classes in ndextract.py for details on how this works)"""
+
     def __init__(self, headpath, tiffpath, all_channels, trenches_per_file=100):
         self.headpath = headpath
         self.kymographpath = self.headpath + "/kymograph"
