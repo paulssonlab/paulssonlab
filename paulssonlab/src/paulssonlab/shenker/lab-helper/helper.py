@@ -15,6 +15,7 @@ from collections import defaultdict
 import re
 from IPython import embed
 
+# TODO: individual meeting duration (45min)
 # TODO: move config to .toml
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
@@ -25,9 +26,11 @@ GENERAL_CALENDAR = "Paulsson Lab General Calendar"
 MICROSCOPE_CALENDAR = "Paulsson Lab Nikon and Accessories"
 GROUP_MEETINGS_SPREADSHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
 INDIVIDUAL_MEETINGS_SPREADSHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
+GROUP_MEETING_DURATION = 2
+INDIVIDUAL_MEETING_DURATION = 45 / 60
 GOOGLE_USER = "paulssonlab@gmail.com"
 MAX_RESULTS = 2500
-TIMEZONE = "America/New_York"
+DEFAULT_TIMEZONE = "America/New_York"
 
 
 def none_if_exception(func):
@@ -92,10 +95,18 @@ def get_sheets_service():
     return service
 
 
-def parse_time(time):
+def parse_time(time, all_day_tz=DEFAULT_TIMEZONE):
     # t = pendulum.parse(time.get('dateTime', time.get('date')), tz=time.get('timeZone'))
-    t = pd.to_datetime(time.get("dateTime", time.get("date")))
+    # t = pd.to_datetime(time.get('dateTime', time.get('date')))
     all_day = "date" in time and "dateTime" not in time
+    if all_day:
+        t = pd.to_datetime(time["date"])
+        t = t.tz_localize(all_day_tz).tz_convert("UTC")
+    else:
+        t = pd.to_datetime(time.get("dateTime", time.get("date")))
+        if not t.tz:
+            t = t.tz_localize(time["timeZone"])
+        t = t.tz_convert("UTC")
     return t, all_day
 
 
@@ -118,11 +129,13 @@ def iter_calendar_events(service, calendar_id, max_results=MAX_RESULTS, **kwargs
         yield event
 
 
-def get_calendar_events(service, calendar_id, max_results=MAX_RESULTS, **kwargs):
+def get_calendar_events(
+    service, calendar_id, max_results=MAX_RESULTS, all_day_tz=DEFAULT_TIMEZONE, **kwargs
+):
     events = []
     for event in iter_calendar_events(service, calendar_id, **kwargs):
-        start, all_day = parse_time(event["start"])
-        end, _ = parse_time(event["end"])
+        start, all_day = parse_time(event["start"], all_day_tz=all_day_tz)
+        end, _ = parse_time(event["end"], all_day_tz=all_day_tz)
         created = none_if_exception(lambda: pd.to_datetime(event["created"]))
         updated = none_if_exception(lambda: pd.to_datetime(event["updated"]))
         events.append(
@@ -283,13 +296,20 @@ def _format_group_meeting(m):
 
 
 @cli.command()
-@click.option("--duration", default=2, show_default=True)
-def sync_meetings(duration):
+@click.option("--group", default=True)
+@click.option("--individual", default=False)
+def sync_meetings(group, individual):
     calendar_service = get_calendar_service()
     calendar_id = get_calendar_id(calendar_service, GENERAL_CALENDAR)
     sheets_meetings = []
-    sheets_meetings.extend(get_sheets_group_meetings())
-    sheets_meetings.extend(get_sheets_individual_meetings())
+    if group:
+        for m in get_sheets_group_meetings():
+            m["duration"] = GROUP_MEETING_DURATION
+            sheets_meetings.append(m)
+    if individual:
+        for m in get_sheets_individual_meetings():
+            m["duration"] = INDIVIDUAL_MEETING_DURATION
+            sheets_meetings.append(m)
     old_events = get_syncable_calendar_events(calendar_service, calendar_id)
     old_events_by_datetime = {e["start"]["dateTime"]: e for e in old_events}
     event_ids_to_update = set()
@@ -304,7 +324,7 @@ def sync_meetings(duration):
         if start_time < now:
             # only add/update events in the future
             continue
-        end_time = start_time.add(hours=duration)
+        end_time = start_time.add(hours=m["duration"])
         event = {
             "summary": m["summary"],
             "location": m["Room"],
@@ -332,7 +352,6 @@ def sync_meetings(duration):
             calendar_service.events().delete(
                 calendarId=calendar_id, eventId=event["id"]
             ).execute()
-    embed()
 
 
 if __name__ == "__main__":
