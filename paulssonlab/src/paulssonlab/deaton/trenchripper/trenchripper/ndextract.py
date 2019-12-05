@@ -252,13 +252,21 @@ class tiff_to_hdf5_extractor:
         format_string (str): format of filenames from which to extract metadata (using parse library)
     """
 
-    def __init__(self, headpath, tiffpath, format_string, tpts_per_file=100):
+    def __init__(
+        self,
+        headpath,
+        tiffpath,
+        format_string,
+        tpts_per_file=100,
+        manual_metadata_params={},
+    ):
         self.tiffpath = tiffpath
         self.headpath = headpath
         self.metapath = self.headpath + "/metadata.hdf5"
         self.hdf5path = self.headpath + "/hdf5"
         self.tpts_per_file = tpts_per_file
         self.format_string = format_string
+        self.manual_metadata_params = manual_metadata_params
 
     def get_notes(self, organism, microscope, notes):
         """Get note metadata
@@ -339,7 +347,7 @@ class tiff_to_hdf5_extractor:
         outdf["Image Index"] = img_idx
         return outdf
 
-    def writemetadata(self, parser, tiff_files):
+    def writemetadata(self, parser, tiff_files, manual_metadata_params={}):
         """Write metadata
 
         Args:
@@ -396,7 +404,11 @@ class tiff_to_hdf5_extractor:
                     fov_metadata["Image Path"].append(f)
         if "lane" not in fov_metadata:
             fov_metadata["lane"] = [1] * len(fov_metadata["Image Path"])
-
+        if "x" not in fov_metadata:
+            fov_metadata["x"] = [0] * len(fov_metadata["Image Path"])
+        if "y" not in fov_metadata:
+            fov_metadata["y"] = [0] * len(fov_metadata["Image Path"])
+        fov_metadata["t"] = fov_metadata["timepoints"]
         # Convert dictionary to dataframe
         fov_metadata = pd.DataFrame(fov_metadata)
 
@@ -447,7 +459,12 @@ class tiff_to_hdf5_extractor:
         assignment_metadata = assignment_metadata.drop_duplicates(
             subset=["File Index", "Image Index"]
         )
-        assignment_metadata = assignment_metadata[["lane", "File Index", "Image Index"]]
+        assignment_metadata = assignment_metadata[
+            ["lane", "File Index", "Image Index", "x", "y", "t"]
+        ]
+
+        for key, value in manual_metadata_params.items():
+            exp_metadata[key] = value
 
         # save data
         self.meta_handle = pandas_hdf5_handler(self.metapath)
@@ -479,7 +496,9 @@ class tiff_to_hdf5_extractor:
                 ]
             )
 
-        channel_paths_by_file_index = self.writemetadata(parser, tiff_files)
+        channel_paths_by_file_index = self.writemetadata(
+            parser, tiff_files, manual_metadata_params=self.manual_metadata_params
+        )
         dask_controller.futures = {}
         metadf = self.meta_handle.read_df("global", read_metadata=True)
         self.metadata = metadf.metadata
