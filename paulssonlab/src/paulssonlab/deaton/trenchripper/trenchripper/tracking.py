@@ -205,6 +205,8 @@ class mother_tracker:
             all_growth_rate,
             columns=[
                 "time",
+                "major_axis_length",
+                "major_axis_length_smoothed",
                 "igr_length",
                 "igr_length_smoothed",
                 "igr_area",
