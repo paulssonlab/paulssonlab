@@ -9,7 +9,7 @@ from geometry import (
     Cell,
     Round,
     cross,
-    fast_boolean,
+    boolean,
     mirror,
     mirror_refs,
     align,
@@ -24,6 +24,7 @@ from itertools import product
 import numbers
 import shortuuid
 
+REFERENCE_LAYER = 0
 TRENCH_LAYER = 2
 FEEDING_CHANNEL_LAYER = 6
 DEFAULT_DIMS = np.array([23e3, 13e3])
@@ -82,6 +83,47 @@ get_uuid = partial(shortuuid.random, length=2)
 
 
 @memoize
+def sampler_snake(
+    trench_width=[1.5], trench_length=[35], split_sampler=False, **kwargs
+):
+    pass
+
+
+def _compute_lane_split(split, max_lanes):
+    if split is None:
+        split = 1
+    if isinstance(split, numbers.Integral):
+        good_split = False
+        for lanes_per_snake in (int(np.around(max_lanes / split)), max_lanes // split):
+            lanes_per_snake = make_odd(lanes_per_snake)
+            remainder_lanes_per_snake = make_odd(
+                max_lanes - (split - 1) * lanes_per_snake
+            )
+            new_split = (lanes_per_snake,) * (split - 1) + (remainder_lanes_per_snake,)
+            if all(s > 1 for s in new_split):
+                good_split = True
+                split = new_split
+                break
+        if not good_split:
+            raise ValueError("bad split: {split}".format(",".join(split)))
+    else:
+        if isinstance(split[0], numbers.Integral):
+            if sum(split) > max_lanes:
+                raise Exception(
+                    "total lanes desired {} is greater than maximum number of lanes {}".format(
+                        sum(split), max_lanes
+                    )
+                )
+            if np.any(np.array(split) % 2 == 0):
+                raise Exception("number of lanes per snake must be odd")
+        else:
+            raise Exception(
+                "snake splitting spec must be a integer or sequence of integers"
+            )
+    return split
+
+
+@memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
@@ -129,36 +171,7 @@ def snake(
     )
     lane_height = feeding_channel_width + 2 * effective_trench_length
     max_lanes = int((dims[1] - top_margin - bottom_margin) // lane_height)
-    if split is None:
-        split = 1
-    if isinstance(split, numbers.Integral):
-        good_split = False
-        for lanes_per_snake in (int(np.around(max_lanes / split)), max_lanes // split):
-            lanes_per_snake = make_odd(lanes_per_snake)
-            remainder_lanes_per_snake = make_odd(
-                max_lanes - (split - 1) * lanes_per_snake
-            )
-            new_split = (lanes_per_snake,) * (split - 1) + (remainder_lanes_per_snake,)
-            if all(s > 1 for s in new_split):
-                good_split = True
-                split = new_split
-                break
-        if not good_split:
-            raise ValueError("bad split: {split}".format(",".join(split)))
-    else:
-        if isinstance(split[0], numbers.Integral):
-            if sum(split) > max_lanes:
-                raise Exception(
-                    "total lanes desired {} is greater than maximum number of lanes {}".format(
-                        sum(split), max_lanes
-                    )
-                )
-            if np.any(np.array(split) % 2 == 0):
-                raise Exception("number of lanes per snake must be odd")
-        else:
-            raise Exception(
-                "snake splitting spec must be a integer or sequence of integers"
-            )
+    split = _compute_lane_split(split, max_lanes)
     num_lanes = sum(split)
     trench_xs = np.arange(
         -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
@@ -181,81 +194,21 @@ def snake(
     }
     metadata["lane_length"] = lane_fc_dims[0]
     last_lane_y = ((num_lanes - 1) * lane_height) / 2
+    y_offset = (bottom_margin - top_margin) / 2
     snake_cell = Cell("Snake-{}".format(label))
-    lane_cell = Cell("Lane-{}".format(label))
-    lane_fc = Rectangle(
-        -lane_fc_dims / 2, lane_fc_dims / 2, layer=feeding_channel_layer
-    )
-    lane_cell.add(lane_fc)
-    bend_cell = Cell("Feeding Channel Bend-{}".format(label))
-    bend = Round(
-        (0, 0),
-        outer_snake_turn_radius,
-        inner_radius=inner_snake_turn_radius,
+    port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
+    snake_fc_cell, lane_ys = _snake_feeding_channel(
+        lane_fc_dims,
+        effective_trench_length,
+        port_offset,
+        port_radius,
+        split,
+        label,
         layer=feeding_channel_layer,
+        flatten_feeding_channel=flatten_feeding_channel,
+        merge_feeding_channel=merge_feeding_channel,
     )
-    bend = g.slice(bend, 0, 0, layer=feeding_channel_layer)
-    bend_cell.add(bend[1])
-    port_cell = Cell("Feeding Channel Port-{}".format(label))
-    port_x = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
-    port = Round((port_x, 0), port_radius, layer=feeding_channel_layer)
-    port_fc = Rectangle(
-        (0, -lane_fc_dims[1] / 2),
-        (port_x, lane_fc_dims[1] / 2),
-        layer=feeding_channel_layer,
-    )
-    port_cell.add(port)
-    port_cell.add(port_fc)
-    lane_ys = (
-        np.linspace(last_lane_y, -last_lane_y, num_lanes)
-        + (bottom_margin - top_margin) / 2
-    )
-    split_cum = np.concatenate(((0,), np.cumsum(split)))
-    left_port_lanes = split_cum[1:] - 1
-    right_port_lanes = split_cum[:-1]
-    left_bend_lanes = np.concatenate(
-        [
-            np.arange(start, stop - 1, 2)
-            for start, stop in zip(split_cum[:-1], split_cum[1:])
-        ]
-    )
-    right_bend_lanes = left_bend_lanes + 1
-    snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
-    for y in lane_ys:
-        snake_fc_cell.add(CellReference(lane_cell, (0, y)))
-    for lane in right_bend_lanes:
-        snake_fc_cell.add(
-            CellReference(
-                bend_cell, (lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2)
-            )
-        )
-    for lane in left_bend_lanes:
-        snake_fc_cell.add(
-            CellReference(
-                bend_cell,
-                (-lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2),
-                rotation=180,
-            )
-        )
-    for lane in right_port_lanes:
-        snake_fc_cell.add(
-            CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane]))
-        )
-    for lane in left_port_lanes:
-        snake_fc_cell.add(
-            CellReference(
-                port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
-            )
-        )
-    if flatten_feeding_channel or merge_feeding_channel:
-        snake_fc_cell.flatten()
-    if merge_feeding_channel:
-        assert len(snake_fc_cell.elements) == 1
-        snake_fc_cell.elements[0] = fast_boolean(
-            snake_fc_cell.elements[0], None, "or", layer=feeding_channel_layer
-        )
-        # print(len(snake_fc_cell.elements[0].polygons))
-    snake_cell.add(CellReference(snake_fc_cell, (0, 0)))
+    snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
     trench_cell = Cell("Trench-{}".format(label))
     trench_cell.add(
         Rectangle(
@@ -275,6 +228,7 @@ def snake(
         )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
+    # VARS: trenches_per_set
     if draw_trenches:
         for lane_idx, y in enumerate(lane_ys):
             snake_cell.add(
@@ -325,9 +279,93 @@ def snake(
                             layer=trench_layer,
                         )
                     )
-            # snake_cell.add(CellArray(tick_cell, int(trenches_per_set // tick_period), 1, (tick_period*(trench_width + trench_spacing), 0),
-            #                            (trench_xs[0], y - feeding_channel_width/2), x_reflection=True))
     return snake_cell, metadata
+
+
+def _snake_feeding_channel(
+    lane_fc_dims,
+    effective_trench_length,
+    port_offset,
+    port_radius,
+    split,
+    label,
+    layer=FEEDING_CHANNEL_LAYER,
+    flatten_feeding_channel=False,
+    merge_feeding_channel=True,
+):
+    # label, lane_fc_dims, feeding_channel_layer,
+    # inner_snnake_turn_radius, outer_snake_turn_radius
+    # port_radius
+    feeding_channel_width = lane_fc_dims[1]
+    num_lanes = sum(split)
+    lane_height = feeding_channel_width + 2 * effective_trench_length
+    last_lane_y = ((num_lanes - 1) * lane_height) / 2
+    inner_snake_turn_radius = effective_trench_length
+    outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
+    lane_cell = Cell("Lane-{}".format(label))
+    lane_fc = Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
+    lane_cell.add(lane_fc)
+    bend_cell = Cell("Feeding Channel Bend-{}".format(label))
+    bend = Round(
+        (0, 0),
+        outer_snake_turn_radius,
+        inner_radius=inner_snake_turn_radius,
+        layer=layer,
+    )
+    bend = g.slice(bend, 0, 0, layer=layer)
+    bend_cell.add(bend[1])
+    port_cell = Cell("Feeding Channel Port-{}".format(label))
+    port = Round((port_offset, 0), port_radius, layer=layer)
+    port_fc = Rectangle(
+        (0, -lane_fc_dims[1] / 2), (port_offset, lane_fc_dims[1] / 2), layer=layer
+    )
+    port_cell.add(port)
+    port_cell.add(port_fc)
+    lane_ys = np.linspace(last_lane_y, -last_lane_y, num_lanes)
+    split_cum = np.concatenate(((0,), np.cumsum(split)))
+    left_port_lanes = split_cum[1:] - 1
+    right_port_lanes = split_cum[:-1]
+    left_bend_lanes = np.concatenate(
+        [
+            np.arange(start, stop - 1, 2)
+            for start, stop in zip(split_cum[:-1], split_cum[1:])
+        ]
+    )
+    right_bend_lanes = left_bend_lanes + 1
+    snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
+    for y in lane_ys:
+        snake_fc_cell.add(CellReference(lane_cell, (0, y)))
+    for lane in right_bend_lanes:
+        snake_fc_cell.add(
+            CellReference(
+                bend_cell, (lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2)
+            )
+        )
+    for lane in left_bend_lanes:
+        snake_fc_cell.add(
+            CellReference(
+                bend_cell,
+                (-lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2),
+                rotation=180,
+            )
+        )
+    for lane in right_port_lanes:
+        snake_fc_cell.add(
+            CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane]))
+        )
+    for lane in left_port_lanes:
+        snake_fc_cell.add(
+            CellReference(
+                port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
+            )
+        )
+    if flatten_feeding_channel or merge_feeding_channel:
+        snake_fc_cell.flatten()
+    if merge_feeding_channel:
+        snake_fc_cell.polygons = [
+            boolean(snake_fc_cell.polygons, None, "or", layer=layer)
+        ]
+    return snake_fc_cell, lane_ys
 
 
 # TODO: implement using bbox-aware auto-gridding helper
@@ -369,7 +407,7 @@ def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
     alignment_cell = Cell("Alignment Cross")
     horizontal = Rectangle((-size, -width / 2), (size, width / 2))
     vertical = Rectangle((-width / 2, -size), (width / 2, size))
-    cross = fast_boolean(horizontal, vertical, "or", layer=layer)
+    cross = boolean(horizontal, vertical, "or", layer=layer)
     alignment_cell.add(cross)
     alignment_cell.add(Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
     alignment_cell.add(Rectangle((2 * size, -size), (3 * size, size), layer=layer))
@@ -391,11 +429,11 @@ def mask_alignment_cross(
     box_corner = np.array([box_size, box_size])
     outer_box = Rectangle(-(box_corner + width), box_corner + width)
     inner_box = Rectangle(-box_corner, box_corner)
-    box = fast_boolean(outer_box, inner_box, "not", layer=top_layer)
+    box = boolean(outer_box, inner_box, "not", layer=top_layer)
     cross_box_corner = np.array([cross_length, cross_length])
     base_cross_box = Rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
     base_cross = cross(width, cross_length, layer=top_layer)
-    base_cross_box = fast_boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
+    base_cross_box = boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
     alignment_cell.add(base_cross_box)
     alignment_cell.add(base_cross)
     for offset_unit_vector in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -422,6 +460,7 @@ def wafer(
     mask=False,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
+    reference_layer=REFERENCE_LAYER,
 ):
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
@@ -429,7 +468,7 @@ def wafer(
     corner = np.array((side, side)) / 2
     square = Rectangle(-corner, corner)
     circle = Round((0, 0), diameter / 2)
-    wafer_outline = fast_boolean(square, circle, "not")
+    wafer_outline = boolean(square, circle, "not")
     # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
     # TODO: move alignment marks accordingly
     chip_area_corner = (diameter / 2 - chip_area_margin) * np.array(
@@ -437,8 +476,8 @@ def wafer(
     )
     if alignment_mark_position is None:
         alignment_mark_position = chip_area_corner[1] * 7 / 6
-    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner))
-    main_cell.add(wafer_outline)
+    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner), layer=reference_layer)
+    main_cell.add(wafer_outline, layer=reference_layer)
     profilometry_cell = profilometry_marks(
         layers=(feeding_channel_layer, trench_layer), text=text
     )
@@ -581,7 +620,7 @@ def chip(
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     outline_inner = Rectangle(-dims / 2, dims / 2)
     outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
-    outline = fast_boolean(outline_outer, outline_inner, "not", layer=layer)
+    outline = boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
 
 

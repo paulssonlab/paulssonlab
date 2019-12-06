@@ -24,6 +24,9 @@ def bezier(points, t):
     ).sum(axis=0)
 
 
+# TODO: I wrote this function before the following was posted, theirs may be better
+# (it's certainly more concise)
+# https://gdspy.readthedocs.io/en/stable/gettingstarted.html#using-system-fonts
 def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGMENT):
     # SEE: https://www.freetype.org/freetype2/docs/glyphs/glyphs-6.html
     face.load_char(char, freetype.FT_LOAD_NO_SCALE)
