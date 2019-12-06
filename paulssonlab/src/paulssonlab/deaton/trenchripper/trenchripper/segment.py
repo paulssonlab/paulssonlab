@@ -1049,9 +1049,7 @@ class phase_segmentation_cluster(phase_segmentation):
             # Measure loading for each trench
             for trench_idx in range(input_data.shape[0]):
                 trench_array = input_data[trench_idx]
-                trench_loading_array = self.measure_trench_loading(
-                    trench_array, file_idx=file_idx, trench_idx=trench_idx
-                )
+                trench_loading_array = self.measure_trench_loading(trench_array)
                 trench_output.append(trench_loading_array[np.newaxis])
         trench_output = np.concatenate(trench_output, axis=0)
         return trench_output
@@ -1166,7 +1164,6 @@ class phase_segmentation_cluster(phase_segmentation):
             future = dask_controller.daskclient.submit(
                 self.measure_trench_loading,
                 future,
-                file_idx,
                 retries=1,
                 priority=random_priorities[k, 0] * 0.8,
             )

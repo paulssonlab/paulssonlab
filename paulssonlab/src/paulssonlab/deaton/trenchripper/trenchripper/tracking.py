@@ -305,14 +305,16 @@ class mother_tracker:
         )
 
         # Calculate growth rate as a gradient
-        instantaneous_growth_rate_length = np.gradient(major_axis_length, times)[1:]
-        instantaneous_growth_rate_area = np.gradient(area, times)[1:]
-        instantaneous_growth_rate_length_smoothed = np.gradient(mal_smoothed, times)[1:]
-        instantaneous_growth_rate_area_smoothed = np.gradient(area_smoothed, times)[1:]
+        instantaneous_growth_rate_length = np.gradient(major_axis_length, times)
+        instantaneous_growth_rate_area = np.gradient(area, times)
+        instantaneous_growth_rate_length_smoothed = np.gradient(mal_smoothed, times)
+        instantaneous_growth_rate_area_smoothed = np.gradient(area_smoothed, times)
 
         growth_rate_data = np.array(
             [
-                times[1:],
+                times,
+                major_axis_length,
+                mal_smoothed,
                 instantaneous_growth_rate_length,
                 instantaneous_growth_rate_length_smoothed,
                 instantaneous_growth_rate_area,
@@ -323,8 +325,8 @@ class mother_tracker:
         growth_rate_data = np.concatenate(
             [
                 growth_rate_data,
-                growth_rate_data[:, 1:3] / major_axis_length[1:, None],
-                growth_rate_data[:, 3:5] / area[1:, None],
+                growth_rate_data[:, 3:5] / major_axis_length[:, None],
+                growth_rate_data[:, 5:7] / area[:, None],
             ],
             axis=1,
         )
