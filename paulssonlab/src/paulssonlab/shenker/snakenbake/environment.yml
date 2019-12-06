@@ -1,0 +1,13 @@
+name: snakenbake
+channels:
+  - defaults
+dependencies:
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - freetype
+  - scipy
+  - cytoolz
+  - freetype-py
+  - click
+
