@@ -3,7 +3,7 @@ from scipy.special import binom
 import scipy.spatial
 import freetype
 import gdspy as g
-from geometry import Cell, fast_boolean
+from geometry import Cell
 from util import memoize, make_hashable
 from functools import reduce, partial
 
