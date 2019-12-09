@@ -297,9 +297,7 @@ def _snake_feeding_channel(
     merge_feeding_channel=True,
 ):
     feeding_channel_width = lane_fc_dims[1]
-    num_lanes = sum(split)
     lane_height = feeding_channel_width + 2 * effective_trench_length
-    last_lane_y = ((num_lanes - 1) * lane_height) / 2
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
     lane_cell = Cell("Lane-{}".format(label))
@@ -321,27 +319,48 @@ def _snake_feeding_channel(
     )
     port_cell.add(port)
     port_cell.add(port_fc)
-    split_cum = np.concatenate(((0,), np.cumsum(split)))
-    skipped_lanes = np.full(len(split), 2 * gap_lanes)
+    last_lane_y = ((sum(split) - 1) * lane_height) / 2
+    lane_ys = np.linspace(last_lane_y, -last_lane_y, sum(split))
+    # skipped_lanes = np.full(len(split), gap_lanes)
+    # skipped_lanes[-1] = 0
+    # split -= 2*skipped_lanes
+    # print('split',split)
+    # num_lanes = sum(split)
+    # split_cum = np.concatenate(((0,), np.cumsum(split)))
+    # left_port_lanes = split_cum[1:] - 1
+    # print(skipped_lanes)
+    # left_port_lanes -= skipped_lanes
+    lane_mask = np.full(len(lane_ys), True)
+    hidden_lanes = np.cumsum(np.array(split) - 1) - 1
+    lane_mask[hidden_lanes[:-1]] = False
+    lane_mask[sum(split) - len(split) + 1 :] = False
+    # print(left_port_lanes, split_cum)
+    # for lane in left_port_lanes[:-1]:
+    #     lane_mask[lane-1:lane-1+gap_lanes] = False
+    # lane_mask[5] = False
+    # lane_mask[11] = False
+    # lane_mask[17] = False
+    # lane_mask[23] = False
+    lane_ys = lane_ys[lane_mask]
+    print(len(lane_ys))
+    skipped_lanes = np.full(len(split), gap_lanes)
     skipped_lanes[-1] = 0
+    split -= 2 * skipped_lanes
+    print(split, sum(split))
+    # num_lanes = sum(split)
+    split_cum = np.concatenate(((0,), np.cumsum(split)))
     left_port_lanes = split_cum[1:] - 1
-    print(skipped_lanes)
-    left_port_lanes -= skipped_lanes
-    lane_ys = np.linspace(last_lane_y, -last_lane_y, num_lanes)
-    lane_mask = np.arange(len(lane_ys))
-    for lane in left_port_lanes[:-1]:
-        lane_mask[lane + 1 : lane + 1 + 2 * gap_lanes] = False
     right_port_lanes = split_cum[:-1]
     left_bend_lanes = np.concatenate(
         [
             np.arange(start, stop - 1, 2)
-            for start, stop in zip(split_cum[:-1], split_cum[1:] - skipped_lanes)
+            for start, stop in zip(split_cum[:-1], split_cum[1:])
         ]
     )
     right_bend_lanes = left_bend_lanes + 1
     snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
-    for lane in lane_mask:
-        snake_fc_cell.add(CellReference(lane_cell, (0, lane_ys[lane])))
+    for y in lane_ys:
+        snake_fc_cell.add(CellReference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
         snake_fc_cell.add(
             CellReference(
