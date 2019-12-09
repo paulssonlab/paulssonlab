@@ -330,10 +330,12 @@ def _snake_feeding_channel(
     # left_port_lanes = split_cum[1:] - 1
     # print(skipped_lanes)
     # left_port_lanes -= skipped_lanes
-    lane_mask = np.full(len(lane_ys), True)
-    hidden_lanes = np.cumsum(np.array(split) - 1) - 1
-    lane_mask[hidden_lanes[:-1]] = False
-    lane_mask[sum(split) - len(split) + 1 :] = False
+    # lane_mask = np.full(len(lane_ys), True)
+    # lane_mask[[3,4,8,9,13,14,18,19]] = False
+    # print(np.cumsum(np.array(split)))
+    # hidden_lanes = np.cumsum(np.array(split) - 1) - 1
+    # lane_mask[hidden_lanes[:-1]!!!!+hidden_lanes[:-1]+gap_lanes] = False
+    # lane_mask[sum(split) - len(split) + 1:] = False
     # print(left_port_lanes, split_cum)
     # for lane in left_port_lanes[:-1]:
     #     lane_mask[lane-1:lane-1+gap_lanes] = False
@@ -341,12 +343,21 @@ def _snake_feeding_channel(
     # lane_mask[11] = False
     # lane_mask[17] = False
     # lane_mask[23] = False
-    lane_ys = lane_ys[lane_mask]
+    # lane_ys = lane_ys[lane_mask]
     print(len(lane_ys))
-    skipped_lanes = np.full(len(split), gap_lanes)
-    skipped_lanes[-1] = 0
-    split -= 2 * skipped_lanes
+    gaps = np.full(len(split), gap_lanes)
+    gaps[-1] = 0
+    split -= 2 * gaps
+    lane_mask = np.full(len(lane_ys), True)
+    skipped_lanes = np.cumsum(np.array(split) + gap_lanes) - gap_lanes
+    print(">", skipped_lanes)
+    # lane_mask[skipped_lanes:skipped_lanes+1] = False
+    for offset in range(gap_lanes):
+        lane_mask[skipped_lanes[:-1] + offset] = False
+    lane_mask[skipped_lanes[-1] :] = False
+    lane_ys = lane_ys[lane_mask]
     print(split, sum(split))
+    print(">>", np.cumsum(np.array(split) + gap_lanes) - gap_lanes)
     # num_lanes = sum(split)
     split_cum = np.concatenate(((0,), np.cumsum(split)))
     left_port_lanes = split_cum[1:] - 1
