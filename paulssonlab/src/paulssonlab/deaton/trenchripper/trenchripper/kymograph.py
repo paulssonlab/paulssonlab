@@ -2552,7 +2552,17 @@ class kymograph_multifov(multifov):
 class tiff_sequence_kymograph:
     """Class for getting kymographs from tiff stack (see classes in ndextract.py for details on how this works)"""
 
-    def __init__(self, headpath, tiffpath, all_channels, trenches_per_file=100):
+    def __init__(
+        self,
+        headpath,
+        tiffpath,
+        all_channels,
+        filename_format_string,
+        trenches_per_file=5,
+        upside_down=False,
+        time_interval=60,
+        manual_metadata_params={},
+    ):
         self.headpath = headpath
         self.kymographpath = self.headpath + "/kymograph"
         self.hdf5path = self.headpath + "/hdf5"
@@ -2561,6 +2571,10 @@ class tiff_sequence_kymograph:
         self.metapath = self.headpath + "/metadata.hdf5"
         self.meta_handle = pandas_hdf5_handler(self.metapath)
         self.trenches_per_file = trenches_per_file
+        self.filename_format_string = filename_format_string
+        self.upside_down = upside_down
+        self.manual_metadata_params = manual_metadata_params
+        self.time_interval = time_interval
 
     def assignidx(self, metadf):
         outdf = copy.deepcopy(metadf)
@@ -2668,6 +2682,7 @@ class tiff_sequence_kymograph:
             new_labels_trench[i] = trench_label_mapping[old_label]
 
         kymograph_metadata = kymograph_metadata.reset_index()
+        del kymograph_metadata["index"]
         kymograph_metadata["fov"] = new_labels_fov
         kymograph_metadata["trenchid"] = new_labels_trench
 
@@ -2679,7 +2694,9 @@ class tiff_sequence_kymograph:
 
         self.meta_handle = pandas_hdf5_handler(self.metapath)
 
-        assignment_metadata = self.assignidx(kymograph_metadata.set_index(["trenchid"]))
+        assignment_metadata = self.assignidx(
+            kymograph_metadata.set_index(["trenchid"]).sort_values("trenchid")
+        )
 
         channel_tidx_paths_by_file_index = assignment_metadata.reset_index()[
             ["File Index", "row", "channel", "File Trench Index", "Image Path"]
@@ -2725,16 +2742,23 @@ class tiff_sequence_kymograph:
             columns=assignment_metadata.columns,
         )
         assignment_metadata["timepoints"] = timepoints
+        assignment_metadata["time (s)"] = (
+            assignment_metadata["timepoints"] * self.time_interval
+        )
         assignment_metadata = assignment_metadata.set_index(["trenchid", "timepoints"])
+
+        for param, val in self.manual_metadata_params.items():
+            exp_metadata[param] = val
 
         self.meta_handle.write_df(
             "kymograph", assignment_metadata, metadata=exp_metadata
         )
+        self.meta_handle.write_df("global", pd.DataFrame(), metadata=exp_metadata)
         return channel_tidx_paths_by_file_index
 
-    def extract(self, dask_controller, filename_format_string):
+    def extract(self, dask_controller):
         writedir(self.kymographpath, overwrite=True)
-        parser = compile(filename_format_string)
+        parser = compile(self.filename_format_string)
         tiff_files = []
         for root, _, files in os.walk(self.tiffpath):
             tiff_files.extend(
@@ -2745,8 +2769,11 @@ class tiff_sequence_kymograph:
                 ]
             )
 
+        channel_tidx_paths_by_file_index = self.writemetadata(parser, tiff_files)
         metadf = self.meta_handle.read_df("kymograph", read_metadata=True)
         self.metadata = metadf.metadata
+
+        dask_controller.futures = {}
 
         def writehdf5(fidx_channels_paths):
             y_dim = self.metadata["height"]
@@ -2757,23 +2784,28 @@ class tiff_sequence_kymograph:
             file_idx, row, channels, trench_indices, filepaths = fidx_channels_paths
             datasets = {}
             with h5py_cache.File(
-                self.kymographpath + "/kymograph_processed_" + str(file_idx) + ".hdf5",
+                self.kymographpath + "/kymograph_" + str(file_idx) + ".hdf5",
                 "w",
                 chunk_cache_mem_size=self.chunk_cache_mem_size,
             ) as h5pyfile:
                 for i, channel in enumerate(self.all_channels):
                     hdf5_dataset = h5pyfile.create_dataset(
-                        str(row) + "/" + str(channel),
+                        str(channel),
                         (len(filepaths) / num_channels, time, y_dim, x_dim),
                         chunks=self.output_chunk_shape,
                         dtype="uint16",
                     )
-                    datasets[channel] = hdf5_dataset
+                    datasets[str(row) + "/" + channel] = hdf5_dataset
                 for i in range(len(filepaths)):
                     curr_channel = channels[i]
                     curr_file = filepaths[i]
                     curr_trench = trench_indices[i]
-                    datasets[str(row) + "/" + curr_channel][
-                        curr_trench, :, :, :
-                    ] = imread(curr_file)
+                    data = imread(curr_file)
+                    if self.upside_down:
+                        data = np.flip(data, axis=1)
+                    datasets[str(row) + "/" + curr_channel][curr_trench, :, :, :] = data
             return "Done."
+
+        dask_controller.futures["extract file"] = dask_controller.daskclient.map(
+            writehdf5, channel_tidx_paths_by_file_index
+        )
