@@ -151,8 +151,6 @@ def process_file(
     col_to_funcs,
     photobleaching_filename,
     segmentation_filename=None,
-    initial_filename=None,
-    final_filename=None,
     flat_fields=None,
     dark_frame=None,
     time_slice=slice(None),
@@ -201,18 +199,12 @@ def process_file(
     data = {}
     for position in range(num_positions)[position_slice]:
         # TODO: map over dask arrays efficiently
-        # photobleaching_frames = nd2_to_dask(photobleaching_filename, position, 0)
-        photobleaching_frames = [
-            _get_corrected_nd2_frame(
-                dark_frame,
-                flat_fields.get(photobleaching_channel),
-                photobleaching_filename,
-                position,
-                0,
-                t,
-            )
-            for t in range(num_timepoints)
-        ]
+        photobleaching_frames = nd2_to_dask(
+            photobleaching_filename, position, photobleaching_channel
+        )
+        # TODO: correction
+        # photobleaching_frames = [_get_corrected_nd2_frame(dark_frame, flat_fields.get(photobleaching_channel), photobleaching_filename, position, 0, t)
+        #                             for t in range(num_timepoints)]
         if not segmentation_filename:
             segmentation_filename = photobleaching_filename
         segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
@@ -237,43 +229,12 @@ def process_file(
         #     segmentation_func = compose(array_func, segmentation_func)
         segmentation_func = delayed(segmentation_func, pure=True)
         labels = segmentation_func(segmentation_frame)
-        sandwich_frames = []
-        if initial_filename is not None:
-            sandwich_channel = get_nd2_reader(initial_filename).metadata["channels"][0]
-            initial_frame = _get_corrected_nd2_frame(
-                dark_frame,
-                flat_fields.get(sandwich_channel),
-                initial_filename,
-                position,
-                0,
-                0,
-            )
-            sandwich_frames.append(initial_frame)
-            regionprops_frame = initial_frame
-        else:
-            regionprops_frame = segmentation_frame
-        if final_filename is not None:
-            sandwich_frames.append(
-                _get_corrected_nd2_frame(
-                    dark_frame,
-                    flat_fields.get(sandwich_channel),
-                    final_filename,
-                    position,
-                    0,
-                    0,
-                )
-            )
-        sandwich_traces = {
-            col: _none_transpose(
-                [
-                    _short_circuit_none(map_over_labels, func, labels, frame)
-                    for frame in sandwich_frames
-                ]
-            )
-            for col, func in col_to_funcs.items()
-        }
-        regionprops = regionprops_func(labels, regionprops_frame)
+        # regionprops = regionprops_func(labels, segmentation_frame)
+        regionprops = None
         photobleaching_frames = photobleaching_frames[time_slice]
+        # traces = {col: _none_transpose([_short_circuit_none(map_over_labels, func, labels, frame)
+        #                                                 for frame in photobleaching_frames])
+        #               for col, func in col_to_funcs.items()}
         traces = {
             col: _none_transpose(
                 [
@@ -288,7 +249,6 @@ def process_file(
             labels = _array_func(labels)
         data[position] = {
             "regionprops": regionprops,
-            "sandwich_traces": sandwich_traces,
             "traces": traces,
             "labels": labels,
             "segmentation_frame": segmentation_frame,
