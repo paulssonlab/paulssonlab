@@ -4,6 +4,7 @@ from dask import delayed
 import dask.array as da
 import skimage
 from cytoolz import compose, partial
+from numbers import Integral
 from matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
@@ -20,6 +21,9 @@ from util import short_circuit_none, none_to_nans, trim_zeros
 # TODO: new
 def nd2_to_dask(filename, position, channel, rechunk=True):
     nd2 = get_nd2_reader(filename)
+    if not isinstance(channel, Integral):
+        # compute channel index once so we don't do it per frame in get_nd2_frame
+        channel = nd2.metadata["channels"].index(channel)
     frame0 = get_nd2_frame(filename, position, channel, 0)
     _get_nd2_frame = delayed(get_nd2_frame)
     frames = [
