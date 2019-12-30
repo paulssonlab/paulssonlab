@@ -1,6 +1,7 @@
 import numpy as np
 import dask
 from dask import delayed
+from dask.delayed import Delayed
 import dask.array as da
 import skimage
 from cytoolz import compose, partial
@@ -39,14 +40,79 @@ def nd2_to_dask(filename, position, channel, rechunk=True):
     return stack
 
 
-# TODO: new
-def nd2_to_futures(client, filename, position, channel):
-    nd2 = get_nd2_reader(filename)
-    frames = [
-        client.submit(get_nd2_frame, filename, position, channel, t)
-        for t in range(nd2.sizes["t"])
-    ]
-    return frames
+def aggregate(func, labels, ary):
+    """Applies a reduction func to groups of pixels in ary aggregated by labels.
+    labels should be two-dimensional, ary must be at least two-dimensional.
+    """
+    keys = labels.ravel()
+    sorter = np.argsort(keys, kind="mergesort")
+    sorted_ = keys[sorter]
+    flag = sorted_[:-1] != sorted_[1:]
+    slices = np.concatenate(([0], np.flatnonzero(flag) + 1, [keys.size]))
+    unique = sorted_[slices[:-1]]
+    values = ary.reshape((*ary.shape[:-2], -1))[:, sorter]
+    test_eval = func(np.ones((1,) * values.ndim))
+
+    def agg(x):
+        groups = np.split(x, slices[1:-1], axis=1)
+        reductions = [func(x) for x in groups]
+        stack = np.stack(reductions, axis=0)
+        return stack
+
+    if isinstance(ary, dask.array.Array):
+        chunks = (unique.shape[0], *test_eval.shape[:-1], values.chunks[0])
+        new_axis = tuple(range(len(chunks) - 1))
+        groups = values.map_blocks(agg, drop_axis=1, new_axis=new_axis, chunks=chunks)
+    else:
+        groups = [func(x) for x in np.split(values, slices[1:-1], axis=1)]
+    return unique, groups
+
+
+def aggregate_dask(func, labels, ary, dtype=np.float_):
+    """Same as ``aggregate`` but labels can be a dask.Delayed object."""
+    # TODO: optimized code path for ufuncs?
+    values = ary.reshape((*ary.shape[:-2], -1))
+    test_eval = func(np.ones((1,) * values.ndim))
+
+    def preprocess(labels):
+        keys = labels.ravel()
+        sorter = np.argsort(keys, kind="mergesort")
+        sorted_ = keys[sorter]
+        flag = sorted_[:-1] != sorted_[1:]
+        slices = np.concatenate(([0], np.flatnonzero(flag) + 1, [keys.size]))
+        unique = sorted_[slices[:-1]]
+        return sorter, slices, unique
+
+    if isinstance(labels, Delayed):
+        preprocess = delayed(preprocess, nout=3)
+    sorter, slices, unique = preprocess(labels)
+    if isinstance(labels, Delayed):
+        num_labels = np.nan
+    else:
+        num_labels = unique.shape[0]
+
+    def agg(x, sorter, slices):
+        x = x[:, sorter]
+        groups = np.split(x, slices[1:-1], axis=1)
+        reductions = [func(x) for x in groups]
+        stack = np.stack(reductions, axis=0)
+        return stack
+
+    if isinstance(ary, dask.array.Array):
+        chunks = (num_labels, *test_eval.shape[:-1], values.chunks[0])
+        new_axis = tuple(range(len(chunks) - 1))
+        groups = values.map_blocks(
+            agg,
+            sorter,
+            slices,
+            drop_axis=1,
+            new_axis=new_axis,
+            chunks=chunks,
+            dtype=dtype,
+        )
+    else:
+        groups = [func(x) for x in np.split(values, slices[1:-1], axis=1)]
+    return unique, groups
 
 
 # FROM: http://emmanuelle.github.io/a-tutorial-on-segmentation.html
@@ -145,6 +211,7 @@ def segment(img, dtype=np.uint16, diagnostics=None):
             permute_labels(watershed_labels)
         )
     return watershed_labels
+    return data
 
 
 def process_file(
@@ -198,27 +265,15 @@ def process_file(
     del nd2
     data = {}
     for position in range(num_positions)[position_slice]:
-        # TODO: map over dask arrays efficiently
         photobleaching_frames = nd2_to_dask(
             photobleaching_filename, position, photobleaching_channel
         )
-        # TODO: correction
-        # photobleaching_frames = [_get_corrected_nd2_frame(dark_frame, flat_fields.get(photobleaching_channel), photobleaching_filename, position, 0, t)
-        #                             for t in range(num_timepoints)]
         if not segmentation_filename:
             segmentation_filename = photobleaching_filename
         segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
             "channels"
         ][0]
-        # segmentation_frame = photobleaching_frames[0]
-        segmentation_frame = _get_corrected_nd2_frame(
-            dark_frame,
-            flat_fields.get(segmentation_channel),
-            segmentation_filename,
-            position,
-            0,
-            0,
-        )
+        segmentation_frame = photobleaching_frames[0]
         segmentation_nd2 = get_nd2_reader(segmentation_filename)
         if segmentation_nd2.metadata["channels"][0] == "BF":
             segmentation_func = compose(segment, invert)
@@ -232,21 +287,13 @@ def process_file(
         # regionprops = regionprops_func(labels, segmentation_frame)
         regionprops = None
         photobleaching_frames = photobleaching_frames[time_slice]
+        traces = {"mean": aggregate(np.mean, labels, photobleaching_channel)}
         # traces = {col: _none_transpose([_short_circuit_none(map_over_labels, func, labels, frame)
         #                                                 for frame in photobleaching_frames])
         #               for col, func in col_to_funcs.items()}
-        traces = {
-            col: _none_transpose(
-                [
-                    _short_circuit_none(map_over_labels, func, labels, frame)
-                    for frame in photobleaching_frames
-                ]
-            )
-            for col, func in col_to_funcs.items()
-        }
-        if array_func is not None:
-            segmentation_frame = _array_func(segmentation_frame)
-            labels = _array_func(labels)
+        # if array_func is not None:
+        #     segmentation_frame = _array_func(segmentation_frame)
+        #     labels = _array_func(labels)
         data[position] = {
             "regionprops": regionprops,
             "traces": traces,
