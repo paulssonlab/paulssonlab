@@ -1,23 +1,24 @@
 import numpy as np
+import holoviews as hv
 import dask
 from dask import delayed
 from dask.delayed import Delayed
 import dask.array as da
 import skimage
+import scipy.ndimage as ndi
 from cytoolz import compose, partial
 from numbers import Integral
 from matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
     get_regionprops,
-    map_over_labels,
     repeat_apply,
     gaussian_box_approximation,
     hessian_eigenvalues,
     RevImage,
     zarrify,
 )
-from util import short_circuit_none, none_to_nans, trim_zeros
+from util import conditional
 
 # TODO: new
 def nd2_to_dask(filename, position, channel, rechunk=True):
@@ -214,90 +215,137 @@ def segment(img, dtype=np.uint16, diagnostics=None):
     return data
 
 
-def process_file(
+def measure_photobleaching(
+    photobleaching_filename,
+    position,
+    photobleaching_channel,
+    labels,
+    time_slice=slice(None),
+    rechunk=True,
+):
+    if labels is None:
+        return None
+    photobleaching_frames = nd2_to_dask(
+        photobleaching_filename, position, photobleaching_channel, rechunk=rechunk
+    )
+    photobleaching_frames = photobleaching_frames[time_slice]
+    mean_traces = aggregate(partial(np.mean, axis=-1), labels, photobleaching_frames)[
+        1
+    ].compute(scheduler="single-threaded")
+    traces = {"mean": mean_traces}
+    return traces
+
+
+def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[]):
+    positions = {}
+    for filename in filenames:
+        nd2 = get_nd2_reader(filename)
+        xs = nd2._parser._raw_metadata.x_data
+        ys = nd2._parser._raw_metadata.y_data
+        for d in (xs, ys):
+            if not np.allclose(np.array(d) - d[0], 0):
+                raise ValueError(
+                    "expected constant x/y stage position in {}".format(filename)
+                )
+        x = xs[0]
+        y = ys[0]
+        channels = nd2.metadata["channels"]
+        if len(channels) != 1:
+            raise ValueError("expected exactly one channel: {}".format(channels))
+        if channels[0] in ignored_channels:
+            continue
+        matched = False
+        for pos in positions:
+            if np.sqrt((x - pos[0]) ** 2 + (y - pos[1]) ** 2) <= tol:
+                if channels[0] in positions[pos]:
+                    raise ValueError(
+                        "duplicate channel: {} in {}, conflicts with {}".format(
+                            channels[0], filename, positions[pos][channels[0]]
+                        )
+                    )
+                else:
+                    positions[pos][channels[0]] = filename
+                    matched = True
+                    break
+        if not matched:
+            positions[(x, y)] = {channels[0]: filename}
+    return positions
+
+
+def process_photobleaching_file(
     col_to_funcs,
     photobleaching_filename,
+    photobleaching_channel=None,
     segmentation_filename=None,
-    flat_fields=None,
-    dark_frame=None,
+    segmentation_channel=None,
     time_slice=slice(None),
     position_slice=slice(None),
-    array_func=zarrify,
     delayed=True,
+    rechunk=True,
+    segmentation_frame_filter=None,
+    segmentation_labels_filter=None,
 ):
     if delayed is True:
-        delayed = dask.delayed
+        delayed = dask.delayed(pure=True)
     elif delayed is False:
         delayed = lambda func, **kwargs: func
-    if flat_fields is None:
-        flat_fields = {}
-
-    def _correct_frame(dark_frame, flat_field, frame):
-        if dark_frame is not None:
-            frame = frame - dark_frame
-            if flat_field is not None:
-                flat_field = flat_field - dark_frame
-        if flat_field is not None:
-            frame = frame / flat_field
-        return frame
-
-    def _get_corrected_nd2_frame(dark_frame, flat_field, *args, **kwargs):
-        frame = get_nd2_frame(*args, **kwargs)
-        if np.any(frame):
-            return _correct_frame(dark_frame, flat_field, frame)
-        else:
-            return None
-
-    _get_corrected_nd2_frame = delayed(_get_corrected_nd2_frame, pure=True)
-    regionprops_func = delayed(get_regionprops, pure=True)
-    _transpose = partial(short_circuit_none, np.transpose)
-    if array_func is not None:
-        _none_array_func = partial(short_circuit_none, array_func)
-        _array_func = delayed(_none_array_func, pure=True)
-        _transpose = compose(_none_array_func, _transpose)
-    _none_transpose = compose(_transpose, none_to_nans)
-    _none_transpose = delayed(_none_transpose, pure=True)
-    _short_circuit_none = delayed(short_circuit_none, pure=True)
     nd2 = get_nd2_reader(photobleaching_filename)
     num_positions = nd2.sizes.get("v", 1)
-    num_timepoints = nd2.sizes.get("t", 1)
-    photobleaching_channel = nd2.metadata["channels"][0]
-    del nd2
+    if photobleaching_channel is None:
+        photobleaching_channels = nd2.metadata["channels"]
+        if len(photobleaching_channels) != 1:
+            raise ValueError(
+                "expected only one photobleaching channel: {} in {}".format(
+                    photobleaching_channels, photobleaching_filename
+                )
+            )
+        photobleaching_channel = photobleaching_channels[0]
+    if not segmentation_filename:
+        segmentation_filename = photobleaching_filename
+    if segmentation_channel is None:
+        segmentation_channels = get_nd2_reader(segmentation_filename).metadata[
+            "channels"
+        ]
+        if len(segmentation_channels) != 1:
+            raise ValueError(
+                "expected only one segmentation channel: {} in {}".format(
+                    segmentation_channels, segmentation_filename
+                )
+            )
+        segmentation_channel = segmentation_channels[0]
+    if segmentation_channel == "BF":
+        segmentation_func = compose(segment, invert)
+    else:
+        segmentation_func = segment
     data = {}
     for position in range(num_positions)[position_slice]:
-        photobleaching_frames = nd2_to_dask(
-            photobleaching_filename, position, photobleaching_channel
+        segmentation_frame = delayed(get_nd2_frame)(
+            segmentation_filename, position, segmentation_channel, 0
         )
-        if not segmentation_filename:
-            segmentation_filename = photobleaching_filename
-        segmentation_channel = get_nd2_reader(segmentation_filename).metadata[
-            "channels"
-        ][0]
-        segmentation_frame = photobleaching_frames[0]
-        segmentation_nd2 = get_nd2_reader(segmentation_filename)
-        if segmentation_nd2.metadata["channels"][0] == "BF":
-            segmentation_func = compose(segment, invert)
-        else:
-            segmentation_func = segment
-        # TODO: if we zarrify labels, we need to turn back into ndarray before map_over_labels
-        # if array_func is not None:
-        #     segmentation_func = compose(array_func, segmentation_func)
-        segmentation_func = delayed(segmentation_func, pure=True)
-        labels = segmentation_func(segmentation_frame)
-        # regionprops = regionprops_func(labels, segmentation_frame)
-        regionprops = None
-        photobleaching_frames = photobleaching_frames[time_slice]
-        traces = {"mean": aggregate(np.mean, labels, photobleaching_channel)}
-        # traces = {col: _none_transpose([_short_circuit_none(map_over_labels, func, labels, frame)
-        #                                                 for frame in photobleaching_frames])
-        #               for col, func in col_to_funcs.items()}
-        # if array_func is not None:
-        #     segmentation_frame = _array_func(segmentation_frame)
-        #     labels = _array_func(labels)
+        good_segmentation_frame = delayed(segmentation_frame_filter)(segmentation_frame)
+        segmentation_frame_filtered = delayed(conditional)(
+            good_segmentation_frame, segmentation_frame, None
+        )
+        labels = delayed(segmentation_func)(segmentation_frame_filtered)
+        good_segmentation_labels = delayed(segmentation_labels_filter)(
+            labels, segmentation_frame
+        )
+        labels_filtered = delayed(conditional)(good_segmentation_labels, labels, None)
+        traces = delayed(measure_photobleaching)(
+            photobleaching_filename,
+            position,
+            photobleaching_channel,
+            labels_filtered,
+            time_slice=time_slice,
+            rechunk=rechunk,
+        )
+        regionprops = delayed(get_regionprops)(
+            labels_filtered, segmentation_frame_filtered
+        )
         data[position] = {
-            "regionprops": regionprops,
             "traces": traces,
-            "labels": labels,
             "segmentation_frame": segmentation_frame,
+            "labels": labels,
+            "regionprops": regionprops,
         }
     return data
