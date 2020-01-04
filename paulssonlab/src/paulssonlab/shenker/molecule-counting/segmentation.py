@@ -36,7 +36,7 @@ def nd2_to_dask(filename, position, channel, rechunk=True):
     ]
     stack = da.stack(arrays, axis=0)
     if rechunk:
-        stack = stack.rechunk({0: "auto"})
+        stack = stack.rechunk({0: "auto" if rechunk is True else rechunk})
     return stack
 
 
