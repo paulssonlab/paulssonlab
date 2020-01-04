@@ -17,7 +17,12 @@ from numbers import Integral
 import warnings
 import zarr
 from numcodecs import Blosc
-from collections import Sequence, Mapping
+from collections import Sequence, Mapping, defaultdict
+
+
+def tree():
+    return defaultdict(tree)
+
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"
