@@ -2,42 +2,24 @@ import numpy as np
 import dask.base
 
 
-def short_circuit_none(func, *args, **kwargs):
-    if args[-1] is None:
+def conditional(flag, true_val, false_val):
+    if flag:
+        return true_val
+    else:
+        return false_val
+
+
+# TODO: unused
+def short_circuit_first(func, *args, **kwargs):
+    if args[0] is None:
         return None
     else:
         return func(*args, **kwargs)
 
 
 # TODO: unused
-def trim_nones(ary):
-    length = len(ary)
-    for idx, elem in enumerate(reversed(ary)):
-        if elem is not None:
-            length = idx
-            break
-    return ary[: len(ary) - length]
-
-
-def trim_zeros(ary, scheduler="synchronous"):
-    length = len(ary)
-    for idx, elem in enumerate(reversed(ary)):
-        if isinstance(elem, dask.base.DaskMethodsMixin):
-            elem = elem.compute(scheduler=scheduler)
-        if np.any(elem):
-            length = idx
-            break
-    return ary[: len(ary) - length]
-
-
-def none_to_nans(iterable):
-    iterable = list(iterable)
-    non_none = None
-    for elem in iterable:
-        if elem is not None:
-            non_none = elem
-            break
-    if non_none is None:
+def short_circuit_last(func, *args, **kwargs):
+    if args[-1] is None:
         return None
-    replacement = np.full(np.shape(non_none), np.nan)
-    return [elem if elem is not None else replacement for elem in iterable]
+    else:
+        return func(*args, **kwargs)
