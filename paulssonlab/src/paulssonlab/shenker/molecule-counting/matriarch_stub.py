@@ -125,15 +125,6 @@ def recursive_map(
         return func(data)
 
 
-# TODO: changed argument order, use in matriarch measure func
-def map_over_labels(func, label_image, intensity_image):
-    # assumes are consecutive integers 0,...,N
-    groups = numpy_indexed.group_by(
-        label_image.ravel(), intensity_image.ravel(), reduction=func
-    )
-    return [g[1] for g in groups]
-
-
 def repeat_apply(func, n):
     if n <= 0:
         return lambda x: x

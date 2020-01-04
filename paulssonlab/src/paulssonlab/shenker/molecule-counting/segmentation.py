@@ -139,47 +139,96 @@ def segment_otsuonly(img):
 
 # TODO: modified
 def segment(img, dtype=np.uint16, diagnostics=None):
-    img = skimage.img_as_float(img)
+    if img is None:
+        return None
+    # img = skimage.img_as_float(img)
     if diagnostics is not None:
         diagnostics["img"] = RevImage(img)
     ##img_scaled = skimage.transform.pyramid_expand(img, upscale=2,
     ##                                              multichannel=False)
     ##if diagnostics is not None:
     ##    diagnostics['img_scaled'] = RevImage(img_scaled)
-    img_blurred = skimage.filters.gaussian(img, 0.5)
+    # img_blurred = skimage.filters.gaussian(img, 0.5)
+    img_blurred = gaussian_box_approximation(img, 2)
     if diagnostics is not None:
         diagnostics["img_blurred"] = RevImage(img_blurred)
-    mask = img_blurred > skimage.filters.threshold_otsu(img_blurred)
+    hist, bin_edges = np.histogram(img_blurred.flat, bins=1024)
+    hist_idx = np.argmax(hist)
+    threshold_scale_factor = 1.5
+    # threshold = bin_edges[idx] * threshold_scale_factor
+    # threshold = skimage.filters.threshold_otsu(img_blurred)
+    num_thresholds = 50
+    max_size = img.size / 10
+    thresholds = 10 ** np.linspace(
+        np.log10(bin_edges[hist_idx]), np.log10(img_blurred.max()), num_thresholds
+    )
+    threshold_metrics = []
+    for thresh in thresholds:
+        labels, _ = ndi.label(img_blurred > thresh)
+        sizes = np.bincount(labels.flat)
+        # metric = np.median(sizes[min_size:])
+        metric = np.median(sizes[sizes < max_size])
+        threshold_metrics.append(metric)
+    threshold_metrics = np.array(threshold_metrics)
+    threshold_metrics[np.isinf(threshold_metrics)] = 0
+    threshold_metrics[np.isnan(threshold_metrics)] = 0
+    threshold_idx = np.argmax(threshold_metrics)
+    threshold = thresholds[threshold_idx]
+    if diagnostics is not None:
+        # TODO: hv.Histogram doesn't work with logy=True (SEE: https://github.com/holoviz/holoviews/issues/2591)
+        # diagnostics['histogram'] = hv.Histogram((bin_edges, hist)) * hv.VLine(threshold).options(color='red',logx=True,logy=True)
+        diagnostics["histogram"] = (
+            hv.Histogram((bin_edges, np.log10(hist + 1)))
+            * hv.VLine(threshold).options(color="red")
+            * hv.VLine(bin_edges[hist_idx]).options(color="green")
+        ).options(logx=True)
+        diagnostics["threshold_scale_factor"] = threshold_scale_factor
+        diagnostics["threshold"] = threshold
+        diagnostics["threshold_metrics"] = hv.Curve(
+            (thresholds, threshold_metrics)
+        ) * hv.VLine(threshold).options(color="red")
+    mask = img_blurred > threshold
     mask = skimage.morphology.remove_small_objects(mask, 5)
+    del img_blurred
+    # TODO: is this helpful??
+    mask = skimage.morphology.binary_erosion(skimage.morphology.binary_dilation(mask))
     if diagnostics is not None:
         diagnostics["mask"] = RevImage(mask)
-    mask_labels = skimage.morphology.label(mask)
+    # ndimage.label can work in place, output non-int64 dtypes,
+    # and raise an error if the number of labels exceeds the dtype's max value
+    # whereas skimage.morphology.label cannot
+    mask_labels = np.empty_like(mask, dtype=dtype)
+    ndi.label(mask, output=mask_labels)
     # img_normalized = normalize_componentwise(img, mask_labels)
     # if diagnostics is not None:
     #    diagnostics['img_normalized'] = RevImage(img_normalized)
-    img_k1 = hessian_eigenvalues(img)[0]
+    # TODO: can we compute hessian and frangi without converting to float?
+    # for now, we convert to float32 so hessian_eigenvalues doesn't convert it to float64
+    img_k1 = hessian_eigenvalues(skimage.img_as_float32(img))[0]
     # TODO: necessary?
-    img_k1 -= img_k1.min()
-    img_k1 /= img_k1.max()
+    # img_k1 -= img_k1.min()
+    # img_k1 /= img_k1.max()
     if diagnostics is not None:
         diagnostics["img_k1"] = RevImage(img_k1)
     # img_k1_frangi = skimage.filters.frangi(img_k1, sigmas=np.arange(0.1,1.5,0.5))#, scale_range=(1,3), scale_step=0.5)
+    # img_k1_frangi = skimage.filters.frangi(img_k1, sigmas=np.arange(0.1,1.5,0.2))#, scale_range=(1,3), scale_step=0.5)
+    # TODO: frangi breaks if input is float32, why??
     img_k1_frangi = skimage.filters.frangi(
-        img_k1, sigmas=np.arange(0.1, 1.5, 0.2)
-    )  # , scale_range=(1,3), scale_step=0.5)
+        skimage.img_as_float64(img_k1), sigmas=np.arange(1, 6, 2)
+    ).astype(np.float32)
     if diagnostics is not None:
         diagnostics["img_k1_frangi"] = RevImage(img_k1_frangi)
     # # TODO: necessary?
     # img_k1_frangi -= img_k1_frangi.min()
     # img_k1_frangi /= img_k1_frangi.max()
-    img_k1_frangi_uint = skimage.img_as_uint(img_k1_frangi)
-    if diagnostics is not None:
-        diagnostics["img_k1_frangi_uint"] = RevImage(img_k1_frangi_uint)
+    # img_k1_frangi_uint = skimage.img_as_uint(img_k1_frangi)
+    # if diagnostics is not None:
+    #     diagnostics['img_k1_frangi_uint'] = RevImage(img_k1_frangi_uint)
     # selem = skimage.morphology.disk(20)
     # img_k1_frangi_thresh = skimage.filters.rank.otsu(img_k1_frangi_uint, selem)
-    img_k1_frangi_thresh = skimage.filters.threshold_local(
-        img_k1_frangi, block_size=23, mode="nearest"
-    )
+    # img_k1_frangi_thresh = skimage.filters.threshold_local(img_k1_frangi, block_size=23, mode='nearest')
+    img_k1_frangi_thresh = np.empty_like(img_k1_frangi)
+    ndi.gaussian_filter(img_k1_frangi, 4, output=img_k1_frangi_thresh, mode="nearest")
     if diagnostics is not None:
         diagnostics["img_k1_frangi_thresh"] = RevImage(img_k1_frangi_thresh)
     # img_k1_frangi_thresh_blurred = skimage.filters.gaussian(img_k1_frangi_thresh, 0)
@@ -187,6 +236,7 @@ def segment(img, dtype=np.uint16, diagnostics=None):
     #     diagnostics['img_k1_frangi_thresh_blurred'] = RevImage(img_k1_frangi_thresh_blurred)
     # img_thresh = img_k1_frangi > img_k1_frangi_thresh_blurred
     img_thresh = img_k1_frangi > img_k1_frangi_thresh
+    del img_k1_frangi, img_k1_frangi_thresh
     # img_thresh = img_k1_frangi > skimage.filters.threshold_otsu(img_k1_frangi)
     if diagnostics is not None:
         diagnostics["img_thresh"] = RevImage(img_thresh)
@@ -197,22 +247,23 @@ def segment(img, dtype=np.uint16, diagnostics=None):
     # if diagnostics is not None:
     #     diagnostics['img_thresh_eroded'] = RevImage(img_thresh_eroded)
     # clean_seeds = skimage.morphology.label(skimage.morphology.remove_small_objects(img_thresh_eroded, 5))
-    clean_seeds = skimage.morphology.label(
-        skimage.morphology.remove_small_objects(img_thresh_masked, 5)
+    clean_seeds = np.empty_like(mask, dtype=dtype)
+    num_labels = ndi.label(
+        skimage.morphology.remove_small_objects(img_thresh_masked, 30),
+        output=clean_seeds,
     )
     if diagnostics is not None:
+        diagnostics["num_labels"] = num_labels
         diagnostics["clean_seeds"] = RevImage(clean_seeds)
     watershed_labels = skimage.morphology.watershed(
         img_k1, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
     )
-    watershed_labels = watershed_labels.astype(dtype)
     if diagnostics is not None:
         diagnostics["watershed_labels"] = RevImage(watershed_labels)
         diagnostics["watershed_labels_permuted"] = RevImage(
             permute_labels(watershed_labels)
         )
     return watershed_labels
-    return data
 
 
 def measure_photobleaching(
