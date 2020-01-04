@@ -9,7 +9,7 @@ import skimage
 import skimage.filters
 import skimage.feature
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
-import scipy.ndimage
+import scipy.ndimage as ndi
 from cytoolz import reduce, compose, partial
 import numpy_indexed
 import cachetools
@@ -164,7 +164,7 @@ def hessian_eigenvalues(img, sigma=1.5):
 #     k2[np.isnan(k2)] = 0
 #     return k1, k2
 
-# TODO: modified
+# TODO: modified, this is the newest version
 def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
     w_ideal = np.sqrt((12 * sigma**2 / n) + 1)
     w_l = int(np.floor(w_ideal))
@@ -173,14 +173,18 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
     w_u = w_l + 2
     m = (12 * sigma**2 - n * w_l**2 - 4 * n * w_l - 3 * n) / (-4 * w_l - 4)
     m = round(m)
+    # switch between ary and temp so that we don't need to repeatedly reallocate
+    temp = np.empty_like(ary)
     for i in range(m):
-        ary = scipy.ndimage.filters.uniform_filter(ary, w_l, mode=mode, cval=0)
+        ndi.filters.uniform_filter(ary, w_l, output=temp, mode=mode, cval=0)
+        temp, ary = ary, temp
     for i in range(n - m):
-        ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode, cval=0)
+        ndi.filters.uniform_filter(ary, w_u, output=temp, mode=mode, cval=0)
+        temp, ary = ary, temp
     return ary
 
 
-# TODO: modified
+# TODO: modified, this is the newest version
 def normalize_componentwise(
     img, img_labels, label_index=None, dilation=10, in_place=False
 ):
@@ -188,7 +192,7 @@ def normalize_componentwise(
     if label_index is None:
         label_index = np.unique(img_labels)
     img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
-    mins, maxes, _, _ = scipy.ndimage.extrema(img, labels=img_labels, index=label_index)
+    mins, maxes, _, _ = ndi.extrema(img, labels=img_labels, index=label_index)
     img[img_labels == 0] = 0
     for idx, label in enumerate(label_index):
         if label == 0:
