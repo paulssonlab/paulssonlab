@@ -156,7 +156,7 @@ def hessian_eigenvalues(img, sigma=1.5):
 #     return k1, k2
 
 # TODO: modified, this is the newest version
-def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
+def gaussian_box_approximation(ary, sigma, n=3, output=None, mode="nearest", cval=0):
     w_ideal = np.sqrt((12 * sigma**2 / n) + 1)
     w_l = int(np.floor(w_ideal))
     if w_l % 2 == 0:
@@ -164,6 +164,11 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest", cval=0):
     w_u = w_l + 2
     m = (12 * sigma**2 - n * w_l**2 - 4 * n * w_l - 3 * n) / (-4 * w_l - 4)
     m = round(m)
+    if output is None:
+        ary = ary.copy()
+    else:
+        output[:] = ary  # TODO: this initial copy could be avoided
+        ary = output
     # switch between ary and temp so that we don't need to repeatedly reallocate
     temp = np.empty_like(ary)
     for i in range(m):
