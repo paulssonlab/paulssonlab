@@ -144,7 +144,7 @@ def segment(
     threshold_blur_sigma=50,
     frangi_blur_sigma=4,
     frangi_sigmas=np.arange(1, 6, 2),
-    min_threshold_scale_factor=1,
+    min_threshold_scale_factor=1.2,
     min_component_size=30,
     watershed_compactness=0.01,
     dtype=np.uint16,
@@ -168,7 +168,7 @@ def segment(
     hist_idx = np.argmax(hist)
     min_threshold = bin_edges[hist_idx] * min_threshold_scale_factor
     threshold = gaussian_box_approximation(img, threshold_blur_sigma)
-    # np.clip(threshold, min_threshold, None, out=threshold)
+    np.clip(threshold, min_threshold, None, out=threshold)
     if diagnostics is not None:
         # TODO: hv.Histogram doesn't work with logy=True (SEE: https://github.com/holoviz/holoviews/issues/2591)
         # diagnostics['histogram'] = hv.Histogram((bin_edges, hist)) * hv.VLine(threshold).options(color='red',logx=True,logy=True)
@@ -180,14 +180,13 @@ def segment(
         diagnostics["min_threshold"] = min_threshold
         diagnostics["threshold_blur_sigma"] = threshold_blur_sigma
         diagnostics["threshold"] = RevImage(threshold)
-    mask = np.greater(
-        img_blurred, threshold, dtype=dtype
-    )  # * np.greater(threshold, min_threshold, dtype=dtype)
+    mask = img_blurred > threshold
+    # mask = np.greater(img_blurred, threshold, dtype=dtype) #* np.greater(threshold, min_threshold, dtype=dtype)
     # ndimage.label can work in place, output non-int64 dtypes,
     # and raise an error if the number of labels exceeds the dtype's max value
     # whereas skimage.morphology.label cannot
-    ndi.label(mask, output=mask)
-    skimage.morphology.remove_small_objects(mask, min_component_size, in_place=True)
+    # ndi.label(mask, output=mask)
+    # skimage.morphology.remove_small_objects(mask, min_component_size, in_place=True)
     del img_blurred
     # TODO: is this helpful??
     mask = skimage.morphology.binary_erosion(skimage.morphology.binary_dilation(mask))
@@ -246,7 +245,7 @@ def segment(
     clean_seeds = np.empty_like(mask, dtype=dtype)
     ndi.label(img_thresh_masked, output=clean_seeds)
     skimage.morphology.remove_small_objects(
-        cleann_seeds, min_component_size, in_place=True
+        clean_seeds, min_component_size, in_place=True
     )
     # TODO: could relabel_sequential?
     if diagnostics is not None:
