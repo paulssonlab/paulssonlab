@@ -5,6 +5,7 @@ from dask import delayed
 from dask.delayed import Delayed
 import dask.array as da
 import skimage
+import skimage.segmentation
 import scipy.ndimage as ndi
 from cytoolz import compose, partial
 from numbers import Integral
@@ -141,7 +142,7 @@ def segment_otsuonly(img):
 def segment(
     img,
     blur_sigma=2,
-    threshold_blur_sigma=50,
+    highpass_sigma=100,
     frangi_blur_sigma=4,
     frangi_sigmas=np.arange(1, 6, 2),
     min_threshold_scale_factor=1.2,
@@ -152,42 +153,42 @@ def segment(
 ):
     if img is None:
         return None
-    # img = skimage.img_as_float(img)
+    img = skimage.img_as_float32(img)
+    # img_flattened = img - gaussian_box_approximation(img, highpass_sigma)
+    img_flattened = gaussian_box_approximation(
+        img, blur_sigma
+    ) - gaussian_box_approximation(img, highpass_sigma)
     if diagnostics is not None:
         diagnostics["img"] = RevImage(img)
-    ##img_scaled = skimage.transform.pyramid_expand(img, upscale=2,
-    ##                                              multichannel=False)
-    ##if diagnostics is not None:
-    ##    diagnostics['img_scaled'] = RevImage(img_scaled)
-    # img_blurred = skimage.filters.gaussian(img, 0.5)
-    img_blurred = gaussian_box_approximation(img, blur_sigma)
-    if diagnostics is not None:
-        diagnostics["blur_sigma"] = blur_sigma
-        diagnostics["img_blurred"] = RevImage(img_blurred)
-    hist, bin_edges = np.histogram(img_blurred.flat, bins=1024)
-    hist_idx = np.argmax(hist)
-    min_threshold = bin_edges[hist_idx] * min_threshold_scale_factor
-    threshold = gaussian_box_approximation(img, threshold_blur_sigma)
-    np.clip(threshold, min_threshold, None, out=threshold)
-    if diagnostics is not None:
-        # TODO: hv.Histogram doesn't work with logy=True (SEE: https://github.com/holoviz/holoviews/issues/2591)
-        # diagnostics['histogram'] = hv.Histogram((bin_edges, hist)) * hv.VLine(threshold).options(color='red',logx=True,logy=True)
-        diagnostics["histogram"] = (
-            hv.Histogram((bin_edges, np.log10(hist + 1)))
-            * hv.VLine(min_threshold).options(color="red")
-        ).options(logx=True)
-        diagnostics["min_threshold_scale_factor"] = min_threshold_scale_factor
-        diagnostics["min_threshold"] = min_threshold
-        diagnostics["threshold_blur_sigma"] = threshold_blur_sigma
-        diagnostics["threshold"] = RevImage(threshold)
-    mask = img_blurred > threshold
+        diagnostics["highpass_sigma"] = highpass_sigma
+        diagnostics["img_flattened"] = RevImage(img_flattened)
+    # img_blurred = gaussian_box_approximation(img, blur_sigma)
+    # if diagnostics is not None:
+    #     diagnostics['blur_sigma'] = blur_sigma
+    #     diagnostics['img_blurred'] = RevImage(img_blurred)
+    # hist, bin_edges = np.histogram(img_blurred.flat, bins=1024)
+    # hist_idx = np.argmax(hist)
+    # min_threshold = bin_edges[hist_idx] * min_threshold_scale_factor
+    # threshold = gaussian_box_approximation(img, threshold_blur_sigma)
+    # np.clip(threshold, min_threshold, None, out=threshold)
+    # if diagnostics is not None:
+    #     # TODO: hv.Histogram doesn't work with logy=True (SEE: https://github.com/holoviz/holoviews/issues/2591)
+    #     # diagnostics['histogram'] = hv.Histogram((bin_edges, hist)) * hv.VLine(threshold).options(color='red',logx=True,logy=True)
+    #     diagnostics['histogram'] = (hv.Histogram((bin_edges, np.log10(hist+1)))
+    #                                 * hv.VLine(min_threshold).options(color='red')).options(logx=True)
+    #     diagnostics['min_threshold_scale_factor'] = min_threshold_scale_factor
+    #     diagnostics['min_threshold'] = min_threshold
+    #     diagnostics['threshold_blur_sigma'] = threshold_blur_sigma
+    #     diagnostics['threshold'] = RevImage(threshold)
+    # mask = img_blurred > threshold
     # mask = np.greater(img_blurred, threshold, dtype=dtype) #* np.greater(threshold, min_threshold, dtype=dtype)
     # ndimage.label can work in place, output non-int64 dtypes,
     # and raise an error if the number of labels exceeds the dtype's max value
     # whereas skimage.morphology.label cannot
     # ndi.label(mask, output=mask)
     # skimage.morphology.remove_small_objects(mask, min_component_size, in_place=True)
-    del img_blurred
+    mask = img_flattened > skimage.filters.threshold_li(img_flattened)
+    # del img_flattened
     # TODO: is this helpful??
     mask = skimage.morphology.binary_erosion(skimage.morphology.binary_dilation(mask))
     if diagnostics is not None:
@@ -197,7 +198,8 @@ def segment(
     #    diagnostics['img_normalized'] = RevImage(img_normalized)
     # TODO: can we compute hessian and frangi without converting to float?
     # for now, we convert to float32 so hessian_eigenvalues doesn't convert it to float64
-    img_k1 = hessian_eigenvalues(skimage.img_as_float32(img))[0]
+    img_k1 = hessian_eigenvalues(img_flattened)[0]
+    del img_flattened
     # TODO: necessary?
     # img_k1 -= img_k1.min()
     # img_k1 /= img_k1.max()
@@ -230,24 +232,24 @@ def segment(
     # if diagnostics is not None:
     #     diagnostics['img_k1_frangi_thresh_blurred'] = RevImage(img_k1_frangi_thresh_blurred)
     # img_thresh = img_k1_frangi > img_k1_frangi_thresh_blurred
-    img_thresh = img_k1_frangi > img_k1_frangi_thresh
+    img_cells = img_k1_frangi > img_k1_frangi_thresh
     del img_k1_frangi, img_k1_frangi_thresh
     # img_thresh = img_k1_frangi > skimage.filters.threshold_otsu(img_k1_frangi)
     if diagnostics is not None:
-        diagnostics["img_thresh"] = RevImage(img_thresh)
-    img_thresh_masked = img_thresh * (mask != 0)
+        diagnostics["img_cells"] = RevImage(img_cells)
+    img_cells_masked = img_cells * mask
     if diagnostics is not None:
-        diagnostics["img_thresh_masked"] = RevImage(img_thresh_masked)
+        diagnostics["img_cells_masked"] = RevImage(img_cells_masked)
     # img_thresh_eroded = repeat_apply(skimage.morphology.erosion, 0)(img_thresh_masked)
     # if diagnostics is not None:
     #     diagnostics['img_thresh_eroded'] = RevImage(img_thresh_eroded)
     # clean_seeds = skimage.morphology.label(skimage.morphology.remove_small_objects(img_thresh_eroded, 5))
     clean_seeds = np.empty_like(mask, dtype=dtype)
-    ndi.label(img_thresh_masked, output=clean_seeds)
+    ndi.label(img_cells_masked, output=clean_seeds)
     skimage.morphology.remove_small_objects(
         clean_seeds, min_component_size, in_place=True
     )
-    # TODO: could relabel_sequential?
+    clean_seeds, _, _ = skimage.segmentation.relabel_sequential(clean_seeds)
     if diagnostics is not None:
         # diagnostics['num_labels'] = num_labels
         diagnostics["clean_seeds"] = RevImage(clean_seeds)
