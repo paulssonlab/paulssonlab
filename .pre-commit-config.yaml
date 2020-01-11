@@ -1,0 +1,21 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+    -   id: check-added-large-files
+    -   id: check-merge-conflict
+    -   id: end-of-file-fixer
+    -   id: mixed-line-ending
+        args: ['--fix=lf']
+-   repo: local
+    hooks:
+    -   id: black
+        name: Format .py files
+        entry: black
+        language: system
+        types: [python]
+    -   id: jupytext
+        name: Format .ipynb files
+        entry: jupytext --quiet --from ipynb --pipe black
+        language: system
+        files: \.ipynb$
