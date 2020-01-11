@@ -198,6 +198,12 @@ def normalize_componentwise(
     return img
 
 
+# FROM: http://emmanuelle.github.io/a-tutorial-on-segmentation.html
+def permute_labels(labels):
+    label_map = np.concatenate(((0,), np.random.permutation(labels.max()) + 1))
+    return label_map[labels]
+
+
 DEFAULT_REGIONPROPS = [
     "label",
     "area",
@@ -214,11 +220,6 @@ DEFAULT_REGIONPROPS = [
     "solidity",
     "weighted_centroid",
 ]
-
-# FROM: http://emmanuelle.github.io/a-tutorial-on-segmentation.html
-def permute_labels(labels):
-    label_map = np.concatenate(((0,), np.random.permutation(labels.max()) + 1))
-    return label_map[labels]
 
 
 def get_regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS):
