@@ -1,8 +1,9 @@
 import click
-from processing import ingest_nd2_file, quantize_frames
-from util import open_zarr_group
-import commands
-import inventory
+
+# from matriarch.processing import ingest_nd2_file, quantize_frames
+# from matriarch.util import open_zarr_group
+import matriarch.commands as commands
+import matriarch.inventory as inventory
 
 
 @click.group()

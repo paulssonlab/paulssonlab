@@ -9,7 +9,7 @@ from playhouse.apsw_ext import (
     BooleanField,
     BlobField,
 )
-from json_util import JSONField
+from .misc.json_util import JSONField
 import pickle
 import base64
 import zarr
@@ -21,8 +21,8 @@ import os
 import re
 import gc
 from IPython import embed
-from util import tqdm_auto
-from metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
+from .util import tqdm_auto
+from .metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
 
 AGGREGATE_EXCLUDE = re.compile(
     r"^(Thumbs.*\.db|Pos7_TimelapseAnalysis\.mat|.*\.txt|\..*)$"
@@ -62,7 +62,7 @@ class File(BaseModel):
     aggregated = BooleanField()
     aggregated_path = TextField()
     metadata = JSONField()
-    checksum = BlobField()
+    checksum = BlobField(null=True)
 
 
 def connect_db(db_file):
@@ -227,7 +227,7 @@ def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
 @click.command()
 @click.argument("in_path", type=click.Path(exists=True))
 @click.argument(
-    "out_path", type=click.Path(writable=True, dir_okay=False), required=False
+    "out_path", type=click.Path(writable=True, dir_okay=False), required=True
 )
 @click.option("--rescan", is_flag=True, default=False)
 @click.option(
