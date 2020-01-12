@@ -12,3 +12,22 @@ nbstripout --install
 ```
 
 The first command creates a conda environment using the list of packages in `environment.yml`. The next two commands make this conda environment activate automatically when you `cd` into this repo (if you aren't using direnv, skip these two commands and run an explicit `conda activate paulssonlab` instead). The last two commands set up the pre-commit hooks that automatically format code (in both `.ipynb` and `.py` files) and strip output from jupyter notebooks before adding them to git. If you're starting from an empty conda environment, install these tools with `conda install -c conda-forge pre-commit black jupytext nbstripout`.
+
+## How to make a new project
+TODO: How to structure python modules (example dir) so they can be easily imported. Primer on Python package structure.
+
+## How to import an existing git repo
+To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
+1. `conda activate paulssonlab` and install git-filter-repo with `pip install git-filter-repo`.
+2. `git clone git@github.com:shenker/old-repo.git`
+3. Download the `git-jupyter-linter` script from https://github.com/shenker/git-jupyter-linter (e.g., run `curl -O https://raw.githubusercontent.com/shenker/git-jupyter-linter/master/git-jupyter-linter`)
+4. `cd old-repo`
+5. Filter old-repo with `python ../git-jupyter-linter` (this will take a few minutes).
+6. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
+5. Then merge this repo:
+```
+cd path/to/paulssonlab # this repo
+git remote add -f old-repo path/to/old-repo
+git merge --allow-unrelated-histories old-repo/master
+git remote rm old-repo
+```
