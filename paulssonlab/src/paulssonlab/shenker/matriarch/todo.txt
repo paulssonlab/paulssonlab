@@ -1,0 +1,1183 @@
+### ISSUES
+%%output on plots_browser doubles outputs
+
+raise taptool issue: should work better on overlays, hvplot with by=col
+MultiIndex get_loc_level: slice(None) is slow vs. omitting trailing slice (should be equivalent)
+pandas observed multiindex groupby dataframe vs series
+ENH: holoviews create new view for output
+ENH: holoviews stream with multiple sources
+TODO: way to export holoviews plot image (matplotlib) to numpy array (cf. renderer._figure_data)
+    bug where options won't apply consistently
+
+TODO: trench_img invert_yaxis issue with holoviews master (GH#3083??)
+
+ENH: make dask memory stats traces longer/customizable
+
+### IMMEDIATE
+
+FIX TRENCH FINDING FOR TrErr.nd2 (look at trench length; add as filter criterion?)
+    pos0: bad crops
+
+FIX ERRORS
+{('/n/scratch2/jqs1/fidelity/all/TrErr.stripe-1.256m.nd2',
+  37): <Future: status: error, key: do_measure_and_write-b6ed4cd097d970fee66df862014802af>,
+ ('/n/scratch2/jqs1/fidelity/all/TrErr.stripe-1.256m.nd2',
+  231): <Future: status: error, key: do_measure_and_write-67f21db56906a1674e54e362c57093e1>}
+
+{('/n/scratch2/jqs1/fidelity/all/181010_rpos_bigsnake.stripe-1.64m.nd2',
+  385): <Future: status: error, key: do_measure_and_write-8a0f00ec9b8239f5817039ed4d9f6f45>}
+
+try 10 timepoints at a time, 1 timepoint at a time
+compress trench crops (with transform) upon load (factor of 2?)
+
+allow to crop BF without analyzing BF; pass in analysis channel to _measurement_func
+consensus filtering (pitch, angle)
+    need trench finding straggler handling
+restart from partially-finished run
+    store finished timepoints in zarr metadata
+    use func to slice into trenches parquet if available
+    check for positions without file or with lock file
+        rm lock file, rm positions
+DEBUG ANALYSIS STRAGGLERS
+priority: save trenches/errs first
+    LIMITED BY STRAGGLERS (dynamically timeout and retry? use new retry feature!)
+merge_parquet (with sort)
+load dataframes
+    concat different positions
+    concat mask alongside labelwise
+    use threadpoolexecutor?
+find txn errors
+label_viewer
+
+RAM usage during trench finding
+    don't save holoviews in diag/separate info and diag
+
+RAM usage during analysis
+    flag to load in trench set by trench set (?)
+    handle case with few positions, many timepoints/channels (TrErr.nd2)
+
+### ANALYSIS PROFILE
+trench crops 5%
+get_frame 3%
+segment 35%
+measurement func 45%
+write zarr 8%
+
+MADE DASK PROFILING 10x SLOWER (don't know if this helped)
+
+### PATH TO SHIPPING
+README:
+NUMCODECS NEEDS TO BE COMPILED WITHOUT AVX2 (SSE2 is okay)
+lfs setstripe -c -1 -S 256m
+
+NEED TO RECORD RAW trench_diag, trench_errs (only write if trench_err is not None)
+CATCH non-none trench_err ERRORS
+
+change zarr keys to set1/trench500 (?) [seg masks are already correct!]
+    uniformize trench_crops/flattened_crops/segmentation_masks [unflatten]
+
+TODO: add levels kwarg to flatten_dict (!!!)
+
+FIGURE OUT WHY image zarrs are so BIG (is trench cropping a bad idea?)
+    what is the compression ratio?
+write_images_to_zarr fixes
+
+DISABLE TRENCH_DIAG HOLOVIEWS
+    OR JUST STORE USEFUL STUFF IN info INSTEAD OF diag?? (enable/disable with flag)
+        make sure label-specific metadata goes to the right trenches (!!!!!!!!!)
+    make it possible to turn diag off
+    measure memory usage with diag turned off
+    or just separate metadata from diagnostics, pass both through? (in tuple? decorator to split diagnostics tuple as separate kwargs?)
+
+AUTO-SET TRENCH FILTERING THRESHOLDS (calculate thresholds once all positions are aggregated)
+    ('diag', 'find_trench_lines.hough_2.peak_func.pitch')
+    ('info', 'hough_value')
+
+DEBUG WHY SOME FRAMES TAKE FOREVER
+
+USE MIDPOINT FRAME TO FIND TRENCHES (when possible)
+
+HELPER FUNCS TO RECOMPUTE+OVERWRITE/LOAD IN trenches/raw images/segmentations/measurements IF NOT ALREADY COMPUTED (position-by-position)
+    get_frame that handles nd2/zar
+    make sure overwrite works correctly
+
+REDUCE MEMORY USAGE IN SEGMENTATION (not measure, probably?)/RUN GC EXPLICITLY
+
+trench finding priority
+
+trench finding takes 2.5G (not super stable), reading (without analysis) takes 1.4G (stable), goes back to 0.9G upon idle
+    DO I NEED TO DISABLE STORING HOLOVIEWS IN DIAG???
+
+try read with non-striped file (stripe32.64m ~17s; stripe1 ~50s; stripe4 ~30s)
+try seg without measure/write (~100s)
+    14% trench crops (8% get_nd2_frame, 4% dask _gc_callback)
+    85% seg (50% frangi, 13% hessian, 7% watershed)
+try seg/measure without write (~250s)
+    7% trench crops
+    39% seg
+    48% measurement_func
+try seg/measure/write parquet only
+    WORKS
+try read/write zarr no seg
+try read/write zarr with seg
+try write all with no locking, filename hardcoded to random tmpfile
+try write all with nested dir zarr store, not lmdb
+
+TURN OFF LMDB LOCKING???
+
+support frame-by-frame, chunked, or position-by-position tasks
+    store which frames have been inserted in zarr stack metadata??
+
+make file locking resilient to worker restarts
+    shell script to rm any .zarr that has a lock+rm the lock, so it can be retried
+figure out what's eating up all the memory
+    dummy tasks that don't load any frames
+figure out what's eating up all the FD's (just worker-to-worker transfers?)
+
+fix dask memory histogram
+exploding worker fd count
+identify/fix gil-holding funcs
+quiet useless warnings (turned on via flag)
+
+can use pyarrow.serialize(df) to efficiently serialize pandas dfs with object columns
+
+full pipeline
+    check that sorting is set correctly upon initial processing/saving/loading
+zarr get_frame
+label viewer
+columnar data loader
+
+update_wrapper to name functions
+iterate_over_groupby should be a map functional, not a decorator
+support frame-by-frame, chunked, or position-by-position tasks
+    batched trench cropping/frame loading (to minimize memory use)???
+
+### OLD PATH TO SHIPPING
+(1d) trench detection+save to parquet+quality filtering
+
+(2hr) parquet/arrow loading func
+    should we put index columns in dfs???
+        think about dictionary harmonization
+        discoverability: how do we specify filenames/where to find what filename/position?
+
+(1d) label_viewer
+
+(2hr) async as_finished/clean up
+
+(1d) benchmark with script that only reads in all frames
+    also look at memory usage
+    find which striping is best
+    copy big snakes data into that striping (shell alias to do this)
+
+### NEXT GOAL
+DISABLE SPILL-TO-DISK
+    still pausing at 0.8
+
+stale locks
+    add timeout to locking
+
+async as_finished pipeline
+
+memory profile (?)
+    get dask ipykernel working??
+    fix dask memory graph in intermediate regime
+
+DEBUG: killedworkers???
+    just memory
+
+write_dataframe_to_parquet
+
+git commit
+
+DISABLE get_image CACHEING ON WORKERS
+
+FIX WORKER RESTART ISSUE
+DEBUG: ('duplicate batch index', (1, 0, 0, 0))
+    definitely due to retries, right??
+    keep_new duplicates
+
+PERF: figure out why get_nd2_frame is taking 48% time
+    try striping nd2?
+    io.BufferedReader?
+
+figure out how to streaming notify (filename, pos, t) [time is important!] for both batch/timepoint modes
+
+test timepoint submission mode (pretend real-time)
+
+FILENAME/POSITION INDEX COLUMNS
+LOCKING FOR ARROW (common locking command with zarr?)
+shortcircuit groupby in iterate_over_groupby (-> iterate_groupby) with filename/pos not None
+make overwrite=False raise error if file exists in ALL writing funcs
+
+general write func (user-customizable)
+    these call  write_dataframe_to_arrow/write_images_to_zarr
+    take (filename, position) as first level of dict
+    second level of dict is image/measurement
+    handle arrow dictionaryarray
+
+test run locally
+fast reading arrow into pandas (dictionaryarray)
+full run of dask
+
+get_trench/get_frame that loads from zarr or nd2
+
+label_viewer
+
+measurement_func improvements:
+    allow computing erosion only once (cache function called on mask, pass in that result instead of label_image)
+    pass in segmentation/intensity channel names into measurement_func
+
+new dataframe index order for all_frames, trenches, framewise/trenchwise/labelwise
+    eliminate unnecessary index columns for trenches
+trench detection for big snakes (tomorrow)
+frame quality/trench quality/trench debris filtering (monday)
+    scroller widget to scroll through trench detection errors (?)
+simple workflow for trench detection+compression+analysis (monday)
+
+mask postprocessing function (results are stored in zarr)
+split off _measure into version that can read in calculated mask
+
+...
+
+break out swap first two dict levels as util func
+
+how to pass in tabular_output_func/image_output_func/write_images_to_zarr
+    separate filename-choosing funcs and write strategy
+        how to specify merge/overwrite/other options easily??
+sketch out entire compression+segmentation+measurement notebook
+
+make key different from filename/position (for using other organizational schemes??)
+
+get rid of trench_set (just give trenches unique index??)
+
+and analysis output_func (pass in output type=trenchwise/framewise)
+    keep sorted(?) dict of recordbatches
+    merge (read in, sort, concat, write into temp file, atomic move into place)
+        BUT SOP is to chain/keep in memory!!!
+    handle dictionaryarrays
+    structure in a way so that it is easy to merge_dicts+write (dask chain)
+        and/or gather images(?)+dfs to master
+
+commandline trench detection+compression
+
+### READY FOR NEW DATA
+stop using iter_index
+refactored analysis_func that can do trench compression and/or segmentation and/or analysis (today)
+    figure out way of using merge_dicts, splitting off writer tasks
+    from ND2 or zarr
+    offline and online (using same/similar strategy as online compression; keep in memory)
+label_viewer (tomorrow)
+
+incremental analysis
+    using a chain of dask tasks, each one dumps parquet to disk, keeps sorted dict of arrow in memory
+fast reading of partitioned parquet files
+optimized single-core pandas txn error detection
+    try pandas PRs
+
+...
+
+NEEDS TO SUPPORT SEGMENTATION WORKFLOW
+
+compare performance of (a) segmenting/no writing+reading pixels+compute mean of
+                       (b) segmenting+writing masks to zarr+reading pixels+compute mean
+                       (c) reading masks from zarr+reading pixels+compute mean:
+    1) channels bundled in zarr
+    2) channels as separate zarrs
+    use as guide for analysis_func refactor (!!!)
+
+compress_frames can take either one filename/position (multiple channels) or all_frames
+    use LRU caching to allow compress_frames to iterate over frames without ensuring that we load only once
+    does new iteration order allow this caching?
+    DO WE NEED TO PASS both TRENCHES/FRAMES_TO_ANALYZE??? (make sure this works if we drop channel index from trenches)
+        SHOULD WE DROP trenches FROM selected_trenches??? (yes! this allows for, e.g., using multiple channels in segmentation)
+
+when iterating over all_frames or one frame, should efficiently lock/LMDB
+    one LMDB per filename/position
+    benchmark to see how long it takes to read/recompress upon new timepoint
+
+compress_frames = wrap_trenches_for_frames_iterator(_compress_frames)
+
+compression+segmentation+zarr (locking+resizing in LMDB)
+    rewritten analyze_trenches func? (spec in diary)
+    record offset in zarr metadata (group-level in lmbd)
+        record quantized overview frame
+        record trench bboxes
+        reconstruct trench crops + overview frame into zarr/TIFF series
+    fast area
+    
+get_frame that handles nd2/zarr
+
+label_viewer
+
+switch to filename/position/trench_set/trench/channel/t/label
+    performance boost???
+    what is trench_key, trench_t_key? (where to put channel?)
+
+### DEMO
+loweronly_fast: pos87, t73, ts1, t54
+big group111, medium group143/136/135, small group178/179/184, double group106
+
+### TONIGHT
+YFP + MCHERRY MOVIE + PLOT (with vline)
+
+FILTER FOR # OF TIMEPOINTS WITH TWO CELLS ABOVE BACKGROUND (!)
+
+flip trench_crops so mother is always to left (or top)
+image hovertool without quadmesh? (speedup?)
+
+all cells/mother cell mean brightness over time
+
+thread to load trenches into trench_image cache (alternating one forward, one back); empty queue every time we make a UI selection that's not time
+
+...
+
+QUICK UPDATE OF DETECTED_BURSTS IN GROUPED SCATTERPLOT
+    GroupedMultiIndexStream
+
+fast subsetting of labelwise_df according to selected trenches (trench_t_median/trench_median/background)
+    filter groupby by key only (no iterating over intermediate dfs... since they're slices, would this actually make it faster?)
+
+auto position-joining; real acq times
+    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
+    BONUS: trench identification (+ photobleaching measurement, segmentation diffing!!!)
+    easy way to select first of photobleaching timepoints
+
+easy way to filter out trenches adjacent to bright trenches
+
+optimize group_stream, label_stream
+    how much does rearranging key order help?
+    can we make assumptions? (e.g., trench_set is always 1 or 2; t range is usually the same)
+    preemptive caching?
+
+stream+ipywidgets to browse dataframe groupby with selection
+    with interactive legends (!!!) with solo??
+
+...
+
+EL CHEAPO MULTIINDEX PARALLEL GROUPBY
+
+fix snakeviz: add div id to all elements
+    FIX CALLSTACK TOGGLEING
+    ...and call it a day
+
+BUG: create new view from output (TEST IN CHROME)
+
+load in all selected trenches as movies
+    make highlight glyph red
+    DynamicMap using ipywidgets column_browser to scroll between selected trenches
+    HoloMap MCHERRY+YFP+Scatter(MCHERRY/YFP 2 y-axes) plot to scroll through time (VLine on Scatter)
+    show multiple trenches (5?) stacked as vertical column Layout
+    BONUS: background level overlay (taken from another df using stream.key)
+
+key construction method on MultiIndexStream
+
+EVENTS
+    find noise by looking for non-continuous traces
+
+turn frame caching back on
+
+trench_viewer normalization
+load current trench movie (both channels) as holomap
+
+label_viewer
+
+robust streaming to sorted parquet
+    incremental parquet writer that sorts, dumps finished+sorted chunks to disk
+
+fix css height on qgrid/scroll bars
+better show_frame_info
+
+debug groupby performance issue (are groups not cached?)
+    pd.eval
+    try numba-ifying
+        1ms group iteration overhead (workaround??)
+        precompute bright_ts on trenchwise_df for different brightness thresholds
+    flamegraph
+
+SPARK
+
+MIP segmentation
+
+...
+
+filter labels to cell_size (for plotting and all analysis)
+extra columns in hovertool
+filter out bright trenches
+filter out empty trenches (using trenchwise?)
+area filtering
+add caching to multiindexstream
+fix hvplot ndoverlay?
+make multiindexstream._index a param
+
+label_viewer
+fix output_view
+
+1) VIDEOS
+1.5) auto position-joining; real acq times
+    KEY: experiment, exp_position, acq_time, trench_set, trench, label: filename, position, t
+2) cli+notebook/dask to compress an .nd2
+3) reimplemented analyis func; transfer mask to master node to be zarr'd
+4) single notebook to analyze an .nd2
+
+3) use skiplist to create a continuously sorted list of in-memory data upon gather
+4) trigged by new data for a filename/position OR periodically, re-run analysis; re-dump masks to zarr (and disk)
+
+a single notebook to take an .nd2 to plots and a SORTED parquet
+    a single command
+
+test gather CPU usage without any writing
+    streaming to parquet
+
+architecture:
+    store RecordBatches in memory (eventually plasma?)
+        in dict keyed by filename/position
+            in kdtree (?) so always sorted
+    every 1min OR every new timepoint
+        rechunk (?) and/or make a new pandas
+            for now, make a new pandas
+        dump to partitioned parquet dataset
+            (write to temp location, then move into place)
+            do we need anything besides folder structure to make pq dataset?
+        ONLY KEEP PANDAS IN MEMORY WHILE THAT POSITION IS BEING ANALYZED
+            can parallelize using dask (serialize pandas dataframe directly)
+
+### DATA CLEANUP
+try to fix parquet with categorical
+
+read_arrow cast to categorical
+copy_arrow cast to dictionary/categorical
+
+cast to categorical in original RecordBatch (use helper func in dask task)
+
+compare read_arrow performance of 3cols vs all
+
+try all performance testing without strings, see if that is the only issue
+
+can we read parquet dictionary to arrow dictionary?
+    why doesn't this work?
+
+round-trip through pandas to rechunk
+
+multiindex from categoricalindex?
+
+### MINIMAL
+try parquet
+
+try to read selected columns with fastparquet off original 
+time reading a single column off original arrow dump
+    write selected columns to a BufferOutputStream
+
+filter bursts
+
+started 11:14pm
+
+parquetify subset
+    how much does it compress
+    how slow vs. initial copying (turn compression off?)
+
+subselect labelwise arrow (~1G)
+    compare many recordbatches vs. monolithic recordbatch vs. parquet
+    figure out why arrow is 100G instead of 10G?
+
+compare reading one column in parquet vs arrow
+
+read selected columns (iter limit) into pandas from disk .arrow
+    re-save as parquet and arrow, compare read/write performance
+    (probably parquet! see http://wesmckinney.com/blog/python-parquet-multithreading/)
+
+time how long it takes to iterate through all 100G (no writing)
+    for trenchwise, time nativefile vs osfile vs memory_map vs in memory
+
+make sure fastparquet can read pyarrow parquet in row groups
+    can pyarrow do this yet?
+
+test arrow read speed off disk
+    read disk file completely into memory, try iterating through recordbatches
+
+profile parquetify, arrow reading
+    why is it slow??
+    does this have to do with IO latency?
+    does memory-mapping make it faster? (!!!)
+
+get burst detection/visualization working on analysis50 parquet
+
+load frame stacks of burst movies
+
+### immediate
+what is gather performance with no writing?
+what is gather performance arrow vs parquet (for different batch sizes)
+what is gather performance for in proc vs. out-of-proc scheduler?
+
+increase recordbatch size by 10x when streaming to arrow on disk
+    not worth streaming to parquet?
+    what is the size of a typical recordbatch?
+
+write out-of-core sorter
+
+profile batch loading
+
+find bursts with batched processing
+    use dask arrays?
+
+use same processing scheme/real-time plots for out-of-core processing and streaming
+
+profile scheduler
+    scheduler in separate process??
+
+try to profile streaming gather
+    what is CPU usage without writing? (store in memory/just throw away)
+
+stream to plasma
+
+### NEXT
+have readd on periodic_callback
+
+### FIRST LIGHT
+STARTED 12:12am
+
+try without buffering (why are gathers not 20s spaced apart?)
+
+why are worker CPUs not saturated?
+
+keep track of gather timeouts
+
+how does direct_to_workers help performance?
+
+### FUTURE SOLUTION
+try streaming mapreduce in ray
+
+what is performance cost of streaming to plasma?
+can we do this in a separate process?
+    call submit in this process
+    pass future to queue
+    gather process runs stream, gathers
+    puts objects in plasma
+    passes obj ids in queue to jupyter, writer pool
+    writer process pool (need more than 1?) takes obj ids from queue and sinks to arrow
+
+### FIX
+run without dask
+
+x1) just load ND2Reader directly
+x2) read the same numpy array from disk (no nd2reader, still crop trenches)
+3a) numpy array+_analyze_trench with first frame trench data repeated (just make new iter)
+3b) numpy array+_analyze_trench (labels will be messed-up, but whatever)
+
+SEEMS TO STABILIZE AT 1.05GB
+    pulling trench crops but not analyzing anything
+
+get_nd2_reader without getting frame (directly calling ND2Reader)
+    if this still leaks, try reverting wrapt file class
+
+remove pandas concat (just nested dicts)
+skip processing funcs
+load frame/trench positions from numpy array
+    no pandas/nd2reader
+
+turned off regionprops
+
+submit start_ipython_workers issue
+
+memory profile locally
+
+try turning off nd2reader caching
+
+try to sample dicts/strs again
+
+debug SystemError locally in pdb
+    why was this getting caught?
+
+...
+
+turn off worker/server profiling
+
+in parallel, recompile python 3.7, recompile all modules
+AND
+    launch 10 workers, take pympler memory samples with client.run
+    use ConsoleBrowser to track origin
+
+make sure nthreads is off!
+
+SUBMIT GITHUB ISSUE
+
+distributed.worker - WARNING -  Compute Failed
+Function:  Compose
+args:      (                                                                                     bottom  \
+                                                                                          x   
+filename                                        position channel t trench_set trench          
+/n/scratch2/jqs1/fidelity/all/180405_txnerr.nd2 96       MCHERRY 0 1          0          13   
+                                                                              1          37   
+                                                                              2          61   
+                                                                              3          85   
+                                                                              4         109   
+                                                                              5         133   
+                                                                              6         157   
+                                                 
+kwargs:    {}
+Exception: SystemError('Objects/tupleobject.c:851: bad argument to internal function',)
+
+### PERFORMANCE
+streamz diagnostics
+    track time elapsed at each step in the pipeline
+    list of objects at each step in pipeline
+
+timeout on writes (using register_api)
+
+figure out why sampling profiler is blank
+
+raise github issue for help!!!
+
+github issue for broken ipython
+
+line profile everything
+
+limit size of gathers (limit by size and time window)
+
+make sure we don't add duplicate futures to all_futures when we readd after timeout
+
+stabilize number of processing tasks (only emit if processing tasks # is below num_cores*num_jobs)
+
+compare to single-core workers (only getting 150% CPU usage)
+    do we run into FD limits??
+    why don't we parallelize? (benchmark using localcluster?)
+
+where is worker memory usage coming from??
+    how to reduce size of tasks?
+    ipython into one of the workers, use pympler
+
+### OLD
+
+gather with timeout+unlimited retries
+    if timeout, ac.update?
+
+custom stat to keep track of # of in memory tasks
+
+dial batch size up (hovering 40-60 in memory)
+
+record submit/gather(or error) times for each future
+future explicit retry (dask.distributed github PR)
+
+monitor task submission progress/task completion progress
+shut off task submission
+cancel futures
+collect errors
+recover from errors/rerun tasks
+
+as_completed streamz api
+
+wrapper to map pa.RecordBatch.from_pandas in tasks
+
+PROFILE EVENT LOOP (merge in dask/distributed PRs)
+    gather 20%
+    importlib 40%
+    pa.pandas_compat.convert_columns
+
+FEEDBACK from gather stream into async client.submit
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   343                                           def analyze_frames_and_trenches(selected_trenches, frames_to_analyze, func):
+   344         1       2457.0   2457.0      0.0      frames_t = frames_to_analyze.groupby(['filename', 'position'])
+   345         1          1.0      1.0      0.0      res = []
+   346      5011    4077833.0    813.8     49.6      for frame_idx, trenches in iter_index(selected_trenches.groupby(['filename', 'position'])):
+   347      5010      44002.0      8.8      0.5          if not (frame_idx.filename, frame_idx.position) in frames_t.groups:
+   348      4992       3408.0      0.7      0.0              continue
+   349        18      26339.0   1463.3      0.3          fp_frames = frames_t.get_group((frame_idx.filename, frame_idx.position))
+   350      1488    1351714.0    908.4     16.4          for t, frames in fp_frames.groupby('t'):
+   351      1470    2713643.0   1846.0     33.0              res.append(func(trenches, frames))
+   352         1          1.0      1.0      0.0      return res
+
+### CRITICAL PATH
+limit size of gather
+    async gather_and_cancel?
+
+async client.submit in analyze_frames_and_trenches
+    NON-BLOCKING CLUSTER JOB LAUNCHING
+
+find memory leakage
+
+github issue for streamz:
+    map async funcs
+    gather to await them (as_completed)
+
+github issue for streamz: buffer to _buffer
+
+report as_completed+stream on https://github.com/dask/distributed/issues/2157
+
+allow for multiple mask preprocessing functions
+    erode segmentation masks
+
+save segmentation masks as zarr on disk
+    allow loading instead of recomputing in analyze_trenches
+        pluggable segmentation function(?)
+stream pandas to (partitioned) parquet?
+
+redo segmentation at full scale
+
+label viewer
+click on label in label viewer
+click on RFP vs. YFP scatterplot to trigger stream
+fix slow trench set viewer
+    cache calls to unique, keyed by labels at higher level?
+    clear cache when _index/_df changes
+let _index be a param in LabelStream so it can be updated (but watch out for long string in __repr__, performance issue)
+
+FIX CREATE VIEW: https://github.com/pyviz/pyviz_comms/issues/3
+
+BUG: self.running_jobs[job_id] = self.pending_jobs.pop(job_id); KeyError: '21240606'
+
+RESULTS
+    identify bright trench anomalies/filter out
+    identify bursts
+    count bursts, rough burst rate
+    plot burst YFP vs. time aligned to burst max
+    time-averaged burst rate vs. time
+    first above-threshold label # histogram (mothers vs. daughters)
+
+func to join positions across multi-file experiments (look for identical positions) [put filename/position/t columns in dataframe, put joined_experiment, joined_position, joined_t in index; VICE-VERSA MAY BE BETTER]
+func to replace integer times with real times (joinable?)
+
+### DEPLOYMENT
+fix dumb holoviews init issue; maybe relevant: https://github.com/ioam/holoviews/issues/1801
+
+### CRITICAL PATH 2
+from trench_bboxes, all_frames:
+    easy way to browse all trench/timepoints
+    trench_bboxes only has t=0!
+    just construct a multiindex
+
+quick way to subset labelwise, trenchwise data to selected trench stream
+quick way to filter trenches, load trenches into multiindex_browser
+
+click on trench in trench set viewer to trigger stream
+remove slider index=None workaround
+
+### PERFORMANCE
+30% waiting for read lock
+24% frangi
+
+allow for multithreaded file reading
+    .reopen() gets a new copy with a HHH
+    make sure it works with memmap
+    check performance with memmap
+
+check ulimit on worker nodes
+    run ulimit on workers
+    count fds on workers
+    try proc fix
+
+fast frangi (box blur-style approximation?)
+
+util function for selecting a random subset of control trenches
+    select random subset without replacement from groupby
+        with excluding some keys (treatment group)
+
+### NEXT
+EVENT: pos 2 t 3 trench_set 1 trench 56
+
+tooltips on trench_boxes, label_outlines, pixel values
+pixel values on image_viewer
+
+have channel specifications in trench_set_viewer override stream
+
+get_trench_overlay
+tap to change stream
+
+is selected_trenches offset??
+    fix hough_value index alignment
+    check shift=False, .join step
+separate overlay and trench_set image dmaps
+debug get_trench_set_overlay performance
+    get_nd2_frame_cached
+    
+automatic anyargs decorator/wrapper
+
+trench image viewer
+    dict filter function, grab allowed keys from df columns
+    running off dataframe_browser
+    with optional synced frame_viewer
+trench label viewer (optionally outline all labels, bold selected label)
+    func to get segmentation: either a dict, or a func to recompute (cached)
+trench set viewer (optionally outline each bbox)
+plot individual labels scatterplot where tapping updates stream running off labelwise_df
+    specify columns listed in hover
+
+dask.distributed issue for not cleaning up sockets+IOPub errors/MWE
+nd2reader multithreading issues (catch all exceptions?) with localcluster
+
+### NICE THINGS
+fix flicker in dataframe_browser
+allow for erosion before labelwise analysis (take multiple preprocessing functions, analyze result of each; None is identity func, take names)
+
+### OLD
+analyze_trench should be an analyze frame/labels applied to a given trench instead of whole frame, easily pluggable
+
+get segmentation channel (per file/position) from selected_trenches df
+support arbitrary framewise/trenchwise functions of multiple channels
+    use this support to build segmentation/segmentation+erode
+only pass namedtuple OR kwargs OR tuple, don't bother passing in uls/rls (just look these up without calling .values?)
+
+easily pluggable do_analysis, other functions
+as_completed to stream: emit((key, per_t_df))
+use that to append to master df (use arrow to make fast?)
+
+### TODAYISH
+filename/position/t -> select corresponding trench_bboxes for filename/position
+    -> get MCHERRY -> segment
+                   -> trenchwise focus/percentiles
+    -> get YFP     -> percentiles
+    
+    MCHERRY-segment + YFP -> labelwise mean/percentiles
+                          -> regionprops
+                          
+    trenchwise results -> gather -> concat (both axes)
+    labelwise results -> gather -> concat (both axes)
+
+REPLACE NAMEDTUPLE with attribute-access dict (pickleable?)
+
+BUNDLE TRENCH LOADING/SEGMENTATION/COMPUTATION
+    INTO A SINGLE FUNCTION
+USE STREAMS TO scatter/gather (also for trench finding!)
+small demo:
+    trenchwise focus/percentiles
+    segmentation
+    labelwise mean/percentiles
+    regionprops orientation/centroid
+PIPELINING to make mapping frame_stacks over many data easy
+ALLOW ERODING MASK BEFORE PROCESSING (say, only erode for percentile)
+easy way to wrap map_trenchwise (?) results in zarr (postprocess=func)
+    considering workflow is load trench stacks into memory, do some interactive processing (with a subset), then stream+cancel for big analysis
+
+DASK to run all three off the same trench sets, canceling after done
+quick-and-dirty ASYNC(?)
+    that can stream/checkpoint to disk???
+easy way to test dask submit loops locally??
+
+dask segment and regionprops remotely
+    multiindex columns: (scalar, *) and (centroid, x/y)
+
+allow keying into a singleton with show_plot_browser
+ui function to easily subset keys in diag, show slider to browse timepoints in trench segmentation diag
+    dataframe_browser with sliders for trench_set, trench, t
+        get_trench_thumb(/get_trench_stack?) function that can be passed to image_viewer
+    access dict with future.result(), cache locally
+
+quick segmentation fix
+    rank filter (?) to smooth noise in cell interior
+    use k1/abs derivative of sum of mask along short dimension to split side-by-side cell ends
+
+multichannel_image_viewer
+    stacked and side-by-side (use overlays so only update when necessary?)
+frame_viewer/image_viewer (takes a dict); easy callback to wrap a regrid??
+plot trench 95% percentile brightness vs. time, click on a plot to show plot in frame_viewer
+
+### SOON
+new trench detection
+    quick way to fix angle? (using symmetry of aliasing? abs val of derivative, smoothed?)
+    use columns to filter out empty trenches (after finding bboxes!)
+    dask find bboxes
+    plot periodogram x-axis as wavelength
+
+fix intermittent trench detection clustering issues
+
+stream results back to list+cancel immediately (to keep memory free)
+    asynchronously (!!!)
+    hide exception messages
+    utility func that keeps a dict updated with futures in real-time
+        PIPELINE? that stores intermediate results in dicts? (and update order in a queue?)
+    something that triggers a stream (with rate limit) whenever a future finishes, for use with real-time results coming off the microscope
+jupyterlab state
+
+make namedtuple dicts pickleable (wrapper that unpickles to a normal namedtuple?)
+
+allow merging filenames (so timepoints are joint)???
+
+check trench_set in get_trench_stacks (hash to make sure values are different)
+get_trench_stacks: easy way to load in different channels
+pandas schema for cell lineages
+benchmark get_trench_stacks with memmap
+
+obey regionprops bbox convention: half-open interval [x_min, x_max)
+RANSAC to refine angle (e.g., 180405.nd2/pos14/MCHERRY/t0)
+
+store namedtuple in dataframe for easy groupby/sending series via dask without incurring performance cost of iter_index
+make apply_map_futures gracefully return when nothing matches predicate [real problem: return gracefully when mapping func returns None]
+function for next(iter(framestack_group.groupby('t')))[1]
+
+strategy for allowing trench_detection, trench_segmentation to return a dataframe of metadata without incurring cost of constructing holoviews objects which will never be used
+    how fast is dask transfer vs recomputing locally?
+
+get segmentation working better with trench normalize? (lower threshold?)
+    or does otsu threshold already work well enough? (for trenches with uneven brightness along axis)
+transcribe charles segmentation
+compare to charles
+    segmentation diffing?
+
+get per-timepoint, per-trench focus locally
+per-trench focus with dask
+segmentation with dask
+    keep segmentation masks remote
+    function to easily pull back calculated quantities
+        given mask stack and image stack
+        output dataframe of calculated quantities
+            (like trenchwise/etc.)
+identify transcription errors
+nice UI
+    show trench stacks lined up for selected trenches
+
+draw trench bboxes on image
+use .asof when looking up trench bbox points
+optimize get_trench_stacks
+    check that pickle/unpickling doesn't screw up speed of accessing .values for upper_left/lower_right
+
+fix trench detection with debris in feeding channel (TxnErr002.nd2)
+    angle/pitch finding seems to mostly work
+        debug pitch bias issue (frequencing sampling?)
+        don't count 0 values in offset calculation
+
+### POSTPONED
+frame histogram (clustering or thresholding) for frame quality
+errors as dataframe
+fix edge_points on boundary/corners (result should be continuous when adding epsilon to coordinates)
+fix off-by-one issue in trench detection offsets
+take entire datasets, rotate by random angles, crop slightly in nonsquare aspect ratios, assess angle detection performance (compare to angle_offset+orig_found_angle)
+
+pandas local/dask runner+combiner for both frame quality/trench finding
+dask trench-wise processing for trench-wise focus df
+
+groupby/max group size for the above
+
+mask out found trenches, compute mean intensity/PSD for masked frames as another debris check
+    how to find debris that intersects with trenches? does this work?
+calculate azimuthally-averaged PSD, throw out images with bright low-frequency debris
+
+easy dask re-running of trench detection on bad_angle frames
+    function to re-run dask (OR LOCAL?) on a dataframe
+        by making gather a pass-through (?), map_futures with max_level=1 so we don't recurse super deep
+        OR just use local cluster for local testing?
+    can use this to throw out out-of-focus frames
+    (join dataframe with focus, debris indicators, find appropriate cuts)
+    functions that make it easy to group tasks (arbitrarily?) with a flag
+        groupby (filename, position) and max group size, submit grouped jobs, then merge results dict (keyed by index) upon gather
+
+debug period-finding errors
+debug failures (make function to collect failures as dataframe to send to frame_stream)
+can I fix workload balancing issues by grouping tasks??
+submit workload balancing dask.distributed issue
+    starved workers at the end of get_trenches
+    task serialization (wrapped_diagnostics_to_dataframe)
+    update priority: so that wrapped_diagnostics_to_dataframe run+transfer ASAP
+
+### TRENCH DETECTION POLISH
+optimize holoviews .options and and .max for trench_segmentation
+    report issue related to my pickling issue?
+defaultdict which can filter out hv.ViewableElements so we don't waste memory on plots we'll never pull down
+    benchmark how long constructing holoviews objs takes vs. no holoviews objs for get_trenches_diag
+    benchmark how long it takes to pickle+pull down from a worker vs. re-run get_trenches locally
+
+### NEXT
+run charles segmentation locally on one frame stack
+run my trench detection+charles segmentation using dask
+do the same for charles phase segmentation, compare with fluorescence
+trench finding in phase
+corrupted nd2 reader
+
+### AFTER
+my trench detection in phase+charles phase segmentation using dask
+first cut of tracking using integer programming (given a good segmentation)
+tracking+segmentation
+
+### AFTER UI POLISH
+explicit dask retry of failed tasks
+show_plot_browser should work for singleton keys [i.e., single plots] (and make that work correctly with streams)
+feasibility of running regrid off a remote image stored on a worker (is there a way to hook up bokeh to connect directly to worker?)
+synchronize show_plot_browser StreamXY [exclude specially-tagged images?]
+make regrid work better at max zoom level (show actual pixels)
+trench_image_viewer, cell_image_viewer: plot trench/cell outlines, accept arbitrary callbacks that return (possibly cached) hv ViewableElements to overlay (e.g., can compute segmentation on-the-fly, cache it using cachetools, return an overlayed contour)
+    FrameStream <-> TrenchStream <-> CellStream, e.g., updating cellstream updates trench (if needed), which updates frame (if needed)
+    moving TrenchStream also picks the first cell in the trench, Frame picks first trench in frame
+    show right/left trench/cell arrow widgets below frame browser widgets
+    trench/cell scrolling updates contour but does not change frame/viewport by default
+    “Zoom to Trench” button sets x_range, y_range, frame to zoom in on selected trench
+    “Zoom to Cell” button (in same row as Zoom to Trench) does the same for cell (using bbox for current frame)
+
+###POLISH
+fit shear in trench detection (this is probably what's limiting trench rotation finding accuracy)
+fix qgrid column name wrapping
+qgrid data wrapping
+qgrid resize column width to fit data
+qgrid UI to show/hide many columns quickly
+qgrid freeze index/multiindex
+some way of passing options through to sub-functions in processing pipeline? quick hack now.
+bundle up raw intermediate results (e.g., ndarrays) in diag for easy debugging/running steps by hand (shouldn't take any more space to pickle because holoviews objects just wrap this data anyway)
+compression/incremental loading/prefetching for regridded images+animations
+only display/update plots that are open in plot browser
+
+####################################################################################################################
+
+### 
+compare stage position to trench finding, use stage position to find absolute trench numbers
+parallel load trenches from ND2
+
+#### TODAY
+
+only compute checksums for files with duplicate sizes
+debug old ND2 version warning
+file hash
+deduplicate ND2's using file hash (check reliability of other heuristics)
+diagnose ND2 time mismatch
+check self-consistency/availability of TIFF metadata for TIFF aggregations with lots of files/bytes
+make preliminary ND2/TIFF correspondences
+check frame data for representative TIFF only
+output preliminary deletion list (correspondences and duplicated ND2's) for review
+use jq/JMESPath
+
+#### LATER
+check frame data (first, last, evenly-spaced frames, random) [requires parsing TIFF naming conventions... or parsing all metadata]
+
+#### ASAP
+
+de-duplicate nd2 files using size/mtime/metadata strings
+de-duplicate tiffs vs. nd2 using EITHER time or x_data (kdtree?)
+dask-parallelization from notebook
+cmd line arg to parallelize compress operation (see below)
+command to output static .html with trench finding diagnostics given file
+notebook which allows easily identifying trench finding errors at scale running on file lists pulled from inventory queries
+DEPLOY: set up matriarch on peoples' O2 accounts, give people file lists of good and bad files to check diagnostics
+
+#### FOR TOMORROW
+
+use hough to detect trench periodicity! run hough on each trench set separately?
+use LRUStorageCache for zarr
+
+parallelized ingest_nd2/ingest_tiff/trench_pack (NO QUANTIZATION)
+ingest_tiff --watch
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
+FUNCTIONS FOR MOVING TRENCH THUMBS/SEG MASKS ON AND OFF DISK
+REGULARIZE (half-way normalize) trench intensity for sharpness measurement
+turn on trench_set/trench progress bars for segmentation
+rough segmentation
+NOT TRACKING
+intensity hough
+rotation-invariant (feeding channel) detrending
+fix trench detection to work with only one trench set filled
+
+OUTPUT (and input!!!) in MATLAB .CSV FORMAT
+
+################
+
+SEGMENTATION
+TRACKING
+vectorize hessian_eigenvalues so we don't need to use map_ndarray on image stacks
+rough hough with binarized image, then blur and intensity hough
+ability to join runs of the same experiment (???)
+
+#################
+
+fix rotation: blur, do intensity hough, try edge-filtering first
+blur trench profile, set minimum trench spacing
+
+set of scatter plots synchronized to qgrid (bidirectional RangeXY), tool tips
+SEE: https://github.com/ioam/holoviews/issues/1600
+
+STORE CHANNELS IN SEPARATE ARRAYS? new path: raw/pos_0/ch_1 (e.g., trench_crops/pos_0/trench_set_1/trench_84/ch_3)
+ingest_tiff
+ingest_tiff --watch (need some way of updating latest field, poll metadata?)
+trench_pack
+trench_pack QUALITY THRESHOLDS for trench detection, if it fails just keep whole frame unmodified (or quantized, if --quantize-trench)
+trench_pack --quantize-trench/--quantize-fov (which keeps a quantized whole-FOV copy in pos#/ch0/fov)
+trench_pack --crop-fov (for each trench set keeps only bounding box of all trench thumb corners, which can be combined with --quantize-fov)
+inventory_data --formats nd2,tiff,zarr
+PARALLELIZE ingest_nd2, ingest_tiff, quantize
+
+mother cell endpoint tracking
+mother cell segmentation mask
+allow image viewer to overlay seg masks, trench thumb boundaries easily
+fluorescent readout using cell masks
+
+switch to pipenv on orchestra / FIX JUPYTER THEME (git repo/rectify with Bancroft)
+
+REPLY TO HOLOVIEWS DEVS
+
+fix pickling of diag_pos:
+    make sure pickle isn't doing something stupid (compare pickled sizes with asized)
+    compress/quantize/change dtype/crop intermediates (esp. masks)
+    load raw images from disk
+set up viewer for quick refresh of new data (just send new data to Stream)
+fix none_pos
+use trench_spacing to identify good/bad trench finding, use median (robust metric) from first 10 positions to constrain trench finding for rest of positions
+refactor trench detection, only detect rotation once
+per-trench and per-frame sharpness
+per-trench and per-frame debris/QA detector
+dataframe join with per-frame, per-trench metadata
+
+rotation-invariant detrending
+test detect_trenches on each position using max-stack, on a few positions using each timepoint (use trench spacing/rotation as benchmark)
+look for brightest N pixels in trench cross-sections, show in table/next-prev browser so I can click and have viewer load/crop to trench
+synchronize RangeXY of all images
+
+####################
+
+plot browser: only update visible outputs (accordion state)
+
+replace ingested/processed flag with finished flag
+
+minimum spacing from smallest consecutive peak spacing
+weight periodogram by peak height (?? this may be bad)
+
+non-binary hough transform (??)
+2nd, 3rd cell endpoint tracking, masks
+UI
+tiff metadata/sketch of folder watcher (“stream”) command
+
+compute loading statistics (over time)
+
+allow multiple accordion panes to be open simultaneously (see ipywidgets bug)
+figure out why regrid(aggregator='mode') segfaults
+revisit holoviews image axis inversion/overlay bug
+fix bokeh toolbar/wheel zoom on by default
+
+sublime remotesubl retry
+
+command-line ingest/quantize commands (incl. option to only process first N)
+auto LSF parallelization for ingest/quantize
+auto-detect quantization level (need “natural image” vs. independent noise heuristic)
+
+get rid of ingest_nd2_file
+implement quantize_nd2 by allowing ingest_nd2 take a filter func
+profile quantize
+
+allow image viewer to overlay trenches easily
+link image viewer to frame stepping widget
+improve rotation detection/trench finding
+mother cell endpoint tracking
+mother cell volume mask
+allow image viewer to overlay mean cell intensity/variance easily on seg masks
+beyond mother cell tracking
+
+spatial barcode warp/metric/clustering
+
+unify process_arrays, process_attrs, ingest_nd2 so they can all share the same parallelization/remote execution/completion status tracking/progress bar infrastructure
+
+fast/parallel nd2 to zarr converter, with progress bar (command line tool)
+
+crosstalk composite
+use fluorescent channel when doing lineage tracking
+
+process_frames: register computed groups callback to compute on demand (TODO: use threading to store, return computed value immediately), provide require_computed, keep track of which (c, t) have been computed
+LATER: need to handle versioning of computed callbacks
+
+universal caching/storage layer (look up diagnostic/intermediate calculations, if not found, recompute and store them)
+
+POLISH:
+alignment between kymograph pixel centers and sharpness plot points
+pixel value live display
+turn on wheel zoom by default
+DWG overlay
+
+AFTER BUG FIX/WORKAROUND:
+live-updating intersected point on thumbnail
+
+NICE THINGS:
+replace thumbnail viewer with full-size image viewer
+stich together multiple fields in image viewer, toggle to use unified or per-field coördinate system
