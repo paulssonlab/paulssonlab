@@ -1,0 +1,21 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+google-api-python-client = "*"
+ipython = "*"
+click = "*"
+jupyter = "*"
+notebook = "*"
+pandas = "*"
+pendulum = "*"
+holoviews = "*"
+bokeh = "*"
+matplotlib = "*"
+jupyterlab = "*"
+"google-auth-httplib2" = "*"
+google-auth-oauthlib = "*"
+
+[dev-packages]
