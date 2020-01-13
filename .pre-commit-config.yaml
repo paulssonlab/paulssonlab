@@ -1,3 +1,4 @@
+default_stages: [commit]
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.3.0
@@ -25,3 +26,8 @@ repos:
         entry: jupytext --quiet --from ipynb --pipe black
         language: system
         files: \.ipynb$
+    -   id: directory_tag
+        name: Tag commit message with changed top-level directories
+        entry: python ./directory_tag.py
+        language: system
+        stages: [commit-msg]
