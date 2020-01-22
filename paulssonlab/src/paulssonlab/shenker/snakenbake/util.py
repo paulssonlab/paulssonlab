@@ -15,7 +15,11 @@ def make_odd(number):
 
 def make_hashable(obj):
     if isinstance(obj, np.ndarray):
+        # mutable ndarrays aren't hashable
         return hash(obj.tobytes())
+    elif isinstance(obj, list):
+        # if we don't handle list, we get a weird error (TODO)
+        return hash(tuple(obj))
     else:
         return toolz.sandbox.EqualityHashKey(None, obj)
 
@@ -32,5 +36,6 @@ def hash_key(args, kwargs):
     # return (map(make_hashable, args), frozenset(itemmap(map(make_hashable), kwargs)))
 
 
-# memoize = lambda func: cachetools.cached({}, key=hashkey)(func)
+# memoize = lambda func: cachetools.cached({}, key=hash_key)(func)
 memoize = lambda func: cytoolz.memoize(key=hash_key)(func)
+# memoize = lambda x: x

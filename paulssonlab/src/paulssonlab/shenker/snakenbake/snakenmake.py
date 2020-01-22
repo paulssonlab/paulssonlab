@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 import numpy as np
 import gdspy as g
 from gdspy import CellReference, CellArray, Rectangle
@@ -81,18 +80,50 @@ get_uuid = partial(shortuuid.random, length=2)
 # TODO
 # fix duplicate chip memoization
 
+# @memoize
+def sampler_snake(trench_width=[1.5], trench_length=[35], **kwargs):
+    """Generates a snake with different trench widths and lengths in a single chip.
 
-@memoize
-def sampler_snake(
-    trench_width=[1.5], trench_length=[35], split_sampler=False, **kwargs
-):
-    pass
+    Parameters
+    ----------
+    trench_width : List[float], optional
+        Trench widths (in microns).
+    trench_length : List[float], optional
+        Trench lengths (in microns).
+    **kwargs
+        Other keyword arguments are passed through to `snake`.
+    """
+    raise NotImplementedError
 
 
-def _compute_lane_split(split, max_lanes):
+def _compute_lane_split(split, max_lanes, gap_lanes=0):
+    """Given a split specification and maximum number of lanes, generates a list of
+    lanes per snake.
+
+    Parameters
+    ----------
+    split : Union[int, Iterable[int]], optional
+        If an integer, specifies the number of snakes of approximately-equal size. If a
+        tuple, specifies the number of lanes for each snake.
+    max_lanes : int
+        Maximum number of lanes that can fit on the chip.
+    gap_lanes : int, optional
+        Number of lanes' worth of blank space to leave between each snake.
+
+    Returns
+    -------
+    split
+        An array specifying how many lanes each snake contains.
+
+    Raises
+    ------
+    ValueError
+        Raised if 'split' is an invalid split specification.
+    """
     if split is None:
         split = 1
     if isinstance(split, numbers.Integral):
+        max_lanes -= gap_lanes * (split - 1)
         good_split = False
         for lanes_per_snake in (int(np.around(max_lanes / split)), max_lanes // split):
             lanes_per_snake = make_odd(lanes_per_snake)
@@ -102,22 +133,24 @@ def _compute_lane_split(split, max_lanes):
             new_split = (lanes_per_snake,) * (split - 1) + (remainder_lanes_per_snake,)
             if all(s > 1 for s in new_split):
                 good_split = True
-                split = new_split
+                split = np.array(new_split)
                 break
         if not good_split:
             raise ValueError("bad split: {split}".format(",".join(split)))
     else:
+        split = np.asarray(split)
+        max_lanes -= gap_lanes * (len(split) - 1)
         if isinstance(split[0], numbers.Integral):
-            if sum(split) > max_lanes:
-                raise Exception(
+            if np.sum(split) > max_lanes:
+                raise ValueError(
                     "total lanes desired {} is greater than maximum number of lanes {}".format(
                         sum(split), max_lanes
                     )
                 )
-            if np.any(np.array(split) % 2 == 0):
-                raise Exception("number of lanes per snake must be odd")
+            if np.any(split % 2 == 0):
+                raise ValueError("number of lanes per snake must be odd")
         else:
-            raise Exception(
+            raise ValueError(
                 "snake splitting spec must be a integer or sequence of integers"
             )
     return split
@@ -136,16 +169,16 @@ def snake(
     trench_fc_overlap=None,
     trench_margin=0.5e3,
     trench_gap=20,
-    gap_lanes=1,
+    gap_lanes=0,
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
-    ticks=True,
+    ticks=False,
     tick_length=5,
     tick_margin=5,
     tick_period=50,
     tick_text_size=None,
-    tick_labels=True,
+    tick_labels=False,
     draw_trenches=True,
     flatten_feeding_channel=False,
     merge_feeding_channel=True,
@@ -153,6 +186,92 @@ def snake(
     trench_layer=TRENCH_LAYER,
     label=None,
 ):
+    """Summary
+
+    Parameters
+    ----------
+    dims : Tuple[float, float], optional
+        A tuple of `(height, width)` specifying the dimensions of the chip footprint (in
+        microns).
+    split : Union[int, Iterable[int]], optional
+        If an integer, specifies the number of snakes of approximately-equal size. If a
+        tuple, specifies the number of lanes for each snake.
+    horizontal_margin : float, optional
+        Empty space (in microns) between the outside bends of the snake and the chip
+        border.
+    top_margin : float, optional
+        Empty space (in microns) between the top dead end of the topmost set of trenches
+        and the bottom edge of the chip.
+    bottom_margin : float, optional
+        Empty space (in microns) between the bottom dead end of the bottommost set of
+        trenches and the bottom edge of the chip.
+    port_margin : float, optional
+        Empty space (in microns) between the outside of each port and the left/right
+        edges of the chip.
+    trench_width : float, optional
+        Width (in microns) of the trenches.
+    trench_length : float, optional
+        Length (in microns) of the trenches.
+    trench_fc_overlap : float, optional
+        Length (in microns) that trenches should extend into the feeding channel. This
+        allows the design to tolerate misalignment between the feeding channel and
+        trench layers.
+    trench_margin : float, optional
+        Trenches will be excluded from a region this length (in microns) on each end of
+        each straight section of feeding channel.
+    trench_gap : float, optional
+        Distance (in microns) between the dead end of one set of trenches and the dead
+        ends of the next set of trenches.
+    gap_lanes : int, optional
+        If nonzero, the number of lanes that are left without a feeding channel. Setting
+        this to 1 could decrease the probability of flow between adjacent snakes due to
+        defects bridging two snakes.
+    trench_spacing : float, optional
+        Empty space (in microns) between the edge of one trench and the edge of the next
+        trench.
+    feeding_channel_width : float, optional
+        Width (in microns) of feeding channel.
+    port_radius : float, optional
+        Radius (in microns) of the ports.
+    ticks : bool, optional
+        Whether to include small rectangular tick marks above the dead-ends of the
+        trenches every `tick_period` trenches.
+    tick_length : float, optional
+        Length (in microns) of the tick marks.
+    tick_margin : float, optional
+        Distance (in microns) between the dead end of a trench and the tick marks.
+    tick_period : int, optional
+        Number of trenches between tick marks.
+    tick_text_size : None, optional
+        Font size (in microns) of the trench tick numbering.
+    tick_labels : bool, optional
+        Whether to label every tick mark with the trench number.
+    draw_trenches : bool, optional
+        Whether to output trenches or not.
+    flatten_feeding_channel : bool, optional
+        If False, each bend or straight section of a feeding channel will be specified
+        as a cell reference. If True, each polygon of the feeding channel will be output
+        individually.
+    merge_feeding_channel : bool, optional
+        If False, the feeding channel bends and the straight rectangular sections will
+        be output as separate polygons. If True, each snake's feeding channel will be
+        output as a single polygon. The MLA150 software seems to prefer merged feeding
+        channels.
+    feeding_channel_layer : int, optional
+        Feeding channel layer number.
+    trench_layer : int, optional
+        Trench layer number.
+    label : str, optional
+        Unique identifier used for cell names. If None is given, an alphanumeric UUID
+        will be generated.
+
+    Returned
+    ------------------
+    snake_cell
+        GDS cell containing the chip design.
+    metadata : dict
+        Dict containing the design parameters.
+    """
     if label is None:
         label = get_uuid()
     if port_margin is None:
@@ -172,8 +291,8 @@ def snake(
     )
     lane_height = feeding_channel_width + 2 * effective_trench_length
     max_lanes = int((dims[1] - top_margin - bottom_margin) // lane_height)
-    split = _compute_lane_split(split, max_lanes)
-    num_lanes = sum(split)
+    split = _compute_lane_split(split, max_lanes, gap_lanes=gap_lanes)
+    num_lanes = np.sum(split)
     trench_xs = np.arange(
         -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
         (lane_fc_dims[0] - trench_margin - trench_width) / 2,
@@ -191,10 +310,13 @@ def snake(
             "num_trenches",
             "split",
             "feeding_channel_width",
+            "trench_gap",
+            "trench_length",
         )
     }
     metadata["lane_length"] = lane_fc_dims[0]
-    last_lane_y = ((num_lanes - 1) * lane_height) / 2
+    metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
+    metadata["max_snake_length"] = max(split) * lane_fc_dims[0]
     y_offset = (bottom_margin - top_margin) / 2
     snake_cell = Cell("Snake-{}".format(label))
     port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
@@ -230,7 +352,6 @@ def snake(
         )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
-    # VARS: trenches_per_set
     if draw_trenches:
         for lane_idx, y in enumerate(lane_ys):
             snake_cell.add(
@@ -319,46 +440,15 @@ def _snake_feeding_channel(
     )
     port_cell.add(port)
     port_cell.add(port_fc)
-    last_lane_y = ((sum(split) - 1) * lane_height) / 2
-    lane_ys = np.linspace(last_lane_y, -last_lane_y, sum(split))
-    # skipped_lanes = np.full(len(split), gap_lanes)
-    # skipped_lanes[-1] = 0
-    # split -= 2*skipped_lanes
-    # print('split',split)
-    # num_lanes = sum(split)
-    # split_cum = np.concatenate(((0,), np.cumsum(split)))
-    # left_port_lanes = split_cum[1:] - 1
-    # print(skipped_lanes)
-    # left_port_lanes -= skipped_lanes
-    # lane_mask = np.full(len(lane_ys), True)
-    # lane_mask[[3,4,8,9,13,14,18,19]] = False
-    # print(np.cumsum(np.array(split)))
-    # hidden_lanes = np.cumsum(np.array(split) - 1) - 1
-    # lane_mask[hidden_lanes[:-1]!!!!+hidden_lanes[:-1]+gap_lanes] = False
-    # lane_mask[sum(split) - len(split) + 1:] = False
-    # print(left_port_lanes, split_cum)
-    # for lane in left_port_lanes[:-1]:
-    #     lane_mask[lane-1:lane-1+gap_lanes] = False
-    # lane_mask[5] = False
-    # lane_mask[11] = False
-    # lane_mask[17] = False
-    # lane_mask[23] = False
-    # lane_ys = lane_ys[lane_mask]
-    print(len(lane_ys))
-    gaps = np.full(len(split), gap_lanes)
-    gaps[-1] = 0
-    split -= 2 * gaps
+    max_lanes = sum(split) + gap_lanes * (len(split) - 1)
+    last_lane_y = ((max_lanes - 1) * lane_height) / 2
+    lane_ys = np.linspace(last_lane_y, -last_lane_y, max_lanes)
     lane_mask = np.full(len(lane_ys), True)
-    skipped_lanes = np.cumsum(np.array(split) + gap_lanes) - gap_lanes
-    print(">", skipped_lanes)
-    # lane_mask[skipped_lanes:skipped_lanes+1] = False
+    skipped_lanes = np.cumsum(split + gap_lanes) - gap_lanes
     for offset in range(gap_lanes):
         lane_mask[skipped_lanes[:-1] + offset] = False
     lane_mask[skipped_lanes[-1] :] = False
     lane_ys = lane_ys[lane_mask]
-    print(split, sum(split))
-    print(">>", np.cumsum(np.array(split) + gap_lanes) - gap_lanes)
-    # num_lanes = sum(split)
     split_cum = np.concatenate(((0,), np.cumsum(split)))
     left_port_lanes = split_cum[1:] - 1
     right_port_lanes = split_cum[:-1]
@@ -414,6 +504,27 @@ def profilometry_marks(
     layers=(FEEDING_CHANNEL_LAYER, TRENCH_LAYER),
     text=True,
 ):
+    """Generates a grid of rectangular profilometry targets.
+
+    Parameters
+    ----------
+    dims : Tuple[float, float], optional
+        A tuple of `(height, width)` specifying the dimensions of the chip footprint (in
+        microns).
+    columns : int, optional
+        Number of columns.
+    rows : int, optional
+        Number of rows.
+    layers : int, optional
+        Layer number.
+    text : bool, optional
+        If True, the layer number is written next to the corresponding targets.
+
+    Returns
+    -------
+    profilometry_cell
+        GDS cell containing the profilometry targets.
+    """
     dims = np.array(dims)
     grid_size = np.array([rows, columns])
     grid_dims = dims * grid_size * 2
@@ -441,6 +552,22 @@ def profilometry_marks(
 
 @memoize
 def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
+    """Makes an alignment cross compatible with the MLA150.
+
+    Parameters
+    ----------
+    size : float, optional
+        Size (in microns) of the cross.
+    width : int, optional
+        Thickness (in microns) of the cross.
+    layer : int, optional
+        Layer number.
+
+    Returns
+    -------
+    alignment_cell
+        GDS cell containing the alignment cross.
+    """
     alignment_cell = Cell("Alignment Cross")
     horizontal = Rectangle((-size, -width / 2), (size, width / 2))
     vertical = Rectangle((-width / 2, -size), (width / 2, size))
@@ -454,22 +581,44 @@ def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
 @memoize
 def mask_alignment_cross(
     width=100,
-    cross_length=300,
+    size=300,
     cross_spacing=30,
     num_crosses=2,
     bottom_layer=TRENCH_LAYER,
     top_layer=FEEDING_CHANNEL_LAYER,
 ):
+    """Makes an alignment cross compatible with a mask aligner.
+
+    Parameters
+    ----------
+    width : float, optional
+        Thickness of each cross (in microns).
+    size : float, optional
+        Size of each cross (in microns).
+    cross_spacing : float, optional
+        Spacing (in microns) between crosses.
+    num_crosses : int, optional
+        Number of crosses.
+    bottom_layer : int, optional
+        Bottom layer number.
+    top_layer : int, optional
+        Top layer number.
+
+    Returns
+    -------
+    alignment_cell
+        GDS cell containing the alignment crosses.
+    """
     alignment_cell = Cell("Mask Alignment Cross")
-    offset_unit = 2 * cross_length + cross_spacing
+    offset_unit = 2 * size + cross_spacing
     box_size = offset_unit * (num_crosses + 1)
     box_corner = np.array([box_size, box_size])
     outer_box = Rectangle(-(box_corner + width), box_corner + width)
     inner_box = Rectangle(-box_corner, box_corner)
     box = boolean(outer_box, inner_box, "not", layer=top_layer)
-    cross_box_corner = np.array([cross_length, cross_length])
+    cross_box_corner = np.array([size, size])
     base_cross_box = Rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
-    base_cross = cross(width, cross_length, layer=top_layer)
+    base_cross = cross(width, size, layer=top_layer)
     base_cross_box = boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
     alignment_cell.add(base_cross_box)
     alignment_cell.add(base_cross)
@@ -499,13 +648,46 @@ def wafer(
     trench_layer=TRENCH_LAYER,
     reference_layer=REFERENCE_LAYER,
 ):
+    """Generates a wafer containing the given chips.
+
+    Parameters
+    ----------
+    chips : List
+        List of GDS cells containing chips.
+    name : str
+        Description
+    diameter : float, optional
+        Description
+    side : float, optional
+        Description
+    chip_area_angle : TYPE, optional
+        Description
+    chip_area_margin : float, optional
+        Description
+    alignment_mark_position : float, optional
+        Description
+    alignment_text_size : int, optional
+        Description
+    label_text_size : int, optional
+        Description
+    text : bool, optional
+        Description
+    mask : bool, optional
+        Description
+    feeding_channel_layer : TYPE, optional
+        Description
+    trench_layer : TYPE, optional
+        Description
+    reference_layer : TYPE, optional
+        Description
+    """
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
     main_cell = Cell("main")
     corner = np.array((side, side)) / 2
     square = Rectangle(-corner, corner)
     circle = Round((0, 0), diameter / 2)
-    wafer_outline = boolean(square, circle, "not")
+    wafer_outline = boolean(square, circle, "not", layer=reference_layer)
     # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
     # TODO: move alignment marks accordingly
     chip_area_corner = (diameter / 2 - chip_area_margin) * np.array(
@@ -513,8 +695,8 @@ def wafer(
     )
     if alignment_mark_position is None:
         alignment_mark_position = chip_area_corner[1] * 7 / 6
-    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner), layer=reference_layer)
-    main_cell.add(wafer_outline, layer=reference_layer)
+    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner, layer=reference_layer))
+    main_cell.add(wafer_outline)
     profilometry_cell = profilometry_marks(
         layers=(feeding_channel_layer, trench_layer), text=text
     )
@@ -628,6 +810,32 @@ def chip(
     metadata=None,
     **kwargs,
 ):
+    """Generates a GDS cell containing a chip. Keyword arguments are passed through to
+    `design_func`, which is expected to return a GDS cell containing a chip design. This
+    function adds an outline and a text label to that design.
+
+    Parameters
+    ----------
+    name : str
+        Human-readable label, will be written on the top edge of the chip.
+    design_func : function, optional
+        Function which will return a GDS cell containing the chip design.
+    label_text_size : float, optional
+        Text size (in microns) of the label text.
+    text : bool, optional
+        If True, a label is written along the top edge of the chip.
+    feeding_channel_layer : int, optional
+        Feeding channel layer number.
+    trench_layer : int, optional
+        Trench layer number.
+    metadata : Union[dict, None]
+        If not None, add metadata to the dict.
+
+    Returns
+    -------
+    chip_cell
+        GDS cell containing the outline, text label, and chip design.
+    """
     if "dims" not in kwargs:
         kwargs["dims"] = DEFAULT_DIMS
     kwargs["feeding_channel_layer"] = feeding_channel_layer
@@ -635,7 +843,7 @@ def chip(
     dims = kwargs["dims"]
     design_cell, md = design_func(**{"label": name, **kwargs})
     if metadata is not None:
-        metadata[name] = md
+        metadata[name] = md  # TODO: this won't work with memoization!!!
     chip_cell = Cell("Chip-{}".format(name))
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
@@ -655,6 +863,23 @@ def chip(
 
 @memoize
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
+    """Generates a rectangular outline marking the edges of a chip.
+
+    Parameters
+    ----------
+    dims : Tuple[float, float]
+        A tuple of `(height, width)` specifying the dimensions of the chip footprint (in
+        microns).
+    thickness : float, optional
+        Thickness (in microns) of the outline.
+    layer : int, optional
+        Layer number.
+
+    Returns
+    -------
+    outline
+        GDS cell containing the outline.
+    """
     outline_inner = Rectangle(-dims / 2, dims / 2)
     outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
     outline = boolean(outline_outer, outline_inner, "not", layer=layer)
