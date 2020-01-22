@@ -31,6 +31,6 @@ To import an existing git repo into the main `paulssonlab` monorepo (preserving 
 ```
 cd path/to/paulssonlab # this repo
 git remote add -f old-repo path/to/old-repo
-git merge --allow-unrelated-histories old-repo/master
+git merge --no-verify --allow-unrelated-histories old-repo/master
 git remote rm old-repo
 ```
