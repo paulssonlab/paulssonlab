@@ -4,6 +4,7 @@ This repo contains code and notebooks used in the Paulsson Lab.
 ## Installation
 You should fork this repo (click the button in the upper-right of https://github.com/paulssonlab/paulssonlab) under your personal github account. Then clone your personal fork with, e.g., `git clone git@github.com:shenker/paulssonlab.git`. After cloning this repository, run the following (replace `paulssonlab` with the desired name for your conda environment):
 ```
+cd paulssonlab
 git remote add upstream git@github.com:paulssonlab/paulssonlab.git
 conda env create -n paulssonlab -f environment.yml
 echo "conda activate paulssonlab" > .envrc
