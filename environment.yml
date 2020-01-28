@@ -3,4 +3,7 @@ channels:
   - defaults
 dependencies:
   - pre-commit
-  - nbstripout
+  - click
+  - nbformat
+  - black
+  - cachetools

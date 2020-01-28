@@ -21,11 +21,6 @@ repos:
         entry: black
         language: system
         types: [python]
-    -   id: jupytext
-        name: Format .ipynb files
-        entry: jupytext --quiet --from ipynb --pipe black
-        language: system
-        files: \.ipynb$
     -   id: directory_tag
         name: Tag commit message with changed top-level directories
         entry: python ./directory_tag.py
