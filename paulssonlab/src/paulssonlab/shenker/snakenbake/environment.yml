@@ -14,5 +14,3 @@ dependencies:
   - freetype-py
   - click
   - shortuuid
-prefix: /usr/local/Caskroom/miniconda/base/envs/paulssonlab
-
