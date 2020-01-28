@@ -7,7 +7,7 @@ from geometry import Cell
 from util import memoize, make_hashable
 from functools import reduce, partial
 
-DEFAULT_FACE = freetype.Face("Vera.ttf")
+DEFAULT_FACE = freetype.Face("ttf-bitstream-vera-1.10/Vera.ttf")
 POINTS_PER_SEGMENT = 10
 
 
