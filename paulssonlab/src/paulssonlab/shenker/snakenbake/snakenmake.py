@@ -157,6 +157,11 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
 
 
 @memoize
+def manifold_snake(dims=DEFAULT_DIMS, **kwargs):
+    pass
+
+
+@memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
@@ -318,7 +323,7 @@ def snake(
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
     metadata["max_snake_length"] = max(split) * lane_fc_dims[0]
     y_offset = (bottom_margin - top_margin) / 2
-    snake_cell = Cell("Snake-{}".format(label))
+    snake_cell = Cell(f"Snake-{label}")
     port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     snake_fc_cell, lane_ys = _snake_feeding_channel(
         lane_fc_dims,
@@ -333,75 +338,25 @@ def snake(
         merge_feeding_channel=merge_feeding_channel,
     )
     snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
-    trench_cell = Cell("Trench-{}".format(label))
-    trench_cell.add(
-        Rectangle(
-            (-trench_width / 2, -trench_fc_overlap),
-            (trench_width / 2, trench_length),
-            layer=trench_layer,
-        )
+    snake_trenches_cell = _snake_trenches(
+        trench_width=trench_width,
+        trench_spacing=trench_spacing,
+        trench_length=trench_length,
+        trench_fc_overlap=trench_fc_overlap,
+        feeding_channel_width=feeding_channel_width,
+        ticks=ticks,
+        tick_labels=tick_labels,
+        tick_margin=tick_margin,
+        tick_length=tick_length,
+        tick_period=tick_period,
+        tick_text_size=tick_text_size,
+        draw_trenches=draw_trenches,
+        trench_xs=trench_xs,
+        lane_ys=lane_ys,
+        label=label,
+        layer=TRENCH_LAYER,
     )
-    if ticks:
-        tick_cell = Cell("Tick-{}".format(label))
-        tick_cell.add(
-            Rectangle(
-                (-trench_width / 2, trench_length + tick_margin),
-                (trench_width / 2, trench_length + tick_margin + tick_length),
-                layer=trench_layer,
-            )
-        )
-    tick_xs = trench_xs[::tick_period]
-    num_ticks = len(tick_xs)
-    if draw_trenches:
-        for lane_idx, y in enumerate(lane_ys):
-            snake_cell.add(
-                CellArray(
-                    trench_cell,
-                    trenches_per_set,
-                    1,
-                    (trench_width + trench_spacing, 0),
-                    (trench_xs[0], y + feeding_channel_width / 2),
-                )
-            )
-            snake_cell.add(
-                CellArray(
-                    trench_cell,
-                    trenches_per_set,
-                    1,
-                    (trench_width + trench_spacing, 0),
-                    (trench_xs[0], y - feeding_channel_width / 2),
-                    x_reflection=True,
-                )
-            )
-            if ticks:
-                snake_cell.add(
-                    CellArray(
-                        tick_cell,
-                        num_ticks,
-                        1,
-                        (tick_period * (trench_width + trench_spacing), 0),
-                        (trench_xs[0], y + feeding_channel_width / 2),
-                    )
-                )
-            if tick_labels:
-                for tick_idx, x in enumerate(tick_xs):
-                    tick_idx = (
-                        lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
-                    )
-                    snake_cell.add(
-                        Text(
-                            str(tick_idx),
-                            tick_text_size,
-                            (
-                                x + 2 * trench_width,
-                                y
-                                + feeding_channel_width / 2
-                                + trench_length
-                                + tick_margin,
-                            ),
-                            layer=trench_layer,
-                        )
-                    )
+    snake_cell.add(CellReference(snake_trenches_cell, (0, 0)))
     return snake_cell, metadata
 
 
@@ -421,10 +376,10 @@ def _snake_feeding_channel(
     lane_height = feeding_channel_width + 2 * effective_trench_length
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
-    lane_cell = Cell("Lane-{}".format(label))
+    lane_cell = Cell(f"Lane-{label}")
     lane_fc = Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
     lane_cell.add(lane_fc)
-    bend_cell = Cell("Feeding Channel Bend-{}".format(label))
+    bend_cell = Cell(f"Feeding Channel Bend-{label}")
     bend = Round(
         (0, 0),
         outer_snake_turn_radius,
@@ -433,7 +388,7 @@ def _snake_feeding_channel(
     )
     bend = g.slice(bend, 0, 0, layer=layer)
     bend_cell.add(bend[1])
-    port_cell = Cell("Feeding Channel Port-{}".format(label))
+    port_cell = Cell(f"Feeding Channel Port-{label}")
     port = Round((port_offset, 0), port_radius, layer=layer)
     port_fc = Rectangle(
         (0, -lane_fc_dims[1] / 2), (port_offset, lane_fc_dims[1] / 2), layer=layer
@@ -459,7 +414,7 @@ def _snake_feeding_channel(
         ]
     )
     right_bend_lanes = left_bend_lanes + 1
-    snake_fc_cell = Cell("Snake Feeding Channel-{}".format(label))
+    snake_fc_cell = Cell(f"Snake Feeding Channel-{label}")
     for y in lane_ys:
         snake_fc_cell.add(CellReference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
@@ -493,6 +448,98 @@ def _snake_feeding_channel(
             boolean(snake_fc_cell.polygons, None, "or", layer=layer)
         ]
     return snake_fc_cell, lane_ys
+
+
+def _snake_trenches(
+    trench_width,
+    trench_spacing,
+    trench_length,
+    trench_fc_overlap,
+    feeding_channel_width,
+    ticks,
+    tick_labels,
+    tick_margin,
+    tick_length,
+    tick_period,
+    tick_text_size,
+    draw_trenches,
+    trench_xs,
+    lane_ys,
+    label,
+    layer=TRENCH_LAYER,
+):
+    trenches_per_set = len(trench_xs)
+    snake_trenches_cell = Cell(f"Snake Trenches-{label}")
+    trench_cell = Cell(f"Trench-{label}")
+    trench_cell.add(
+        Rectangle(
+            (-trench_width / 2, -trench_fc_overlap),
+            (trench_width / 2, trench_length),
+            layer=layer,
+        )
+    )
+    if ticks:
+        tick_cell = Cell(f"Tick-{label}")
+        tick_cell.add(
+            Rectangle(
+                (-trench_width / 2, trench_length + tick_margin),
+                (trench_width / 2, trench_length + tick_margin + tick_length),
+                layer=layer,
+            )
+        )
+    tick_xs = trench_xs[::tick_period]
+    num_ticks = len(tick_xs)
+    if draw_trenches:
+        for lane_idx, y in enumerate(lane_ys):
+            snake_trenches_cell.add(
+                CellArray(
+                    trench_cell,
+                    trenches_per_set,
+                    1,
+                    (trench_width + trench_spacing, 0),
+                    (trench_xs[0], y + feeding_channel_width / 2),
+                )
+            )
+            snake_trenches_cell.add(
+                CellArray(
+                    trench_cell,
+                    trenches_per_set,
+                    1,
+                    (trench_width + trench_spacing, 0),
+                    (trench_xs[0], y - feeding_channel_width / 2),
+                    x_reflection=True,
+                )
+            )
+            if ticks:
+                snake_trenches_cell.add(
+                    CellArray(
+                        tick_cell,
+                        num_ticks,
+                        1,
+                        (tick_period * (trench_width + trench_spacing), 0),
+                        (trench_xs[0], y + feeding_channel_width / 2),
+                    )
+                )
+            if tick_labels:
+                for tick_idx, x in enumerate(tick_xs):
+                    tick_idx = (
+                        lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
+                    )
+                    snake_trenches_cell.add(
+                        Text(
+                            str(tick_idx),
+                            tick_text_size,
+                            (
+                                x + 2 * trench_width,
+                                y
+                                + feeding_channel_width / 2
+                                + trench_length
+                                + tick_margin,
+                            ),
+                            layer=layer,
+                        )
+                    )
+    return snake_trenches_cell
 
 
 # TODO: implement using bbox-aware auto-gridding helper
@@ -529,9 +576,7 @@ def profilometry_marks(
     grid_size = np.array([rows, columns])
     grid_dims = dims * grid_size * 2
     profilometry_cell = Cell("Profilometry Marks")
-    mark_cells = {
-        layer: Cell("Profilometry Mark Layer {}".format(layer)) for layer in layers
-    }
+    mark_cells = {layer: Cell(f"Profilometry Mark Layer {layer}") for layer in layers}
     for i, (layer, cell) in enumerate(mark_cells.items()):
         cell.add(Rectangle(dims, -dims / 2, layer=layer))
         origin = -grid_dims / 2 + (i - (len(mark_cells) - 1) / 2) * np.array(
@@ -847,7 +892,7 @@ def chip(
     design_cell, md = design_func(**{"label": name, **kwargs})
     if metadata is not None:
         metadata[name] = md  # TODO: this won't work with memoization!!!
-    chip_cell = Cell("Chip-{}".format(name))
+    chip_cell = Cell(f"Chip-{name}")
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
     text_position = (0, dims[1] / 2 - 1.5 * label_text_size)
@@ -887,12 +932,6 @@ def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
     outline = boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
-
-
-# def chip(design_func, dims=DEFAULT_DIMS, name=None):
-#     cell = Cell('Chip_{}'.format(name) if name else 'Chip')
-
-# TODO: add snake gap using multiple snake calls, put gap between them on chip
 
 
 @click.group()
