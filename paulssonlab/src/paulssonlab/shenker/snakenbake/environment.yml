@@ -1,16 +1,19 @@
-name: paulssonlab
+name: snakenbake
 channels:
+  - conda-forge
   - defaults
 dependencies:
-  - pre-commit
-  - nbstripout
-  - cytoolz
-  - freetype
-  - jupyterlab
   - matplotlib
   - scipy
+  - freetype
   - numpy
   - pint
-  - freetype-py
-  - click
   - shortuuid
+  - cytoolz
+  - click
+  - pre-commit
+  - freetype-py
+  - jupyterlab
+  - pip
+  - pip:
+    - gdspy
