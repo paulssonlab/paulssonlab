@@ -655,31 +655,34 @@ def wafer(
     chips : List
         List of GDS cells containing chips.
     name : str
-        Description
+        Name of wafer to include
     diameter : float, optional
-        Description
+        Diameter of wafer (in microns).
     side : float, optional
-        Description
-    chip_area_angle : TYPE, optional
-        Description
+        The side length of the reference square polygon (on layer number `reference
+        layer`). Note that this reference square has no function.
+    chip_area_angle : float, optional
+        Angle (in radians). Equal to the arctan of the aspect ratio of the chip layout area.
     chip_area_margin : float, optional
-        Description
+        Distance (in microns) between corner of chip layout area and edge of wafer.
     alignment_mark_position : float, optional
-        Description
-    alignment_text_size : int, optional
-        Description
-    label_text_size : int, optional
-        Description
+        Distance (in microns) between both alignment marks.
+    alignment_text_size : float, optional
+        Size (in microns) of label text for alignment marks.
+    label_text_size : float, optional
+        Size (in microns) of text.
     text : bool, optional
-        Description
+        If true, label the wafer with `name`. If mask is true, additionally label the
+        masks with `name` and the layer number outside of the wafer area.
     mask : bool, optional
-        Description
-    feeding_channel_layer : TYPE, optional
-        Description
-    trench_layer : TYPE, optional
-        Description
-    reference_layer : TYPE, optional
-        Description
+        If true, mask aligner-compatible alignment crosses are generated. If false,
+        MLA150-compatible alignment marks are generated.
+    feeding_channel_layer : int, optional
+        Feeding channel layer number.
+    trench_layer : int, optional
+        Trench layer number.
+    reference_layer : int, optional
+        Layer number for wafer and chip area outline.
     """
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
