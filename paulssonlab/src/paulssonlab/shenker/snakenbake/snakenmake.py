@@ -293,10 +293,11 @@ def manifold_snake(
                 layer=feeding_channel_layer,
             )
         )
+        manifold_bend_y = agg_lane_ys[-1] - feeding_channel_width / 2 + manifold_width
         snake_manifold_cell.add(
             Rectangle(
                 (manifold_left_x, port_y + manifold_width / 2),
-                (manifold_left_x + manifold_width, agg_lane_ys[-1]),
+                (manifold_left_x + manifold_width, manifold_bend_y),
                 layer=feeding_channel_layer,
             )
         )
@@ -306,10 +307,18 @@ def manifold_snake(
         for y in agg_lane_ys:
             snake_manifold_cell.add(
                 g.Rectangle(
-                    (manifold_left_x, y + feeding_channel_width / 2),
+                    (manifold_left_x + manifold_width, y + feeding_channel_width / 2),
                     (x1, y - feeding_channel_width / 2),
                 )
             )
+        snake_fc_cell.add(
+            g.Round(
+                (manifold_left_x + manifold_width, manifold_bend_y),
+                manifold_width,
+                initial_angle=2 / 2 * np.pi,
+                final_angle=3 / 2 * np.pi,
+            )
+        )
         snake_fc_cell.add(CellReference(snake_manifold_cell, (0, 0)))
     flatten_or_merge(
         snake_fc_cell, flatten=flatten_feeding_channel, merge=merge_feeding_channel
