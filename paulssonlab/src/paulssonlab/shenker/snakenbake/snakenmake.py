@@ -164,12 +164,12 @@ def manifold_snake(
     split=None,
     lanes_per_snake=1,
     num_inputs=1,
-    manifold_port_margin=0.5e3,
-    manifold_radius=1.5e3,
-    manifold_margin=1e3,
+    manifold_width=200,
+    manifold_input_length=1.5e3,
+    manifold_margin=200,
     top_margin=1.5e3,
     bottom_margin=1e3,
-    port_margin=None,
+    port_margin=0.5e3,
     trench_width=1.5,
     trench_length=35,
     trench_fc_overlap=None,
@@ -193,8 +193,6 @@ def manifold_snake(
 ):
     if label is None:
         label = get_uuid()
-    if port_margin is None:
-        port_margin = horizontal_margin / 2
     if trench_fc_overlap is None:
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
     if tick_text_size is None:
@@ -205,13 +203,13 @@ def manifold_snake(
     horizontal_margin = (
         port_margin
         + 2 * port_radius
-        + manifold_port_margin
-        + manifold_radius
+        + manifold_width
+        + manifold_input_length
         + manifold_margin
     )
     lane_fc_dims = np.array(
         [
-            dims[0] - 2 * horizontal_margin - outer_snake_turn_radius,
+            dims[0] - 2 * horizontal_margin - 2 * outer_snake_turn_radius,
             feeding_channel_width,
         ]
     )
@@ -254,14 +252,13 @@ def manifold_snake(
     metadata["lane_length"] = lane_fc_dims[0]
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
     metadata["max_snake_length"] = max(split) * lane_fc_dims[0]
-    y_offset = (bottom_margin - top_margin) / 2
     snake_cell = Cell(f"Snake-{label}")
     # port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
-    port_offset = outer_snake_turn_radius
+    # port_offset = outer_snake_turn_radius
     snake_fc_cell, lane_ys = _snake_feeding_channel(
         lane_fc_dims,
         effective_trench_length,
-        port_offset,
+        outer_snake_turn_radius,
         0,
         split,
         label,
@@ -277,103 +274,47 @@ def manifold_snake(
     if remainder > 0:
         input_split = (*input_split[:-1], input_split[-1] + remainder)
     input_split_cum = np.concatenate(((0,), np.cumsum(input_split)))
-    print(input_split, input_split_cum, len(lane_ys))
     ###
     for idx in range(len(input_split_cum) - 1):
         snake_manifold_cell = Cell(f"Snake-{idx}-{label}")
         agg_lane_ys = lane_ys[
             left_port_lanes[input_split_cum[idx] : input_split_cum[idx + 1]]
         ]
-        input_y = agg_lane_ys[0]
+        port_x = -dims[0] / 2 + port_margin + port_radius
+        port_y = agg_lane_ys[0] - manifold_width / 2 + feeding_channel_width / 2
         snake_manifold_cell.add(
-            Round(
-                (-dims[0] / 2 + manifold_port_margin, input_y),
-                port_radius,
+            Round((port_x, port_y), port_radius, layer=feeding_channel_layer)
+        )
+        manifold_left_x = port_x + port_radius + manifold_input_length
+        snake_manifold_cell.add(
+            Rectangle(
+                (port_x, port_y + manifold_width / 2),
+                (manifold_left_x, port_y - manifold_width / 2),
                 layer=feeding_channel_layer,
             )
         )
         snake_manifold_cell.add(
             Rectangle(
-                (-dims[0] / 2 + manifold_port_margin, input_y + lane_fc_dims[1] / 2),
-                (
-                    -dims[0] / 2 + manifold_port_margin + port_radius + manifold_margin,
-                    input_y - lane_fc_dims[1] / 2,
-                ),
+                (manifold_left_x, port_y + manifold_width / 2),
+                (manifold_left_x + manifold_width, agg_lane_ys[-1]),
                 layer=feeding_channel_layer,
             )
         )
-        manifold_left_x = (
-            -dims[0] / 2 + manifold_port_margin + port_radius + manifold_margin
-        )
-        y0 = input_y - lane_fc_dims[1] / 2
-        y1 = input_y + lane_fc_dims[1] / 2
-        theta = 2 * np.arcsin(lane_fc_dims[1] / (2 * manifold_radius))
-        # theta = 2 * np.arctan2(lane_fc_dims[1] / 2, manifold_radius)
-        # radius = np.sqrt(manifold_radius ** 2 + (lane_fc_dims[1] / 2) ** 2)
-        manifold_branch_points = []
-        num_agg_lanes = len(agg_lane_ys)
-        for idx in range(num_agg_lanes):
-            # thetas = theta * (num_agg_lanes / 2 - idx - np.array([0, 1])[:, np.newaxis])
-            thetas = theta * (-idx - np.array([0, 1])[:, np.newaxis])
-            points = np.array([manifold_left_x, input_y]) + manifold_radius * np.hstack(
-                [np.cos(thetas), np.sin(thetas)]
-            )
-            manifold_branch_points.append(points)
-        manifold_points = [
-            (manifold_left_x, y0),
-            (manifold_left_x, y1),
-            manifold_branch_points[0][0],
-            manifold_branch_points[0][1],
-        ]
-        for branch_points in manifold_branch_points[1:]:
-            manifold_points.append(branch_points[1])
-        snake_manifold_cell.add(g.Polygon(manifold_points))
-        for y, branch_points in zip(agg_lane_ys, manifold_branch_points):
-            # snake_fc_cell.add(
-            #     g.Polygon(
-            #         [
-            #             (manifold_left_x, y0),
-            #             (manifold_left_x, y1),
-            #             branch_points[0],
-            #             branch_points[1],
-            #         ]
-            #     )
-            # )
-            x1 = -lane_fc_dims[0] / 2 - outer_snake_turn_radius
+        y0 = port_y - feeding_channel_width / 2
+        y1 = port_y + feeding_channel_width / 2
+        x1 = -lane_fc_dims[0] / 2 - outer_snake_turn_radius
+        for y in agg_lane_ys:
             snake_manifold_cell.add(
-                g.Polygon(
-                    [
-                        branch_points[1],
-                        branch_points[0],
-                        (x1, y + lane_fc_dims[1] / 2),
-                        (x1, y - lane_fc_dims[1] / 2),
-                    ]
+                g.Rectangle(
+                    (manifold_left_x, y + feeding_channel_width / 2),
+                    (x1, y - feeding_channel_width / 2),
                 )
             )
         snake_fc_cell.add(CellReference(snake_manifold_cell, (0, 0)))
-    ###
-    # port_cell = Cell(f"Manifold Port-{label}")
-    # port = Round((1000, 0), 100, layer=feeding_channel_layer)
-    # port_cell.add(port)
-    # port_fc = Rectangle(
-    #     (0, -lane_fc_dims[1] / 2),
-    #     (port_offset, lane_fc_dims[1] / 2),
-    #     layer=feeding_channel_layer,
-    # )
-    # port_cell.add(port_fc)
-    # for lane in right_port_lanes:
-    #     snake_fc_cell.add(
-    #         CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane]))
-    #     )
-    # for lane in left_port_lanes:
-    #     snake_fc_cell.add(
-    #         CellReference(
-    #             port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
-    #         )
-    #     )
     flatten_or_merge(
         snake_fc_cell, flatten=flatten_feeding_channel, merge=merge_feeding_channel
     )
+    y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
     # trenches
     snake_trenches_cell = _snake_trenches(
@@ -559,7 +500,6 @@ def snake(
     metadata["lane_length"] = lane_fc_dims[0]
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
     metadata["max_snake_length"] = max(split) * lane_fc_dims[0]
-    y_offset = (bottom_margin - top_margin) / 2
     snake_cell = Cell(f"Snake-{label}")
     port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     snake_fc_cell, lane_ys = _snake_feeding_channel(
@@ -577,6 +517,7 @@ def snake(
     flatten_or_merge(
         snake_fc_cell, flatten=flatten_feeding_channel, merge=merge_feeding_channel
     )
+    y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
     snake_trenches_cell = _snake_trenches(
         trench_width=trench_width,
@@ -624,16 +565,19 @@ def _snake_feeding_channel(
         (0, 0),
         outer_snake_turn_radius,
         inner_radius=inner_snake_turn_radius,
+        initial_angle=3 / 2 * np.pi,
+        final_angle=5 / 2 * np.pi,
         layer=layer,
     )
-    bend = g.slice(bend, 0, 0, layer=layer)
-    bend_cell.add(bend[1])
+    bend_cell.add(bend)
     port_cell = Cell(f"Feeding Channel Port-{label}")
     if port_radius:
         port = Round((port_offset, 0), port_radius, layer=layer)
         port_cell.add(port)
     port_fc = Rectangle(
-        (0, -lane_fc_dims[1] / 2), (port_offset, lane_fc_dims[1] / 2), layer=layer
+        (0, -feeding_channel_width / 2),
+        (port_offset, feeding_channel_width / 2),
+        layer=layer,
     )
     port_cell.add(port_fc)
     max_lanes = sum(split) + gap_lanes * (len(split) - 1)
