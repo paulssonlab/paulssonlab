@@ -10,6 +10,14 @@ Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
 boolean = partial(boolean, max_points=MAX_POINTS)
 
 
+def flatten_or_merge(cell, flatten=False, merge=False, layer=None):
+    if flatten or merge:
+        cell.flatten()
+    if merge:
+        cell.polygons = [boolean(cell.polygons, None, "or", layer=layer)]
+    return cell
+
+
 def cross(width, length, **kwargs):
     half_width = width / 2
     points = [
