@@ -346,7 +346,7 @@ def manifold_snake(
         label=label,
         layer=TRENCH_LAYER,
     )
-    snake_cell.add(CellReference(snake_trenches_cell, (0, 0)))
+    snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
     metadata = {
         k: v
         for k, v in locals().items()
