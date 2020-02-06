@@ -162,8 +162,9 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
 def manifold_snake(
     dims=DEFAULT_DIMS,
     split=None,
+    add_remainder=False,
     lanes_per_snake=1,
-    num_inputs=1,
+    num_manifolds=1,
     manifold_width=200,
     manifold_input_length=1.5e3,
     manifold_margin=200,
@@ -223,20 +224,21 @@ def manifold_snake(
         if split:
             raise ValueError("cannot specify both split and lanes_per_snake")
         split = (lanes_per_snake,) * int(max_lanes // lanes_per_snake)
-        remainder = max_lanes % lanes_per_snake
-        if remainder % 2 == 0:
-            remainder -= 1
-        if remainder > 0:
-            split += (remainder,)
+        if add_remainder:
+            remainder = max_lanes % lanes_per_snake
+            if remainder % 2 == 0:
+                remainder -= 1
+            if remainder > 0:
+                split += (remainder,)
     split = _compute_lane_split(split, max_lanes)
     num_lanes = np.sum(split)
     # manifold split
     split_cum = np.concatenate(((0,), np.cumsum(split)))
     left_port_lanes = split_cum[1:] - 1
     right_port_lanes = split_cum[:-1]
-    lanes_per_input = int(len(split) // num_inputs)
-    manifold_split = (lanes_per_input,) * num_inputs
-    remainder = len(split) % num_inputs
+    lanes_per_input = int(len(split) // num_manifolds)
+    manifold_split = (lanes_per_input,) * num_manifolds
+    remainder = len(split) % num_manifolds
     if remainder > 0:
         manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
