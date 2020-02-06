@@ -898,10 +898,10 @@ def wafer(
     chips,
     name,
     diameter=76.2e3,
-    side=87.15e3,
+    side=None,
     chip_area_angle=np.pi / 4,
     chip_area_margin=4e3,
-    alignment_mark_position=32e3,
+    alignment_mark_position=None,
     alignment_text_size=1000,
     label_text_size=2000,
     text=True,
@@ -948,6 +948,8 @@ def wafer(
     """
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
+    if side is None:
+        side = diameter * 1.2
     main_cell = Cell("main")
     corner = np.array((side, side)) / 2
     square = Rectangle(-corner, corner)
