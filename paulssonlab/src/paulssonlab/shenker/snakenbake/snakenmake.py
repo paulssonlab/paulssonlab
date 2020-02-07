@@ -168,6 +168,7 @@ def manifold_snake(
     manifold_width=200,
     manifold_input_length=1.5e3,
     manifold_margin=200,
+    manifold_round_radius=True,
     top_margin=1.5e3,
     bottom_margin=1e3,
     port_margin=0.5e3,
@@ -198,6 +199,8 @@ def manifold_snake(
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
     if tick_text_size is None:
         tick_text_size = tick_length * 2
+    if manifold_round_radius is True:
+        manifold_round_radius = feeding_channel_width
     # define some dimensions
     effective_trench_length = trench_length + trench_gap / 2
     inner_snake_turn_radius = effective_trench_length
@@ -262,6 +265,14 @@ def manifold_snake(
         layer=feeding_channel_layer,
     )
     # manifolds
+    if manifold_round_radius:
+        rounded_corner = Cell("Snake-round")
+        rounded_curve = g.Curve(0, 0)
+        rounded_curve.v(manifold_round_radius)
+        rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
+        rounded_corner.add(
+            g.Polygon(rounded_curve.get_points(), layer=feeding_channel_layer)
+        )
     for idx in range(len(manifold_split_cum) - 1):
         for flip in (1, -1):
             snake_manifold_cell = Cell(
@@ -296,6 +307,36 @@ def manifold_snake(
                     layer=feeding_channel_layer,
                 )
             )
+            if manifold_round_radius:
+                snake_manifold_cell.add(
+                    CellReference(
+                        rounded_corner,
+                        (flip * manifold_left_x, port_y + flip * manifold_width / 2),
+                        rotation=90 * (1 - flip),
+                    )
+                )
+                for y in manifold_lane_ys[1:]:
+                    snake_manifold_cell.add(
+                        CellReference(
+                            rounded_corner,
+                            (
+                                flip * (manifold_left_x + manifold_width),
+                                y - flip * feeding_channel_width / 2,
+                            ),
+                            rotation=90 * (3 - flip),
+                        )
+                    )
+                for y in manifold_lane_ys[:-1]:
+                    snake_manifold_cell.add(
+                        CellReference(
+                            rounded_corner,
+                            (
+                                flip * (manifold_left_x + manifold_width),
+                                y + flip * feeding_channel_width / 2,
+                            ),
+                            rotation=90 * (4 - flip),
+                        )
+                    )
             for y in manifold_lane_ys:
                 snake_manifold_cell.add(
                     g.Rectangle(
