@@ -3,17 +3,17 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - matplotlib
-  - scipy
-  - freetype
-  - numpy
-  - pint
   - shortuuid
-  - cytoolz
-  - click
-  - pre-commit
+  - freetype
   - freetype-py
+  - cytoolz
+  - matplotlib
+  - pint
+  - numpy
+  - click
   - jupyterlab
+  - scipy
+  - bitarray
   - pip
   - pip:
     - gdspy
