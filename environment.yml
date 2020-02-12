@@ -1,5 +1,6 @@
 name: paulssonlab
 channels:
+  - conda-forge
   - defaults
 dependencies:
   - pre-commit
