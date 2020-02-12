@@ -8,6 +8,7 @@ from geometry import (
     Cell,
     Round,
     cross,
+    l_shape,
     boolean,
     mirror,
     mirror_refs,
@@ -17,6 +18,8 @@ from geometry import (
 )
 from text import Text as _Text
 from util import make_odd, memoize
+import hamming
+import bitarray.util
 import click
 from functools import partial
 from cytoolz import compose
@@ -180,6 +183,7 @@ def manifold_snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    registration_marks=False,
     ticks=False,
     tick_length=5,
     tick_margin=5,
@@ -371,25 +375,27 @@ def manifold_snake(
     y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
     # trenches
-    snake_trenches_cell = _snake_trenches(
-        trench_width=trench_width,
-        trench_spacing=trench_spacing,
-        trench_length=trench_length,
-        trench_fc_overlap=trench_fc_overlap,
-        feeding_channel_width=feeding_channel_width,
-        ticks=ticks,
-        tick_labels=tick_labels,
-        tick_margin=tick_margin,
-        tick_length=tick_length,
-        tick_period=tick_period,
-        tick_text_size=tick_text_size,
-        draw_trenches=draw_trenches,
-        trench_xs=trench_xs,
-        lane_ys=lane_ys,
-        label=label,
-        layer=TRENCH_LAYER,
-    )
-    snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
+    if draw_trenches:
+        snake_trenches_cell = _snake_trenches(
+            trench_width=trench_width,
+            trench_spacing=trench_spacing,
+            trench_length=trench_length,
+            trench_gap=trench_gap,
+            trench_fc_overlap=trench_fc_overlap,
+            feeding_channel_width=feeding_channel_width,
+            registration_marks=registration_marks,
+            ticks=ticks,
+            tick_labels=tick_labels,
+            tick_margin=tick_margin,
+            tick_length=tick_length,
+            tick_period=tick_period,
+            tick_text_size=tick_text_size,
+            trench_xs=trench_xs,
+            lane_ys=lane_ys,
+            label=label,
+            layer=TRENCH_LAYER,
+        )
+        snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
     metadata = {
         k: v
         for k, v in locals().items()
@@ -434,6 +440,7 @@ def snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    registration_marks=False,
     ticks=False,
     tick_length=5,
     tick_margin=5,
@@ -600,25 +607,27 @@ def snake(
     )
     y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
-    snake_trenches_cell = _snake_trenches(
-        trench_width=trench_width,
-        trench_spacing=trench_spacing,
-        trench_length=trench_length,
-        trench_fc_overlap=trench_fc_overlap,
-        feeding_channel_width=feeding_channel_width,
-        ticks=ticks,
-        tick_labels=tick_labels,
-        tick_margin=tick_margin,
-        tick_length=tick_length,
-        tick_period=tick_period,
-        tick_text_size=tick_text_size,
-        draw_trenches=draw_trenches,
-        trench_xs=trench_xs,
-        lane_ys=lane_ys,
-        label=label,
-        layer=TRENCH_LAYER,
-    )
-    snake_cell.add(CellReference(snake_trenches_cell, (0, 0)))
+    if draw_trenches:
+        snake_trenches_cell = _snake_trenches(
+            trench_width=trench_width,
+            trench_spacing=trench_spacing,
+            trench_length=trench_length,
+            trench_gap=trench_gap,
+            trench_fc_overlap=trench_fc_overlap,
+            feeding_channel_width=feeding_channel_width,
+            registration_marks=registration_marks,
+            ticks=ticks,
+            tick_labels=tick_labels,
+            tick_margin=tick_margin,
+            tick_length=tick_length,
+            tick_period=tick_period,
+            tick_text_size=tick_text_size,
+            trench_xs=trench_xs,
+            lane_ys=lane_ys,
+            label=label,
+            layer=TRENCH_LAYER,
+        )
+        snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
     return snake_cell, metadata
 
 
@@ -710,24 +719,72 @@ def _snake_feeding_channel(
     return snake_fc_cell, lane_ys
 
 
+# @memoize # TODO!!!
+def _barcode(ary, mark_size, mark_spacing, columns=None, rows=None, layer=None):
+    if columns is None and rows is None:
+        raise ValueError("either columns or rows must be specified")
+    N = len(ary)
+    if columns is None:
+        rows = int(np.ceil(N / columns))
+    elif rows is None:
+        columns = int(np.ceil(N / rows))
+    padding = rows * columns - N
+    ary2 = bitarray.util.zeros(padding)
+    ary2.extend(ary)
+    number = bitarray.util.ba2int(ary)  # TODO: does not handle different endiannesses
+    cell = Cell(f"Barcode-{padding}-{number}")
+    mark_pitch = mark_size + mark_spacing
+    y_offset = -(rows * mark_pitch - mark_spacing) / 2
+    for column in range(columns):
+        for row in range(rows):
+            idx = row + rows * column
+            if ary2[idx]:
+                cell.add(
+                    Rectangle(
+                        (mark_pitch * column, y_offset + mark_pitch * row),
+                        (
+                            mark_pitch * column + mark_size,
+                            y_offset + mark_pitch * row + mark_size,
+                        ),
+                        layer=layer,
+                    )
+                )
+    return cell
+
+
 def _snake_trenches(
     trench_width,
     trench_spacing,
     trench_length,
+    trench_gap,
     trench_fc_overlap,
     feeding_channel_width,
+    registration_marks,
     ticks,
     tick_labels,
     tick_margin,
     tick_length,
     tick_period,
     tick_text_size,
-    draw_trenches,
     trench_xs,
     lane_ys,
     label,
     layer=TRENCH_LAYER,
 ):
+    if ticks and registration_marks:
+        raise ValueError("cannot draw both ticks and registration marks")
+    lane_gap_offset_y = feeding_channel_width / 2 + trench_length + trench_gap / 2
+    ###
+    barcode_num_bits = 11
+    barcode_rows = 4
+    barcode_columns = 4
+    mark_size = 1
+    mark_spacing = 1
+    mark_pitch = mark_size + mark_spacing
+    barcode_margin = 10
+    column_barcode_margin = barcode_margin
+    row_barcode_margin = barcode_margin + barcode_columns * mark_pitch
+    ###
     trenches_per_set = len(trench_xs)
     snake_trenches_cell = Cell(f"Snake Trenches-{label}")
     trench_cell = Cell(f"Trench-{label}")
@@ -738,67 +795,139 @@ def _snake_trenches(
             layer=layer,
         )
     )
+    tick_cell = Cell(f"Tick-{label}")
     if ticks:
-        tick_cell = Cell(f"Tick-{label}")
         tick_cell.add(
             Rectangle(
-                (-trench_width / 2, trench_length + tick_margin),
-                (trench_width / 2, trench_length + tick_margin + tick_length),
+                (-trench_width / 2, tick_margin - trench_gap / 2),
+                (
+                    trench_width / 2,
+                    tick_margin - trench_gap / 2 + tick_length,
+                ),
                 layer=layer,
             )
         )
+    elif registration_marks:
+        tick_cell.add(
+            l_shape(
+                trench_gap / 4, trench_width + trench_spacing, trench_width, layer=layer
+            )
+        )
+        # tick_cell.add()
+        # mark_size = 2 * trench_width
+        # mark_margin = 1
+        # mark_pitch = mark_size + mark_margin
+        # tick_cell.add(
+        #     cross((trench_gap - mark_margin) / 2 / np.sqrt(2), mark_size, layer=layer)
+        #     .rotate(np.pi / 4)
+        #     .translate(0, trench_length + trench_gap / 2)
+        # )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
-    if draw_trenches:
-        for lane_idx, y in enumerate(lane_ys):
-            snake_trenches_cell.add(
-                CellArray(
-                    trench_cell,
-                    trenches_per_set,
-                    1,
-                    (trench_width + trench_spacing, 0),
-                    (trench_xs[0], y + feeding_channel_width / 2),
-                )
+    if registration_marks:
+        lane_ys_diff = np.diff(lane_ys)
+        uniform_lane_ys = np.all(lane_ys_diff == lane_ys_diff[0])
+        for tick_idx, x in enumerate(tick_xs):
+            bits = hamming.encode(
+                bitarray.util.int2ba(tick_idx, length=barcode_num_bits)
             )
-            snake_trenches_cell.add(
-                CellArray(
-                    trench_cell,
-                    trenches_per_set,
-                    1,
-                    (trench_width + trench_spacing, 0),
-                    (trench_xs[0], y - feeding_channel_width / 2),
-                    x_reflection=True,
-                )
+            # bits = bitarray.bitarray([True] * 16)
+            # bits[6] = 0
+            # bits[9] = 0
+            column_barcode = _barcode(
+                bits,
+                mark_size,
+                mark_spacing,
+                rows=barcode_rows,
+                columns=barcode_columns,
+                layer=layer,
             )
-            if ticks:
+            if uniform_lane_ys:
                 snake_trenches_cell.add(
                     CellArray(
-                        tick_cell,
+                        column_barcode,
+                        1,
+                        len(lane_ys),
+                        (0, lane_ys_diff[0]),
+                        (x + column_barcode_margin, lane_ys[0] + lane_gap_offset_y),
+                    )
+                )
+            else:
+                for y in lane_ys:
+                    snake_trenches_cell.add(
+                        CellReference(
+                            column_barcode,
+                            (x + column_barcode_margin, y + lane_gap_offset_y),
+                        )
+                    )
+    for lane_idx, y in enumerate(lane_ys):
+        snake_trenches_cell.add(
+            CellArray(
+                trench_cell,
+                trenches_per_set,
+                1,
+                (trench_width + trench_spacing, 0),
+                (trench_xs[0], y + feeding_channel_width / 2),
+            )
+        )
+        snake_trenches_cell.add(
+            CellArray(
+                trench_cell,
+                trenches_per_set,
+                1,
+                (trench_width + trench_spacing, 0),
+                (trench_xs[0], y - feeding_channel_width / 2),
+                x_reflection=True,
+            )
+        )
+        if ticks or registration_marks:
+            snake_trenches_cell.add(
+                CellArray(
+                    tick_cell,
+                    num_ticks,
+                    1,
+                    (tick_period * (trench_width + trench_spacing), 0),
+                    (trench_xs[0], y + lane_gap_offset_y),
+                )
+            )
+            if registration_marks:
+                bits = hamming.encode(
+                    bitarray.util.int2ba(lane_idx, length=barcode_num_bits)
+                )
+                # bits = bitarray.bitarray([True] * 16)
+                row_barcode = _barcode(
+                    bits,
+                    mark_size,
+                    mark_spacing,
+                    rows=barcode_rows,
+                    columns=barcode_columns,
+                    layer=layer,
+                )
+                snake_trenches_cell.add(
+                    CellArray(
+                        row_barcode,
                         num_ticks,
                         1,
                         (tick_period * (trench_width + trench_spacing), 0),
-                        (trench_xs[0], y + feeding_channel_width / 2),
+                        (trench_xs[0] + row_barcode_margin, y + lane_gap_offset_y),
                     )
                 )
-            if tick_labels:
-                for tick_idx, x in enumerate(tick_xs):
-                    tick_idx = (
-                        lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
+        if tick_labels:
+            for tick_idx, x in enumerate(tick_xs):
+                tick_idx = (
+                    lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
+                )
+                snake_trenches_cell.add(
+                    Text(
+                        str(tick_idx),
+                        tick_text_size,
+                        (
+                            x + 2 * trench_width,
+                            y + feeding_channel_width / 2 + trench_length + tick_margin,
+                        ),
+                        layer=layer,
                     )
-                    snake_trenches_cell.add(
-                        Text(
-                            str(tick_idx),
-                            tick_text_size,
-                            (
-                                x + 2 * trench_width,
-                                y
-                                + feeding_channel_width / 2
-                                + trench_length
-                                + tick_margin,
-                            ),
-                            layer=layer,
-                        )
-                    )
+                )
     return snake_trenches_cell
 
 
