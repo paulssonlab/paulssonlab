@@ -856,14 +856,14 @@ def profilometry_marks(
 
 
 @memoize
-def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
+def alignment_cross(length=1e3, thickness=6, layer=TRENCH_LAYER):
     """Makes an alignment cross compatible with the MLA150.
 
     Parameters
     ----------
-    size : float, optional
-        Size (in microns) of the cross.
-    width : int, optional
+    length : float, optional
+        Length (in microns) of each appendage of the cross.
+    width : float, optional
         Thickness (in microns) of the cross.
     layer : int, optional
         Layer number.
@@ -874,19 +874,20 @@ def alignment_cross(size=1e3, width=6, layer=TRENCH_LAYER):
         GDS cell containing the alignment cross.
     """
     alignment_cell = Cell("Alignment Cross")
-    horizontal = Rectangle((-size, -width / 2), (size, width / 2))
-    vertical = Rectangle((-width / 2, -size), (width / 2, size))
-    cross = boolean(horizontal, vertical, "or", layer=layer)
-    alignment_cell.add(cross)
-    alignment_cell.add(Rectangle((-3 * size, -size), (-2 * size, size), layer=layer))
-    alignment_cell.add(Rectangle((2 * size, -size), (3 * size, size), layer=layer))
+    alignment_cell.add(cross(length, thickness))
+    alignment_cell.add(
+        Rectangle((-3 * length, -length), (-2 * length, length), layer=layer)
+    )
+    alignment_cell.add(
+        Rectangle((2 * length, -length), (3 * length, length), layer=layer)
+    )
     return alignment_cell
 
 
 @memoize
 def mask_alignment_cross(
-    width=100,
-    size=300,
+    length=300,
+    thickness=100,
     cross_spacing=30,
     num_crosses=2,
     bottom_layer=TRENCH_LAYER,
@@ -896,10 +897,10 @@ def mask_alignment_cross(
 
     Parameters
     ----------
+    length : float, optional
+        Length of each individual cross appendage (in microns).
     width : float, optional
         Thickness of each cross (in microns).
-    size : float, optional
-        Size of each cross (in microns).
     cross_spacing : float, optional
         Spacing (in microns) between crosses.
     num_crosses : int, optional
@@ -915,15 +916,15 @@ def mask_alignment_cross(
         GDS cell containing the alignment crosses.
     """
     alignment_cell = Cell("Mask Alignment Cross")
-    offset_unit = 2 * size + cross_spacing
-    box_size = offset_unit * (num_crosses + 1)
-    box_corner = np.array([box_size, box_size])
-    outer_box = Rectangle(-(box_corner + width), box_corner + width)
+    offset_unit = 2 * length + cross_spacing
+    box_length = offset_unit * (num_crosses + 1)
+    box_corner = np.array([box_length, box_length])
+    outer_box = Rectangle(-(box_corner + thickness), box_corner + thickness)
     inner_box = Rectangle(-box_corner, box_corner)
     box = boolean(outer_box, inner_box, "not", layer=top_layer)
-    cross_box_corner = np.array([size, size])
+    cross_box_corner = np.array([length, length])
     base_cross_box = Rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
-    base_cross = cross(width, size, layer=top_layer)
+    base_cross = cross(length, thickness, layer=top_layer)
     base_cross_box = boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
     alignment_cell.add(base_cross_box)
     alignment_cell.add(base_cross)

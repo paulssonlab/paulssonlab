@@ -18,21 +18,34 @@ def flatten_or_merge(cell, flatten=False, merge=False, layer=None):
     return cell
 
 
-def cross(width, length, **kwargs):
-    half_width = width / 2
+def cross(length, thickness, **kwargs):
+    half_thickness = thickness / 2
     points = [
-        (half_width, half_width),
-        (length, half_width),
-        (length, -half_width),
-        (half_width, -half_width),
-        (half_width, -length),
-        (-half_width, -length),
-        (-half_width, -half_width),
-        (-length, -half_width),
-        (-length, half_width),
-        (-half_width, half_width),
-        (-half_width, length),
-        (half_width, length),
+        (half_thickness, half_thickness),
+        (length, half_thickness),
+        (length, -half_thickness),
+        (half_thickness, -half_thickness),
+        (half_thickness, -length),
+        (-half_thickness, -length),
+        (-half_thickness, -half_thickness),
+        (-length, -half_thickness),
+        (-length, half_thickness),
+        (-half_thickness, half_thickness),
+        (-half_thickness, length),
+        (half_thickness, length),
+    ]
+    return Polygon(points, **kwargs)
+
+
+def l_shape(height, width, thickness, **kwargs):
+    half_thickness = thickness / 2
+    points = [
+        (-half_thickness, height),
+        (half_thickness, height),
+        (half_thickness, -(height - thickness)),
+        (width - half_thickness, -(height - thickness)),
+        (width - half_thickness, -height),
+        (-half_thickness, -height),
     ]
     return Polygon(points, **kwargs)
 
