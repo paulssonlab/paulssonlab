@@ -753,7 +753,7 @@ def _barcode(
     layer=None,
 ):
     if zero_symbol is None:
-        zero_symbol = g.Polygon([(-1 / 2, -1 / 2), (-1 / 2, 1 / 2), (1 / 2, -1 / 2)])
+        zero_symbol = g.Polygon([(1 / 2, -1 / 2), (1 / 2, 1 / 2), (-1 / 2, -1 / 2)])
     elif zero_symbol is not False:
         zero_symbol = gdspy.copy(zero_symbol)
     if one_symbol is None:
