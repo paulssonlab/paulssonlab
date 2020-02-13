@@ -1,5 +1,5 @@
 import numpy as np
-from gdspy import Cell, Round, Polygon, boolean
+from gdspy import Cell, Round, Polygon, boolean, Rectangle
 from functools import partial
 
 MAX_POINTS = 4094  # 8191 # same as LayoutEditor
@@ -48,6 +48,22 @@ def l_shape(height, width, thickness, **kwargs):
         (-half_thickness, -height),
     ]
     return Polygon(points, **kwargs)
+
+
+def qr_target(outer_thickness, margin, inner_width, layer=None):
+    hole_x = margin + inner_width / 2
+    outer_x = hole_x + outer_thickness
+    half_inner_width = inner_width / 2
+    outer = Rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
+    hole = Rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
+    outer = boolean(outer, hole, "not", layer=layer)
+    # return outer
+    inner = Rectangle(
+        (-half_inner_width, -half_inner_width),
+        (half_inner_width, half_inner_width),
+        layer=layer,
+    )
+    return boolean(outer, inner, "or", layer=layer)
 
 
 def polygon_orientation(polygon):

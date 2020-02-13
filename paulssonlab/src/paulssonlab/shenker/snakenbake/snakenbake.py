@@ -8,7 +8,7 @@ from geometry import (
     Cell,
     Round,
     cross,
-    l_shape,
+    qr_target,
     boolean,
     mirror,
     mirror_refs,
@@ -190,7 +190,7 @@ def manifold_snake(
     ticks=False,
     tick_length=5,
     tick_margin=5,
-    tick_period=50,
+    tick_period=25,
     tick_text_size=None,
     tick_labels=False,
     draw_trenches=True,
@@ -274,7 +274,7 @@ def manifold_snake(
     )
     # manifolds
     if manifold_round_radius:
-        rounded_corner = Cell("Snake-round")
+        rounded_corner = Cell(f"Snake-round-{label}")
         rounded_curve = g.Curve(0, 0)
         rounded_curve.v(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
@@ -465,7 +465,7 @@ def snake(
     ticks=False,
     tick_length=5,
     tick_margin=5,
-    tick_period=50,
+    tick_period=25,
     tick_text_size=None,
     tick_labels=False,
     draw_trenches=True,
@@ -804,9 +804,10 @@ def _snake_trenches(
     mark_size = 1
     mark_spacing = 1
     mark_pitch = mark_size + mark_spacing
-    barcode_margin = 10
-    column_barcode_margin = barcode_margin
-    row_barcode_margin = barcode_margin + barcode_columns * mark_pitch
+    column_barcode_margin = (
+        4 * mark_size + 3 * mark_spacing
+    ) / 2 + mark_spacing  # TODO: couple to qr_target arguments, below
+    row_barcode_margin = column_barcode_margin + barcode_columns * mark_pitch
     chip_barcode_margin = row_barcode_margin + barcode_columns * mark_pitch
     ###
     trenches_per_set = len(trench_xs)
@@ -833,8 +834,8 @@ def _snake_trenches(
         )
     elif registration_marks:
         tick_cell.add(
-            l_shape(
-                trench_gap / 4, trench_width + trench_spacing, trench_width, layer=layer
+            qr_target(
+                mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
             )
         )
     tick_xs = trench_xs[::tick_period]
