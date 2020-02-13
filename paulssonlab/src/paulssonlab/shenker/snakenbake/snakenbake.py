@@ -742,7 +742,29 @@ def _snake_feeding_channel(
 
 
 # @memoize # TODO!!!
-def _barcode(ary, mark_size, mark_spacing, columns=None, rows=None, layer=None):
+def _barcode(
+    ary,
+    mark_size,
+    mark_spacing,
+    zero_symbol=None,
+    one_symbol=None,
+    columns=None,
+    rows=None,
+    layer=None,
+):
+    if zero_symbol is None:
+        zero_symbol = g.Polygon([(-1 / 2, -1 / 2), (-1 / 2, 1 / 2), (1 / 2, -1 / 2)])
+    elif zero_symbol is not False:
+        zero_symbol = gdspy.copy(zero_symbol)
+    if one_symbol is None:
+        one_symbol = g.Rectangle((-1 / 2, -1 / 2), (1 / 2, 1 / 2))
+    elif one_symbol is not False:
+        one_symbol = gdspy.copy(one_symbol)
+    for symbol in (zero_symbol, one_symbol):
+        if symbol is False:
+            continue
+        symbol.scale(mark_size)
+        symbol.layers = [layer for l in symbol.layers]
     if columns is None and rows is None:
         raise ValueError("either columns or rows must be specified")
     N = len(ary)
@@ -756,21 +778,18 @@ def _barcode(ary, mark_size, mark_spacing, columns=None, rows=None, layer=None):
     number = bitarray.util.ba2int(ary)  # TODO: does not handle different endiannesses
     cell = Cell(f"Barcode-{padding}-{number}")
     mark_pitch = mark_size + mark_spacing
-    y_offset = -(rows * mark_pitch - mark_spacing) / 2
+    y_offset = -((rows - 1) * mark_pitch) / 2
     for column in range(columns):
         for row in range(rows):
+            x = mark_pitch * column + mark_size / 2
+            y = y_offset + mark_pitch * row
             idx = row + rows * column
             if ary2[idx]:
-                cell.add(
-                    Rectangle(
-                        (mark_pitch * column, y_offset + mark_pitch * row),
-                        (
-                            mark_pitch * column + mark_size,
-                            y_offset + mark_pitch * row + mark_size,
-                        ),
-                        layer=layer,
-                    )
-                )
+                if one_symbol is not False:
+                    cell.add(g.copy(one_symbol, x, y))
+            else:
+                if zero_symbol is not False:
+                    cell.add(g.copy(zero_symbol, x, y))
     return cell
 
 
