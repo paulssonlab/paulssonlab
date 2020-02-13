@@ -184,6 +184,7 @@ def manifold_snake(
     feeding_channel_width=90,
     port_radius=200,
     registration_marks=False,
+    chip_id=None,
     ticks=False,
     tick_length=5,
     tick_margin=5,
@@ -384,6 +385,7 @@ def manifold_snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            chip_id=chip_id,
             ticks=ticks,
             tick_labels=tick_labels,
             tick_margin=tick_margin,
@@ -441,6 +443,7 @@ def snake(
     feeding_channel_width=90,
     port_radius=200,
     registration_marks=False,
+    chip_id=None,
     ticks=False,
     tick_length=5,
     tick_margin=5,
@@ -616,6 +619,7 @@ def snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            chip_id=chip_id,
             ticks=ticks,
             tick_labels=tick_labels,
             tick_margin=tick_margin,
@@ -760,6 +764,7 @@ def _snake_trenches(
     trench_fc_overlap,
     feeding_channel_width,
     registration_marks,
+    chip_id,
     ticks,
     tick_labels,
     tick_margin,
@@ -784,6 +789,7 @@ def _snake_trenches(
     barcode_margin = 10
     column_barcode_margin = barcode_margin
     row_barcode_margin = barcode_margin + barcode_columns * mark_pitch
+    chip_barcode_margin = row_barcode_margin + barcode_columns * mark_pitch
     ###
     trenches_per_set = len(trench_xs)
     snake_trenches_cell = Cell(f"Snake Trenches-{label}")
@@ -827,6 +833,45 @@ def _snake_trenches(
     if registration_marks:
         lane_ys_diff = np.diff(lane_ys)
         uniform_lane_ys = np.all(lane_ys_diff == lane_ys_diff[0])
+        if chip_id is not None:
+            bits = hamming.encode(
+                bitarray.util.int2ba(chip_id, length=barcode_num_bits)
+            )
+            chip_barcode = _barcode(
+                bits,
+                mark_size,
+                mark_spacing,
+                rows=barcode_rows,
+                columns=barcode_columns,
+                layer=layer,
+            )
+            if uniform_lane_ys:
+                snake_trenches_cell.add(
+                    CellArray(
+                        chip_barcode,
+                        num_ticks,
+                        len(lane_ys),
+                        (
+                            tick_period * (trench_width + trench_spacing),
+                            lane_ys_diff[0],
+                        ),
+                        (
+                            trench_xs[0] + chip_barcode_margin,
+                            lane_ys[0] + lane_gap_offset_y,
+                        ),
+                    )
+                )
+            else:
+                for y in lane_ys:
+                    snake_trenches_cell.add(
+                        CellArray(
+                            chip_barcode,
+                            num_ticks,
+                            1,
+                            (tick_period * (trench_width + trench_spacing), 0),
+                            (trench_xs[0] + row_barcode_margin, y + lane_gap_offset_y),
+                        )
+                    )
         for tick_idx, x in enumerate(tick_xs):
             bits = hamming.encode(
                 bitarray.util.int2ba(tick_idx, length=barcode_num_bits)
