@@ -43,7 +43,7 @@ def Text(
     **kwargs,
 ):
     objs = _Text(text, size, position=(0, 0), **kwargs)
-    objs = mirror_refs(objs)
+    # objs = mirror_refs(objs)
     if prerotate_alignment is not None:
         objs = align_refs(objs, position=(0, 0), alignment=prerotate_alignment)
     if angle == 0:
@@ -283,7 +283,7 @@ def manifold_snake(
             snake_manifold_cell = Cell(
                 f"Snake-{'left' if flip == 1 else 'right'}-{idx}-{label}"
             )
-            port_lanes = left_port_lanes if flip == 1 else right_port_lanes
+            port_lanes = right_port_lanes if flip == -1 else left_port_lanes
             manifold_lane_ys = lane_ys[
                 port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
             ][::-flip]
@@ -292,13 +292,15 @@ def manifold_snake(
                 manifold_width / 2 - feeding_channel_width / 2
             )
             snake_manifold_cell.add(
-                Round((flip * port_x, port_y), port_radius, layer=feeding_channel_layer)
+                Round(
+                    (-flip * port_x, port_y), port_radius, layer=feeding_channel_layer
+                )
             )
             manifold_left_x = port_x + port_radius + manifold_input_length
             snake_manifold_cell.add(
                 Rectangle(
-                    (flip * port_x, port_y + manifold_width / 2),
-                    (flip * manifold_left_x, port_y - manifold_width / 2),
+                    (-flip * port_x, port_y + manifold_width / 2),
+                    (-flip * manifold_left_x, port_y - manifold_width / 2),
                     layer=feeding_channel_layer,
                 )
             )
@@ -307,8 +309,8 @@ def manifold_snake(
             )
             snake_manifold_cell.add(
                 Rectangle(
-                    (flip * manifold_left_x, port_y - flip * manifold_width / 2),
-                    (flip * (manifold_left_x + manifold_width), manifold_bend_y),
+                    (-flip * manifold_left_x, port_y - flip * manifold_width / 2),
+                    (-flip * (manifold_left_x + manifold_width), manifold_bend_y),
                     layer=feeding_channel_layer,
                 )
             )
@@ -316,41 +318,41 @@ def manifold_snake(
                 snake_manifold_cell.add(
                     CellReference(
                         rounded_corner,
-                        (flip * manifold_left_x, port_y + flip * manifold_width / 2),
-                        rotation=90 * (1 - flip),
+                        (-flip * manifold_left_x, port_y + flip * manifold_width / 2),
+                        rotation=90 * (2 + flip),
                     )
                 )
-                for y in manifold_lane_ys[1:]:
-                    snake_manifold_cell.add(
-                        CellReference(
-                            rounded_corner,
-                            (
-                                flip * (manifold_left_x + manifold_width),
-                                y - flip * feeding_channel_width / 2,
-                            ),
-                            rotation=90 * (3 - flip),
-                        )
-                    )
                 for y in manifold_lane_ys[:-1]:
                     snake_manifold_cell.add(
                         CellReference(
                             rounded_corner,
                             (
-                                flip * (manifold_left_x + manifold_width),
+                                -flip * (manifold_left_x + manifold_width),
                                 y + flip * feeding_channel_width / 2,
                             ),
-                            rotation=90 * (4 - flip),
+                            rotation=90 * (3 + flip),
+                        )
+                    )
+                for y in manifold_lane_ys[1:]:
+                    snake_manifold_cell.add(
+                        CellReference(
+                            rounded_corner,
+                            (
+                                -flip * (manifold_left_x + manifold_width),
+                                y - flip * feeding_channel_width / 2,
+                            ),
+                            rotation=90 * (4 + flip),
                         )
                     )
             for y in manifold_lane_ys:
                 snake_manifold_cell.add(
                     g.Rectangle(
                         (
-                            flip * (manifold_left_x + manifold_width),
+                            -flip * (manifold_left_x + manifold_width),
                             y + feeding_channel_width / 2,
                         ),
                         (
-                            flip * (-lane_fc_dims[0] / 2 - outer_snake_turn_radius),
+                            -flip * (-lane_fc_dims[0] / 2 - outer_snake_turn_radius),
                             y - feeding_channel_width / 2,
                         ),
                         layer=feeding_channel_layer,
@@ -359,10 +361,10 @@ def manifold_snake(
             manifold_bend_angle = np.pi * (1 / 2 - flip)
             snake_fc_cell.add(
                 Round(
-                    (flip * (manifold_left_x + manifold_width), manifold_bend_y),
+                    (-flip * (manifold_left_x + manifold_width), manifold_bend_y),
                     manifold_width,
                     initial_angle=manifold_bend_angle,
-                    final_angle=manifold_bend_angle - flip * np.pi,
+                    final_angle=manifold_bend_angle + flip * np.pi,
                     layer=feeding_channel_layer,
                 )
             )
@@ -684,15 +686,15 @@ def _snake_feeding_channel(
     lane_mask[skipped_lanes[-1] :] = False
     lane_ys = lane_ys[lane_mask]
     split_cum = np.concatenate(((0,), np.cumsum(split)))
-    left_port_lanes = split_cum[1:] - 1
-    right_port_lanes = split_cum[:-1]
-    left_bend_lanes = np.concatenate(
+    right_port_lanes = split_cum[1:] - 1
+    left_port_lanes = split_cum[:-1]
+    right_bend_lanes = np.concatenate(
         [
             np.arange(start, stop - 1, 2)
             for start, stop in zip(split_cum[:-1], split_cum[1:])
         ]
     )
-    right_bend_lanes = left_bend_lanes + 1
+    left_bend_lanes = right_bend_lanes + 1
     snake_fc_cell = Cell(f"Snake Feeding Channel-{label}")
     for y in lane_ys:
         snake_fc_cell.add(CellReference(lane_cell, (0, y)))
