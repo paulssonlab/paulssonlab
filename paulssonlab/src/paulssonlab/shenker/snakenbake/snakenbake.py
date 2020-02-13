@@ -169,8 +169,10 @@ def manifold_snake(
     lanes_per_snake=1,
     num_manifolds=1,
     manifold_width=200,
-    manifold_input_length=1.5e3,
+    manifold_input_margin=2e3,
+    manifold_bend_margin=0.2e3,
     manifold_margin=200,
+    manifold_bend_radius=200,
     manifold_round_radius=True,
     top_margin=1.5e3,
     bottom_margin=1e3,
@@ -212,9 +214,10 @@ def manifold_snake(
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
     horizontal_margin = (
         port_margin
-        + 2 * port_radius
+        + port_radius
+        + manifold_width / 2
+        + 2 * manifold_bend_radius
         + manifold_width
-        + manifold_input_length
         + manifold_margin
     )
     lane_fc_dims = np.array(
@@ -288,40 +291,53 @@ def manifold_snake(
                 port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
             ][::-flip]
             port_x = -dims[0] / 2 + port_margin + port_radius
-            port_y = manifold_lane_ys[0] + flip * (
-                manifold_width / 2 - feeding_channel_width / 2
+            manifold_input_bend_x = port_x + manifold_width / 2 + manifold_bend_radius
+            manifold_input_bend_y = manifold_lane_ys[0] - flip * (
+                feeding_channel_width / 2 + manifold_bend_margin
+            )
+            port_y = manifold_input_bend_y + flip * (
+                manifold_input_margin + port_radius
             )
             snake_manifold_cell.add(
                 Round(
                     (-flip * port_x, port_y), port_radius, layer=feeding_channel_layer
                 )
             )
-            manifold_left_x = port_x + port_radius + manifold_input_length
             snake_manifold_cell.add(
-                Rectangle(
-                    (-flip * port_x, port_y + manifold_width / 2),
-                    (-flip * manifold_left_x, port_y - manifold_width / 2),
+                Round(
+                    (-flip * manifold_input_bend_x, manifold_input_bend_y),
+                    manifold_bend_radius + manifold_width,
+                    inner_radius=manifold_bend_radius,
+                    initial_angle=0,
+                    final_angle=-flip * np.pi,
                     layer=feeding_channel_layer,
                 )
             )
-            manifold_bend_y = manifold_lane_ys[-1] + flip * (
+            snake_manifold_cell.add(
+                Rectangle(
+                    (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
+                    (-flip * (port_x + manifold_width / 2), port_y),
+                )
+            )
+            manifold_left_x = manifold_input_bend_x + manifold_bend_radius
+            manifold_top_y = manifold_lane_ys[0] - flip * feeding_channel_width / 2
+            manifold_taper_y = manifold_lane_ys[-1] + flip * (
                 feeding_channel_width / 2 - manifold_width
             )
             snake_manifold_cell.add(
                 Rectangle(
-                    (-flip * manifold_left_x, port_y - flip * manifold_width / 2),
-                    (-flip * (manifold_left_x + manifold_width), manifold_bend_y),
+                    (-flip * manifold_left_x, manifold_input_bend_y),
+                    (-flip * (manifold_left_x + manifold_width), manifold_top_y),
+                )
+            )
+            snake_manifold_cell.add(
+                Rectangle(
+                    (-flip * manifold_left_x, manifold_top_y),
+                    (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
                     layer=feeding_channel_layer,
                 )
             )
             if manifold_round_radius:
-                snake_manifold_cell.add(
-                    CellReference(
-                        rounded_corner,
-                        (-flip * manifold_left_x, port_y + flip * manifold_width / 2),
-                        rotation=90 * (2 + flip),
-                    )
-                )
                 for y in manifold_lane_ys[:-1]:
                     snake_manifold_cell.add(
                         CellReference(
@@ -333,7 +349,7 @@ def manifold_snake(
                             rotation=90 * (3 + flip),
                         )
                     )
-                for y in manifold_lane_ys[1:]:
+                for y in manifold_lane_ys:
                     snake_manifold_cell.add(
                         CellReference(
                             rounded_corner,
@@ -358,13 +374,13 @@ def manifold_snake(
                         layer=feeding_channel_layer,
                     )
                 )
-            manifold_bend_angle = np.pi * (1 / 2 - flip)
+            manifold_taper_angle = np.pi * (1 / 2 - flip)
             snake_fc_cell.add(
                 Round(
-                    (-flip * (manifold_left_x + manifold_width), manifold_bend_y),
+                    (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
                     manifold_width,
-                    initial_angle=manifold_bend_angle,
-                    final_angle=manifold_bend_angle + flip * np.pi,
+                    initial_angle=manifold_taper_angle,
+                    final_angle=manifold_taper_angle + flip * np.pi,
                     layer=feeding_channel_layer,
                 )
             )
@@ -1321,7 +1337,7 @@ def chip(
     chip_cell = Cell(f"Chip-{name}")
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
-    text_position = (0, dims[1] / 2 - 1.5 * label_text_size)
+    text_position = (0, dims[1] / 2 - 1.1 * label_text_size)
     if text:
         chip_cell.add(
             Text(
