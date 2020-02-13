@@ -819,15 +819,6 @@ def _snake_trenches(
                 trench_gap / 4, trench_width + trench_spacing, trench_width, layer=layer
             )
         )
-        # tick_cell.add()
-        # mark_size = 2 * trench_width
-        # mark_margin = 1
-        # mark_pitch = mark_size + mark_margin
-        # tick_cell.add(
-        #     cross((trench_gap - mark_margin) / 2 / np.sqrt(2), mark_size, layer=layer)
-        #     .rotate(np.pi / 4)
-        #     .translate(0, trench_length + trench_gap / 2)
-        # )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
     if registration_marks:
@@ -876,9 +867,6 @@ def _snake_trenches(
             bits = hamming.encode(
                 bitarray.util.int2ba(tick_idx, length=barcode_num_bits)
             )
-            # bits = bitarray.bitarray([True] * 16)
-            # bits[6] = 0
-            # bits[9] = 0
             column_barcode = _barcode(
                 bits,
                 mark_size,
@@ -939,7 +927,6 @@ def _snake_trenches(
                 bits = hamming.encode(
                     bitarray.util.int2ba(lane_idx, length=barcode_num_bits)
                 )
-                # bits = bitarray.bitarray([True] * 16)
                 row_barcode = _barcode(
                     bits,
                     mark_size,
