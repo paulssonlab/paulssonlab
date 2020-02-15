@@ -174,6 +174,8 @@ def manifold_snake(
     manifold_margin=200,
     manifold_bend_radius=200,
     manifold_round_radius=True,
+    manifold_input_style="bend-out",
+    border_margin=600,
     top_margin=1.5e3,
     bottom_margin=1e3,
     port_margin=0.5e3,
@@ -217,14 +219,47 @@ def manifold_snake(
     effective_trench_length = trench_length + trench_gap / 2
     inner_snake_turn_radius = effective_trench_length
     outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
-    horizontal_margin = (
-        port_margin
-        + port_radius
-        + manifold_width / 2
-        + 2 * manifold_bend_radius
-        + manifold_width
-        + manifold_margin
-    )
+    if manifold_input_style == "right-angle":
+        horizontal_margin = (
+            port_margin
+            + 2 * port_radius
+            + manifold_input_margin
+            + manifold_width
+            + manifold_margin
+        )
+    elif manifold_input_style == "u-turn":
+        horizontal_margin = (
+            port_margin
+            + port_radius
+            + manifold_width / 2
+            + 2 * manifold_bend_radius
+            + manifold_width
+            + manifold_margin
+        )
+    elif manifold_input_style == "bend-out":
+        horizontal_margin = (
+            port_margin
+            + 2 * port_radius
+            + manifold_input_margin
+            + manifold_bend_radius
+            + manifold_width
+            + manifold_margin
+        )
+    elif manifold_input_style == "bend-in":
+        horizontal_margin = border_margin
+        # TODO: rename manifold_margin to something more clear
+        # TODO: combine border/port margin?
+        # TODO: this should be +=, so that top/bottom_margin is extra
+        # TODO: top_margin should incorporate label size
+        top_margin = (
+            port_margin
+            + port_radius
+            + manifold_width / 2
+            + manifold_bend_radius
+            + manifold_bend_margin
+        )
+    else:
+        raise NotImplementedError
     lane_fc_dims = np.array(
         [
             dims[0] - 2 * horizontal_margin - 2 * outer_snake_turn_radius,
@@ -296,45 +331,91 @@ def manifold_snake(
                 port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
             ][::-flip]
             port_x = -dims[0] / 2 + port_margin + port_radius
-            manifold_input_bend_x = port_x + manifold_width / 2 + manifold_bend_radius
             manifold_input_bend_y = manifold_lane_ys[0] - flip * (
                 feeding_channel_width / 2 + manifold_bend_margin
             )
-            port_y = manifold_input_bend_y + flip * (
-                manifold_input_margin + port_radius
-            )
+            if manifold_input_style == "right-angle":
+                pass
+            elif manifold_input_style == "u-turn":
+                manifold_input_bend_x = (
+                    port_x + manifold_width / 2 + manifold_bend_radius
+                )
+                port_y = manifold_input_bend_y + flip * (
+                    manifold_input_margin + port_radius
+                )
+                manifold_bend_angles = (0, -flip * np.pi)
+            elif manifold_input_style == "bend-out":
+                manifold_input_bend_x = port_x + port_radius + manifold_input_margin
+                port_y = manifold_lane_ys[0] - flip * (
+                    feeding_channel_width / 2
+                    + manifold_bend_margin
+                    + manifold_bend_radius
+                    + manifold_width / 2
+                )
+                manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
+            elif manifold_input_style == "bend-in":
+                manifold_input_bend_x = (
+                    port_x + manifold_width / 2 + manifold_bend_radius
+                )
+            else:
+                raise NotImplementedError
             snake_manifold_cell.add(
                 Round(
                     (-flip * port_x, port_y), port_radius, layer=feeding_channel_layer
                 )
             )
+            # if manifold_input_style == 'right-angle':
+            #     pass
+            # elif manifold_input_style == 'u-turn':
+
+            # elif manifold_input_style == 'bend-out':
+
+            # elif manifold_input_style == 'bend-in':
+            #     pass
+            # else:
+            #     raise NotImplementedError
             snake_manifold_cell.add(
                 Round(
                     (-flip * manifold_input_bend_x, manifold_input_bend_y),
                     manifold_bend_radius + manifold_width,
                     inner_radius=manifold_bend_radius,
-                    initial_angle=0,
-                    final_angle=-flip * np.pi,
+                    initial_angle=manifold_bend_angles[0],
+                    final_angle=manifold_bend_angles[1],
                     layer=feeding_channel_layer,
                 )
             )
-            snake_manifold_cell.add(
-                Rectangle(
-                    (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
-                    (-flip * (port_x + manifold_width / 2), port_y),
+            if manifold_input_style in ("right-angle", "bend-out"):
+                snake_manifold_cell.add(
+                    Rectangle(
+                        (-flip * port_x, port_y + manifold_width / 2),
+                        (-flip * manifold_input_bend_x, port_y - manifold_width / 2),
+                        layer=feeding_channel_layer,
+                    )
                 )
-            )
+            elif manifold_input_style in ("u-turn", "bend-in"):
+                snake_manifold_cell.add(
+                    Rectangle(
+                        (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
+                        (-flip * (port_x + manifold_width / 2), port_y),
+                        layer=feeding_channel_layer,
+                    )
+                )
+            else:
+                raise NotImplementedError
             manifold_left_x = manifold_input_bend_x + manifold_bend_radius
             manifold_top_y = manifold_lane_ys[0] - flip * feeding_channel_width / 2
             manifold_taper_y = manifold_lane_ys[-1] + flip * (
                 feeding_channel_width / 2 - manifold_width
             )
+            # manifold bend margin
             snake_manifold_cell.add(
                 Rectangle(
                     (-flip * manifold_left_x, manifold_input_bend_y),
                     (-flip * (manifold_left_x + manifold_width), manifold_top_y),
+                    layer=feeding_channel_layer,
                 )
             )
+            # manifold
             snake_manifold_cell.add(
                 Rectangle(
                     (-flip * manifold_left_x, manifold_top_y),
