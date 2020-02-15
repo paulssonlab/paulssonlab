@@ -186,6 +186,11 @@ def manifold_snake(
     feeding_channel_width=90,
     port_radius=200,
     registration_marks=False,
+    barcode_num_bits=11,
+    barcode_rows=4,
+    barcode_columns=4,
+    mark_size=1,
+    mark_spacing=1,
     chip_id=None,
     ticks=False,
     tick_length=5,
@@ -403,6 +408,11 @@ def manifold_snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            barcode_num_bits=barcode_num_bits,
+            barcode_rows=barcode_rows,
+            barcode_columns=barcode_columns,
+            mark_size=mark_size,
+            mark_spacing=mark_spacing,
             chip_id=chip_id,
             ticks=ticks,
             tick_labels=tick_labels,
@@ -461,6 +471,11 @@ def snake(
     feeding_channel_width=90,
     port_radius=200,
     registration_marks=False,
+    barcode_num_bits=11,
+    barcode_rows=4,
+    barcode_columns=4,
+    mark_size=1,
+    mark_spacing=1,
     chip_id=None,
     ticks=False,
     tick_length=5,
@@ -637,6 +652,11 @@ def snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            barcode_num_bits=barcode_num_bits,
+            barcode_rows=barcode_rows,
+            barcode_columns=barcode_columns,
+            mark_size=mark_size,
+            mark_spacing=mark_spacing,
             chip_id=chip_id,
             ticks=ticks,
             tick_labels=tick_labels,
@@ -741,7 +761,7 @@ def _snake_feeding_channel(
     return snake_fc_cell, lane_ys
 
 
-# @memoize # TODO!!!
+@memoize  # TODO!!!
 def _barcode(
     ary,
     mark_size,
@@ -776,7 +796,7 @@ def _barcode(
     ary2 = bitarray.util.zeros(padding)
     ary2.extend(ary)
     number = bitarray.util.ba2int(ary)  # TODO: does not handle different endiannesses
-    cell = Cell(f"Barcode-{padding}-{number}")
+    cell = Cell(f"Barcode-m{mark_size}-s{mark_spacing}-{padding}-{number}")
     mark_pitch = mark_size + mark_spacing
     y_offset = -((rows - 1) * mark_pitch) / 2
     for column in range(columns):
@@ -801,6 +821,11 @@ def _snake_trenches(
     trench_fc_overlap,
     feeding_channel_width,
     registration_marks,
+    mark_size,
+    mark_spacing,
+    barcode_num_bits,
+    barcode_rows,
+    barcode_columns,
     chip_id,
     ticks,
     tick_labels,
@@ -816,19 +841,12 @@ def _snake_trenches(
     if ticks and registration_marks:
         raise ValueError("cannot draw both ticks and registration marks")
     lane_gap_offset_y = feeding_channel_width / 2 + trench_length + trench_gap / 2
-    ###
-    barcode_num_bits = 11
-    barcode_rows = 4
-    barcode_columns = 4
-    mark_size = 1
-    mark_spacing = 1
     mark_pitch = mark_size + mark_spacing
     column_barcode_margin = (
         4 * mark_size + 3 * mark_spacing
     ) / 2 + mark_spacing  # TODO: couple to qr_target arguments, below
     row_barcode_margin = column_barcode_margin + barcode_columns * mark_pitch
     chip_barcode_margin = row_barcode_margin + barcode_columns * mark_pitch
-    ###
     trenches_per_set = len(trench_xs)
     snake_trenches_cell = Cell(f"Snake Trenches-{label}")
     trench_cell = Cell(f"Trench-{label}")
@@ -844,10 +862,7 @@ def _snake_trenches(
         tick_cell.add(
             Rectangle(
                 (-trench_width / 2, tick_margin - trench_gap / 2),
-                (
-                    trench_width / 2,
-                    tick_margin - trench_gap / 2 + tick_length,
-                ),
+                (trench_width / 2, tick_margin - trench_gap / 2 + tick_length),
                 layer=layer,
             )
         )
