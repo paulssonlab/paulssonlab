@@ -1141,7 +1141,7 @@ for i in range(1, 100):
     else:
         print(arr_score[i], arr_score[i-1])
         matrix_cost_divide2[0] = matrix_cost_divide2[0]+ i*1#5
-        
+
         if (arr_score[i] < arr_score[i-1]):
             print(arr_score[i], arr_score[i-1])
             continue

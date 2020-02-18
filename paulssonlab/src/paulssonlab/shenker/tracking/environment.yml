@@ -83,8 +83,8 @@ dependencies:
   - libxml2=2.9.9=h13577e0_0
   - lz4-c=1.8.3=he1b5a44_1001
   - markupsafe=1.1.1=py37h14c3975_0
-  - matplotlib=3.1.0=py37_1
   - matplotlib-base=3.1.0=py37hfd891ef_1
+  - matplotlib=3.1.0=py37_1
   - mccabe=0.6.1=py_1
   - mistune=0.8.4=py37h14c3975_1000
   - mock=3.0.5=py37_0
@@ -123,8 +123,8 @@ dependencies:
   - pyparsing=2.4.0=py_0
   - pyqt=5.9.2=py37hcca6a23_0
   - pyrsistent=0.15.2=py37h516909a_0
-  - python=3.7.3=h5b0a415_0
   - python-dateutil=2.8.0=py_0
+  - python=3.7.3=h5b0a415_0
   - pytz=2019.1=py_0
   - pywavelets=1.0.3=py37hd352d35_1
   - pyyaml=5.1.1=py37h516909a_0
@@ -168,4 +168,3 @@ dependencies:
   - zipp=0.5.1=py_0
   - zlib=1.2.11=h14c3975_1004
   - zstd=1.4.0=h3b9ef0a_0
-prefix: /home/jqs1/miniconda3/envs/tracking

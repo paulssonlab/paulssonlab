@@ -30,9 +30,9 @@ dependencies:
   - cycler=0.10.0=py_1
   - cython=0.29.10=py36he1b5a44_0
   - cytoolz=0.9.0.1=py36h14c3975_1001
-  - dask=1.2.2=py_3
   - dask-core=1.2.2=py_0
   - dask-jobqueue=0.4.1=py_0
+  - dask=1.2.2=py_3
   - datashader=0.7.0=py_0
   - datashape=0.5.4=py_1
   - dbus=1.13.6=he372182_0
@@ -77,8 +77,8 @@ dependencies:
   - libblas=3.8.0=10_openblas
   - libcblas=3.8.0=10_openblas
   - libffi=3.2.1=he1b5a44_1006
-  - libgcc=7.2.0=h69d50b8_2
   - libgcc-ng=9.1.0=hdf63c60_0
+  - libgcc=7.2.0=h69d50b8_2
   - libgfortran-ng=7.3.0=hdf63c60_0
   - libiconv=1.15=h516909a_1005
   - liblapack=3.8.0=10_openblas
@@ -97,8 +97,8 @@ dependencies:
   - lz4-c=1.8.3=he1b5a44_1001
   - markdown=2.6.11=py_0
   - markupsafe=1.1.1=py36h14c3975_0
-  - matplotlib=3.1.0=py36_1
   - matplotlib-base=3.1.0=py36hfd891ef_1
+  - matplotlib=3.1.0=py36_1
   - memory_profiler=0.55.0=py_0
   - mistune=0.8.4=py36h14c3975_1000
   - monotonic=1.5=py_0
@@ -112,8 +112,8 @@ dependencies:
   - notebook=5.7.8=py36_1
   - numba=0.43.1=py36hf2d7682_0
   - numcodecs=0.6.3=py36hf484d3e_0
-  - numpy=1.16.4=py36h95a1406_0
   - numpy-indexed=0.3.5=py_1
+  - numpy=1.16.4=py36h95a1406_0
   - olefile=0.46=py_0
   - openblas=0.3.6=h6e990d7_1
   - openssl=1.1.1b=h14c3975_1
@@ -131,6 +131,11 @@ dependencies:
   - pexpect=4.7.0=py36_0
   - pickleshare=0.7.5=py36_1000
   - pillow=6.0.0=py36he7afcd5_0
+  - pip:
+      - deepmerge==0.0.5
+      - pims==0.4.1
+      - slicerator==1.0.0
+      - xmltodict==0.12.0
   - pip=19.1.1=py36_0
   - prometheus_client=0.7.0=py_0
   - prompt_toolkit=2.0.9=py_0
@@ -139,17 +144,17 @@ dependencies:
   - ptyprocess=0.6.0=py_1001
   - pyarrow=0.12.1=py36hbbcf98d_0
   - pycparser=2.19=py36_1
-  - pyct=0.4.6=py_0
   - pyct-core=0.4.6=py_0
+  - pyct=0.4.6=py_0
   - pygments=2.4.2=py_0
   - pyopenssl=19.0.0=py36_0
   - pyparsing=2.4.0=py_0
   - pyqt=5.9.2=py36hcca6a23_0
   - pyrsistent=0.15.2=py36h516909a_0
   - pysocks=1.7.0=py36_0
-  - python=3.6.7=h381d211_1004
   - python-dateutil=2.8.0=py_0
   - python-lmdb=0.92=py36_0
+  - python=3.6.7=h381d211_1004
   - pytz=2019.1=py_0
   - pyviz_comms=0.7.2=py_0
   - pywavelets=1.0.3=py36hd352d35_1
@@ -195,10 +200,3 @@ dependencies:
   - zict=0.1.4=py_0
   - zlib=1.2.11=h14c3975_1004
   - zstd=1.4.0=h3b9ef0a_0
-  - pip:
-    - deepmerge==0.0.5
-    - pims==0.4.1
-    - slicerator==1.0.0
-    - xmltodict==0.12.0
-prefix: /home/jqs1/miniconda3/envs/matriarch
-

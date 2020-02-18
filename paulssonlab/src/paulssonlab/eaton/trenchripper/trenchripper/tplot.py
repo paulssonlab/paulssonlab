@@ -3,7 +3,8 @@ from matplotlib import pyplot as plt
 
 
 def plot_kymograph(kymograph):
-    """Helper function for plotting kymographs. Takes a kymograph array of shape (y_dim,x_dim,t_dim).
+    """Helper function for plotting kymographs. Takes a kymograph array of
+    shape (y_dim,x_dim,t_dim).
 
     Args:
         kymograph (array): kymograph array of shape (y_dim,x_dim,t_dim).

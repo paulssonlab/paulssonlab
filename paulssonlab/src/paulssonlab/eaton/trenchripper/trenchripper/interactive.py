@@ -14,14 +14,14 @@ from .utils import kymo_handle, pandas_hdf5_handler
 
 class kymograph_interactive(kymograph_multifov):
     def __init__(self, headpath):
-        """The kymograph class is used to generate and visualize kymographs. The central function of this
-        class is the method 'generate_kymograph', which takes an hdf5 file of images from a single fov and
-        outputs an hdf5 file containing kymographs from all detected trenches.
+        """The kymograph class is used to generate and visualize kymographs.
+        The central function of this class is the method 'generate_kymograph',
+        which takes an hdf5 file of images from a single fov and outputs an
+        hdf5 file containing kymographs from all detected trenches.
 
         NOTE: I need to revisit the row detection, must ensure there can be no overlap...
 
         Args:
-
         """
         # break all_channels,fov_list,t_subsample_step=t_subsample_step
         super(kymograph_interactive, self).__init__(headpath)
@@ -496,7 +496,8 @@ class kymograph_interactive(kymograph_multifov):
         plt.show()
 
     def plot_kymograph(self, ax, kymograph):
-        """Helper function for plotting kymographs. Takes a kymograph array of shape (y_dim,x_dim,t_dim).
+        """Helper function for plotting kymographs. Takes a kymograph array of
+        shape (y_dim,x_dim,t_dim).
 
         Args:
             kymograph (array): kymograph array of shape (y_dim,x_dim,t_dim).

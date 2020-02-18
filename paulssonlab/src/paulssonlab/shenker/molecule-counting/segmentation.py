@@ -43,8 +43,11 @@ def nd2_to_dask(filename, position, channel, rechunk=True):
 
 
 def aggregate(func, labels, ary):
-    """Applies a reduction func to groups of pixels in ary aggregated by labels.
-    labels should be two-dimensional, ary must be at least two-dimensional.
+    """Applies a reduction func to groups of pixels in ary aggregated by
+    labels.
+
+    labels should be two-dimensional, ary must be at least two-
+    dimensional.
     """
     keys = labels.ravel()
     sorter = np.argsort(keys, kind="mergesort")

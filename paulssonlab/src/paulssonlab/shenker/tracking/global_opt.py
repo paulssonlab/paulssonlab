@@ -362,11 +362,11 @@ for mn in range(len(arr_m)):
     """def get_center2(threshold_number,mask_number):
         mask_number = mask_number-1
         array1 = arr[threshold_number][mask_number]
-        max_y = max(array1, key = lambda item : item[0])  
-        min_y = min(array1, key = lambda item : item[0])  
-        max_x = max(array1, key = lambda item : item[1]) 
-        min_x = min(array1, key = lambda item : item[1])  
-        
+        max_y = max(array1, key = lambda item : item[0])
+        min_y = min(array1, key = lambda item : item[0])
+        max_x = max(array1, key = lambda item : item[1])
+        min_x = min(array1, key = lambda item : item[1])
+
         arr_center = [(max_y[0]+min_y[0])/2 , (max_x[1]+ min_x[1])/2]
         arr_center_x = arr_center[1]
         return arr_center_x
@@ -374,11 +374,11 @@ for mn in range(len(arr_m)):
     center_arr2=[[]]*(len(df_list[mn]))
     print('aa',len(df_list[mn]), df_list[mn])
     #for k in range (0, len(arr_m)):
-    for i in range (len(df_list[mn])): 
-                
+    for i in range (len(df_list[mn])):
+
                 center_arr2[i] = get_center2(df_list[mn]['threshold_number'][i],df_list[mn]['mask'][i])
                 #print(i , center_arr2)
-    
+
     df_list[mn]['center'] = center_arr2"""
 
     print(mn)
@@ -603,8 +603,8 @@ for i in range (0,len(arr_m)):
     cc.sort()
     df_list[i]['center']=cc
 #for i in range (0,len(arr_m)-1):
-    
-    
+
+
 for i in range (0,len(arr_m)-1):
     m=1
     for j in range(0,len(df_list[i])):

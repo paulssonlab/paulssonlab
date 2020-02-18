@@ -152,8 +152,8 @@ class kymograph_cluster:
         }
 
     def median_filter_2d(self, array, smoothing_kernel):
-        """Two-dimensional median filter, with average smoothing at the signal edges in
-        the second dimension (the non-time dimension).
+        """Two-dimensional median filter, with average smoothing at the signal
+        edges in the second dimension (the non-time dimension).
 
         Args:
             array_list (list): List containing a single array of 2 dimensional signal to be smoothed.
@@ -173,8 +173,9 @@ class kymograph_cluster:
         return med_filter
 
     def get_smoothed_y_percentiles(self, file_idx, y_percentile, smoothing_kernel_y):
-        """For each imported array, computes the percentile along the x-axis of the segmentation
-        channel, generating a (y,t) array. Then performs median filtering of this array for smoothing.
+        """For each imported array, computes the percentile along the x-axis of
+        the segmentation channel, generating a (y,t) array. Then performs
+        median filtering of this array for smoothing.
 
         Args:
             imported_hdf5_handle (h5py.File): Hdf5 file handle corresponding to the input hdf5 dataset
@@ -215,7 +216,8 @@ class kymograph_cluster:
         triangle_max_threshold,
         triangle_min_threshold,
     ):
-        """Applies a triangle threshold to each timepoint in a (t,y) input array, returning a boolean mask.
+        """Applies a triangle threshold to each timepoint in a (t,y) input
+        array, returning a boolean mask.
 
         Args:
             img_arr (array): ndarray to be thresholded.
@@ -241,8 +243,8 @@ class kymograph_cluster:
         return triangle_mask
 
     def get_edges_from_mask(self, mask):
-        """Finds edges from a boolean mask of shape (t,y). Filters out rows of length
-        smaller than y_min_edge_dist.
+        """Finds edges from a boolean mask of shape (t,y). Filters out rows of
+        length smaller than y_min_edge_dist.
 
         Args:
             mask (array): Boolean of shape (y,t) resulting from triangle thresholding.
@@ -272,7 +274,8 @@ class kymograph_cluster:
         triangle_min_threshold,
         y_min_edge_dist,
     ):
-        """Detects edges in the shape (t,y) smoothed percentile arrays for each input array.
+        """Detects edges in the shape (t,y) smoothed percentile arrays for each
+        input array.
 
         Args:
             y_percentiles_smoothed_array (array): A shape (y,t) smoothed percentile array.
@@ -324,9 +327,9 @@ class kymograph_cluster:
     def remove_out_of_frame(
         self, orientations, repaired_trench_edges_y, start_above, end_above
     ):
-        """Takes an array of trench row edges and removes the first/last
-        edge, if that edge does not have a proper partner (i.e. trench row mask
-        takes value True at boundaries of image).
+        """Takes an array of trench row edges and removes the first/last edge,
+        if that edge does not have a proper partner (i.e. trench row mask takes
+        value True at boundaries of image).
 
         Args:
             edges (array): Array of edges along y-axis.
@@ -489,7 +492,8 @@ class kymograph_cluster:
     #         return y_ends_list
 
     def get_y_drift(self, y_ends_list):
-        """Given a list of midpoints, computes the average drift in y for every timepoint.
+        """Given a list of midpoints, computes the average drift in y for every
+        timepoint.
 
         Args:
             y_midpoints_list (list): A list containing, for each fov, a list of the form [time_list,[midpoint_array]]
@@ -699,7 +703,7 @@ class kymograph_cluster:
         smoothing_kernel_x,
     ):
 
-        """Summary
+        """Summary.
 
         Args:
             array_tuple (tuple): A singleton tuple containing the y-cropped hdf5 array of shape (rows,x,y,t).
@@ -761,7 +765,8 @@ class kymograph_cluster:
         return midpoints
 
     def get_x_row_midpoints(self, x_percentiles_t, otsu_nbins, otsu_scaling):
-        """Given an array of signal in x, determines the position of trench midpoints.
+        """Given an array of signal in x, determines the position of trench
+        midpoints.
 
         Args:
             x_percentiles_t (array): array of trench intensities in x, at time t.
@@ -781,8 +786,8 @@ class kymograph_cluster:
         return midpoints
 
     def get_x_midpoints(self, x_percentiles_smoothed, otsu_nbins, otsu_scaling):
-        """Given an x percentile array of shape (rows,t,x), determines the trench midpoints of each row array
-        at each time t.
+        """Given an x percentile array of shape (rows,t,x), determines the
+        trench midpoints of each row array at each time t.
 
         Args:
             x_percentiles_smoothed_array (array): A smoothed and background subtracted percentile array of shape (rows,x,t)
@@ -825,7 +830,8 @@ class kymograph_cluster:
         return all_midpoints_list
 
     def get_x_drift(self, midpoint_futures):
-        """Given a list of midpoints, computes the average drift in x for every timepoint.
+        """Given a list of midpoints, computes the average drift in x for every
+        timepoint.
 
         Args:
             all_midpoints_list (list): A nested list of the form [row_list,[time_list,[midpoint_array]]] containing
@@ -880,8 +886,9 @@ class kymograph_cluster:
         return midpoint_seeds
 
     def get_in_bounds(self, all_midpoints, x_drift, trench_width_x, trench_present_thr):
-        """Produces and writes a trench mask of shape (y_dim,t_dim,x_dim). This will be used to mask out
-        trenches from the reshaped "cropped_in_y" array at a later step.
+        """Produces and writes a trench mask of shape (y_dim,t_dim,x_dim). This
+        will be used to mask out trenches from the reshaped "cropped_in_y"
+        array at a later step.
 
         Args:
             cropped_in_y (array): A y-cropped hdf5 array of shape (rows,y,x,t) containing y-cropped image data.
@@ -927,9 +934,12 @@ class kymograph_cluster:
     def get_all_in_bounds(
         self, midpoint_futures, x_drift_future, trench_width_x, trench_present_thr
     ):
-        """Generates complete kymograph arrays for all trenches in the fov in every channel listed in 'self.all_channels'.
-        Writes hdf5 files containing datasets of shape (trench_num,y_dim,x_dim,t_dim) for each row,channel combination.
-        Dataset keys follow the convention ["[row_number]/[channel_name]"].
+        """Generates complete kymograph arrays for all trenches in the fov in
+        every channel listed in 'self.all_channels'. Writes hdf5 files
+        containing datasets of shape (trench_num,y_dim,x_dim,t_dim) for each
+        row,channel combination. Dataset keys follow the convention.
+
+        ["[row_number]/[channel_name]"].
 
         Args:
             cropped_in_y_handle (h5py.File): Hdf5 file handle corresponding to the y-cropped hdf5 dataset
@@ -959,8 +969,8 @@ class kymograph_cluster:
         return in_bounds_list, x_coords_list, k_tot_list
 
     def init_counting_arr(self, x_dim):
-        """Initializes a counting array of shape (x_dim,) which counts from 0 to
-        x_dim on axis 0.
+        """Initializes a counting array of shape (x_dim,) which counts from 0
+        to x_dim on axis 0.
 
         Args:
             x_dim (int): Size of x axis to use.
@@ -973,8 +983,9 @@ class kymograph_cluster:
         return counting_arr
 
     def get_trench_mask(self, in_bounds, counting_arr):
-        """Produce a trench mask of shape (y_dim,t_dim,x_dim) which will correspond
-        to the reshaped "cropped_in_y" array that will be made later.
+        """Produce a trench mask of shape (y_dim,t_dim,x_dim) which will
+        correspond to the reshaped "cropped_in_y" array that will be made
+        later.
 
         Args:
             array_tuple (tuple): Singleton tuple containing the trench boundary array of shape
@@ -1000,9 +1011,11 @@ class kymograph_cluster:
         return k_mask
 
     def apply_kymo_mask(self, k_mask, img_arr, k_tot):
-        """Given a y-cropped image and a boolean trench mask of shape (y_dim,t_dim,x_dim), masks that image to
-        generate an output kymograph of shape (trench_num,y_dim,x_dim,t_dim). Masked trenches must be a fized size,
-        so this only detects trenches that are totally in frame for the whole timelapse.
+        """Given a y-cropped image and a boolean trench mask of shape
+        (y_dim,t_dim,x_dim), masks that image to generate an output kymograph
+        of shape (trench_num,y_dim,x_dim,t_dim). Masked trenches must be a
+        fized size, so this only detects trenches that are totally in frame for
+        the whole timelapse.
 
         Args:
             array_tuple (tuple): Tuple containing the y-cropped hdf5 array of shape (t,y,x), and
@@ -1030,8 +1043,9 @@ class kymograph_cluster:
     def crop_with_k_masks(
         self, output_kymograph, cropped_in_y_list, kymo_mask, k_tot, row_num
     ):
-        """Generates and writes kymographs of a single row from the already y-cropped image data, using a pregenerated kymograph mask
-        of shape (y_dim,t_dim,x_dim).
+        """Generates and writes kymographs of a single row from the already
+        y-cropped image data, using a pregenerated kymograph mask of shape
+        (y_dim,t_dim,x_dim).
 
         Args:
             cropped_in_y_handle (h5py.File): Hdf5 file handle corresponding to the y-cropped hdf5 dataset
@@ -1064,9 +1078,12 @@ class kymograph_cluster:
         padding_y,
         trench_len_y,
     ):
-        """Generates complete kymograph arrays for all trenches in the fov in every channel listed in 'self.all_channels'.
-        Writes hdf5 files containing datasets of shape (trench_num,y_dim,x_dim,t_dim) for each row,channel combination.
-        Dataset keys follow the convention ["[row_number]/[channel_name]"].
+        """Generates complete kymograph arrays for all trenches in the fov in
+        every channel listed in 'self.all_channels'. Writes hdf5 files
+        containing datasets of shape (trench_num,y_dim,x_dim,t_dim) for each
+        row,channel combination. Dataset keys follow the convention.
+
+        ["[row_number]/[channel_name]"].
 
         Args:
             cropped_in_y_handle (h5py.File): Hdf5 file handle corresponding to the y-cropped hdf5 dataset
@@ -1663,9 +1680,10 @@ class kymograph_cluster:
 
 class kymograph_multifov(multifov):
     def __init__(self, headpath):
-        """The kymograph class is used to generate and visualize kymographs. The central function of this
-        class is the method 'generate_kymograph', which takes an hdf5 file of images from a single fov and
-        outputs an hdf5 file containing kymographs from all detected trenches.
+        """The kymograph class is used to generate and visualize kymographs.
+        The central function of this class is the method 'generate_kymograph',
+        which takes an hdf5 file of images from a single fov and outputs an
+        hdf5 file containing kymographs from all detected trenches.
 
         NOTE: I need to revisit the row detection, must ensure there can be no overlap...
 
@@ -1677,7 +1695,6 @@ class kymograph_multifov(multifov):
             the first position. NOTE: these names must match those of the input hdf5 file datasets.
             trench_len_y (int): Length from the end of the tenches to be used when cropping in the
             y-dimension.
-
         """
 
         self.headpath = headpath
@@ -1687,9 +1704,10 @@ class kymograph_multifov(multifov):
         self.metadata = self.metadf.metadata
 
     def import_hdf5(self, i):
-        """Performs initial import of the hdf5 file to be processed. Converts the input hdf5 file's "channel"
-        datasets into the first dimension of the array, ordered as specified by 'self.all_channels'. Outputs
-        a numpy array.
+        """Performs initial import of the hdf5 file to be processed. Converts
+        the input hdf5 file's "channel" datasets into the first dimension of
+        the array, ordered as specified by 'self.all_channels'. Outputs a numpy
+        array.
 
         Args:
             i (int): Specifies the current fov index.
@@ -1741,8 +1759,8 @@ class kymograph_multifov(multifov):
         return imported_array_list
 
     def median_filter_2d(self, array, smoothing_kernel):
-        """Two-dimensional median filter, with average smoothing at the signal edges in
-        the first dimension.
+        """Two-dimensional median filter, with average smoothing at the signal
+        edges in the first dimension.
 
         Args:
             array_list (list): List containing a single array of yt signal to be smoothed.
@@ -1762,8 +1780,9 @@ class kymograph_multifov(multifov):
     def get_smoothed_y_percentiles(
         self, i, imported_array_list, y_percentile, smoothing_kernel_y
     ):
-        """For each imported array, computes the percentile along the x-axis of the segmentation
-        channel, generating a (y,t) array. Then performs median filtering of this array for smoothing.
+        """For each imported array, computes the percentile along the x-axis of
+        the segmentation channel, generating a (y,t) array. Then performs
+        median filtering of this array for smoothing.
 
         Args:
             i (int): Specifies the current fov index.
@@ -1798,7 +1817,8 @@ class kymograph_multifov(multifov):
         triangle_max_threshold,
         triangle_min_threshold,
     ):
-        """Applys a triangle threshold to each timepoint in a (y,t) input array, returning a boolean mask.
+        """Applys a triangle threshold to each timepoint in a (y,t) input
+        array, returning a boolean mask.
 
         Args:
             img_arr (array): Image array to be thresholded.
@@ -1825,8 +1845,8 @@ class kymograph_multifov(multifov):
         return triangle_mask, all_thresholds
 
     def get_edges_from_mask(self, mask):
-        """Finds edges from a boolean mask of shape (y,t). Filters out rows of length
-        smaller than y_min_edge_dist.
+        """Finds edges from a boolean mask of shape (y,t). Filters out rows of
+        length smaller than y_min_edge_dist.
 
         Args:
             mask (array): Boolean of shape (y,t) resulting from triangle thresholding.
@@ -1858,7 +1878,8 @@ class kymograph_multifov(multifov):
         triangle_max_threshold,
         triangle_min_threshold,
     ):
-        """Detects edges in the shape (y,t) smoothed percentile arrays for each input array.
+        """Detects edges in the shape (y,t) smoothed percentile arrays for each
+        input array.
 
         Args:
             i (int): Specifies the current fov index.
@@ -1913,9 +1934,9 @@ class kymograph_multifov(multifov):
     def remove_out_of_frame(
         self, orientations, repaired_trench_edges_y, start_above, end_above
     ):
-        """Takes an array of trench row edges and removes the first/last
-        edge, if that edge does not have a proper partner (i.e. trench row mask
-        takes value True at boundaries of image).
+        """Takes an array of trench row edges and removes the first/last edge,
+        if that edge does not have a proper partner (i.e. trench row mask takes
+        value True at boundaries of image).
 
         Args:
             edges (array): Array of edges along y-axis.
@@ -2083,7 +2104,8 @@ class kymograph_multifov(multifov):
         return y_ends_list
 
     def get_y_drift(self, i, y_ends_lists):
-        """Given a list of midpoints, computes the average drift in y for every timepoint.
+        """Given a list of midpoints, computes the average drift in y for every
+        timepoint.
 
         Args:
             y_midpoints_list (list): A list containing, for each fov, a list of the form [time_list,[midpoint_array]]
@@ -2296,7 +2318,7 @@ class kymograph_multifov(multifov):
         background_kernel_x,
         smoothing_kernel_x,
     ):
-        """Summary
+        """Summary.
 
         Args:
             i (int): Specifies the current fov index.
@@ -2351,7 +2373,8 @@ class kymograph_multifov(multifov):
         return midpoints
 
     def get_midpoints(self, x_percentiles_t, otsu_nbins, otsu_scaling):
-        """Given an array of signal in x, determines the position of trench midpoints.
+        """Given an array of signal in x, determines the position of trench
+        midpoints.
 
         Args:
             x_percentiles_t (array): array of trench intensities in x, at time t.
@@ -2372,8 +2395,8 @@ class kymograph_multifov(multifov):
     def get_all_midpoints(
         self, i, x_percentiles_smoothed_list, otsu_nbins, otsu_scaling
     ):
-        """Given an x percentile array of shape (rows,x,t), determines the trench midpoints of each row array
-        at each time t.
+        """Given an x percentile array of shape (rows,x,t), determines the
+        trench midpoints of each row array at each time t.
 
         Args:
             i (int): Specifies the current fov index.
@@ -2407,7 +2430,8 @@ class kymograph_multifov(multifov):
         return midpoints_row_list
 
     def get_x_drift(self, i, all_midpoints_list):
-        """Given an t by x array of midpoints, computed the average drift in x for every timepoint.
+        """Given an t by x array of midpoints, computed the average drift in x
+        for every timepoint.
 
         Args:
             i (int): Specifies the current fov index.
@@ -2432,8 +2456,8 @@ class kymograph_multifov(multifov):
         return x_drift_row_list
 
     def init_counting_arr(self, x_dim, t_dim):
-        """Initializes a counting array of shape (x_dim,t_dim) which counts from 0 to
-        x_dim on axis 0 for all positions in axis 1.
+        """Initializes a counting array of shape (x_dim,t_dim) which counts
+        from 0 to x_dim on axis 0 for all positions in axis 1.
 
         Args:
             x_dim (int): Size of x axis to use.
@@ -2448,8 +2472,8 @@ class kymograph_multifov(multifov):
         return counting_arr_repeated
 
     def get_k_mask(self, in_bounds, counting_arr, k):
-        """Generates a boolean trench mask of shape (x_dim,t_dim) for a given trench k, using
-        the trench boundary values in in_bounds_list.
+        """Generates a boolean trench mask of shape (x_dim,t_dim) for a given
+        trench k, using the trench boundary values in in_bounds_list.
 
         Args:
             in_bounds (array): A shape (2,t_dim,k_dim) array specifying the start and end bounds in x of a
@@ -2469,8 +2493,9 @@ class kymograph_multifov(multifov):
         return k_mask
 
     def apply_kymo_mask(self, img_arr, mask_arr, row_num, channel):
-        """Given a y-cropped image and a boolean trench mask of shape (x_dim,t_dim), masks that image in
-        xt to generate an output kymograph of shape (y_dim,x_dim,t_dim).
+        """Given a y-cropped image and a boolean trench mask of shape
+        (x_dim,t_dim), masks that image in xt to generate an output kymograph
+        of shape (y_dim,x_dim,t_dim).
 
         Args:
             img_arr (array): A numpy array of a y-cropped image
@@ -2541,8 +2566,8 @@ class kymograph_multifov(multifov):
     def get_k_masks(
         self, cropped_in_y, all_midpoints, x_drift, trench_width_x, trench_present_thr
     ):
-        """Generates a boolean trench mask of shape (x_dim,t_dim) for each trench k. This will be used to mask
-        out each trench at a later step.
+        """Generates a boolean trench mask of shape (x_dim,t_dim) for each
+        trench k. This will be used to mask out each trench at a later step.
 
         Args:
             cropped_in_y (array): A y-cropped numpy array of shape (rows,channels,x,y,t) containing y-cropped image data.
@@ -2576,8 +2601,8 @@ class kymograph_multifov(multifov):
         return k_masks
 
     def crop_with_k_masks(self, cropped_in_y, row_num, k_masks):
-        """Performs cropping of the aleady y-cropped image data, using pregenerated kymograph masks
-        of shape (x_dim,t_dim).
+        """Performs cropping of the aleady y-cropped image data, using
+        pregenerated kymograph masks of shape (x_dim,t_dim).
 
         Args:
             cropped_in_y (array): A y-cropped array of shape (rows,channels,x,y,t).
@@ -2607,8 +2632,10 @@ class kymograph_multifov(multifov):
         trench_width_x,
         trench_present_thr,
     ):
-        """Generates complete kymograph arrays for all trenches in the fov in every channel listed in 'self.all_channels'.
-        Outputs a list of these kymograph arrays, with entries corresponding to each row in the fov with index i.
+        """Generates complete kymograph arrays for all trenches in the fov in
+        every channel listed in 'self.all_channels'. Outputs a list of these
+        kymograph arrays, with entries corresponding to each row in the fov
+        with index i.
 
         Args:
             i (int): Specifies the current fov index.
@@ -2670,7 +2697,8 @@ class kymograph_multifov(multifov):
         return cropped_in_x_list
 
     def generate_kymograph(self):
-        """Master function for generating kymographs for the set of fovs specified on initialization.
+        """Master function for generating kymographs for the set of fovs
+        specified on initialization.
 
         Returns:
             list: A nested list of the form [fov_list,[row_list,[kymograph_array]]], containing kymograph arrays of

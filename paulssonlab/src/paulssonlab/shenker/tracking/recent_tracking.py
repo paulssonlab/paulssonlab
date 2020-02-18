@@ -49,8 +49,8 @@ def main2(mainhuh):
 
     # @profile
     """def tree(node1, node2):
-            tree1 = get_tree(n_mask_img[mn][node1], arr[mn][node1], n_mask_img[mn][node2], arr[mn][node2]) 
-        
+            tree1 = get_tree(n_mask_img[mn][node1], arr[mn][node1], n_mask_img[mn][node2], arr[mn][node2])
+
             return tree1"""
     # @profile
     def get_coord_min_max(threshold_number, mask_number):

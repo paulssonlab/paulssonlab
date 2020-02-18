@@ -69,7 +69,7 @@ def divide(length, x_there, x_here, i):
     else:
         oo = -int((75 + (length)) / 8)  ######10
 
-    """x_lol=0            
+    """x_lol=0
             if i>74:
                     m = -0.25+0.25-0.2
                     x_lol=0"""

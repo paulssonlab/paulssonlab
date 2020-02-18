@@ -86,7 +86,8 @@ get_uuid = partial(shortuuid.random, length=2)
 
 # @memoize
 def sampler_snake(trench_width=[1.5], trench_length=[35], **kwargs):
-    """Generates a snake with different trench widths and lengths in a single chip.
+    """Generates a snake with different trench widths and lengths in a single
+    chip.
 
     Parameters
     ----------
@@ -101,8 +102,8 @@ def sampler_snake(trench_width=[1.5], trench_length=[35], **kwargs):
 
 
 def _compute_lane_split(split, max_lanes, gap_lanes=0):
-    """Given a split specification and maximum number of lanes, generates a list of
-    lanes per snake.
+    """Given a split specification and maximum number of lanes, generates a
+    list of lanes per snake.
 
     Parameters
     ----------
@@ -560,7 +561,7 @@ def snake(
     trench_layer=TRENCH_LAYER,
     label=None,
 ):
-    """Summary
+    """Summary.
 
     Parameters
     ----------
@@ -1405,9 +1406,10 @@ def chip(
     metadata=None,
     **kwargs,
 ):
-    """Generates a GDS cell containing a chip. Keyword arguments are passed through to
-    `design_func`, which is expected to return a GDS cell containing a chip design. This
-    function adds an outline and a text label to that design.
+    """Generates a GDS cell containing a chip. Keyword arguments are passed
+    through to `design_func`, which is expected to return a GDS cell containing
+    a chip design. This function adds an outline and a text label to that
+    design.
 
     Parameters
     ----------

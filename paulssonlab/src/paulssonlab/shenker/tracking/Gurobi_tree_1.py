@@ -109,7 +109,7 @@ for i in range(0,1):
 for k in range(1,2):
     for l in range(0,2):
         s[k][l] = n.addVar(0,1,obj=1,vtype=GRB.INTEGER,name="node1")
-        
+
 for i in range(2,3):
     for j in range(0,5):
         s[i][j] = n.addVar(0,1,obj=1,vtype=GRB.INTEGER,name="node1" )

@@ -116,7 +116,7 @@ ell2 = make_ellipse(img2,560,10,610,48,40)
 ell2 = make_ellipse(img2,647,10,700,48,40)
 
 img2=img2.rotate(1)
-img1.paste(img2, (20, 80)) 
+img1.paste(img2, (20, 80))
 
 
 
@@ -130,7 +130,7 @@ ell2 = make_ellipse(img3,150,10,210,48,40)
 img3 = img3.filter(ImageFilter.GaussianBlur(2))
 
 img3=img3.rotate(2)
-img1.paste(img3, (20, 160)) 
+img1.paste(img3, (20, 160))
 
 
 
@@ -140,11 +140,11 @@ ell2 = make_ellipse(img3,2,10,52,48,40)
 ell2 = make_ellipse(img3,70,10,120,48,40)
 ell2 = make_ellipse(img3,180,10,250,48,40)
 ell4 = make_ellipse(img3,380,10,450,48,40)
- 
+
 img3 = img3.filter(ImageFilter.GaussianBlur(2))
 
 img3=img3.rotate(-2)
-img1.paste(img3, (20+260, 160)) 
+img1.paste(img3, (20+260, 160))
 
 
 """

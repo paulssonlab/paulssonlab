@@ -154,7 +154,7 @@ for i in range(1, t):
     m1_mat[i - 1] = np.delete(m1_mat[i - 1], arr)
     # print(m1_mat[i-1] ,'>')
     """for k in arr:
-        
+
         print(sum_len[i-1][k])"""
 
     sum_len[i - 1] = [0] * len(m1_mat[i - 1])
@@ -235,12 +235,12 @@ for i in range(0, t):
             count2 += 1
 
 
-"""    
+"""
 df['to2'] = df['to']
 for i in range(0, t-1):
     for j in range(len(df['to'][i])):
         df['to2'][i][j] = np.asarray(df['to'][i][j]) + (0.5 * np.asarray(df['to_length'][i][j] ))
-        
+
 df['from2'] = df['from']
 for i in range(0, t-1):
     for j in range(len(df['from'][i])):

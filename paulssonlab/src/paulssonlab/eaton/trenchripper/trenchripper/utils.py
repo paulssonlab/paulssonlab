@@ -25,8 +25,8 @@ class multifov:
         self.num_fovs = len(fov_list)
 
     def map_to_fovs(self, func, *args, **kargs):
-        """Handler for performing steps of analysis across multiple fovs. Appends output
-        of a function to a list of outputs for each fov.
+        """Handler for performing steps of analysis across multiple fovs.
+        Appends output of a function to a list of outputs for each fov.
 
         Args:
             func (function): Function to apply to each fov. NOTE: Must be written

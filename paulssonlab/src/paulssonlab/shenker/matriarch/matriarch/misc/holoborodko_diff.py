@@ -8,9 +8,8 @@ from scipy.special import comb
 
 
 def coeffs(M):
-    """
-    Generate the "Smooth noise-robust differentiators" as defined in Pavel
-    Holoborodko's formula for c_k
+    """Generate the "Smooth noise-robust differentiators" as defined in Pavel
+    Holoborodko's formula for c_k.
 
     Parameters
     ----------
@@ -27,15 +26,13 @@ def coeffs(M):
 
 
 def holo_diff(x, y, M=2):
-    """
-    Implementation of Pavel Holoborodko's method of "Smooth noise-robust
-    differentiators" see
-    http://www.holoborodko.com/pavel/numerical-methods/numerical-derivative/
-    smooth-low-noise-differentiators
-    Creates a numerical approximation to the first derivative of a function
-    defined by data points.  End point approximations are found from
-    approximations of lower order.  Greater smoothing is achieved by using a
-    larger value for the order parameter, M.
+    """Implementation of Pavel Holoborodko's method of "Smooth noise-robust
+    differentiators" see http://www.holoborodko.com/pavel/numerical-
+    methods/numerical-derivative/ smooth-low-noise-differentiators Creates a
+    numerical approximation to the first derivative of a function defined by
+    data points.  End point approximations are found from approximations of
+    lower order.  Greater smoothing is achieved by using a larger value for the
+    order parameter, M.
 
     Parameters
     ----------

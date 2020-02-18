@@ -435,25 +435,25 @@ def main2(mainhuh):
 
         ######EXIT  CONSTRAINT #####
 
-        """if mn>0:   
+        """if mn>0:
             c_a = [0] * len(df_list[mn-1])
             sum_see2=[LinExpr()] * len(df_list[mn-1])
-            index_ia=[None] * len(df_list[mn-1]) 
+            index_ia=[None] * len(df_list[mn-1])
             sum_see3[mn-1] = [0] * len(df_list[mn-1])
             for i in range(len(df_list[mn-1])):
-                                
-                                
-                                c_a[i] = df_list[mn-1]['left_edge'].values[i]  
-                                
+
+
+                                c_a[i] = df_list[mn-1]['left_edge'].values[i]
+
                                 if (c_a[i] > min (df_list[mn-1]['right_edge'])):
-                                    index_ia[i] = [i2a for i2a in range(len(df_list[mn-1])) if ( (df_list[mn-1]['right_edge'].values[i2a] - 20) < c_a[i])]# and i2>k  ] 
+                                    index_ia[i] = [i2a for i2a in range(len(df_list[mn-1])) if ( (df_list[mn-1]['right_edge'].values[i2a] - 20) < c_a[i])]# and i2>k  ]
                                     sum_see2[i] = quicksum((s[mn-1][kl] - a_exit[mn-1][kl]) for kl in index_ia[i])
                                 else:
                                     index_ia[i] = None
                                     sum_see2[i] = LinExpr(0)
-                                
+
                                 #print(type(sum_see2[i]))
-                                k = len(df_list[mn-1]) 
+                                k = len(df_list[mn-1])
                                 sum_see3[mn-1][i] = sum_see2[i]
                                 con_exit  = model_tree.addConstr( ( ( k * a_exit[mn-1][i] ) + sum_see3[mn-1][i]) <= k)"""
 

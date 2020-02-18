@@ -334,18 +334,18 @@ for mn in range(len(arr_m)):
 
     ######################################
     """for i in range (0,len(df_list[mn])):
-             
+
             con2 = model_tree.addConstr(a_exit[mn][i]==0 )
             model_tree.update() """
 
     """asum=0
     bsum=0
     #for i in range (0,len(df_list[mn])):
-        
+
     for j in range (0,len(df_list[mn-1])):
             bsum += s[mn-1][j]
-    
-    
+
+
     for i in range (0,len(df_list[mn])):
         asum += s[mn][i]
         con2 = model_tree.addConstr(a_exit[mn][i] +asum - bsum<=0 )
@@ -398,6 +398,6 @@ for jk in range(0, len(arr_m)):
 
 """a_exit_arr = []
 for v in model_tree.getVars():
-        if (v.varName[0]=='a' and v.x==1):# & v.x==1): 
+        if (v.varName[0]=='a' and v.x==1):# & v.x==1):
             a_exit_arr +=[v.x]
             print('%s %g' % (v.varName, v.x))"""

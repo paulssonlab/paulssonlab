@@ -304,7 +304,7 @@ compression+segmentation+zarr (locking+resizing in LMDB)
         record trench bboxes
         reconstruct trench crops + overview frame into zarr/TIFF series
     fast area
-    
+
 get_frame that handles nd2/zarr
 
 label_viewer
@@ -463,7 +463,7 @@ multiindex from categoricalindex?
 ### MINIMAL
 try parquet
 
-try to read selected columns with fastparquet off original 
+try to read selected columns with fastparquet off original
 time reading a single column off original arrow dump
     write selected columns to a BufferOutputStream
 
@@ -603,16 +603,16 @@ SUBMIT GITHUB ISSUE
 distributed.worker - WARNING -  Compute Failed
 Function:  Compose
 args:      (                                                                                     bottom  \
-                                                                                          x   
-filename                                        position channel t trench_set trench          
-/n/scratch2/jqs1/fidelity/all/180405_txnerr.nd2 96       MCHERRY 0 1          0          13   
-                                                                              1          37   
-                                                                              2          61   
-                                                                              3          85   
-                                                                              4         109   
-                                                                              5         133   
-                                                                              6         157   
-                                                 
+                                                                                          x
+filename                                        position channel t trench_set trench
+/n/scratch2/jqs1/fidelity/all/180405_txnerr.nd2 96       MCHERRY 0 1          0          13
+                                                                              1          37
+                                                                              2          61
+                                                                              3          85
+                                                                              4         109
+                                                                              5         133
+                                                                              6         157
+
 kwargs:    {}
 Exception: SystemError('Objects/tupleobject.c:851: bad argument to internal function',)
 
@@ -789,7 +789,7 @@ is selected_trenches offset??
 separate overlay and trench_set image dmaps
 debug get_trench_set_overlay performance
     get_nd2_frame_cached
-    
+
 automatic anyargs decorator/wrapper
 
 trench image viewer
@@ -826,10 +826,10 @@ filename/position/t -> select corresponding trench_bboxes for filename/position
     -> get MCHERRY -> segment
                    -> trenchwise focus/percentiles
     -> get YFP     -> percentiles
-    
+
     MCHERRY-segment + YFP -> labelwise mean/percentiles
                           -> regionprops
-                          
+
     trenchwise results -> gather -> concat (both axes)
     labelwise results -> gather -> concat (both axes)
 
@@ -1015,7 +1015,7 @@ only display/update plots that are open in plot browser
 
 ####################################################################################################################
 
-### 
+###
 compare stage position to trench finding, use stage position to find absolute trench numbers
 parallel load trenches from ND2
 

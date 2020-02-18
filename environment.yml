@@ -3,8 +3,8 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - pre-commit
-  - click
-  - nbformat
   - black
   - cachetools
+  - click
+  - nbformat
+  - pre-commit

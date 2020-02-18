@@ -1003,7 +1003,7 @@ class SegmentationDataset(Dataset):
 
 
 class double_conv(nn.Module):
-    """(Conv => BatchNorm =>ReLU) twice"""
+    """(Conv => BatchNorm =>ReLU) twice."""
 
     def __init__(self, in_ch, out_ch):
         super().__init__()

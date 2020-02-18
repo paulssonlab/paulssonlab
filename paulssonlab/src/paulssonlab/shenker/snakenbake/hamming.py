@@ -19,10 +19,8 @@ BITS_PER_BYTE = 8
 
 
 def encode(data: bitarray):
-    """
-    Given a bitstring 'data', returns a new bitstring containing the original bits
-    and Hamming (even) parity bits to allow for SECDED.
-    """
+    """Given a bitstring 'data', returns a new bitstring containing the
+    original bits and Hamming (even) parity bits to allow for SECDED."""
     # cache due to constant reuse
     data_length = len(data)
     num_parity_bits = _num_parity_bits_needed(data_length)
@@ -54,10 +52,9 @@ def encode(data: bitarray):
 
 
 def decode(encoded: bitarray):
-    """
-    Given a bitstring 'encoded' with Hamming SECDED parity bits, returns the original data bitstring,
-    correcting single errors and reporting if two errors are found.
-    """
+    """Given a bitstring 'encoded' with Hamming SECDED parity bits, returns the
+    original data bitstring, correcting single errors and reporting if two
+    errors are found."""
     encoded_length = len(encoded)
     num_parity_bits = (
         floor(log2(encoded_length - 1)) + 1
@@ -94,9 +91,11 @@ def decode(encoded: bitarray):
 
 
 def _num_parity_bits_needed(length: int):
-    """
-    Given the length of a DATA bitstring, returns the number of parity bits needed for Hamming SEC codes.
-    An additional parity bit beyond this number of parity bits is needed to achieve SECDED codes.
+    """Given the length of a DATA bitstring, returns the number of parity bits
+    needed for Hamming SEC codes.
+
+    An additional parity bit beyond this number of parity bits is needed
+    to achieve SECDED codes.
     """
     n = _next_power_of_two(length)
     lower_bin = floor(log2(n))
@@ -106,9 +105,9 @@ def _num_parity_bits_needed(length: int):
 
 
 def _calculate_parity(data: bitarray, parity: int):
-    """
-    Calculates the specified Hamming parity bit (1, 2, 4, 8, etc.) for the given data.
-    Assumes even parity to allow for easier computation of parity using XOR.
+    """Calculates the specified Hamming parity bit (1, 2, 4, 8, etc.) for the
+    given data. Assumes even parity to allow for easier computation of parity
+    using XOR.
 
     If 0 is passed in to parity, then the overall parity is computed - that is, parity over
     the entire sequence.
@@ -125,9 +124,10 @@ def _calculate_parity(data: bitarray, parity: int):
 
 
 def _data_bits_covered(parity: int, lim: int):
-    """
-    Yields the indices of all data bits covered by a specified parity bit in a bitstring
-    of length lim. The indices are relative to DATA BITSTRING ITSELF, NOT including
+    """Yields the indices of all data bits covered by a specified parity bit in
+    a bitstring of length lim.
+
+    The indices are relative to DATA BITSTRING ITSELF, NOT including
     parity bits.
     """
     if not _is_power_of_two(parity):
@@ -147,9 +147,8 @@ def _data_bits_covered(parity: int, lim: int):
 
 
 def _extract_data(encoded: bitarray):
-    """
-    Assuming encoded is a Hamming SECDED encoded bitstring, returns the substring that is the data bits.
-    """
+    """Assuming encoded is a Hamming SECDED encoded bitstring, returns the
+    substring that is the data bits."""
     data = bitarray()
     for i in range(3, len(encoded)):
         if not _is_power_of_two(i):
@@ -158,8 +157,7 @@ def _extract_data(encoded: bitarray):
 
 
 def _next_power_of_two(n: int):
-    """
-    Given an integer n, returns the next power of two after n.
+    """Given an integer n, returns the next power of two after n.
 
     >>> _next_power_of_two(768)
     1024
@@ -174,16 +172,15 @@ def _next_power_of_two(n: int):
 
 
 def _is_power_of_two(n: int):
-    """
-    Returns if the given non-negative integer n is a power of two.
+    """Returns if the given non-negative integer n is a power of two.
+
     Credit: https://stackoverflow.com/questions/600293/how-to-check-if-a-number-is-a-power-of-2
     """
     return (not (n == 0)) and ((n & (n - 1)) == 0)
 
 
 def _powers_of_two(n: int):
-    """
-    Yields the first n powers of two.
+    """Yields the first n powers of two.
 
     >>> [x for x in _powers_of_two(5)]
     [1, 2, 4, 8, 16]
@@ -201,10 +198,9 @@ def _powers_of_two(n: int):
 
 
 def bytes_to_bits(byte_stream: bytearray):
-    """
-    Converts the given bytearray to a bitarray by converting  each successive byte into its
-    appropriate binary data bits and appending them to the bitarray.
-    """
+    """Converts the given bytearray to a bitarray by converting  each
+    successive byte into its appropriate binary data bits and appending them to
+    the bitarray."""
     out = bitarray()
     for byte in byte_stream:
         data = bin(byte)[2:].zfill(BITS_PER_BYTE)
@@ -216,11 +212,11 @@ def bytes_to_bits(byte_stream: bytearray):
 
 
 def bits_to_bytes(bits: bitarray):
-    """
-    Converts the given bitarray bits to a bytearray.
+    """Converts the given bitarray bits to a bytearray.
 
-    Assumes the bits of the last byte or fraction of a byte are to be interpreted as the least
-    significant bits of the last byte of data, e.g. 0b100 would map to the byte 0b00000100.
+    Assumes the bits of the last byte or fraction of a byte are to be
+    interpreted as the least significant bits of the last byte of data,
+    e.g. 0b100 would map to the byte 0b00000100.
     """
     out = bytearray()
     for i in range(0, len(bits) // BITS_PER_BYTE * BITS_PER_BYTE, BITS_PER_BYTE):

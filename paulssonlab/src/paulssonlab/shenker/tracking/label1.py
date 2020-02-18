@@ -20,7 +20,7 @@ print(img1) # these are the labels
 
 np.savetxt('file1.txt',img1)
 
-#img2 = np.where(img1>0, th1, th1*0) 
+#img2 = np.where(img1>0, th1, th1*0)
 img2 = np.where(th1>0, th1,220)  # changing the last parameter changes the background color
 img3 = np.where(img1==5, th1,0)   # this prints only the areas which are labeled as img== label
 
@@ -45,7 +45,7 @@ print(img1) # these are the labels
 
 np.savetxt('file1.txt',img1)
 
-#img2 = np.where(img1>0, th1, th1*0) 
+#img2 = np.where(img1>0, th1, th1*0)
 img2 = np.where(th1>0, th1,220)  # changing the last parameter changes the background color
 img3 = np.where(img1==2, th1,0)   # this prints only the areas which are labeled as img== label
 
@@ -91,7 +91,7 @@ for cord in listOfCoordinates:
 
 np.savetxt('file_coordinates_listOfCoordinates.txt',listOfCoordinates)
 
- 
+
 output2a = np.where(img1a==5) #[0] gives row indices and [1] gives column indices
 mask_1a = [2 for i in range (len(output2a[0]))]
 listOfCoordinatesa= list(zip(output2a[0], output2a[1], mask_1a))
@@ -115,7 +115,7 @@ th1_bg = th1[img1==0]
 
 
 #np.savetxt('file_coordinates_bg.txt',output2)
-#img2 = np.where(img1>0, th1, th1*0) 
+#img2 = np.where(img1>0, th1, th1*0)
 img2 = np.where(th1>0, th1,220)  # changing the last parameter changes the background color
 img3 = np.where(img1a==5, th1,7)   # this prints only the areas which are labeled as img == label #img1a==5 img1==2
 
@@ -154,7 +154,7 @@ n_mask_img1a = np.amax(img1a)
 
 
 """for i in range (1,n_mask_img1+1):
-    output2 = np.where(img1==i)  
+    output2 = np.where(img1==i)
     mask_1 = [i for j in range (len(output2[0]))]
     listOfCoordinates= list(zip(output2[0], output2[1], mask_1))"""
 
@@ -193,7 +193,7 @@ for i in range (len(arra)):
         if arra[i] == arr[j]:
             arr_new[i] = arr[i]
             #print(arr[i],i)
-            
+
 arr_new = arr_new[arr_new!=0]"""
 
 for i in range(len(arr1)):
