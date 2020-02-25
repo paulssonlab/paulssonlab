@@ -28,8 +28,8 @@ import numbers
 import shortuuid
 
 REFERENCE_LAYER = 0
-TRENCH_LAYER = 2
-FEEDING_CHANNEL_LAYER = 6
+TRENCH_LAYER = 1
+FEEDING_CHANNEL_LAYER = 2
 DEFAULT_DIMS = np.array([23e3, 13e3])
 
 
@@ -1225,11 +1225,11 @@ def mask_alignment_cross(
 
 def wafer(
     chips,
-    name,
+    text_right=None,
+    text_left=None,
     diameter=76.2e3,
-    side=None,
-    chip_area_angle=np.pi / 4,
-    chip_area_margin=4e3,
+    chip_dims=None,
+    chip_margin=0.5e3,
     alignment_mark_position=None,
     alignment_text_size=1000,
     label_text_size=2000,
@@ -1245,17 +1245,12 @@ def wafer(
     ----------
     chips : List
         List of GDS cells containing chips.
-    name : str
-        Name of wafer to include
+    text_right : str
+        Text to write on right side of wafer.
+    text_left : str
+        Text to write on left side of wafer.
     diameter : float, optional
         Diameter of wafer (in microns).
-    side : float, optional
-        The side length of the reference square polygon (on layer number `reference
-        layer`). Note that this reference square has no function.
-    chip_area_angle : float, optional
-        Angle (in radians). Equal to the arctan of the aspect ratio of the chip layout area.
-    chip_area_margin : float, optional
-        Distance (in microns) between corner of chip layout area and edge of wafer.
     alignment_mark_position : float, optional
         Distance (in microns) between both alignment marks.
     alignment_text_size : float, optional
@@ -1263,7 +1258,7 @@ def wafer(
     label_text_size : float, optional
         Size (in microns) of text.
     text : bool, optional
-        If true, label the wafer with `name`. If mask is true, additionally label the
+        If true, label the wafer with `text_right` and `text_left`. If mask is true, additionally label the
         masks with `name` and the layer number outside of the wafer area.
     mask : bool, optional
         If true, mask aligner-compatible alignment crosses are generated. If false,
@@ -1277,29 +1272,59 @@ def wafer(
     """
     if len(chips) > 6:
         raise Exception("cannot lay out more than six chips on a wafer")
-    if side is None:
-        side = diameter * 1.2
+    if chip_dims is None:
+        raise Exception("must provide maximum chip dimension")
     main_cell = Cell("main")
-    corner = np.array((side, side)) / 2
-    square = Rectangle(-corner, corner)
+    square_corner = np.array([diameter, diameter]) * 1.2 / 2
+    square = Rectangle(-square_corner, square_corner, layer=reference_layer)
     circle = Round((0, 0), diameter / 2)
     wafer_outline = boolean(square, circle, "not", layer=reference_layer)
-    # TODO: put text top horizontal or right vertical depending on chip_angle_area <> np.pi/4
-    # TODO: move alignment marks accordingly
-    chip_area_corner = (diameter / 2 - chip_area_margin) * np.array(
-        [np.cos(chip_area_angle), np.sin(chip_area_angle)]
+    main_cell.add(wafer_outline)
+    horizontal_chip_spacing = chip_dims[0] + chip_margin
+    vertical_chip_spacing = chip_dims[1] + chip_margin
+    vertical_spacings = (-1, 0, 1)
+    if len(chips) <= 3:
+        horizontal_spacings = (0,)
+    else:
+        horizontal_spacings = (-1, 1)
+    for (horizontal, vertical), chip in zip(
+        product(horizontal_spacings, vertical_spacings), chips
+    ):
+        x = horizontal_chip_spacing * horizontal / 2
+        y = vertical_chip_spacing * vertical  # * 2 / 3
+        main_cell.add(CellReference(chip, (x, y)))
+    chip_area = np.array(
+        (
+            len(horizontal_spacings) * chip_dims[0]
+            + (len(horizontal_spacings) - 1) * chip_margin,
+            len(vertical_spacings) * chip_dims[1]
+            + (len(vertical_spacings) - 1) * chip_margin,
+        )
     )
+    chip_area_corner = chip_area / 2
     if alignment_mark_position is None:
         alignment_mark_position = chip_area_corner[1] * 7 / 6
-    main_cell.add(Rectangle(-chip_area_corner, chip_area_corner, layer=reference_layer))
-    main_cell.add(wafer_outline)
     profilometry_cell = profilometry_marks(
         layers=(feeding_channel_layer, trench_layer), text=text
     )
-    profilometry_spacing = np.array([0, chip_area_corner[1] * 2 / 3])
+    profilometry_bbox = profilometry_cell.get_bounding_box()
+    profilometry_spacing = np.array(
+        [chip_area[0] + 2 * np.abs(profilometry_bbox[:, 0]).max(), 0]
+    )
     main_cell.add(
-        CellArray(
-            profilometry_cell, 1, 2, profilometry_spacing, -profilometry_spacing / 2
+        CellReference(
+            profilometry_cell,
+            np.array(
+                (-chip_area[0] / 2 - profilometry_bbox[:, 0].max() - chip_margin, 0)
+            ),
+        )
+    )
+    main_cell.add(
+        CellReference(
+            profilometry_cell,
+            np.array(
+                (chip_area[0] / 2 - profilometry_bbox[:, 0].min() + chip_margin, 0)
+            ),
         )
     )
     if mask:
@@ -1351,7 +1376,7 @@ def wafer(
             trench_text_position = fc_text_position * np.array([-1, 1])
             main_cell.add(
                 Text(
-                    "FC layer\n" + name,
+                    "FC layer\n" + text_right,
                     label_text_size,
                     position=fc_text_position,
                     alignment="right",
@@ -1360,7 +1385,7 @@ def wafer(
             )
             main_cell.add(
                 Text(
-                    "trench layer\n" + name,
+                    "trench layer\n" + text_right,
                     label_text_size,
                     position=trench_text_position,
                     alignment="left",
@@ -1368,10 +1393,10 @@ def wafer(
                 )
             )
         else:
-            text_position = (chip_area_corner[0] + label_text_size, 0)
+            text_position = (chip_area_corner[0] + chip_margin + label_text_size, 0)
             main_cell.add(
                 Text(
-                    name,
+                    text_right,
                     label_text_size,
                     position=text_position,
                     angle=np.pi / 2,
@@ -1380,18 +1405,6 @@ def wafer(
                     layer=feeding_channel_layer,
                 )
             )
-    horizontal_chip_spacing = chip_area_corner[0]
-    vertical_chip_spacing = chip_area_corner[1]
-    if len(chips) <= 3:
-        horizontal_spacings = (0,)
-    else:
-        horizontal_spacings = (-1, 1)
-    for (horizontal, vertical), chip in zip(
-        product(horizontal_spacings, (-1, 0, 1)), chips
-    ):
-        x = horizontal_chip_spacing * horizontal / 2
-        y = vertical_chip_spacing * vertical * 2 / 3
-        main_cell.add(CellReference(chip, (x, y)))
     return main_cell
 
 
