@@ -1159,7 +1159,7 @@ def alignment_cross(length=1e3, thickness=6, layer=TRENCH_LAYER):
         GDS cell containing the alignment cross.
     """
     alignment_cell = Cell("Alignment Cross")
-    alignment_cell.add(cross(length, thickness))
+    alignment_cell.add(cross(length, thickness, layer=layer))
     alignment_cell.add(
         Rectangle((-3 * length, -length), (-2 * length, length), layer=layer)
     )
