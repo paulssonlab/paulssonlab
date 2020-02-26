@@ -652,9 +652,11 @@ def snake(
             "trench_length",
         )
     }
-    metadata["lane_length"] = lane_fc_dims[0]
+    lane_length = lane_fc_dims[0]
+    metadata["lane_length"] = lane_length
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
-    metadata["max_snake_length"] = max(split) * lane_fc_dims[0]
+    snake_length = split * lane_length
+    metadata["snake_length"] = snake_length
     snake_cell = Cell(f"Snake-{label}")
     port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     snake_fc_cell, lane_ys = _snake_feeding_channel(
