@@ -125,7 +125,7 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
     return split
 
 
-# @memoize # TODO!!!!
+@memoize
 def manifold_snake(
     dims=DEFAULT_DIMS,
     split=None,
@@ -707,6 +707,7 @@ def snake(
     return snake_cell, metadata
 
 
+@memoize
 def _snake_feeding_channel(
     lane_fc_dims,
     effective_trench_length,
@@ -847,6 +848,7 @@ def _barcode(
     return cell
 
 
+@memoize
 def _snake_trenches(
     trench_width,
     trench_spacing,
