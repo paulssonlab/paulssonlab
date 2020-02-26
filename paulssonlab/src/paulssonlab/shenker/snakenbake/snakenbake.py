@@ -1251,6 +1251,10 @@ def wafer(
         Text to write on left side of wafer.
     diameter : float, optional
         Diameter of wafer (in microns).
+    chip_dims : Tuple[float, float], optional
+        Description
+    chip_margin : float, optional
+        Description
     alignment_mark_position : float, optional
         Distance (in microns) between both alignment marks.
     alignment_text_size : float, optional
