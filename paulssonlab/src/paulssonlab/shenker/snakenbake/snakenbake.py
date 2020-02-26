@@ -43,7 +43,6 @@ def Text(
     **kwargs,
 ):
     objs = _Text(text, size, position=(0, 0), **kwargs)
-    # objs = mirror_refs(objs)
     if prerotate_alignment is not None:
         objs = align_refs(objs, position=(0, 0), alignment=prerotate_alignment)
     if angle == 0:
@@ -51,7 +50,7 @@ def Text(
     elif angle == -np.pi / 2:
         for ref in objs:
             ref.rotation += 90
-            ref.origin[:] = ref.origin[::-1]
+            ref.origin[:] = ref.origin[::-1] * np.array([-1, 1])
     elif angle == np.pi / 2:
         for ref in objs:
             ref.rotation -= 90
