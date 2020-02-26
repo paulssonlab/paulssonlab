@@ -30,6 +30,13 @@ def write_gds(main_cell, filename, unit=1.0e-6, precision=1.0e-9):
     gdspy.write_gds(filename, cells=cells, unit=unit, precision=precision)
 
 
+def strip_units(x):
+    if hasattr(x, "magnitude"):
+        return x.magnitude
+    else:
+        return x
+
+
 def make_odd(number):
     if number % 2 == 0:
         return number - 1
