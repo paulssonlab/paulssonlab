@@ -63,42 +63,6 @@ def Text(
 
 get_uuid = partial(shortuuid.random, length=2)
 
-# TODO: encode parameters in cell names
-# TODO: break out func for each cell, use memoize decorator to reuse cells from multiple chips
-# SAMPLER_WAFER FUNCTION TAKES KWARGS, when arrays are given, make variations and name approrpiately
-
-# TODO
-# autonaming of cells according to argument that changed, autolabeling of sampler_wafer
-# make ROUND_POINST, MAX_POINTS modifyable at runtime by replacing partial
-
-# .5mm margin outside of port for punching
-# .5mm mixing zone after bends
-# use round number for align mark value, brandon uses -32000um
-# fix font to reduce x-extent
-# make index numbers larger so smallest feature is 1.5um across
-# make alternate wafer with 3 only chips, centered: centered
-# put 1/bottom on bottom align mark
-# mirror all text
-
-# TODO
-# fix duplicate chip memoization
-
-# @memoize
-def sampler_snake(trench_width=[1.5], trench_length=[35], **kwargs):
-    """Generates a snake with different trench widths and lengths in a single
-    chip.
-
-    Parameters
-    ----------
-    trench_width : List[float], optional
-        Trench widths (in microns).
-    trench_length : List[float], optional
-        Trench lengths (in microns).
-    **kwargs
-        Other keyword arguments are passed through to `snake`.
-    """
-    raise NotImplementedError
-
 
 def _compute_lane_split(split, max_lanes, gap_lanes=0):
     """Given a split specification and maximum number of lanes, generates a
@@ -1086,7 +1050,6 @@ def _snake_trenches(
     return snake_trenches_cell
 
 
-# TODO: implement using bbox-aware auto-gridding helper
 @memoize
 def profilometry_marks(
     dims=np.array([150, 75]),
