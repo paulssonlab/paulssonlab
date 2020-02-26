@@ -4,6 +4,30 @@ import numpy as np
 import toolz
 import cytoolz
 from cytoolz import partial, compose
+import gdspy
+import matplotlib.pyplot as plt
+
+
+def plot_cell(cell, exclude=(2,)):
+    # FROM: https://github.com/heitzmann/gdspy/issues/42
+    if hasattr(cell, "get_polygons"):
+        poly_dict = cell.get_polygons(by_spec=True)
+    else:
+        poly_dict = {
+            l_d: [p] for l_d, p in zip(zip(cell.layers, cell.datatypes), cell.polygons)
+        }
+    plt.figure(figsize=(40, 20))
+    for layer_datatype, polys in poly_dict.items():
+        if layer_datatype[0] in exclude:
+            continue
+        for poly in polys:
+            plt.fill(*poly.T, lw=0.5, ec="k", fc=(1, 0, 0, 0.5))
+    plt.axes().set_aspect("equal", "datalim")
+
+
+def write_gds(main_cell, filename, unit=1.0e-6, precision=1.0e-9):
+    cells = [main_cell] + list(main_cell.get_dependencies(True))
+    gdspy.write_gds(filename, cells=cells, unit=unit, precision=precision)
 
 
 def make_odd(number):

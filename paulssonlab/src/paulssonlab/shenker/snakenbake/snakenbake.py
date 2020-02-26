@@ -17,7 +17,7 @@ from geometry import (
     flatten_or_merge,
 )
 from text import Text as _Text
-from util import make_odd, memoize
+from util import make_odd, memoize, plot_cell, write_gds
 import hamming
 import bitarray.util
 import click
