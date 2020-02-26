@@ -219,8 +219,8 @@ def manifold_snake(
         manifold_round_radius = feeding_channel_width
     # define some dimensions
     effective_trench_length = trench_length + trench_gap / 2
-    inner_snake_turn_radius = effective_trench_length
-    outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
+    inner_snake_bend_radius = effective_trench_length
+    outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
     if manifold_input_style == "u-turn":
         horizontal_margin = (
             port_margin
@@ -255,7 +255,7 @@ def manifold_snake(
         bottom_margin = top_margin
     lane_fc_dims = np.array(
         [
-            dims[0] - 2 * horizontal_margin - 2 * outer_snake_turn_radius,
+            dims[0] - 2 * horizontal_margin - 2 * outer_snake_bend_radius,
             feeding_channel_width,
         ]
     )
@@ -299,7 +299,7 @@ def manifold_snake(
     snake_fc_cell, lane_ys = _snake_feeding_channel(
         lane_fc_dims,
         effective_trench_length,
-        outer_snake_turn_radius,
+        outer_snake_bend_radius,
         0,
         split,
         label,
@@ -443,7 +443,7 @@ def manifold_snake(
                             y + feeding_channel_width / 2,
                         ),
                         (
-                            -flip * (-lane_fc_dims[0] / 2 - outer_snake_turn_radius),
+                            -flip * (-lane_fc_dims[0] / 2 - outer_snake_bend_radius),
                             y - feeding_channel_width / 2,
                         ),
                         layer=feeding_channel_layer,
@@ -508,7 +508,7 @@ def manifold_snake(
             "trench_gap",
             "trench_length",
             "manifold_width",
-            "outer_snake_turn_radius",
+            "outer_snake_bend_radius",
             "lane_ys",
             "split",
             "split_cum",
@@ -655,11 +655,11 @@ def snake(
     if tick_text_size is None:
         tick_text_size = tick_length * 2
     effective_trench_length = trench_length + trench_gap / 2
-    inner_snake_turn_radius = effective_trench_length
-    outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
+    inner_snake_bend_radius = effective_trench_length
+    outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
     lane_fc_dims = np.array(
         [
-            dims[0] - 2 * horizontal_margin - outer_snake_turn_radius,
+            dims[0] - 2 * horizontal_margin - outer_snake_bend_radius,
             feeding_channel_width,
         ]
     )
@@ -757,16 +757,16 @@ def _snake_feeding_channel(
 ):
     feeding_channel_width = lane_fc_dims[1]
     lane_height = feeding_channel_width + 2 * effective_trench_length
-    inner_snake_turn_radius = effective_trench_length
-    outer_snake_turn_radius = feeding_channel_width + inner_snake_turn_radius
+    inner_snake_bend_radius = effective_trench_length
+    outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
     lane_cell = Cell(f"Lane-{label}")
     lane_fc = Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
     lane_cell.add(lane_fc)
     bend_cell = Cell(f"Feeding Channel Bend-{label}")
     bend = Round(
         (0, 0),
-        outer_snake_turn_radius,
-        inner_radius=inner_snake_turn_radius,
+        outer_snake_bend_radius,
+        inner_radius=inner_snake_bend_radius,
         initial_angle=3 / 2 * np.pi,
         final_angle=5 / 2 * np.pi,
         layer=layer,
