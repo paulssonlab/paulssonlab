@@ -1231,7 +1231,8 @@ def wafer(
     chip_margin=0.5e3,
     alignment_mark_position=None,
     alignment_text_size=1000,
-    label_text_size=2000,
+    right_text_size=2000,
+    left_text_size=1300,
     text=True,
     mask=False,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
@@ -1254,7 +1255,9 @@ def wafer(
         Distance (in microns) between both alignment marks.
     alignment_text_size : float, optional
         Size (in microns) of label text for alignment marks.
-    label_text_size : float, optional
+    right_text_size : float, optional
+        Size (in microns) of text.
+    left_text_size : float, optional
         Size (in microns) of text.
     text : bool, optional
         If true, label the wafer with `text_right` and `text_left`. If mask is true, additionally label the
@@ -1282,6 +1285,7 @@ def wafer(
     horizontal_chip_spacing = chip_dims[0] + chip_margin
     vertical_chip_spacing = chip_dims[1] + chip_margin
     vertical_spacings = (-1, 0, 1)
+    chips = [*reversed(chips[:3]), *chips[3:]]
     if len(chips) <= 3:
         horizontal_spacings = (0,)
     else:
@@ -1301,8 +1305,6 @@ def wafer(
         )
     )
     chip_area_corner = chip_area / 2
-    if alignment_mark_position is None:
-        alignment_mark_position = chip_area_corner[1] * 7 / 6
     profilometry_cell = profilometry_marks(
         layers=(feeding_channel_layer, trench_layer), text=text
     )
@@ -1332,6 +1334,8 @@ def wafer(
         )
     else:
         alignment_cell = alignment_cross(layer=trench_layer)
+    if alignment_mark_position is None:
+        alignment_mark_position = chip_area_corner[1] * 7 / 6
     if mask:
         vertical_alignment_spacing = np.array([0, alignment_mark_position * 2])
         main_cell.add(
@@ -1358,16 +1362,6 @@ def wafer(
         main_cell.add(
             CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
         )
-        if text:
-            main_cell.add(
-                Text(
-                    "trench layer",
-                    alignment_text_size,
-                    position=(0, 2 * alignment_text_size - alignment_spacing[1] / 2),
-                    alignment="centered",
-                    layer=trench_layer,
-                )
-            )
     if text:
         if mask:
             mask_text_padding = 30e2
@@ -1392,18 +1386,37 @@ def wafer(
                 )
             )
         else:
-            text_position = (chip_area_corner[0] + chip_margin + label_text_size, 0)
-            main_cell.add(
-                Text(
-                    text_right,
-                    label_text_size,
-                    position=text_position,
-                    angle=np.pi / 2,
-                    alignment="left",
-                    prerotate_alignment="centered",
-                    layer=feeding_channel_layer,
-                )
+            text_right_x = (
+                chip_area_corner[0]
+                + np.abs(profilometry_bbox[1, 0] - profilometry_bbox[0, 0])
+                + 2 * chip_margin
             )
+            text_right_position = (text_right_x, 0)
+            if text_right:
+                main_cell.add(
+                    Text(
+                        text_right,
+                        right_text_size,
+                        position=text_right_position,
+                        angle=np.pi / 2,
+                        alignment="left",
+                        prerotate_alignment="centered",
+                        layer=feeding_channel_layer,
+                    )
+                )
+            text_left_position = (-text_right_x, 0)
+            if text_left:
+                main_cell.add(
+                    Text(
+                        text_left,
+                        left_text_size,
+                        position=text_left_position,
+                        angle=-np.pi / 2,
+                        alignment="right",
+                        prerotate_alignment="centered",
+                        layer=feeding_channel_layer,
+                    )
+                )
     return main_cell
 
 
