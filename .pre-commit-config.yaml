@@ -18,7 +18,8 @@ repos:
     hooks:
     -   id: docformatter
 -   repo: https://github.com/shenker/pre-commit-hooks.git
-    rev: 78768dc4839cae4938dffae6fb680a8d630bbbaf
+    rev: ac0f3db4edf735336c31f382d10239a69ef539b6
     hooks:
     -   id: fix-environment-yamls
     -   id: tag-directory
+        args: ['--prefix', 'paulssonlab/src/paulssonlab']
