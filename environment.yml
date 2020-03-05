@@ -1,0 +1,10 @@
+name: paulssonlab
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - cachetools
+  - click
+  - nbformat
+  - pre-commit
