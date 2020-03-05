@@ -25,6 +25,8 @@ When you make changes, `git add path/to/modified/file` to add them to the git in
 
 When you want to pull the latest changes from the rest of the lab, `git pull upstream master`. When you are ready to share your changes with the rest of the lab, first `git pull upstream master` (and fix merge conflicts if any arise), then `git push upstream`.
 
+TODO: cherry-picking a commit/merging from a user's fork.
+
 ## How to make a new project
 TODO: How to structure python modules (example dir) so they can be easily imported. Primer on Python package structure.
 
