@@ -22,4 +22,5 @@ repos:
     hooks:
     -   id: fix-environment-yamls
     -   id: tag-directory
-        args: ['--prefix', 'paulssonlab/src/paulssonlab']
+        args: ['--prefix', 'paulssonlab/src/paulssonlab/projects',
+               '--prefix', 'paulssonlab/src/paulssonlab']
