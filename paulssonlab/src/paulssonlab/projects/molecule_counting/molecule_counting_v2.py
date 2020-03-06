@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from scipy.integrate import simps, trapz
-from scipy.optimize import curve_fit, nnls
+from scipy.optimize import curve_fit
 import seaborn as sns
 from sklearn.linear_model import LinearRegression
+import holoviews as hv
 
 
 ###These functions are all involved in the initial processing of the time series data.
@@ -17,6 +18,10 @@ def decay_rates(data, t_end):
     ).values
 
 
+# def filter_traces(data, ub, lb, dt=1, t_max=800):
+#     data['dy_max'] = data.apply(lambda y: (y.values[:t_max-dt]/y.values[dt:t_max]).max(),axis=1)
+#     data['dy_min'] = data.apply(lambda y: (y.values[:t_max-dt]/y.values[dt:t_max]).min(),axis=1)
+#     return data[(data.dy_max < ub) & (data.dy_min > lb)]
 def filter_traces(data, ub, lb, dt=1, t_max=800):
     data["dy_max"] = data.apply(
         lambda y: (y.values[: t_max - dt] / y.values[dt:t_max]).max(), axis=1
@@ -27,64 +32,88 @@ def filter_traces(data, ub, lb, dt=1, t_max=800):
     return data[(data.dy_max < ub) & (data.dy_min > lb)]
 
 
-def process_df(
-    full_data, fp_dir, bad_fovs=[], trunc=0, dy_max=10, dy_min=0, fusion=False, fp=""
-):
-    trace_list = []
+def process_df(full_data, fp_dir, bad_fovs=[], trunc=0, dy_max=10, dy_min=0):
+    traces = []
     rp_list = []
-    rp_df = pd.DataFrame()
-    min_len = 10**10
-    for i, fov in enumerate(list(full_data[fp_dir].keys())):
+    for i in full_data[fp_dir].keys():
         if i not in bad_fovs:
             print(i)
-            if fusion:
-                regionprops = full_data[fp_dir][fov]["regionprops"]
-                measurements = full_data[fp_dir][fov]["traces"][fp]
-                area = full_data[fp_dir][fov]["regionprops"]["area"]
-                y = measurements["mean"][1:, 1:]
 
-            else:
-                regionprops = full_data[fp_dir][i]["regionprops"]
-                measurements = full_data[fp_dir][i]["traces"]
-                area = full_data[fp_dir][i]["regionprops"]["area"]
-                y = measurements["mean"][1:, 1:]
+            regionprops = full_data[fp_dir][i]["regionprops"]
+            timeseries = full_data[fp_dir][i]["traces"]["mean"][1:, 1:]
+            #             area  = full_data[fp_dir][i]['regionprops']['area']
+            #             timeseries = measurements['mean'][1:,1:]
 
-            regionprops["fov"] = i
-            print(measurements["mean"].shape)
-            min_len = min(min_len, y.shape[1])
-            trace_list.append(y)
+            traces.append(timeseries)
+
+            regionprops["FOV"] = i
             rp_list.append(regionprops)
-    #     print(min_len)
-    trace_list = [t[:, :min_len] for t in trace_list]
-    #     for t in trace_list: print(t.shape)
-    traces = np.concatenate(trace_list)
-    rp_df = pd.concat(rp_list, sort=False)
-    rp_df.reset_index(inplace=True)
+
+            print(timeseries.shape)
+
+    traces = np.concatenate(traces)
+    df_meta = pd.concat(rp_list, sort=False)
+    df_meta.reset_index(inplace=True)
     print(traces.shape)
 
-    data = pd.DataFrame(traces)
-    data = pd.concat([data, rp_df], axis=1, sort=False)
-
+    df_data = pd.DataFrame(traces)
+    #     data = pd.concat([data,rp_df],axis=1,sort=False)
+    print("computing k")
     t_end = traces.shape[1] - trunc
-    data["k"] = decay_rates(data, t_end)
-    data = filter_traces(data, dy_max, dy_min, 10, t_end)
-    #     data = filter_traces(data,dy_max,dy_min,10,1350)
+    cell_id = df_meta.index.tolist()
+    df_meta["cell_id"] = cell_id
+    df_meta["k"] = decay_rates(df_data, t_end)
+    dt = 10
+    df_meta["dy"] = df_data.apply(
+        lambda y: np.abs((y.values[: t_end - dt] / y.values[dt:t_end])).max(), axis=1
+    )
+    df_n = df_data.apply(lambda x: x / x[0], axis=1)
+    #     print(dy)
+    #     filter_traces(df_data,dy_max,dy_min,10,950)
 
-    print(data.shape)
-    plt.figure()
-    data.k.hist(bins=30)
-    plt.title("Histogram of Photobleaching Rates")
+    #     print(df_data.shape)
+    #     plt.figure()
+    #     df_meta.k.hist(bins=30)
+    #     plt.title('Histogram of Photobleaching Rates')
 
-    plt.figure()
-    data[0].hist(bins=30)
-    plt.title("Histogram of Initial Intensities")
-    return data
+    #     plt.figure()
+    #     df_data[0].hist(bins=30)
+    #     plt.title('Histogram of Initial Intensities')
+    print("hv stuff")
+    time = np.arange(df_data.shape[1])
+    data = hv.Table(
+        (time, cell_id, df_data, df_n), ["time", "cell_id"], ["fluor", "normed"]
+    )  # TODO Fix that
+
+    kdims = ["centroid_x", "centroid_y"]
+    vdims = [
+        "label",
+        "area",
+        "eccentricity",
+        "min_intensity",
+        "mean_intensity",
+        "max_intensity",
+        "major_axis_length",
+        "minor_axis_length",
+        "orientation",
+        "perimeter",
+        "solidity",
+        "weighted_centroid_x",
+        "weighted_centroid_y",
+        "FOV",
+        "cell_id",
+        "k",
+        "dy",
+    ]
+    meta_data = hv.Table(df_meta, kdims, vdims)
+    return data, meta_data
 
 
 ###These function are all involved in statistical inference and plotting
 def sum_exp(t, *p):
     if isinstance(p[0], (tuple, list, np.ndarray)):
         p = p[0]
+
     n = int((len(p) - 1) / 2)
     y = p[0]
     C = p[1 : n + 1]
@@ -109,11 +138,10 @@ def filter_df(df, prop_dict):
 def get_stats(df, n):
     y = df.filter(regex="^[0-9]+$", axis=1)
     #     y = y.rolling(window=1).mean()
-    #     y = y.subtract(y.min(axis=1),axis=0)
     mu = y.mean()
     tp = np.arange(0, mu.size)
-    lb = [0] + (n) * [-1] + n * [0]
-    ub = (n + 1) * [1] + n * [1]
+    lb = (n + 1) * [-1] + n * [0]
+    ub = (n + 1) * [1] + n * [0.1]
     params, _ = curve_fit(
         sum_exp,
         tp,
@@ -143,7 +171,6 @@ def get_stats(df, n):
     #     plt.ylim(bottom=1000)
     #     plt.xlim(left=0,right=100)
     print(f"background intensity is {bg:.0f}")
-    print(params[0])
     mu -= bg
     y -= bg
 
@@ -181,12 +208,11 @@ def nu_fit_seq(tp, C, k, fbar):
     reg = LinearRegression(fit_intercept=True).fit(X, y)
     print(f"Regression score is {reg.score(X,y):.3f}")
     nu = reg.coef_
-    f_bg = reg.intercept_
-    print(f"fbg is {f_bg}")
+
     #     nu = [10,4]
-    f_bg = 0 * reg.intercept_
-    f_pred = reg.predict(X)  # - f_bg
-    fbar[1:] = fbar[1:]  # - f_bg
+    f_bg = reg.intercept_
+    f_pred = reg.predict(X) - f_bg
+    fbar[1:] = fbar[1:] - f_bg
     V = np.multiply(nu, X)
     return f_pred, nu, V, P
 
@@ -197,17 +223,11 @@ def nu_fit(tp, C, k, fbar):
     y = fbar
     print(X.shape, y.shape)
     reg = LinearRegression(fit_intercept=True).fit(X, y)
-    print(f"Regression score is {reg.score(X,y):.3f}")
-
     nu = reg.coef_
     f_bg = reg.intercept_
     print(f"fbg is {f_bg}")
-
-    f_pred = reg.predict(X)
-    #     fbar[1:] = fbar[1:]
-    #     nu = nnls(X,y)[0]
-    #     print(nu)
-    #     f_pred = np.dot(X,nu)
+    f_pred = reg.predict(X) - f_bg
+    fbar[1:] = fbar[1:] - f_bg
     V = np.multiply(nu, X)
     return f_pred, nu, V, P
 
@@ -220,17 +240,15 @@ def pb_inference(C, k, mu, sigma2, q=1):
     pbar = mu / mu[0]
     f = pd.DataFrame(sigma2.values)
     fbar = f.mean(axis=0)
-    #     fbar[1:] =fbar[1:] - fbar[1:].min()
     #     fbar =  fbar - .8*fbar.iloc[-50:].min()
     #     fbar[1:] =  fbar[1:] - (fbar.iloc[1]*pbar**2)[1:]
-    #     fbar[1:] =  fbar[1:] - fbar.values[-1]
     #     fbar[1:] =  fbar[1:] - (fbar[1]*pbar**2)[1:]
 
-    f_predicted, nu, var_list, p_list = nu_fit_seq(tp, C, k, fbar)
+    f_predicted, nu, var_list, p_list = nu_fit(tp, C, k, fbar)
 
     for i in range(n):
         print(
-            f"nu_{i} = {nu[i]:.2f}, C_{i} = {C[i][0]:.0f}, k_{i} = {k[i][0]:.5f} inferred molecule count = {C[i][0]/nu[i]:.0f}"
+            f"nu_{i} = {nu[i]:.2f}, C_{i} = {C[i][0]:.0f}, k_{i} = {k[i][0]:.4f} inferred molecule count = {C[i][0]/nu[i]:.0f}"
         )
     return nu, f_predicted, var_list, p_list, fbar, tp
 
@@ -243,7 +261,7 @@ def fluct_plot(df, n=1, q=1):
     pbar = mu / mu[0]
     plt.figure(figsize=(12, 10))
     plt.scatter(1 - pbar, fbar, color="k", label="Single-cell data")
-    print(f_predicted.shape, pbar.shape)
+
     print(simps(fbar, 1 - pbar), simps(f_predicted, 1 - pbar))
     plt.plot(
         1 - pbar,
@@ -260,7 +278,7 @@ def fluct_plot(df, n=1, q=1):
 
     plt.xlabel(r"Fraction Photobleached", fontsize=28)
     plt.ylabel(r"$\hat{\sigma}^2$", fontsize=28)
-    plt.ylim(bottom=0)  # ,top=100000)
+    plt.ylim(bottom=0, top=3500)
     plt.xlim(left=0, right=1)
     plt.legend(fontsize=20)
 
@@ -274,38 +292,19 @@ def fluct_plot(df, n=1, q=1):
     return f_predicted, fbar, pbar, mu, sigma2, y
 
 
-# def kmaps(df):
-#     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(24,12))
-
-#     cmap = cm.get_cmap('coolwarm')
-
-#     fit_df = df[['centroid_x', 'centroid_y', 'k',0]].copy()
-#     fit_df['c_k'] = (fit_df.k - fit_df.k.min())/(fit_df.k.max() - fit_df.k.min())
-#     fit_df['c_I0'] = (fit_df[0] - fit_df[0].min())/(fit_df[0].max() - fit_df[0].min())
-
-#     sns.regplot(data=fit_df, x="centroid_y", y="centroid_x", fit_reg=False,  ax=axs[0], scatter_kws={'color':cmap(fit_df['c_k']),'alpha':.5})
-
-#     sns.regplot(data=fit_df, x="centroid_y", y="centroid_x", fit_reg=False, ax=axs[1], scatter_kws={'color':cmap(fit_df['c_I0']),'alpha':.5})
-
-#     axs[0].set_xlim([0,2000])
-#     axs[0].set_ylim([0,2000])
-#     axs[1].set_xlim([0,2000])
-#     axs[1].set_ylim([0,2000])
-
-
 def kmaps(df):
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(24, 12))
 
     cmap = cm.get_cmap("coolwarm")
 
-    fit_df = df[["centroid-0", "centroid-1", "k", 0]].copy()
+    fit_df = df[["centroid_x", "centroid_y", "k", 0]].copy()
     fit_df["c_k"] = (fit_df.k - fit_df.k.min()) / (fit_df.k.max() - fit_df.k.min())
     fit_df["c_I0"] = (fit_df[0] - fit_df[0].min()) / (fit_df[0].max() - fit_df[0].min())
 
     sns.regplot(
         data=fit_df,
-        x="centroid-1",
-        y="centroid-0",
+        x="centroid_y",
+        y="centroid_x",
         fit_reg=False,
         ax=axs[0],
         scatter_kws={"color": cmap(fit_df["c_k"]), "alpha": 0.5},
@@ -313,14 +312,14 @@ def kmaps(df):
 
     sns.regplot(
         data=fit_df,
-        x="centroid-1",
-        y="centroid-0",
+        x="centroid_y",
+        y="centroid_x",
         fit_reg=False,
         ax=axs[1],
         scatter_kws={"color": cmap(fit_df["c_I0"]), "alpha": 0.5},
     )
 
-    axs[0].set_xlim([0, 5000])
-    axs[0].set_ylim([0, 3000])
-    axs[1].set_xlim([0, 5000])
-    axs[1].set_ylim([0, 3000])
+    axs[0].set_xlim([0, 2000])
+    axs[0].set_ylim([0, 2000])
+    axs[1].set_xlim([0, 2000])
+    axs[1].set_ylim([0, 2000])
