@@ -11,7 +11,6 @@ import skimage.feature
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 import scipy.ndimage as ndi
 from cytoolz import reduce, compose, partial
-import numpy_indexed
 import cachetools
 from numbers import Integral
 import warnings

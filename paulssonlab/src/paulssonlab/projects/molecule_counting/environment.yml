@@ -1,6 +1,5 @@
 name: molecule_counting
 channels:
-  - http://conda.anaconda.org/gurobi
   - pyviz
   - conda-forge
   - defaults
@@ -22,13 +21,9 @@ dependencies:
   - nd2reader
   - nodejs
   - numpy
-  - numpy-indexed
-  - numpy_groupies
   - pandas
   - panel
-  - peakutils
   - pre-commit
-  - pyarrow
   - scikit-image
   - scipy
   - seaborn
