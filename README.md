@@ -21,11 +21,11 @@ python ../nbcleanse/nbcleanse.py install
 First we `cd` into the repo directory. The second command allows you to push to the central paulssonlab fork using `git push upstream` (use `git push origin` to push to your personal fork). The third command creates a conda environment using the list of packages in `environment.yml`. The next two commands make this conda environment activate automatically when you `cd` into this repo (if you aren't using direnv, skip these two commands and run an explicit `conda activate paulssonlab` instead). The remaining commands set up the pre-commit hooks that automatically format code (in both `.ipynb` and `.py` files) and strip output from jupyter notebooks before adding them to git.
 
 ## Basic Git workflow
-When you make changes, `git add path/to/modified/file` to add them to the git index. When you have added all related changes, `git commit` (or `g ci`) them. Follow [these best practices](https://chris.beams.io/posts/git-commit/) for writing informative git commit messages. To push to your own fork, `git push origin` (by default, `origin` is the default remote, so you can just `git push`).
+When you make changes, `git add path/to/modified/file` to add them to the git index. When you have added all related changes, `git commit` them. Follow [these best practices](https://chris.beams.io/posts/git-commit/) for writing informative git commit messages. To push to your own fork, `git push origin` (by default, `origin` is the default remote, so you can just `git push`).
 
-When you want to pull the latest changes from the rest of the lab, `git pull upstream master`. When you are ready to share your changes with the rest of the lab, first `git pull upstream master` (and fix merge conflicts if any arise), then `git push upstream`.
+When you want to pull the latest changes from the rest of the lab, `git pull upstream master`. When you are ready to share your changes with the rest of the lab, first `git pull upstream master` (and fix merge conflicts if any arise), then `git push upstream`. Alternatively, `hub sync` is a shortcut that does both `git pull origin` and `git pull upstream master`.
 
-TODO: cherry-picking a commit/merging from a user's fork.
+If you want to incorporate a change that a user (e.g., `nolsman`) has pushed to their own fork but not yet pushed to the main `paulssonlab` fork, you can `hub fetch nolsman`, then `git merge nolsman/master`.
 
 ## How to make a new project
 TODO: How to structure python modules (example dir) so they can be easily imported. Primer on Python package structure.
