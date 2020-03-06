@@ -1,0 +1,17 @@
+name: inventory
+channels:
+  - pyviz
+  - conda-forge
+  - defaults
+dependencies:
+  - apsw
+  - black
+  - cachetools
+  - click
+  - nbformat
+  - numpy
+  - peewee
+  - pre-commit
+  - tqdm
+  - xxhash
+  - zarr

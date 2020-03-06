@@ -21,7 +21,7 @@ import os
 import re
 import gc
 from IPython import embed
-from .util import tqdm_auto
+from tqdm.autonotebook import tqdm
 from .metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
 
 AGGREGATE_EXCLUDE = re.compile(
@@ -147,7 +147,7 @@ def _abbreviate_filename(filename, length, sep="..."):
 
 
 def _scan_file_list(file_list, valid_extensions, extension_aliases=EXTENSION_ALIASES):
-    pbar = tqdm_auto(file_list, desc="scanning for image files")
+    pbar = tqdm(file_list, desc="scanning for image files")
     num_files_to_process = 0
     skipped = []
     for path in pbar:
@@ -192,7 +192,7 @@ def _should_aggregate_directory(root, dirs, extension, files_by_extension):
 
 
 def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
-    pbar = tqdm_auto(os.walk(directory), desc="scanning for image files")
+    pbar = tqdm(os.walk(directory), desc="scanning for image files")
     num_files_to_process = 0
     skipped = []
     for root, dirs, files in pbar:
@@ -298,7 +298,7 @@ def inventory(
             files_to_process = (
                 File.select().where(File.metadata == "").order_by(File.size.desc())
             )
-            pbar = tqdm_auto(
+            pbar = tqdm(
                 files_to_process.iterator(), total=files_to_process.count()
             )  # .iterator() so we don't cache rows (memory leak)
             for file_row in pbar:
@@ -325,9 +325,7 @@ def inventory(
                 .where((File.checksum.is_null(True)) & (File.aggregated == False))
                 .order_by(File.size.desc())
             )
-            pbar = tqdm_auto(
-                files_to_process.iterator(), total=files_to_process.count()
-            )
+            pbar = tqdm(files_to_process.iterator(), total=files_to_process.count())
             for file_row in pbar:
                 file = os.path.split(file_row.path)[-1]
                 pbar.set_postfix(
