@@ -1,0 +1,27 @@
+name: fp_aggregation
+channels:
+  - pyviz
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - bokeh
+  - cachetools
+  - click
+  - cytoolz
+  - dask
+  - dask-jobqueue
+  - datashader
+  - distributed
+  - holoviews
+  - hvplot
+  - jupyterlab
+  - matplotlib
+  - nbformat
+  - nd2reader
+  - nodejs
+  - numpy
+  - pandas
+  - pre-commit
+  - scikit-image
+  - scipy
