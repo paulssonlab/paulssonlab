@@ -4,6 +4,7 @@ repos:
     rev: v2.5.0
     hooks:
     -   id: check-added-large-files
+        exclude: '\.ipynb$'
     -   id: check-merge-conflict
     -   id: end-of-file-fixer
     -   id: mixed-line-ending
@@ -18,7 +19,7 @@ repos:
     hooks:
     -   id: docformatter
 -   repo: https://github.com/shenker/pre-commit-hooks.git
-    rev: ac0f3db4edf735336c31f382d10239a69ef539b6
+    rev: 2cf20ad811e1f6e9d3c2d914282fd260025847d8
     hooks:
     -   id: fix-environment-yamls
     -   id: tag-directory
