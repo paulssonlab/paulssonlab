@@ -14,20 +14,21 @@ from cytoolz import reduce, compose, partial
 import cachetools
 from numbers import Integral
 import warnings
-import zarr
-from numcodecs import Blosc
 from collections import Sequence, Mapping, defaultdict
+
+# import zarr
+# from numcodecs import Blosc
 
 
 def tree():
     return defaultdict(tree)
 
 
-DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
-DEFAULT_ORDER = "C"
-zarrify = partial(
-    zarr.array, compressor=DEFAULT_COMPRESSOR, order=DEFAULT_ORDER, chunks=False
-)
+# DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
+# DEFAULT_ORDER = "C"
+# zarrify = partial(
+#     zarr.array, compressor=DEFAULT_COMPRESSOR, order=DEFAULT_ORDER, chunks=False
+# )
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 

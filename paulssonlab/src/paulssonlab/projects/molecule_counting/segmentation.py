@@ -9,7 +9,7 @@ import skimage.segmentation
 import scipy.ndimage as ndi
 from cytoolz import compose, partial
 from numbers import Integral
-from matriarch_stub import (
+from paulssonlab.projects.molecule_counting.matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
     get_regionprops,
@@ -17,9 +17,8 @@ from matriarch_stub import (
     gaussian_box_approximation,
     hessian_eigenvalues,
     RevImage,
-    zarrify,
 )
-from util import conditional
+from paulssonlab.projects.molecule_counting.util import conditional
 
 # TODO: new
 def nd2_to_dask(filename, position, channel, rechunk=True):
