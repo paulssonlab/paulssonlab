@@ -369,6 +369,10 @@ if __name__ == "__main__":
 
     fov_dir = os.path.join(in_dir, "FOV")
 
+    files = os.listdir(fov_dir)
+    ## DEBUG
+    # files = ["FOV_0.h5"]
+
     # Run in parallel
     if num_cpu > 1:
         args = [
@@ -384,7 +388,7 @@ if __name__ == "__main__":
                 x_dimension,
                 y_dimension,
             )
-            for filename in os.listdir(fov_dir)
+            for filename in files
         ]
 
         # TODO: weed out any files which do not end in h5
@@ -394,7 +398,7 @@ if __name__ == "__main__":
 
     # Do not run in parallel
     else:
-        for filename in os.listdir(fov_dir):
+        for filename in files:
             if filename.endswith("h5"):
                 run_trench_analysis(
                     os.path.join(fov_dir, filename),

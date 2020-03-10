@@ -15,12 +15,15 @@ import pathlib
 # TODO: pass in a range of FOV positions?
 #       (maybe the user only wants a sub-set of the data, and could save time & storage)
 # TODO: if min or max frames are not specified, then must provide sane defaults (i.e. 0 to max)
+# TODO: it might make more sense to store the overall ND2 data in individual 1x1 arrays. More straightforward than a table.
+#       This could also make it easier to dynamically add the channel names: a sub-hierarchy of the names,
+#       pointing to an integer numbering (0, 1, 2...).
 ###
 
 # Input an ND2 file path, the number of FOVs, a directory to write HDF5 files to, and the num. CPUs to use
 # Calls the conversion function across all FOV positions in the ND2 file.
 # We do not pass in an nd2reader object itself because this causes issues when dispatching to processes.
-def convert_files(nd2_file_path, num_fov, hdf_dir, num_cpu, min_frame, max_frame):
+def convert_files(nd2_file_path, fov_list, hdf_dir, num_cpu, min_frame, max_frame):
     # Make a sub-directory for storing the H5 files for each FOV
     fov_path = os.path.join(hdf_dir, "FOV")
     pathlib.Path(fov_path).mkdir(parents=True, exist_ok=True)
@@ -29,13 +32,13 @@ def convert_files(nd2_file_path, num_fov, hdf_dir, num_cpu, min_frame, max_frame
         # https://stackoverflow.com/questions/10212445/python-map-list-item-to-function-with-arguments
         args = [
             (fov_number, fov_path, nd2_file_path, min_frame, max_frame)
-            for fov_number in num_fov
+            for fov_number in fov_list
         ]
         with Pool(processes=num_cpu) as p:
             p.starmap(convert_by_fov_number, args)
 
     else:
-        for fov_number in num_fov:
+        for fov_number in fov_list:
             convert_by_fov_number(
                 fov_number, fov_path, nd2_file_path, min_frame, max_frame
             )
@@ -167,7 +170,7 @@ def copy_metadata(reader, hdf_dir, title, min_frame, max_frame):
             fov_metadata_row["info_z"] = data[2]
             fov_metadata_row["info_timestamp"] = data[3]
 
-        fov_metadata_row.append()
+            fov_metadata_row.append()
 
     ### Done populating the metadata table
     fov_metadata_table.flush()
@@ -300,13 +303,15 @@ if __name__ == "__main__":
 
     # Open the ND2 reader to get the number of FOVs, but then close it again immediately.
     reader = nd2reader.Nd2(nd2_file_path)
-    num_fov = reader.fields_of_view
+    fov_list = reader.fields_of_view
+    ## DEBUG
+    # fov_list = [0]
     reader.close()
 
     ### Convert the files
     print("Converting file...")
     start = time.time()
-    convert_files(nd2_file_path, num_fov, hdf_dir, num_cpu, min_frame, max_frame)
+    convert_files(nd2_file_path, fov_list, hdf_dir, num_cpu, min_frame, max_frame)
     end = time.time()
     print("Done converting file, which took {} seconds.".format(end - start))
 

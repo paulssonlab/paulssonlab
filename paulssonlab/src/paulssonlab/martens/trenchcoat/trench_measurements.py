@@ -17,7 +17,7 @@ from multiprocessing import Pool
 
 
 ### Measure properties of trenches
-###
+### Update: include optional simple thresholding.
 ###
 ###
 
@@ -65,9 +65,8 @@ def run_trench_analysis(
     crop_bottom,
     x_dimension,
     y_dimension,
+    background,
 ):
-    # TODO: pass in this value as an argument
-    background_correction = 100
 
     Trench = make_trench_type(channel_names)
 
@@ -123,6 +122,7 @@ def run_trench_analysis(
 
         # First, load each of the channels & make trench stacks
         # Do this b/c need to refer across fluor. channels when making intensity measurements
+        # FIXME actually, that's not necessary anymore? Does it matter?
         channel_stacks = {}
         for c in channel_names:
             channel_stacks[c] = load_stack_trenches(
@@ -133,15 +133,24 @@ def run_trench_analysis(
                 y_dimension,
                 stack_size,
                 ranges,
-                background_correction,
             )
 
         ### No segmentation
+        # FIXME but who's the background for making a mask? Then we need to loop segmentation
+        # channels all the same... or determine which is the appropriate channel empirically
+        # and record which channel was used...
+        # and then we also should store the masks!
         for n in range(channel_stacks[c].shape[2]):
             for c in channel_names:
-                trench_properties_row["total_intensity_{}".format(c)] = channel_stacks[
-                    c
-                ][:, :, n].sum()
+                mask = channel_stacks[c][:, :, n] > background
+                corrected_intensity = subtract_background_from_region(
+                    channel_stacks[c][:, :, n], image_mask, background
+                )
+                trench_properties_row[
+                    "total_intensity_{}".format(c)
+                ] = corrected_intensity
+
+                # trench_properties_row['total_intensity_{}'.format(c)] = channel_stacks[c][:, :, n].sum()
 
             trench_properties_row["info_fov"] = fov
             trench_properties_row["info_frame"] = frame_number
@@ -185,11 +194,35 @@ def load_stack_trenches(
     # Then, can apply operations to just the stack of trench cutouts
     # Background subtraction
     # Sets pixels > bg to their original values, < bg to bg, then remove bg.
-    stack = (
-        ((stack > background) * stack) + ((stack <= background) * background)
-    ) - background
+    # stack = ( ((stack > background) * stack) + ((stack <= background) * background) ) - background
+    # NOTE: this is not a good way to handle background. Rather, It's better to subtract it from
+    # the final summed pixel intensities.
 
     return stack
+
+
+# Input a list of pixel co-ordinates (as per skimage.measure.regionpprops),
+# an associated image (2d numpy array) to read intensities from, and and a background signal value.
+# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+def subtract_background_from_coords(coords, image, background):
+    transposed = cell.coords.T
+    summed_intensity = image[transposed[0], transposed[1]].sum()
+    total_background = len(transposed) * background
+
+    return summed_intensity - total_background
+
+
+# Input an image, a binary mask, and a background value per pixel
+# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+def subtract_background_from_region(image, image_mask, background):
+    # Use mask to zero out unwanted pixels, and sum the intensities of the remaining ones
+    summed_intensity = (image * image_mask).sum()
+
+    # Calculate background signal
+    # Sum of a mask is equivalent to the number of valid pixels, if the mask is as integer and not bool.
+    total_background = image_mask.astype(numpy.uint8).sum() * background
+
+    return summed_intensity - total_background
 
 
 # TODO: throw errors if the arguments don't make sense?
@@ -205,6 +238,12 @@ def parse_args():
     parser.add_argument("-I", "--identifier", type=str, help="Trench row identifier")
     parser.add_argument("-T", "--crop-top", type=int, help="Crop top")
     parser.add_argument("-B", "--crop-bottom", type=int, help="Crop bottom")
+    parser.add_argument(
+        "-t",
+        "--threshold-file",
+        type=int,
+        help="File with pixel value minimum thresholds per channek.",
+    )
 
     return parser.parse_args()
 
@@ -221,6 +260,7 @@ if __name__ == "__main__":
     identifier = args.identifier
     crop_top = args.crop_top
     crop_bottom = args.crop_bottom
+    threshold_file = args.threshold_file
 
     # FIXME what's the right way to read these in?
     x_dimension = 30
@@ -231,6 +271,9 @@ if __name__ == "__main__":
     # Load the ND2 metadata to get the channel names
     channel_names = get_channel_names(in_dir, parent_file)
 
+    # Load the thresholds from a text file
+    # TODO
+
     ### Iterate all the files
     # NOTE: this could also be done outside of Python (e.g. in a Slurm / Bash script)
     # in an embarrasingly parallel fashion.
@@ -239,8 +282,13 @@ if __name__ == "__main__":
     start = time.time()
 
     fov_dir = os.path.join(in_dir, "FOV")
+    files = os.listdir(fov_dir)
+    ## DEBUG
+    # files = ['FOV_0.h5']
 
     # Run in parallel
+    # TODO: is it possible to pass in arguments non-explicitly, and therefore not need to use starmap?
+    # Tradeoffs?
     if num_cpu > 1:
         args = [
             (
@@ -252,8 +300,9 @@ if __name__ == "__main__":
                 crop_bottom,
                 x_dimension,
                 y_dimension,
+                threshold,
             )
-            for filename in os.listdir(fov_dir)
+            for filename in files
         ]
 
         # TODO: weed out any files which do not end in h5
@@ -263,7 +312,7 @@ if __name__ == "__main__":
 
     # Do not run in parallel
     else:
-        for filename in os.listdir(fov_dir):
+        for filename in files:
             if filename.endswith("h5"):
                 run_trench_analysis(
                     os.path.join(fov_dir, filename),
@@ -274,6 +323,7 @@ if __name__ == "__main__":
                     crop_bottom,
                     x_dimension,
                     y_dimension,
+                    threshold,
                 )
 
     ### Done looping all FOV
