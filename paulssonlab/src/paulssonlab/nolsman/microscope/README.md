@@ -12,6 +12,8 @@ direnv allow
 echo `git rev-parse --show-toplevel`/paulssonlab/src > "$CONDA_PREFIX/lib/site-packages/paulssonlab.pth"
 ```
 
+Note that the `paulssonlab` git commit hooks do not work on Python 2, so you will have to `conda activate paulssonlab` before you `git commit`.
+
 ## Contributors
 
 - Noah Olsman
