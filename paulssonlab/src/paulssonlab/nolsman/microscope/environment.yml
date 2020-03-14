@@ -1,0 +1,13 @@
+name: nolsman-microscope
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - conda
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - opencv
+  - pandas
+  - pyqt
+  - python=2.7

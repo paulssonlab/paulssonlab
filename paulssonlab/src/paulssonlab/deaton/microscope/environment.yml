@@ -1,0 +1,13 @@
+name: deaton-microscope
+channels:
+  - defaults
+dependencies:
+  - conda
+  - h5py
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - pandas
+  - pyserial
+  - pytables
+  - python=2.7
