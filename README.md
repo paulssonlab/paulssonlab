@@ -28,12 +28,10 @@ After setting up the repo (above), you will need to do the following setup for e
 conda env create -n my_project -f environment.yml
 echo "conda activate my_project" > .envrc
 direnv allow
-pushd `git rev-parse --show-toplevel`
-conda run -n my_project flit install --symlink
-popd
+echo `git rev-parse --show-toplevel`/paulssonlab/src > "$CONDA_PREFIX/lib/site-packages/paulssonlab.pth"
 ```
 
-The first line creates a new conda environment called `my_project` that contains all the conda packages listed in `environment.yml`. The next two lines ensure that this conda environment is loaded whenever we `cd` into this project directory. The last three lines install the `paulssonlab` module as a symlink within this conda environment. This allows you to easily import code from any submodule of the `paulssonlab` module, not just code within this project directory. It is strongly suggested that in your code (both Jupyter notebooks and `.py` files) you exclusively use absolute imports: e.g., `from paulssonlab.projects.my_project.segmentation import segment` instead of `from segmentation import segment`; many things will break in unexpected ways if you do not do this.
+The first line creates a new conda environment called `my_project` that contains all the conda packages listed in `environment.yml`. The next two lines ensure that this conda environment is loaded whenever we `cd` into this project directory. The last line adds the `paulssonlab` package to the PYTHONPATH within this conda environment. This allows you to easily import code from any submodule of the `paulssonlab` package, not just code within this project directory. It is strongly suggested that in your code (both Jupyter notebooks and `.py` files) you exclusively use absolute imports: e.g., `from paulssonlab.projects.my_project.segmentation import segment` instead of `from segmentation import segment`; many things will break in unexpected ways if you do not do this.
 
 ## Basic Git workflow
 When you make changes, `git add path/to/modified/file` to add them to the git index. When you have added all related changes, `git commit` them. Follow [these best practices](https://chris.beams.io/posts/git-commit/) for writing informative git commit messages. To push to your own fork, `git push origin` (by default, `origin` is the default remote, so you can just `git push`).
