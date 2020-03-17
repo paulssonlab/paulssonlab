@@ -1,3 +1,6 @@
+# snakenbake fonts
+/paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
+
 # direnv
 .envrc
 
