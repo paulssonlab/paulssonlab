@@ -28,7 +28,7 @@ After setting up the repo (above), you will need to do the following setup for e
 conda env create -n my_project -f environment.yml
 echo "conda activate my_project" > .envrc
 direnv allow
-echo `git rev-parse --show-toplevel`/paulssonlab/src > "$CONDA_PREFIX/lib/site-packages/paulssonlab.pth"
+echo `git rev-parse --show-toplevel`/paulssonlab/src > `python -c 'import site; print(site.getsitepackages()[0])'`/paulssonlab.pth
 ```
 
 The first line creates a new conda environment called `my_project` that contains all the conda packages listed in `environment.yml`. The next two lines ensure that this conda environment is loaded whenever we `cd` into this project directory. The last line adds the `paulssonlab` package to the PYTHONPATH within this conda environment. This allows you to easily import code from any submodule of the `paulssonlab` package, not just code within this project directory. It is strongly suggested that in your code (both Jupyter notebooks and `.py` files) you exclusively use absolute imports: e.g., `from paulssonlab.projects.my_project.segmentation import segment` instead of `from segmentation import segment`; many things will break in unexpected ways if you do not do this.

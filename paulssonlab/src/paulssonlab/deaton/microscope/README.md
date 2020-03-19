@@ -9,7 +9,7 @@ initenv deaton-microscope
 echo 'export NOTEBOOK_DIR=$PWD' >> .envrc
 echo 'export MICROMANAGER_DIR="/c/Program Files/Micro-Manager-2.0gamma"' >> .envrc
 direnv allow
-echo `git rev-parse --show-toplevel`/paulssonlab/src > "$CONDA_PREFIX/lib/site-packages/paulssonlab.pth"
+echo `git rev-parse --show-toplevel`/paulssonlab/src > `python -c 'import site; print(site.getsitepackages()[0])'`/paulssonlab.pth
 ```
 
 Note that the `paulssonlab` git commit hooks do not work on Python 2, so you will have to `conda activate paulssonlab` before you `git commit`.
