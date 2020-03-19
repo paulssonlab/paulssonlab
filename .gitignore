@@ -1,6 +1,9 @@
 # snakenbake fonts
 /paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
 
+# config files
+/paulssonlab/src/paulssonlab/cloning/config.toml
+
 # direnv
 .envrc
 
