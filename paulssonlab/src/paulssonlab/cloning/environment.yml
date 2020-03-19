@@ -1,0 +1,30 @@
+name: cloning
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - benchlingapi
+  - biopython
+  - black
+  - bokeh
+  - cachetools
+  - click
+  - click
+  - clustalo
+  - cytoolz
+  - google-api-python-client
+  - jupyterlab
+  - mafft
+  - nbformat
+  - numpy
+  - pandas
+  - pip
+  - pip:
+      - primer3-py
+      - primer3plus
+      - requests-html
+  - pre-commit
+  - pytoml
+  - requests
+  - tqdm
