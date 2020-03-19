@@ -1,0 +1,21 @@
+group_meeting_duration = 2
+individual_meeting_duration = 0.75
+
+[google]
+user = "paulssonlab@gmail.com"
+
+[calendars]
+default_timezone = "America/New_York"
+general = "Paulsson Lab General Calendar"
+microscopes = [
+    "Ti1",
+    "Ti2",
+    "Ti3",
+    "Ti4",
+    "Ti5",
+    "Ti6"
+]
+
+[spreadsheets]
+group_meetings = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
+individual_meetings = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 import pandas as pd
 import click
 import pickle
@@ -8,12 +6,20 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pendulum
+from cytoolz import excepts
 from datetime import datetime
 from functools import wraps
 from itertools import zip_longest
 from collections import defaultdict
 import re
 from IPython import embed
+from paulssonlab.api.google import (
+    get_calendar_service,
+    get_sheets_service,
+    get_calendar_id,
+    iter_calendar_events,
+    get_sheets_for_spreadsheet,
+)
 
 # TODO: individual meeting duration (45min)
 # TODO: move config to .toml
@@ -22,22 +28,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
-GENERAL_CALENDAR = "Paulsson Lab General Calendar"
-MICROSCOPE_CALENDAR = "Paulsson Lab Nikon and Accessories"
-GROUP_MEETINGS_SPREADSHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
-INDIVIDUAL_MEETINGS_SPREADSHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
-GROUP_MEETING_DURATION = 2
-INDIVIDUAL_MEETING_DURATION = 45 / 60
-GOOGLE_USER = "paulssonlab@gmail.com"
+# GENERAL_CALENDAR = "Paulsson Lab General Calendar"
+# MICROSCOPE_CALENDAR = "Paulsson Lab Nikon and Accessories"
+# GROUP_MEETINGS_SPREADSHEET = "1Wm3U7YZHewkRthGeDZJ-ahqAY5FW8w91QkAoqsid1aQ"
+# INDIVIDUAL_MEETINGS_SPREADSHEET = "18ljx4U1RednlX555YSFbQWr0ziz2FmwadKdut358qk0"
+# GROUP_MEETING_DURATION = 2
+# INDIVIDUAL_MEETING_DURATION = 45 / 60
+# GOOGLE_USER = "paulssonlab@gmail.com"
 MAX_RESULTS = 2500
-DEFAULT_TIMEZONE = "America/New_York"
-
-
-def none_if_exception(func):
-    try:
-        return func()
-    except:
-        return None
+# DEFAULT_TIMEZONE = "America/New_York"
 
 
 def parse_date_and_time(date, time, tz=pendulum.timezone("utc")):
@@ -46,53 +45,6 @@ def parse_date_and_time(date, time, tz=pendulum.timezone("utc")):
     # FROM: https://github.com/sdispater/pendulum/issues/156
     # return pendulum.instance(datetime.combine(date, time), tz=tz)
     return pendulum.parse(date + " " + time, tz=tz, strict=False)
-
-
-def paginator(req_func):
-    @wraps(req_func)
-    def f(*args, **kwargs):
-        res = req_func(*args, **kwargs).execute()
-        for item in res["items"]:
-            yield item
-        while "nextPageToken" in res and res["nextPageToken"]:
-            res = req_func(
-                *args, **{"pageToken": res["nextPageToken"], **kwargs}
-            ).execute()
-            for item in res["items"]:
-                yield item
-
-    return f
-
-
-def get_creds():
-    creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token:
-            creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server()
-        # Save the credentials for the next run
-        with open("token.pickle", "wb") as token:
-            pickle.dump(creds, token)
-    return creds
-
-
-def get_calendar_service():
-    service = build("calendar", "v3", credentials=get_creds())
-    return service
-
-
-def get_sheets_service():
-    service = build("sheets", "v4", credentials=get_creds())
-    return service
 
 
 def parse_time(time, all_day_tz=DEFAULT_TIMEZONE):
@@ -110,34 +62,17 @@ def parse_time(time, all_day_tz=DEFAULT_TIMEZONE):
     return t, all_day
 
 
-def get_calendar_id(service, calendar_name):
-    calendars = service.calendarList().list().execute()["items"]
-    calendar_id = next(
-        cal["id"] for cal in calendars if cal["summary"] == calendar_name
-    )
-    return calendar_id
-
-
-def iter_calendar_events(service, calendar_id, max_results=MAX_RESULTS, **kwargs):
-    for event in paginator(service.events().list)(
-        calendarId=calendar_id,
-        singleEvents=True,
-        orderBy="startTime",
-        maxResults=max_results,
-        **kwargs,
-    ):
-        yield event
-
-
 def get_calendar_events(
     service, calendar_id, max_results=MAX_RESULTS, all_day_tz=DEFAULT_TIMEZONE, **kwargs
 ):
     events = []
-    for event in iter_calendar_events(service, calendar_id, **kwargs):
+    for event in iter_calendar_events(
+        service, calendar_id, max_results=max_results, **kwargs
+    ):
         start, all_day = parse_time(event["start"], all_day_tz=all_day_tz)
         end, _ = parse_time(event["end"], all_day_tz=all_day_tz)
-        created = none_if_exception(lambda: pd.to_datetime(event["created"]))
-        updated = none_if_exception(lambda: pd.to_datetime(event["updated"]))
+        created = excepts(Exception, lambda: pd.to_datetime(event["created"]))
+        updated = excepts(Exception, lambda: pd.to_datetime(event["updated"]))
         events.append(
             {
                 "summary": event["summary"],
@@ -169,18 +104,6 @@ def get_syncable_calendar_events(
     ):
         events.append(event)
     return events
-
-
-def get_sheets_for_spreadsheet(sheets_service, spreadsheet_id):
-    res = (
-        sheets_service.spreadsheets()
-        .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
-        .execute()
-    )
-    sheets = {
-        s["properties"]["title"]: s["properties"]["sheetId"] for s in res["sheets"]
-    }
-    return sheets
 
 
 def _get_sheets_group_meetings(spreadsheet_id=GROUP_MEETINGS_SPREADSHEET):
