@@ -1,0 +1,21 @@
+name: cloning
+channels:
+  - pyviz
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - cachetools
+  - click
+  - click
+  - cytoolz
+  - google-api-python-client
+  - holoviews
+  - jupyterlab
+  - nbformat
+  - numpy
+  - pandas
+  - pre-commit
+  - pytoml
+  - requests
