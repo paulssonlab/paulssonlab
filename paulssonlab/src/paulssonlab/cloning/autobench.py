@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 import pandas as pd
 import sys
 import os
@@ -104,13 +102,7 @@ def find_parts(bases):
         if idx != -1:
             head = bases[:idx]
             tail = bases[idx + len(part) :]
-            return (
-                find_parts(head)
-                + [
-                    name,
-                ]
-                + find_parts(tail)
-            )
+            return find_parts(head) + [name] + find_parts(tail)
     if len(bases):
         return [(bases,)]
     else:
