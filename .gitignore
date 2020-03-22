@@ -4,6 +4,7 @@
 # config files
 /paulssonlab/src/paulssonlab/cloning/config.toml
 /paulssonlab/src/paulssonlab/shenker/cloning/config.toml
+/paulssonlab/src/paulssonlab/shenker/cloning/credentials.json
 
 # direnv
 .envrc
