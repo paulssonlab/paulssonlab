@@ -6,7 +6,6 @@ Inspired by https://github.com/dominiccarrano/hamming.
 import numpy as np
 from math import floor, ceil, log2
 from bitarray import bitarray
-from hamming import bits_to_bytes, bytes_to_bits
 
 
 class DoubleError(Exception):
