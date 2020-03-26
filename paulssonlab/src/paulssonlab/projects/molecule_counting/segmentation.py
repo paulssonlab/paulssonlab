@@ -249,9 +249,10 @@ def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[]):
         xs = nd2._parser._raw_metadata.x_data
         ys = nd2._parser._raw_metadata.y_data
         for d in (xs, ys):
-            if not np.allclose(np.array(d) - d[0], 0):
+            delta = np.array(d) - d[0]
+            if not np.allclose(delta, 0, atol=0.5):
                 raise ValueError(
-                    "expected constant x/y stage position in {}".format(filename)
+                    f"expected constant x/y stage position in {filename}, instead got residuals {delta}"
                 )
         x = xs[0]
         y = ys[0]
