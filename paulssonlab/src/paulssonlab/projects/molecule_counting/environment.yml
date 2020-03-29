@@ -16,6 +16,7 @@ dependencies:
   - distributed
   - holoviews
   - hvplot
+  - ipywidgets
   - jupyterlab
   - matplotlib
   - nbformat

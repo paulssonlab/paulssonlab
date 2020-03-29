@@ -27,6 +27,8 @@ After setting up the repo (above), you will need to do the following setup for e
 ```
 conda env create -n my_project -f environment.yml
 echo "conda activate my_project" > .envrc
+# the following command only applies if you're using one of: ipywidgets, holoviews, or dask
+jupyter labextension install @jupyter-widgets/jupyterlab-manager @pyviz/jupyterlab_pyviz
 direnv allow
 echo `git rev-parse --show-toplevel`/paulssonlab/src > `python -c 'import site; print(site.getsitepackages()[0])'`/paulssonlab.pth
 ```
