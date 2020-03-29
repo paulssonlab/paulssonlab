@@ -33,8 +33,12 @@ def tree():
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
-def _get_nd2_reader(filename, **kwargs):
-    return nd2reader.ND2Reader(filename, **kwargs)
+def _get_nd2_reader(filename, fix_z_levels=True, **kwargs):
+    nd2 = nd2reader.ND2Reader(filename, **kwargs)
+    # TODO: this is made unnecessary by https://github.com/rbnvrw/nd2reader/commit/995d920e5f52900540c7e4b1efb690fd468c21e0
+    if fix_z_levels:
+        nd2.metadata["z_levels"] = []
+    return nd2
 
 
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)

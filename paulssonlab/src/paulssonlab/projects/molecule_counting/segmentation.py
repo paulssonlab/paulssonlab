@@ -9,7 +9,7 @@ import skimage.segmentation
 import scipy.ndimage as ndi
 from cytoolz import compose, partial
 from numbers import Integral
-from paulssonlab.projects.molecule_counting.matriarch_stub import (
+from .matriarch_stub import (
     get_nd2_reader,
     get_nd2_frame,
     get_regionprops,
@@ -18,7 +18,7 @@ from paulssonlab.projects.molecule_counting.matriarch_stub import (
     hessian_eigenvalues,
     RevImage,
 )
-from paulssonlab.projects.molecule_counting.util import conditional
+from .util import conditional
 
 # TODO: new
 def nd2_to_dask(filename, position, channel, rechunk=True):
@@ -242,8 +242,10 @@ def measure_photobleaching(
     return traces
 
 
-def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[]):
+def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[], progress_bar=None):
     positions = {}
+    if progress_bar is not None:
+        filenames = progress_bar(filenames)
     for filename in filenames:
         nd2 = get_nd2_reader(filename)
         xs = nd2._parser._raw_metadata.x_data
@@ -291,6 +293,7 @@ def process_photobleaching_file(
     rechunk=True,
     segmentation_frame_filter=None,
     segmentation_labels_filter=None,
+    phase_channels=[],
 ):
     if delayed is True:
         delayed = dask.delayed(pure=True)
@@ -320,7 +323,7 @@ def process_photobleaching_file(
                 )
             )
         segmentation_channel = segmentation_channels[0]
-    if segmentation_channel == "BF":
+    if segmentation_channel in phase_channels:
         segmentation_func = compose(segment, invert)
     else:
         segmentation_func = segment
