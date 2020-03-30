@@ -242,7 +242,7 @@ def measure_photobleaching(
     return traces
 
 
-def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[], progress_bar=None):
+def cluster_nd2_by_positions(filenames, tol=10, ignore_channels=[], progress_bar=None):
     positions = {}
     if progress_bar is not None:
         filenames = progress_bar(filenames)
@@ -261,7 +261,7 @@ def cluster_nd2_by_positions(filenames, tol=10, ignored_channels=[], progress_ba
         channels = nd2.metadata["channels"]
         if len(channels) != 1:
             raise ValueError("expected exactly one channel: {}".format(channels))
-        if channels[0] in ignored_channels:
+        if channels[0] in ignore_channels:
             continue
         matched = False
         for pos in positions:
