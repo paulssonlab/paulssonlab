@@ -1,3 +1,10 @@
+import re
+from tqdm.auto import tqdm
+
+PROGRESS_BAR = tqdm
+del tqdm
+
+
 def _default_parse_html_table_row(column_names, tr):
     row = {}
     for name, td in zip(column_names, tr.find("td")):

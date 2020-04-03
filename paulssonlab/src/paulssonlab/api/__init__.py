@@ -1,2 +1,4 @@
 from .core import *
-import paulssonlab.api.google
+from . import addgene
+from . import benchling
+from . import google

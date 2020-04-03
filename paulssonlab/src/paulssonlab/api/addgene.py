@@ -1,19 +1,28 @@
 import re
-from tqdm.auto import tqdm
 import requests_html
 import urllib
 from paulssonlab.cloning.util import format_well_name
-from paulssonlab.api.util import parse_html_table
+from paulssonlab.api.util import parse_html_table, PROGRESS_BAR
 
 
-def get_addgene_info(url, session=None):
+def _ensure_addgene_url(catalog_or_url):
+    try:
+        if "http" in catalog_or_url.lower():
+            return catalog_or_url
+    except:
+        pass
+    return f"http://www.addgene.org/{catalog_or_url}/"
+
+
+def get_addgene_plasmid(catalog_or_url, session=None):
+    url = _ensure_addgene_url(catalog_or_url)
     if not session:
         session = requests_html.HTMLSession()
     res = session.get(url)
-    return _get_addgene_info(res.html)
+    return _get_addgene_plasmid(res.html)
 
 
-def _get_addgene_info(html):
+def _get_addgene_plasmid(html):
     material = {}
     # name ("pAJM.711")
     material["name"] = html.find("div.panel-heading span.material-name")[0].text
@@ -26,7 +35,9 @@ def _get_addgene_info(html):
     # item ("Plasmid")
     material["item"] = table[0]["Item"]
     # catalog ("108512")
-    material["catalog"] = table[0]["Catalog #"]
+    catalog_number = int(table[0]["Catalog #"])
+    material["catalog"] = catalog_number
+    material["url"] = f"http://www.addgene.org/{catalog_number}/"
     # price
     material["price"] = table[0]["Price (USD)"]
     # purpose, depositing lab (text -> href), publication (text -> href)
@@ -120,7 +131,7 @@ def _get_addgene_sequence_urls(html):
 
 
 def _parse_addgene_well(s):
-    m = re.match(r"Plate\s+(\d+) / ([A-H]) / (\d+)", s.strip())
+    m = re.match(r"(?:Plate\s+(\d+) / )?([A-H]) / (\d+)", s.strip())
     return m.groups()
 
 
@@ -131,20 +142,84 @@ def _parse_addgene_kit_row(column_names, tr):
         link = td.find("a", first=True)
         if link is not None and not link.attrs["href"].startswith("#"):
             url = urllib.parse.urljoin(link.base_url, link.attrs["href"])
-    row = {name: td.text for name, td in zip(column_names, tds)}
+    row = {name.lower(): td.text for name, td in zip(column_names, tds)}
     if url is not None:
         row["url"] = url
-    if "Well" in row:
-        row["Well"] = format_well_name(*_parse_addgene_well(row["Well"]))
+        row["catalog"] = int(
+            re.match(r"https?://www.addgene.org/(\d+)/?", url).group(1)
+        )
+    if "well" in row:
+        row["well"] = format_well_name(*_parse_addgene_well(row["well"]))
     return row
 
 
-def get_addgene_kit(url, include_sequences=True, include_info=False, progress_bar=tqdm):
-    session = requests_html.HTMLSession()
+def get_addgene(
+    catalog_or_url,
+    include_sequences=True,
+    include_details=False,
+    progress_bar=PROGRESS_BAR,
+    session=None,
+):
+    url = _ensure_addgene_url(catalog_or_url)
+    if not session:
+        session = requests_html.HTMLSession()
     res = session.get(url)
-    table = res.html.find("table.kit-inventory-table")[0]
+    return _get_addgene(
+        res.html,
+        include_sequences=include_sequences,
+        include_details=include_details,
+        progress_bar=progress_bar,
+        session=session,
+    )
+
+
+def _get_addgene(
+    html,
+    include_sequences=True,
+    include_details=False,
+    progress_bar=PROGRESS_BAR,
+    session=None,
+):
+    data = {}
+    catalog = html.find("small#catalog-number", first=True)
+    if catalog is None:
+        catalog = html.find("span.material-name ~ small", first=True)
+    item, catalog_number = re.search(
+        r"\(([\w ]+) #\s*(\d+)\s*\)", catalog.text
+    ).groups()
+    catalog_number = int(catalog_number)
+    data["item"] = item
+    data["catalog"] = catalog_number
+    url = f"http://www.addgene.org/{catalog_number}/"
+    data["url"] = url
+    if item == "Kit":
+        kit = _get_addgene_kit(
+            html,
+            include_sequences=include_sequences,
+            include_details=include_details,
+            progress_bar=progress_bar,
+        )
+        return {**data, **kit}
+    elif item == "Plasmid" or item == "Bacterial strain":
+        plasmid = _get_addgene_plasmid(html)
+        if include_sequences:
+            sequence_urls = get_addgene_sequence_urls(url, session=session)
+            plasmid["sequence_urls"] = sequence_urls
+        return plasmid
+    else:
+        raise ValueError(f"unknown Addgene item type: {item}")
+
+
+def _get_addgene_kit(
+    html,
+    include_sequences=True,
+    include_details=False,
+    progress_bar=PROGRESS_BAR,
+    session=None,
+):
+    table = html.find("table.kit-inventory-table")[0]
     wells = parse_html_table(table, row_parser=_parse_addgene_kit_row)
-    if progress_bar is not None:
+    if progress_bar is not None and (include_sequences or include_details):
         wells_iter = progress_bar(wells)
     else:
         wells_iter = wells
@@ -152,7 +227,8 @@ def get_addgene_kit(url, include_sequences=True, include_info=False, progress_ba
         if include_sequences:
             sequence_urls = get_addgene_sequence_urls(well["url"], session=session)
             well["sequence_urls"] = sequence_urls
-        if include_info:
-            info = get_addgene_info(well["url"], session=session)
-            well = {**well, **info}
-    return wells
+        if include_details:
+            plasmid = get_addgene_plasmid(well["url"], session=session)
+            well.update(plasmid)
+    data = {"wells": wells}
+    return data
