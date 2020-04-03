@@ -21,6 +21,7 @@ dependencies:
   - pandas
   - pip
   - pip:
+      - escapejson
       - primer3-py
       - primer3plus
       - requests-html
