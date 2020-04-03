@@ -132,7 +132,32 @@ class regionprops_extractor:
             inplace=False,
         )
         kymo_meta = kymo_meta.sort_index()
-        mergeddf = df_out.join(kymo_meta.reindex(df_out.index))
+
+        df_out = df_out.reset_index(inplace=False)
+        df_out = df_out.set_index(
+            ["File Index", "File Trench Index", "timepoints"],
+            drop=True,
+            append=False,
+            inplace=False,
+        )
+        df_out = df_out.sort_index()
+
+        mergeddf = df_out.join(kymo_meta)
+        mergeddf = mergeddf.reset_index(inplace=False)
+        mergeddf = mergeddf.set_index(
+            [
+                "File Index",
+                "File Trench Index",
+                "timepoints",
+                "Intensity Channel",
+                "Objectid",
+            ],
+            drop=True,
+            append=False,
+            inplace=False,
+        )
+        del mergeddf["index"]
+        mergeddf = mergeddf.sort_index()
 
         mergeddf.to_pickle(self.analysispath)
 
