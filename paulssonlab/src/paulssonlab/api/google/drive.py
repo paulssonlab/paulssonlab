@@ -1,4 +1,7 @@
 import re
+import io
+from cytoolz import partial
+from apiclient.http import MediaIoBaseUpload
 
 
 def get_drive_id(url):
@@ -54,3 +57,51 @@ def filter_drive(files, keys):
                 f"could not find {'folder' if key[1] else 'file'} '{key[0]}'"
             )
     return filtered_files
+
+
+def list_drive(service, root=None, query=None):
+    qs = []
+    if root:
+        qs.append(f"'{root}' in parents")
+    if query:
+        qs.append(query)
+    q = " and ".join([f"({subq})" for subq in qs])
+    response = service.files().list(q=q).execute()
+    return _drive_list_to_dict(response)
+
+
+def _drive_list_to_dict(response):
+    files = {}
+    if not "files" in response:
+        return
+    for file in response["files"]:
+        if file["name"] in files:
+            raise ValueError(f"got duplicate file name in drive list: {file['name']}")
+        files[file["name"]] = file
+    return files
+
+
+def upload_drive(
+    service,
+    content,
+    name=None,
+    mimetype="application/octet-stream",
+    file_id=None,
+    parent=None,
+):
+    if not hasattr(content, "seek"):
+        content = io.BytesIO(content.encode())
+    media = MediaIoBaseUpload(content, mimetype=mimetype, resumable=True)
+    body = {"mimeType": mimetype}
+    if name is not None:
+        body["name"] = name
+    if file_id is not None:
+        method = partial(service.files().update, fileId=file_id)
+    else:
+        if name is None:
+            raise ValueError("either file_id or name must be given")
+        if parent is not None:
+            body["parents"] = [parent]
+        method = service.files().create
+    response = method(body=body, media_body=media, fields="id").execute()
+    return response.get("id")
