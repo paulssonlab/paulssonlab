@@ -1,3 +1,5 @@
+# TODO: write (image/table) to disk and zmq (?) pubsub, have a reader that accepts new data from either (Merge)
+
 ### Principles
 
 # each raw pixel has a physical address
