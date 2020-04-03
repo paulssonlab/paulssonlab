@@ -47,7 +47,7 @@ class handlerCore:
             ti = time.time()
             no_timeout = True
             s = serial.Serial(comport, 9600, timeout=0.5)
-            readcmd = "5\n".encode('ascii')
+            readcmd = "5\n".encode("ascii")
             while no_timeout:
                 s.write(readcmd)
                 returnedstr = s.read_until()
@@ -65,7 +65,7 @@ class handlerCore:
             return False
 
     def connect(self, connect_code="MARLIN", timeout=10.0):
-        ports = ['COM%s' % (i + 1) for i in range(256)]
+        ports = ["COM%s" % (i + 1) for i in range(256)]
         result = []
         for port in ports:
             heartbeat = self.get_heartbeat(
@@ -79,7 +79,7 @@ class handlerCore:
             ti = time.time()
             no_timeout = True
             self.serial_handle = serial.Serial(result[0], 9600, timeout=0.5)
-            readcmd = "5\n".encode('ascii')
+            readcmd = "5\n".encode("ascii")
             while no_timeout:
                 self.serial_handle.write(readcmd)
                 returnedstr = self.serial_handle.read_until()
@@ -126,12 +126,12 @@ class handlerCore:
             cmdlist = [""] + [valvestr] + [pumpstr] + titanxstrlist
 
             for cmd in cmdlist:
-                sendstr = cmd + '\n'
-                statestr = sendstr.encode('ascii')
+                sendstr = cmd + "\n"
+                statestr = sendstr.encode("ascii")
                 self.serial_handle.write(statestr)
                 time.sleep(0.25)
 
-            readcmd = "0\n".encode('ascii')
+            readcmd = "0\n".encode("ascii")
             self.serial_handle.write(readcmd)
             returnedstr = self.serial_handle.read_until()[:-1]
             self.serial_handle.reset_output_buffer()
