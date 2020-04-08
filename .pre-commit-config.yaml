@@ -1,23 +1,23 @@
 default_stages: [commit]
 repos:
+-   repo: https://github.com/myint/docformatter.git
+    rev: v1.3.1
+    hooks:
+    -   id: docformatter
+-   repo: https://github.com/psf/black
+    rev: 19.10b0
+    hooks:
+    -   id: black
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.5.0
     hooks:
     -   id: check-added-large-files
         exclude: '\.ipynb$'
-    -   id: check-merge-conflict
-    -   id: end-of-file-fixer
     -   id: mixed-line-ending
         args: ['--fix=lf']
     -   id: trailing-whitespace
--   repo: https://github.com/psf/black
-    rev: 19.10b0
-    hooks:
-    -   id: black
--   repo: https://github.com/myint/docformatter.git
-    rev: v1.3.1
-    hooks:
-    -   id: docformatter
+    -   id: end-of-file-fixer
+    -   id: check-merge-conflict
 -   repo: https://github.com/shenker/pre-commit-hooks.git
     rev: 2cf20ad811e1f6e9d3c2d914282fd260025847d8
     hooks:
