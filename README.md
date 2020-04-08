@@ -47,12 +47,12 @@ TODO: How to structure python modules (example dir) so they can be easily import
 
 ## How to import an existing git repo
 To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
-1. `conda activate nbcleanse` and install git-filter-repo with `pip install git-filter-repo`.
-2. `cd path/to/nbcleanse` (where you cloned `nbcleanse` above)
+1. `cd path/to/nbcleanse` (where you cloned `nbcleanse` above)
+2. `conda env create -n nbcleanse -f environment.yml` (or if you have already created the `nbcleanse` conda environment, you can `conda activate nbcleanse`)
 3. `cd ..`
 4. `git clone git@github.com:shenker/old-repo.git`
 5. `cd old-repo`
-6. Filter old-repo with `python ../nbcleanse/nbcleanse.py filter_repo` (this will take a few minutes).
+6. Filter old-repo with `python ../nbcleanse/nbcleanse.py filter-repo` (this will take a few minutes).
 7. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
 8. Then merge this repo:
 ```
