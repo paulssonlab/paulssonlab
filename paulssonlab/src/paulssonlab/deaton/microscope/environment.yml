@@ -2,12 +2,20 @@ name: deaton-microscope
 channels:
   - defaults
 dependencies:
+  - black
+  - cachetools
+  - click
   - conda
   - h5py
   - jupyterlab
   - matplotlib
+  - nbformat
   - numpy
   - pandas
+  - pip
+  - pip:
+      - docformatter
+  - pre-commit
   - pyserial
   - pytables
   - python=2.7

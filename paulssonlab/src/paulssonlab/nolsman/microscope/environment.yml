@@ -3,11 +3,19 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - black
+  - cachetools
+  - click
   - conda
   - jupyterlab
   - matplotlib
+  - nbformat
   - numpy
   - opencv
   - pandas
+  - pip
+  - pip:
+      - docformatter
+  - pre-commit
   - pyqt
   - python=2.7

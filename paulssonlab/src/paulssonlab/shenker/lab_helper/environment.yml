@@ -16,6 +16,9 @@ dependencies:
   - nbformat
   - numpy
   - pandas
+  - pip
+  - pip:
+      - docformatter
   - pre-commit
   - pytoml
   - requests

@@ -26,6 +26,7 @@ dependencies:
       - primer3plus
       - requests-html
       - pygsheets
+      - docformatter
   - pre-commit
   - pytoml
   - requests

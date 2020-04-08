@@ -4,16 +4,23 @@ channels:
   - defaults
 dependencies:
   - bitarray
+  - black
+  - cachetools
+  - click
   - click
   - cytoolz
   - freetype
   - freetype-py
   - jupyterlab
   - matplotlib
+  - nbformat
   - numpy
   - pint
   - pip
   - pip:
       - gdspy
+      - docformatter
+  - pip
+  - pre-commit
   - scipy
   - shortuuid

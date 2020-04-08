@@ -22,6 +22,9 @@ dependencies:
   - nodejs
   - numpy
   - pandas
+  - pip
+  - pip:
+      - docformatter
   - pre-commit
   - scikit-image
   - scipy

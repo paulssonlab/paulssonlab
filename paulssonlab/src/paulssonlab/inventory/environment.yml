@@ -11,6 +11,9 @@ dependencies:
   - nbformat
   - numpy
   - peewee
+  - pip
+  - pip:
+      - docformatter
   - pre-commit
   - tqdm
   - xxhash
