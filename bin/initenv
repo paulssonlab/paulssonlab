@@ -22,7 +22,7 @@ if [ -z "$envname" ]; then
             echo "❌  ${bold}Environment name required, aborting.${normal}"
             exit 1
         fi
-        echo "✏️   ${bold}Writing environment name ${envname} to .envname${normal}"
+        echo "✏️   ${bold}Writing environment name '${envname}' to .envname${normal}"
         echo "$envname" > "$envname_file"
     fi
 fi
@@ -36,7 +36,7 @@ fi
 conda activate "$envname" 2> /dev/null && exit 0
 
 # if conda env does not exist, create it? [y/N]
-read -n 1 -p "🔎  ${bold}Conda environment ${envname} does not exist, create it? ${normal}[y/N] " answer
+read -n 1 -p "🔎  ${bold}Conda environment '${envname}' does not exist, create it? ${normal}[y/N] " answer
 echo
 case ${answer:0:1} in
     y|Y )

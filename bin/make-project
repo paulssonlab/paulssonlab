@@ -68,6 +68,6 @@ EOF
 esac
 echo "✏️   ${bold}Writing packages to environment.yml${normal}"
 echo "$packages" > environment.yml
-echo "✏️   ${bold}Writing environment name ${envname} to .envname${normal}"
+echo "✏️   ${bold}Writing environment name '${envname}' to .envname${normal}"
 echo "$envname" > .envname
 make-envrc
