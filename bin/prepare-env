@@ -6,6 +6,10 @@ if [ ! -f "$envyml" ]; then
     echo "❌  Environment file ${envyml} not found, aborting."
     exit 1
 fi
+pth_contents="${root}/paulssonlab/src"
+pth_file="$(python -c 'import site; print(site.getsitepackages()[0])')/paulssonlab.pth"
+echo "📦  ${bold}Adding paulssonlab package to PYTHONPATH: ${normal}writing \"${pth_contents}\" to $pth_file"
+echo "$pth_contents" > "$pth_file"
 labextensions=""
 if grep -q "dask\|ipywidgets\|bokeh" "$envyml"; then
     labextensions="${labextensions} @jupyter-widgets/jupyterlab-manager"
