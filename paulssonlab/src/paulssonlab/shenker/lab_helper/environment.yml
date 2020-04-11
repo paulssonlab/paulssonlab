@@ -1,19 +1,18 @@
-name: cloning
+name: lab_helper
 channels:
   - pyviz
-  - bioconda
   - conda-forge
   - defaults
 dependencies:
   - black
   - cachetools
   - click
-  - click
   - cytoolz
   - google-api-python-client
   - holoviews
   - jupyterlab
   - nbformat
+  - nodejs
   - numpy
   - pandas
   - pip

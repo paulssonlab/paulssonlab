@@ -6,10 +6,18 @@ channels:
 dependencies:
   - apsw
   - black
+  - bokeh
   - cachetools
   - click
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - matplotlib
   - nbformat
+  - nodejs
   - numpy
+  - pandas
   - peewee
   - pip
   - pip:

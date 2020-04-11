@@ -4,9 +4,9 @@ from bokeh.layouts import column, gridplot
 from bokeh.plotting import figure, show
 from bokeh.models import Range1d, LinearAxis, BoxAnnotation
 from bokeh.models.callbacks import CustomJS
-from functional import compose
+from cytoolz import compose
 from align import align_mafft, read_ab1, trim_to_ref
-from util import grouper
+from paulssonlab.util import grouper
 
 
 def show_chromatogram_alignment(

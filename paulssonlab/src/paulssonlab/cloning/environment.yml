@@ -1,15 +1,13 @@
 name: cloning
 channels:
-  - bioconda
   - conda-forge
+  - bioconda
   - defaults
 dependencies:
-  - benchlingapi
   - biopython
   - black
   - bokeh
   - cachetools
-  - click
   - click
   - clustalo
   - cytoolz
@@ -17,10 +15,12 @@ dependencies:
   - jupyterlab
   - mafft
   - nbformat
+  - nodejs
   - numpy
   - pandas
   - pip
   - pip:
+      - benchlingapi
       - escapejson
       - primer3-py
       - primer3plus
