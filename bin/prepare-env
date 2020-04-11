@@ -23,4 +23,15 @@ fi
 if [ -n "$labextensions" ]; then
     echo "🧪  ${bold}Installing JupyterLab extensions:${normal}${labextensions}"
     jupyter labextension install${labextensions}
+    status=$?
+    if [ $status != 0 ] ; then
+        echo "❌  jupyter labextension install ${bold}failed.${normal}"
+        echo "${bold}If it is complaining about a missing nodejs, run${normal}"
+        echo
+        echo "    conda install -y nodejs"
+        echo "    export-env"
+        echo "    prepare-env"
+        echo
+        exit $?
+    fi
 fi
