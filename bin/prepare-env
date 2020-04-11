@@ -32,6 +32,6 @@ if [ -n "$labextensions" ]; then
         echo "    export-env"
         echo "    prepare-env"
         echo
-        exit $?
+        exit $status
     fi
 fi
