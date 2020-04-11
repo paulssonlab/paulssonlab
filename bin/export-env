@@ -1,0 +1,3 @@
+#!/bin/sh
+conda env export --from-history > environment.yml
+pre-commit run environment.yml

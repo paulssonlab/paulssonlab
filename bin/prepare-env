@@ -1,0 +1,22 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+envyml="${1:-environment.yml}"
+if [ ! -f "$envyml" ]; then
+    echo "❌  Environment file ${envyml} not found, aborting."
+    exit 1
+fi
+labextensions=""
+if grep -q "dask\|ipywidgets\|bokeh" "$envyml"; then
+    labextensions="${labextensions} @jupyter-widgets/jupyterlab-manager"
+fi
+if grep -q "bokeh" "$envyml"; then
+    labextensions="${labextensions} @bokeh/jupyter_bokeh"
+fi
+if grep -q "holoviews" "$envyml"; then
+    labextensions="${labextensions} @pyviz/jupyterlab_pyviz"
+fi
+if [ -n "$labextensions" ]; then
+    echo "🧪  ${bold}Installing JupyterLab extensions:${normal}${labextensions}"
+    jupyter labextension install${labextensions}
+fi

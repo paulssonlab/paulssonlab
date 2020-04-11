@@ -1,0 +1,49 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+envyml="$1"
+envname="$2"
+if [ -z "$envyml" ]; then
+    envyml="$(pwd)/environment.yml"
+fi
+envname_file="$(dirname "$envyml")/.envname"
+if [ -z "$envname" ]; then
+    # if `dirname env.yml`/.envname exists, conda activate << .envname
+    if [ -f "$envname_file" ]; then
+        envname="$(cat "$envname_file")"
+    else
+        envname="$(grep name: "$envyml"|cut -d" " -f2)"
+        # prompt for envname
+        read -p "💬  ${bold}Name of conda environment to activate/create ${normal}, or press ENTER for default [${envname}]: " new_envname
+        if [ -n "$new_envname" ]; then
+            envname="$new_envname"
+        fi
+        if [ -z "$envname" ]; then
+            echo "❌  ${bold}Environment name required, aborting.${normal}"
+            exit 1
+        fi
+        echo "✏️   ${bold}Writing environment name ${envname} to .envname${normal}"
+        echo "$envname" > "$envname_file"
+    fi
+fi
+
+# exit if we are in env already
+if [ "$envname" = "$CONDA_DEFAULT_ENV" ]; then
+    exit 0
+fi
+
+# try to activate environment
+conda activate "$envname" 2> /dev/null && exit 0
+
+# if conda env does not exist, create it? [y/N]
+read -n 1 -p "🔎  ${bold}Conda environment ${envname} does not exist, create it? ${normal}[y/N] " answer
+echo
+case ${answer:0:1} in
+    y|Y )
+        create-env "$envname" "$envyml"
+        conda activate "$envname"
+    ;;
+    * )
+        exit 1
+    ;;
+esac

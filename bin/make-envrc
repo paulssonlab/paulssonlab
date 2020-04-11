@@ -1,0 +1,6 @@
+#!/bin/sh
+cat << EOF > .envrc
+source_up .envrc_base
+initenv
+EOF
+direnv allow
