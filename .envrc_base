@@ -5,3 +5,8 @@ PATH_add $root/bin
 function initenv() {
     . $root/bin/initenv
 }
+# let users run initenv as init-env (so it matches name style of init-repo, make-project, etc.)
+# this may not work in all shells
+# SEE: https://unix.stackexchange.com/questions/168221/are-there-problems-with-hyphens-in-functions-aliases-and-executables
+# because of this, all .envrc files shoud call initenv, not init-env
+alias init-env=initenv
