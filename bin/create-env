@@ -12,6 +12,16 @@ if [ ! -f "$envyml" ]; then
     exit 1
 fi
 conda env create -n "$envname" -f "$envyml"
+status=$?
+if [ $status != 0 ] ; then
+    echo "❌  ${bold}Could not create environment '${envname}', aborting.${normal}"
+    exit 1
+fi
 . "$CONDA_PREFIX/etc/profile.d/conda.sh"
 conda activate "$envname"
+status=$?
+if [ $status != 0 ] ; then
+    echo "❌  ${bold}Could not activate environment '${envname}', aborting.${normal}"
+    exit 1
+fi
 prepare-env "$envyml"
