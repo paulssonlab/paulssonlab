@@ -7,7 +7,7 @@ We can quantify the tendency of a given fluorescent protein to aggregate by obse
 - Jacob Quinn Shenker
 - Noah Olsman
 - Madison Adamthwaite
-- Catherine Kejia Xu (visiting from Tuomas Knowles's group at Cambridge, February-April 2020)
+- Catherine Kejia Xu (visiting from Tuomas Knowles's group at Cambridge, February-March 2020)
 - original assay: Dirk Landgraf
 
 ## References
