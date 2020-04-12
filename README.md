@@ -4,7 +4,7 @@ This repo contains code and notebooks used in the Paulsson Lab.
 ## Installation
 Open a shell, `cd` to the directory where you want to clone the repo, and run the following
 ```
-/bin/bash -c "$(curl -fsSL https://github.com/paulssonlab/paulssonlab/raw/master/bin/clone-repo)"
+/bin/bash -c "$(curl -fsSL https://gist.githubusercontent.com/shenker/11cccba44d843c5c135a152f55ef9d51/raw/paulssonlab-install.sh)"
 ```
 
 Note that you need a `bash`-compatible shell installed (this is a given on Linux/macOS systems, but on Windows you will need to use WSL or scoop to set up `bash`).
