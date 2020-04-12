@@ -1,3 +1,8 @@
 #!/bin/sh
+old_envyml="$(mktemp environment.yml.XXXX)"
+mv environment.yml "$old_envyml"
 conda env export --from-history > environment.yml
-pre-commit run environment.yml
+pre-commit run fix-environment-yamls --files environment.yml > /dev/null
+# FROM: https://stackoverflow.com/questions/8800578/how-to-colorize-diff-on-the-command-line
+git --no-pager diff --no-index "$old_envyml" environment.yml
+rm "$old_envyml"
