@@ -14,7 +14,8 @@ echo
 case ${answer:0:1} in
     y|Y )
         # SEE: https://stackoverflow.com/questions/1167746/how-to-assign-a-heredoc-value-to-a-variable-in-bash
-        packages=$(cat <<EOF
+        # SEE: https://stackoverflow.com/questions/2953081/how-can-i-write-a-heredoc-to-a-file-in-bash-script
+        packages=$(cat << EOF
 name: ${envname}
 channels:
   - pyviz
@@ -48,7 +49,7 @@ EOF
         echo "    export-env"
         echo "    prepare-env"
         echo
-        packages=$(cat <<EOF
+        packages=$(cat << EOF
 name: ${envname}
 channels:
   - conda-forge
@@ -66,6 +67,27 @@ EOF
         )
     ;;
 esac
+echo "✏️   ${bold}Writing README.md${normal}"
+cat << "EOF" > README.md
+# Title
+
+Summary.
+
+## Installation
+
+You will need to configure the Bop It Extreme by running the following:
+```
+important_command --with-arguments
+```
+
+## Contributors
+
+- Your Name
+
+## References
+
+- Landgraf, D., Okumus, B., Chien, P., Baker, T. A., & Paulsson, J. (2012). Segregation of molecules at cell division reveals native protein localization. *Nature Methods*, 9(5), 480.
+EOF
 echo "✏️   ${bold}Writing packages to environment.yml${normal}"
 echo "$packages" > environment.yml
 echo "✏️   ${bold}Writing environment name '${envname}' to .envname${normal}"
