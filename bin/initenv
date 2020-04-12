@@ -4,9 +4,9 @@ normal="$(tput sgr0)"
 envyml="$1"
 envname="$2"
 if [ -z "$envyml" ]; then
-    envyml="$(pwd)/environment.yml"
+    envyml="${PWD}/environment.yml"
 fi
-envname_file="$(dirname "$envyml")/.envname"
+envname_file="${PWD}/.envname"
 if [ -z "$envname" ]; then
     # if `dirname env.yml`/.envname exists, conda activate << .envname
     if [ -f "$envname_file" ]; then
