@@ -1,8 +1,9 @@
+# tooling
+/.nbcleanse
+.envname
+
 # snakenbake fonts
 /paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
-
-# direnv/conda
-.envname
 
 # config files
 /paulssonlab/src/paulssonlab/cloning/config.toml
