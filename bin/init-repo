@@ -15,6 +15,7 @@ else
 fi
 # make paulssonlab conda env
 bin/direnv-allowall
+direnv exec . true # true is a no-op, this forces direnv to load .envrc (direnv reload does not work)
 # check that direnv loaded/conda env was created
 envname_file=.envname
 if [ ! -f "$envname_file" ] || [ $CONDA_DEFAULT_ENV != "$(cat "$envname_file")" ]; then
