@@ -18,7 +18,7 @@ bin/direnv-allowall
 # check that direnv loaded/conda env was created
 envname_file=.envname
 if ! [ -f "$envname_file" ] && [ $CONDA_DEFAULT_ENV = "$(cat "$envname_file")" ]; then
-    echo "❌  ${bold}Conda environment was not created/loaded successfully, aborting.${normal}"
+    echo "❌  ${bold}Conda environment was not created/activated successfully, aborting.${normal}"
     exit 1
 fi
 # install pre-commit hooks
