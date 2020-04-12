@@ -1,4 +1,10 @@
 #!/bin/sh
+if [ -z "$INITIALIZING_REPO" ]; then
+    export INITIALIZING_REPO=1
+    # we need to run this script inside an environment loaded by direnv
+    direnv exec . "${BASH_SOURCE[0]}"
+    exit $?
+fi
 bold="$(tput bold)"
 normal="$(tput sgr0)"
 if git remote -v | grep -q paulssonlab/paulssonlab; then
@@ -15,7 +21,6 @@ else
 fi
 # make paulssonlab conda env
 bin/direnv-allowall
-direnv exec . true # true is a no-op, this forces direnv to load .envrc (direnv reload does not work)
 # check that direnv loaded/conda env was created
 envname_file=.envname
 if [ ! -f "$envname_file" ] || [ $CONDA_DEFAULT_ENV != "$(cat "$envname_file")" ]; then
