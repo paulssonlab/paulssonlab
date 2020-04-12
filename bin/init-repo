@@ -22,6 +22,7 @@ if [ ! -f "$envname_file" ] || [ $CONDA_DEFAULT_ENV != "$(cat "$envname_file")" 
     exit 1
 fi
 # install pre-commit hooks
+echo "🔱  ${bold}Installing git hooks${normal}"
 pre-commit install --install-hooks &&
     pre-commit install --install-hooks -t commit-msg
 status=$?
@@ -32,5 +33,8 @@ fi
 # run git status (so git builds its cache before we install the nbcleanse filter)
 git status > /dev/null
 # install nbcleanse
-git clone git@github.com:shenker/nbcleanse.git $root/.nbcleanse
-.nbcleanse/nbcleanse.py install
+if [ ! -d .nbcleanse ]; then
+    echo "💾  ${bold}Installing nbcleanse to ${normal}${PWD}/paulssonlab"
+    git clone git@github.com:shenker/nbcleanse.git $root/.nbcleanse
+fi
+python .nbcleanse/nbcleanse.py install
