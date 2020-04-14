@@ -841,7 +841,7 @@ class tracking_solver:
         self.viewpadding = 0
 
     def define_tracking_problem(
-        self, Cij, Cik, Cki, Ce, posij, posik, poski, sizes, merge_per_iter, edge_limit
+        self, Cij, Cik, Cki, posij, posik, poski, sizes, merge_per_iter, edge_limit
     ):
 
         prob = LpProblem("Lineage", LpMinimize)
@@ -850,7 +850,6 @@ class tracking_solver:
         Aik = {}
         Aki = {}
         Ai = {}
-        Ae = {}
 
         obj_fn_terms = []
         obj_fn_coeff = []
@@ -875,7 +874,7 @@ class tracking_solver:
                                 "ai=" + str(i) + ",j=" + str(j) + ",t=" + str(t),
                                 0,
                                 1,
-                                LpInteger,
+                                cat="Continuous",
                             )
                             cijt = cij[i, j]
                             obj_fn_terms.append(Aij[(i, j, t)])
@@ -888,7 +887,7 @@ class tracking_solver:
                                     "ai=" + str(i) + ",k=" + str(j) + ",t=" + str(t),
                                     0,
                                     1,
-                                    LpInteger,
+                                    cat="Continuous",
                                 )
                                 cikt = Cik[t][i, j]
                                 obj_fn_terms.append(Aik[(i, j, t)])
@@ -901,26 +900,20 @@ class tracking_solver:
                                     "ak=" + str(i) + ",i=" + str(j) + ",t=" + str(t),
                                     0,
                                     1,
-                                    LpInteger,
+                                    cat="Continuous",
                                 )
                                 ckit = Cki[t][i, j]
                                 obj_fn_terms.append(Aki[(i, j, t)])
                                 obj_fn_coeff.append(ckit)
 
                 Ai[(i, t)] = LpVariable(
-                    "ai=" + str(i) + ",t=" + str(t), 0, 1, LpInteger
+                    "ai=" + str(i) + ",t=" + str(t), 0, 1, cat="Continuous"
                 )
                 obj_fn_terms.append(Ai[(i, t)])
                 obj_fn_coeff.append(0.0)
 
-                Ae[(i, t)] = LpVariable(
-                    "aei=" + str(i) + ",t=" + str(t), 0, 1, LpInteger
-                )
-                obj_fn_terms.append(Ae[(i, t)])
-                obj_fn_coeff.append(Ce[t][i, 0])
-
         prob += (
-            sum(
+            lpSum(
                 [
                     obj_fn_coeff[n] * obj_fn_term
                     for n, obj_fn_term in enumerate(obj_fn_terms)
@@ -944,14 +937,12 @@ class tracking_solver:
                         key for key in Aki.keys() if (key[0] == j - 1) and (key[2] == t)
                     ] + [key for key in Aki.keys() if (key[0] == j) and (key[2] == t)]
                     neg_Ai = Ai[(j, t)]
-                    neg_Ae = Ae[(j, t)]
 
                     prob += (
                         sum([Aij[key] for key in neg_Aij])
                         + sum([Aik[key] for key in neg_Aik])
                         + sum([Aki[key] for key in neg_Aki])
                         + neg_Ai
-                        + neg_Ae
                         <= 1,
                         "Constraint 7 (" + str(t) + "," + str(j) + ")",
                     )
@@ -959,8 +950,6 @@ class tracking_solver:
             elif t < len(sizes) - 1:
                 N_detect_i = len(sizes[t - 1])
                 N_detect_f = len(sizes[t])
-
-                pos_Ae = [key for key in Ae.keys() if key[1] == t - 1]
 
                 for j in range(N_detect_f):
                     pos_Aij = [key for key in Aij.keys() if key[1:] == (j, t - 1)]
@@ -978,7 +967,6 @@ class tracking_solver:
                     neg_Aki = [
                         key for key in Aki.keys() if (key[0] == j - 1) and (key[2] == t)
                     ] + [key for key in Aki.keys() if (key[0] == j) and (key[2] == t)]
-                    neg_Ae = Ae[(j, t)]
                     neg_Ai = Ai[(j, t)]
 
                     if j == N_detect_f - 1:
@@ -987,12 +975,10 @@ class tracking_solver:
                             sum([Aij[key] for key in pos_Aij])
                             + sum([Aik[key] for key in pos_Aik])
                             + sum([Aki[key] for key in pos_Aki])
-                            + sum([Ae[key] for key in pos_Ae])
                             - sum([Aij[key] for key in neg_Aij])
                             - sum([Aik[key] for key in neg_Aik])
                             - sum([Aki[key] for key in neg_Aki])
                             - neg_Ai
-                            - neg_Ae
                             == 0,
                             "Constraint 9 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1001,7 +987,6 @@ class tracking_solver:
                             sum([Aij[key] for key in pos_Aij])
                             + sum([Aik[key] for key in pos_Aik])
                             + sum([Aki[key] for key in pos_Aki])
-                            + sum([Ae[key] for key in pos_Ae])
                             <= 1,
                             "Constraint 6 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1011,7 +996,6 @@ class tracking_solver:
                             + sum([Aik[key] for key in neg_Aik])
                             + sum([Aki[key] for key in neg_Aki])
                             + neg_Ai
-                            + neg_Ae
                             <= 1,
                             "Constraint 7 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1026,7 +1010,6 @@ class tracking_solver:
                             - sum([Aik[key] for key in neg_Aik])
                             - sum([Aki[key] for key in neg_Aki])
                             - neg_Ai
-                            - neg_Ae
                             == 0,
                             "Constraint 9 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1044,7 +1027,6 @@ class tracking_solver:
                             + sum([Aik[key] for key in neg_Aik])
                             + sum([Aki[key] for key in neg_Aki])
                             + neg_Ai
-                            + neg_Ae
                             <= 1,
                             "Constraint 7 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1056,7 +1038,6 @@ class tracking_solver:
                         above_Aki = [
                             key for key in Aki.keys() if (key[0] == j) and (key[2] == t)
                         ]
-                        above_Ae = []
                         above_Ai = []
                         for i in i_above:
                             above_Aij += [
@@ -1074,7 +1055,6 @@ class tracking_solver:
                                 for key in Aki.keys()
                                 if (key[0] == i) and (key[2] == t)
                             ]
-                            above_Ae.append((i, t))
                             above_Ai.append((i, t))
 
                         prob += (
@@ -1082,24 +1062,12 @@ class tracking_solver:
                             + sum([Aij[key] for key in above_Aij])
                             + sum([Aik[key] for key in above_Aik])
                             + sum([Aki[key] for key in above_Aki])
-                            + sum([Ae[key] for key in above_Ae])
                             <= N_detect_f,
                             "Contraint 8 (" + str(t) + "," + str(j) + ")",
                         )
 
-                        prob += (
-                            N_detect_f * neg_Ae
-                            + sum([Aij[key] for key in above_Aij])
-                            + sum([Aik[key] for key in above_Aik])
-                            + sum([Aki[key] for key in above_Aki])
-                            + sum([Ai[key] for key in above_Ai])
-                            <= N_detect_f,
-                            "Contraint 8 exitdiv (" + str(t) + "," + str(j) + ")",
-                        )
-
             else:
                 N_detect = len(sizes[t])
-                pos_Ae = [key for key in Ae.keys() if key[1] == t - 1]
 
                 for j in range(N_detect):
 
@@ -1115,7 +1083,6 @@ class tracking_solver:
                             sum([Aij[key] for key in pos_Aij])
                             + sum([Aik[key] for key in pos_Aik])
                             + sum([Aki[key] for key in pos_Aki])
-                            + sum([Ae[key] for key in pos_Ae])
                             <= 1,
                             "Constraint 6 (" + str(t) + "," + str(j) + ")",
                         )
@@ -1135,11 +1102,9 @@ class tracking_solver:
             "Merge Limit",
         )
 
-        return prob, Aij, Aik, Aki, Ai, Ae
+        return prob, Aij, Aik, Aki, Ai
 
-    def get_sln_params(
-        self, Aij, Aik, Aki, Ai, Ae, posij, posik, poski, sizes, edge_limit
-    ):
+    def get_sln_params(self, Aij, Aik, Aki, Ai, posij, posik, poski, sizes, edge_limit):
         Aij_arr_list = [
             np.zeros((len(sizes[t]), len(sizes[t + 1])), dtype=bool)
             for t in range(len(sizes) - 1)
@@ -1153,7 +1118,6 @@ class tracking_solver:
             for t in range(len(sizes) - 1)
         ]
         Ai_arr_list = [np.zeros(len(sizes[t]), dtype=bool) for t in range(len(sizes))]
-        Ae_arr_list = [np.zeros(len(sizes[t]), dtype=bool) for t in range(len(sizes))]
 
         for t in range(len(sizes) - 1):
 
@@ -1173,24 +1137,27 @@ class tracking_solver:
                 for j in range(num_j):
                     if j >= i:
                         if j in valid_posij_slice:
-                            Aij_arr_list[t][i, j] = bool(Aij[(i, j, t)].varValue)
+                            Aij_arr_list[t][i, j] = bool(
+                                np.round(Aij[(i, j, t)].varValue)
+                            )
 
                         if j < num_j - 1:
                             valid_posik_slice = valid_posik[i]
                             if j in valid_posik_slice:
                                 Aik_arr_list[t][i, j] = bool(
-                                    Aik[(i, j, t)].varValue
+                                    np.round(Aik[(i, j, t)].varValue)
                                 )  # issue here
 
                         if i < num_i - 1:
                             valid_poski_slice = valid_poski[i]
                             if j in valid_poski_slice:
-                                Aki_arr_list[t][i, j] = bool(Aki[(i, j, t)].varValue)
+                                Aki_arr_list[t][i, j] = bool(
+                                    np.round(Aki[(i, j, t)].varValue)
+                                )
 
-                Ai_arr_list[t][i] = bool(Ai[(i, t)].varValue)
-                Ae_arr_list[t][i] = bool(Ae[(i, t)].varValue)
+                Ai_arr_list[t][i] = bool(np.round(Ai[(i, t)].varValue))
 
-        return Aij_arr_list, Aik_arr_list, Aki_arr_list, Ai_arr_list, Ae_arr_list
+        return Aij_arr_list, Aik_arr_list, Aki_arr_list, Ai_arr_list
 
     def split_all_merged(self, labeled_data, Aki_arr_list):
         new_labeled_data = copy.copy(labeled_data)
@@ -1245,7 +1212,6 @@ class tracking_solver:
         Aij_arr_list,
         Aik_arr_list,
         Aki_arr_list,
-        Ae_arr_list,
         t0=0,
         tf=-1,
         x_size=18,
@@ -1355,36 +1321,6 @@ class tracking_solver:
                     linewidth=3,
                 )
 
-            if Ae_arr_list[t][0] == True:
-                centroid_i = centroids[t][-1]
-                centroid_j = centroids[t + 1][-1]
-
-                ax.plot(
-                    [
-                        centroid_i[0] + t * x_dim + self.viewpadding,
-                        centroid_j[0] + (t + 1) * x_dim + self.viewpadding,
-                    ],
-                    [centroid_i[1], centroid_j[1]],
-                    c="c",
-                    linewidth=3,
-                )
-
-            Ae_coords = np.where(Ae_arr_list[t])
-            for idx in range(len(Ae_coords[0])):
-                i = Ae_coords[0][idx]
-                centroid_i = centroids[t][i]
-                centroid_j = centroids[t + 1][-1]
-
-                ax.plot(
-                    [
-                        centroid_i[0] + t * x_dim + self.viewpadding,
-                        centroid_j[0] + (t + 1) * x_dim + self.viewpadding,
-                    ],
-                    [centroid_i[1], centroid_j[1]],
-                    c="c",
-                    linewidth=3,
-                )
-
         padded_img = np.pad(
             kymo_arr[tf][::-1],
             ((0, 0), (self.viewpadding, self.viewpadding)),
@@ -1403,7 +1339,6 @@ class tracking_solver:
         Aij_arr_list,
         Aik_arr_list,
         Aki_arr_list,
-        Ae_arr_list,
         t0=0,
         tf=-1,
         x_size=18,
@@ -1517,21 +1452,15 @@ class tracking_solver:
         centroids, sizes, bboxes, empty_trenches = get_segment_props(
             labeled_data, interpolate_empty_trenches=True
         )
-        Cij, Cik, Cki, Ce, posij, posik, poski = self.ScoreFn.compute_score_arrays(
+        Cij, Cik, Cki, _, posij, posik, poski = self.ScoreFn.compute_score_arrays(
             centroids, sizes, bboxes
         )
-        prob, Aij, Aik, Aki, Ai, Ae = self.define_tracking_problem(
-            Cij, Cik, Cki, Ce, posij, posik, poski, sizes, merge_per_iter, edge_limit
+        prob, Aij, Aik, Aki, Ai = self.define_tracking_problem(
+            Cij, Cik, Cki, posij, posik, poski, sizes, merge_per_iter, edge_limit
         )
         prob.solve()
-        (
-            Aij_arr_list,
-            Aik_arr_list,
-            Aki_arr_list,
-            Ai_arr_list,
-            Ae_arr_list,
-        ) = self.get_sln_params(
-            Aij, Aik, Aki, Ai, Ae, posij, posik, poski, sizes, edge_limit
+        Aij_arr_list, Aik_arr_list, Aki_arr_list, Ai_arr_list = self.get_sln_params(
+            Aij, Aik, Aki, Ai, posij, posik, poski, sizes, edge_limit
         )
 
         return (
@@ -1542,7 +1471,6 @@ class tracking_solver:
             Aik_arr_list,
             Aki_arr_list,
             Ai_arr_list,
-            Ae_arr_list,
             empty_trenches,
         )
 
@@ -1561,7 +1489,7 @@ class tracking_solver:
             )
         )
 
-        _, _, prob, _, _, Aki_arr_list, _, _, _ = iter_outputs[-1]
+        _, _, prob, _, _, Aki_arr_list, _, _ = iter_outputs[-1]
 
         merged_cells = np.any([np.any(Aki_arr) for Aki_arr in Aki_arr_list])
         objective_val = value(prob.objective)
@@ -1585,7 +1513,7 @@ class tracking_solver:
                     working_labeled_data, self.merge_per_iter, self.edge_limit
                 )
             )
-            _, _, prob, _, _, Aki_arr_list, _, _, _ = iter_outputs[-1]
+            _, _, prob, _, _, Aki_arr_list, _, _ = iter_outputs[-1]
 
             merged_cells = np.any([np.any(Aki_arr) for Aki_arr in Aki_arr_list])
 
@@ -1618,7 +1546,6 @@ class tracking_solver:
             Aik_arr_list,
             Aki_arr_list,
             Ai_arr_list,
-            Ae_arr_list,
             empty_trenches,
         ) = self.run_iteration(working_labeled_data, 0, self.edge_limit)
         objective_val = value(prob.objective)
@@ -1633,12 +1560,11 @@ class tracking_solver:
             Aik_arr_list,
             Aki_arr_list,
             Ai_arr_list,
-            Ae_arr_list,
             lineage_score,
             empty_trenches,
         )
 
-    def get_nuclear_lineage(self, sizes, empty_trenches, Aik_arr_list, Ae_arr_list):
+    def get_nuclear_lineage(self, sizes, empty_trenches, Aik_arr_list):
 
         cell_ids = list(range(len(sizes[0])))
         current_max_id = np.max(cell_ids)
@@ -1673,23 +1599,6 @@ class tracking_solver:
 
                     current_max_id += 2
                     ttl_added += 1
-
-                Ae_coords = np.where(Ae_arr_list[t])
-                for idx in range(len(Ae_coords[0])):
-                    i = Ae_coords[0][idx]
-
-                    daughter_id1, daughter_id2 = (current_max_id + 1, -1)
-
-                    mother_dict[daughter_id1] = cell_ids[i + ttl_added]
-                    daughter_dict[cell_ids[i + ttl_added]] = (
-                        daughter_id1,
-                        daughter_id2,
-                    )
-
-                    del cell_ids[i + ttl_added]
-                    cell_ids.insert(i + ttl_added, daughter_id1)
-
-                    current_max_id += 1
 
                 max_cells = len(sizes[t + 1])
                 cell_ids = copy.copy(cell_ids[:max_cells])
@@ -1837,13 +1746,12 @@ class tracking_solver:
             Aik_arr_list,
             _,
             _,
-            Ae_arr_list,
             lineage_score,
             empty_trenches,
         ) = self.compute_lineage(data, orientation)
 
         mother_dict, daughter_dict, cell_ids_list = self.get_nuclear_lineage(
-            sizes, empty_trenches, Aik_arr_list, Ae_arr_list
+            sizes, empty_trenches, Aik_arr_list
         )
 
         df_out = self.get_lineage_df(
@@ -2020,7 +1928,6 @@ class tracking_solver:
             Aik_arr_list,
             Aki_arr_list,
             Ai_arr_list,
-            Ae_arr_list,
             lineage_score,
             empty_trenches,
         ) = self.compute_lineage(data, orientation)
@@ -2035,7 +1942,6 @@ class tracking_solver:
             Aij_arr_list,
             Aik_arr_list,
             Aki_arr_list,
-            Ae_arr_list,
             t0=t_range[0],
             tf=t_range[1],
             x_size=x_size,
