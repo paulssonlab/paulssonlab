@@ -5,12 +5,14 @@ channels:
   - defaults
 dependencies:
   - black
+  - bokeh
   - cachetools
   - click
   - cytoolz
   - google-api-python-client
   - holoviews
   - jupyterlab
+  - jupyterlab_code_formatter
   - nbformat
   - nodejs
   - numpy

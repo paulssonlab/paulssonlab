@@ -13,6 +13,7 @@ dependencies:
   - cytoolz
   - google-api-python-client
   - jupyterlab
+  - jupyterlab_code_formatter
   - mafft
   - nbformat
   - nodejs

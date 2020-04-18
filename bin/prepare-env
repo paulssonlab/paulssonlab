@@ -10,7 +10,14 @@ pth_contents="${root}/paulssonlab/src"
 pth_file="$(python -c 'import site; print(site.getsitepackages()[0])')/paulssonlab.pth"
 echo "📦  ${bold}Adding paulssonlab package to PYTHONPATH: ${normal}writing \"${pth_contents}\" to $pth_file"
 echo "$pth_contents" > "$pth_file"
+if ! grep -q "jupyterlab" "$envyml"; then
+    exit
+fi
 labextensions=""
+if grep -q "jupyterlab_code_formatter" "$envyml"; then
+    jupyter serverextension enable --py jupyterlab_code_formatter
+    labextensions="${labextensions} @ryantam626/jupyterlab_code_formatter"
+fi
 if grep -q "dask\|ipywidgets\|bokeh" "$envyml"; then
     labextensions="${labextensions} @jupyter-widgets/jupyterlab-manager"
 fi

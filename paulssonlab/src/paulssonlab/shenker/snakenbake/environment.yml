@@ -12,6 +12,7 @@ dependencies:
   - freetype
   - freetype-py
   - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - nbformat
   - numpy

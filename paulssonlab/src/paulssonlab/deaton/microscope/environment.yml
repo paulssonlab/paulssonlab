@@ -8,6 +8,7 @@ dependencies:
   - conda
   - h5py
   - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - nbformat
   - numpy

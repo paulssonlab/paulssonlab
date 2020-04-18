@@ -8,6 +8,7 @@ dependencies:
   - click
   - conda
   - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - nbformat
   - numpy

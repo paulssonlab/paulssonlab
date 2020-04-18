@@ -17,6 +17,7 @@ dependencies:
   - hvplot
   - ipywidgets
   - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - nbformat
   - nd2reader
