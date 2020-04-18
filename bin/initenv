@@ -12,6 +12,10 @@ if [ -z "$envname" ]; then
     if [ -f "$envname_file" ]; then
         envname="$(cat "$envname_file")"
     else
+        if [ ! -f "$envyml" ]; then
+            echo "❌  environment.yml ${bold}does not exist, aborting.${normal}"
+            exit 1
+        fi
         envname="$(grep name: "$envyml"|cut -d" " -f2)"
         # prompt for envname
         read -p "💬  ${bold}Name of conda environment to activate/create ${normal}, or press ENTER for default [${envname}]: " new_envname
