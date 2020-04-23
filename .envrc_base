@@ -1,9 +1,9 @@
 # FROM: https://stackoverflow.com/questions/4774054/reliable-way-for-a-bash-script-to-get-the-full-path-to-itself
 export root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export src="$root/paulssonlab/src/paulssonlab"
-PATH_add $root/bin
+PATH_add "${root}/bin"
 function initenv() {
-    . $root/bin/initenv
+    . "${root}/bin/initenv"
 }
 # let users run initenv as init-env (so it matches name style of init-repo, make-project, etc.)
 # this may not work in all shells
