@@ -2,9 +2,15 @@
 if [ -z "$INITIALIZING_REPO" ]; then
     export INITIALIZING_REPO=1
     # we need to run this script inside an environment loaded by direnv
-    direnv exec . "${BASH_SOURCE[0]}"
+    # this uses the direnv for the bin dir
+    # assuming there is no $root/bin/.envrc,
+    # this will load the root direnv from $root/.envrc, as desired
+    bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    this_script="${BASH_SOURCE[0]}"
+    direnv exec "$bin_dir" "$this_script"
     exit $?
 fi
+cd "${root}"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
 if git remote -v | grep -q paulssonlab/paulssonlab; then
@@ -20,7 +26,7 @@ else
     git remote add upstream git@github.com:paulssonlab/paulssonlab.git
 fi
 # make paulssonlab conda env
-bin/direnv-allowall
+"${root}/bin/direnv-allowall"
 # check that direnv loaded/conda env was created
 envname_file=.envname
 if [ ! -f "$envname_file" ] || [ $CONDA_DEFAULT_ENV != "$(cat "$envname_file")" ]; then
@@ -40,7 +46,7 @@ fi
 git status > /dev/null
 # install nbcleanse
 if [ ! -d .nbcleanse ]; then
-    echo "💾  ${bold}Installing nbcleanse to ${normal}${PWD}/paulssonlab"
-    git clone git@github.com:shenker/nbcleanse.git $root/.nbcleanse
+    echo "💾  ${bold}Installing nbcleanse to ${normal}${root}/.nbcleanse"
+    git clone git@github.com:shenker/nbcleanse.git "${root}/.nbcleanse"
 fi
-python .nbcleanse/nbcleanse.py install
+python "${root}/.nbcleanse/nbcleanse.py" install
