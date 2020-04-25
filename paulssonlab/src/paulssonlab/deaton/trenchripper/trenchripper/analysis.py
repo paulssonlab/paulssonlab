@@ -1,5 +1,5 @@
 from .utils import pandas_hdf5_handler
-from .cluster import dask_controller
+from .trcluster import dask_controller
 import h5py
 import skimage as sk
 import pandas as pd
@@ -171,7 +171,7 @@ class regionprops_extractor:
             working_directory=self.headpath + "/dask",
         )
         dask_cont.startdask()
-        dask_cont.daskcluster.start_workers()
+        #         dask_cont.daskcluster.start_workers()
         dask_cont.displaydashboard()
         dask_cont.futures = {}
 

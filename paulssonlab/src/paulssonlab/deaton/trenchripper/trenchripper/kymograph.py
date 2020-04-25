@@ -12,7 +12,7 @@ import copy
 from parse import compile
 
 from skimage import filters
-from .cluster import hdf5lock
+from .trcluster import hdf5lock
 from .utils import multifov, pandas_hdf5_handler, writedir
 from tifffile import imread
 
@@ -1922,6 +1922,7 @@ class kymograph_multifov(multifov):
         repaired_trench_edges_y = self.repair_out_of_frame(
             trench_edges_y, start_above, end_above
         )
+
         repaired_trench_edges_y = self.remove_small_rows(
             repaired_trench_edges_y, y_min_edge_dist
         )

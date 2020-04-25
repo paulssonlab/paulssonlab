@@ -19,7 +19,7 @@ from skimage import (
     exposure,
 )
 from .utils import kymo_handle, pandas_hdf5_handler, writedir
-from .cluster import hdf5lock
+from .trcluster import hdf5lock
 from time import sleep
 import scipy.ndimage.morphology as morph
 
