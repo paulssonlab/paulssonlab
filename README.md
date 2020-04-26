@@ -42,6 +42,10 @@ If you want to incorporate a change that a user (e.g., `nolsman`) has pushed to 
 
 If you push changes to your personal fork, you may want to pull them from another clone (e.g., if you have your fork cloned on both your laptop and O2). You can do this with `git pull origin master`.
 
+## Common problems
+
+- The `bioconda` channel (if you are using it) must be listed below `conda-forge` in `environment.yml` files, or else you will get errors about package conflicts.
+
 ## How to import an existing Git repo
 To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
 1. `cd path/to/paulssonlab/.nbcleanse`
