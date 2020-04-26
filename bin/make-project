@@ -24,21 +24,16 @@ channels:
 dependencies:
   - black
   - bokeh
-  - cachetools
-  - click
   - holoviews
   - hvplot
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - nbformat
   - numpy
   - nodejs
   - pandas
   - pip
-  - pip:
-      - docformatter
   - pre-commit
 EOF
         )
@@ -56,13 +51,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - black
-  - cachetools
-  - click
-  - nbformat
   - pip
-  - pip:
-      - docformatter
   - pre-commit
 EOF
         )

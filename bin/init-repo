@@ -49,4 +49,7 @@ if [ ! -d .nbcleanse ]; then
     echo "💾  ${bold}Installing nbcleanse to ${normal}${root}/.nbcleanse"
     git clone git@github.com:shenker/nbcleanse.git "${root}/.nbcleanse"
 fi
-python "${root}/.nbcleanse/nbcleanse.py" install
+nbcleanse_conda_env=nbcleanse # in case we want to change this
+conda env remove -n "${nbcleanse_conda_env}" &> /dev/null
+conda env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml"
+conda run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" install --conda "${nbcleanse_conda_env}"

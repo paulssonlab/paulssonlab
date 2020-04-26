@@ -45,7 +45,7 @@ If you push changes to your personal fork, you may want to pull them from anothe
 ## How to import an existing Git repo
 To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
 1. `cd path/to/paulssonlab/.nbcleanse`
-2. `conda env create -n nbcleanse -f environment.yml` (or if you have already created the `nbcleanse` conda environment, you can `conda activate nbcleanse`)
+2. The `nbcleanse` environment has been created automatically for you; activate it with `conda activate nbcleanse`. If you need to create it, run `conda env create -n nbcleanse -f environment.yml` before activating it.
 3. `cd ../..`
 4. `git clone git@github.com:shenker/old-repo.git`
 5. `cd old-repo`
