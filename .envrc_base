@@ -2,7 +2,7 @@
 export root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export src="$root/paulssonlab/src/paulssonlab"
 PATH_add "${root}/bin"
-function initenv() {
+function initenv {
     . "${root}/bin/initenv"
 }
 # let users run initenv as init-env (so it matches name style of init-repo, make-project, etc.)
