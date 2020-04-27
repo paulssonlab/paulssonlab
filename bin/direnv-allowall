@@ -1,4 +1,4 @@
 #!/bin/sh
 bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$bin_dir")"
-find . -name .envrc -exec direnv allow {} \;
+find "$root" -name .envrc -exec direnv allow {} \;
