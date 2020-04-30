@@ -31,6 +31,10 @@ class hdf5_fov_extractor:
         self.ignore_fovmetadata = ignore_fovmetadata
         self.nd2reader_override = nd2reader_override
 
+        self.organism = ""
+        self.microscope = ""
+        self.notes = ""
+
     def assignidx(self, expmeta, metadf=None):
         numfovs = len(expmeta["fields_of_view"])
         timepoints_per_fov = len(expmeta["frames"])
