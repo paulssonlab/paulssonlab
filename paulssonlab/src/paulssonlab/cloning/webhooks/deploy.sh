@@ -1,5 +1,14 @@
 #!/bin/sh
 source="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-docker build "$source" --tag gcr.io/paulssonlab/cloning_webhooks
-docker push gcr.io/paulssonlab/cloning_webhooks
-gcloud run deploy cloning-webhooks --image gcr.io/paulssonlab/cloning_webhooks --allow-unauthenticated --platform managed --region=us-east4
+tag="gcr.io/paulssonlab/cloning_webhooks"
+if [ "$1" == "-d" ]; then
+    docker build "$source" --tag "$tag"
+    docker push "$tag"
+else
+    gcloud builds submit "$source" --ignore-file=.dockerignore --gcs-log-dir=gs://paulssonlab_cloudbuild_logs/logs --config=cloudbuild.yaml
+fi
+if [ $? == 0 ]; then
+    gcloud run deploy cloning-webhooks --image "$tag" --allow-unauthenticated --platform managed --region=us-east4
+else
+    echo Build failed, aborting.
+fi

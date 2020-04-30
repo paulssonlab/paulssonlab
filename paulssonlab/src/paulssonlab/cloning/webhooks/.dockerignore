@@ -1,5 +1,5 @@
-Dockerfile
 README.md
+cloudbuild.yaml
 deploy.sh
 *.pyc
 *.pyo

@@ -2,12 +2,14 @@
 # https://hub.docker.com/_/python
 FROM python:3.8-slim
 
-# Install production dependencies.
-RUN pip install Flask gunicorn google-api-python-client pygsheets
-
-# Copy local code to the container image.
 ENV APP_HOME /app
 WORKDIR $APP_HOME
+
+# Install production dependencies.
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+
+# Copy local code to the container image.
 COPY . ./
 
 # Run the web service on container startup. Here we use the gunicorn
