@@ -50,12 +50,13 @@ If you push changes to your personal fork, you may want to pull them from anothe
 To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
 1. `cd path/to/paulssonlab/.nbcleanse`
 2. The `nbcleanse` environment has been created automatically for you; activate it with `conda activate nbcleanse`. If you need to create it, run `conda env create -n nbcleanse -f environment.yml` before activating it.
-3. `cd ../..`
-4. `git clone git@github.com:shenker/old-repo.git`
-5. `cd old-repo`
-6. Filter old-repo with `python ../paulssonlab/.nbcleanse/nbcleanse.py filter-repo` (this will take a few minutes).
-7. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
-8. Then merge this repo:
+3. Ensure that the `nbcleanse` environment is activated and run `pip install git-filter-repo`
+4. `cd ../..`
+5. `git clone git@github.com:shenker/old-repo.git`
+6. `cd old-repo`
+7. Filter old-repo with `python ../paulssonlab/.nbcleanse/nbcleanse.py filter-repo` (this will take a few minutes).
+8. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
+9. Then merge this repo:
 ```
 cd path/to/paulssonlab # this repo
 git remote add -f old-repo path/to/old-repo
