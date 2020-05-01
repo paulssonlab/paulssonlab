@@ -1,3 +1,4 @@
+# fmt: off
 import trenchripper as tr
 import os
 import shutil
