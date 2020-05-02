@@ -54,8 +54,7 @@ class kymograph_interactive(kymograph_multifov):
     def import_hdf5_interactive(self):
         import_hdf5 = interactive(self.import_hdf5_files, {"manual":True}, all_channels=fixed(self.channels),\
                                   seg_channel=Dropdown(options=self.channels, value=self.channels[0]),invert=Dropdown(options=[True,False],\
-                                  value=False), fov_list=SelectMultiple(options=self.fov_list), t_range=IntRangeSlider(value=[0, self.timepoints_len-1],\
-                                  min=0,max=self.timepoints_len-1,step=1,disabled=False,continuous_update=False),t_subsample_step=IntSlider(value=10,\
+                                  value=False), fov_list=SelectMultiple(options=self.fov_list),t_subsample_step=IntSlider(value=10,\
                                   min=0, max=200, step=1));
         display(import_hdf5)
 
@@ -173,9 +172,9 @@ class kymograph_interactive(kymograph_multifov):
 
         y_cropping = interactive(self.preview_y_crop,{"manual":True},y_percentiles_smoothed_list=fixed(self.y_percentiles_smoothed_list),\
                 imported_array_list=fixed(self.imported_array_list),\
-                y_min_edge_dist=IntSlider(value=50, min=10, max=200, step=10),\
-                padding_y=IntSlider(value=20, min=0, max=100, step=1),\
-                trench_len_y=IntSlider(value=270, min=0, max=1000, step=10),
+                y_min_edge_dist=IntSlider(value=50, min=5, max=1000, step=5),\
+                padding_y=IntSlider(value=20, min=0, max=500, step=5),\
+                trench_len_y=IntSlider(value=270, min=0, max=1000, step=5),
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
                orientation_detection=Dropdown(options=[0, 1, 'phase'],value=0,description='Orientation:',disabled=False),
                 orientation_on_fail=Dropdown(options=[None,0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
@@ -301,7 +300,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def preview_kymographs_interactive(self):
             interact_manual(self.preview_kymographs,cropped_in_y_list=fixed(self.cropped_in_y_list),all_midpoints_list=fixed(self.all_midpoints_list),\
-            x_drift_list=fixed(self.x_drift_list),trench_width_x=IntSlider(value=30, min=10, max=50, step=2),\
+            x_drift_list=fixed(self.x_drift_list),trench_width_x=IntSlider(value=30, min=2, max=1000, step=2),\
             trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05),\
             vertical_spacing=FloatSlider(value=0.8, min=0., max=2., step=0.01))
 
@@ -361,7 +360,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def process_results(self):
         self.final_params["All Channels"] = self.all_channels
-        self.final_params["Time Range"] = self.t_range
+#         self.final_params["Time Range"] = self.t_range
         self.final_params["Invert"] = self.invert
 
         for key,value in self.final_params.items():
@@ -392,7 +391,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.all_channels = globaldf.metadata['channels']
 
         timepoint_num = len(self.kymodf.index.get_level_values("timepoints").unique().tolist())
-        self.t_range = (0,timepoint_num)
+#         self.t_range = (0,timepoint_num)
         self.trenchid_arr = self.kymodf.index.get_level_values("trenchid").unique().values
 
         self.final_params = {}
@@ -420,7 +419,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         plt.show()
 
 
-    def import_array(self,n_trenches,t_range=(0,None),t_subsample_step=1,fig_size_y=9,fig_size_x=6,img_per_row=2):
+    def import_array(self,n_trenches,t_subsample_step=1,fig_size_y=9,fig_size_x=6,img_per_row=2):
         self.fig_size = (fig_size_y,fig_size_x)
         self.img_per_row = img_per_row
 
@@ -431,10 +430,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         array_list = []
         for item in selectedlist:
             with h5py.File(self.kymographpath + "/kymograph_" + str(item[0]) + ".hdf5", "r") as hdf5_handle:
-                if t_range[1] == None:
-                    array = hdf5_handle[self.seg_channel][item[1],t_range[0]::t_subsample_step]
-                else:
-                    array = hdf5_handle[self.seg_channel][item[1],t_range[0]:t_range[1]+1:t_subsample_step]
+                array = hdf5_handle[self.seg_channel][item[1],::t_subsample_step]
             array_list.append(array)
         output_array = np.concatenate(np.expand_dims(array_list,axis=0),axis=0)
         self.t_tot = output_array.shape[1]

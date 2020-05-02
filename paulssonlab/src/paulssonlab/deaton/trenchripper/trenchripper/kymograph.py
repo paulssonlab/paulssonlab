@@ -19,7 +19,7 @@ from tifffile import imread
 
 class kymograph_cluster:
     def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,\
-                 t_range=(0,None),invert=False,y_percentile=85,y_min_edge_dist=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
+                 invert=False,y_percentile=85,y_min_edge_dist=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
                  top_orientation=0,expected_num_rows=None,orientation_on_fail=None,x_percentile=85,background_kernel_x=(1,21),\
                  smoothing_kernel_x=(1,9),otsu_nbins=50,otsu_scaling=1.,trench_present_thr=0.):
 
@@ -32,7 +32,7 @@ class kymograph_cluster:
             trench_len_y = param_dict["Trench Length"]
             padding_y = param_dict["Y Padding"]
             trench_width_x = param_dict["Trench Width"]
-            t_range = param_dict["Time Range"]
+#             t_range = param_dict["Time Range"]
             invert = param_dict["Invert"]
             y_percentile = param_dict["Y Percentile"]
             y_min_edge_dist = param_dict["Minimum Trench Length"]
@@ -57,7 +57,7 @@ class kymograph_cluster:
         self.meta_handle = pandas_hdf5_handler(self.metapath)
         self.trenches_per_file = trenches_per_file
 
-        self.t_range = t_range
+#         self.t_range = t_range
         self.invert = invert
 
         #### important paramaters to set
@@ -151,27 +151,6 @@ class kymograph_cluster:
             y_percentiles_smoothed = (y_percentiles_smoothed - min_qth_percentile)/(max_qth_percentile - min_qth_percentile)
 
         return y_percentiles_smoothed
-
-#     def triangle_threshold(self,img_arr,triangle_nbins,triangle_scaling,triangle_max_threshold,triangle_min_threshold):
-#         """Applies a triangle threshold to each timepoint in a (t,y) input array, returning a boolean mask.
-
-#         Args:
-#             img_arr (array): ndarray to be thresholded.
-#             triangle_nbins (int): Number of bins to be used to construct the thresholding
-#             histogram.
-#             triangle_scaling (float): Factor by which to scale the threshold.
-
-#         Returns:
-#             array: Boolean mask produced by the threshold.
-#         """
-#         all_thresholds = np.apply_along_axis(sk.filters.threshold_triangle,1,img_arr,nbins=triangle_nbins)*triangle_scaling
-#         thresholds_above_min = all_thresholds > triangle_min_threshold
-#         thresholds_below_max = all_thresholds < triangle_max_threshold
-#         all_thresholds[~thresholds_above_min] = triangle_min_threshold
-#         all_thresholds[~thresholds_below_max] = triangle_max_threshold
-
-#         triangle_mask = img_arr>all_thresholds[:,np.newaxis]
-#         return triangle_mask
 
     def get_edges_from_mask(self,mask):
         """Finds edges from a boolean mask of shape (t,y). Filters out rows of
@@ -392,7 +371,7 @@ class kymograph_cluster:
     def get_ends_and_orientations(self,fov_idx,edges_futures,expected_num_rows,top_orientation,orientation_on_fail,y_min_edge_dist,padding_y,trench_len_y):
 
         fovdf = self.meta_handle.read_df("global",read_metadata=False)
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
         working_fovdf = fovdf.loc[fov_idx]
 
         trench_edges_y_list = []
@@ -432,7 +411,7 @@ class kymograph_cluster:
             array: A y-cropped array of shape (rows,channels,x,y,t).
         """
         fovdf = self.meta_handle.read_df("global",read_metadata=False)
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
 
         filedf = fovdf.reset_index(inplace=False)
         filedf = filedf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
@@ -440,10 +419,10 @@ class kymograph_cluster:
         working_filedf = filedf.loc[file_idx]
 
         timepoint_indices = working_filedf["timepoints"].unique().tolist()
-        print(timepoint_indices)
         image_indices = working_filedf.index.get_level_values("Image Index").unique().tolist()
-        print(image_indices)
+#         first_idx,last_idx = (timepoint_indices[0]-self.t_range[0],timepoint_indices[-1]-self.t_range[0])
         first_idx,last_idx = (timepoint_indices[0],timepoint_indices[-1])
+
 
         y_drift = drift_orientation_and_initend_future[0][first_idx:last_idx+1]
         valid_orientations,valid_y_ends = drift_orientation_and_initend_future[1:]
@@ -481,34 +460,6 @@ class kymograph_cluster:
             else:
                 channel_arr_list.append(cropped_in_y)
         return channel_arr_list,lane_y_coords_list
-
-#     ---------------------------------------------------------------------------
-# IndexError                                Traceback (most recent call last)
-# <ipython-input-22-3d7806ff059d> in <module>
-# ----> 1 dask_controller.futures['Smoothed X Percentiles: 1'].result()
-
-# ~/miniconda3/lib/python3.7/site-packages/distributed/client.py in result(self, timeout)
-#     218         if self.status == "error":
-#     219             typ, exc, tb = result
-# --> 220             raise exc.with_traceback(tb)
-#     221         elif self.status == "cancelled":
-#     222             raise result
-
-# ~/TrenchRipper/trenchripper/kymograph.py in get_smoothed_x_percentiles()
-#     490             array: A smoothed and background subtracted percentile array of shape (rows,x,t)
-#     491         """
-# --> 492         channel_arr_list,_ = self.crop_y(file_idx,drift_orientation_and_initend_future,padding_y,trench_len_y)
-#     493         cropped_in_y = channel_arr_list[0]
-#     494         if self.invert:
-
-# ~/TrenchRipper/trenchripper/kymograph.py in crop_y()
-#     452             lane_y_coords_list = []
-#     453             for t in range(img_arr.shape[0]):
-# --> 454                 trench_ends_y = drift_corrected_edges[t]
-#     455                 row_list = []
-#     456                 lane_y_coords = []
-
-
 
     def get_smoothed_x_percentiles(self,file_idx,drift_orientation_and_initend_future,padding_y,trench_len_y,x_percentile,background_kernel_x,smoothing_kernel_x):
 
@@ -841,7 +792,7 @@ class kymograph_cluster:
             trench_width_x (int): Width to be used when cropping in the x-dimension.
         """
         fovdf = self.meta_handle.read_df("global",read_metadata=False)
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
         filedf = fovdf.reset_index(inplace=False)
         filedf = filedf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
         filedf = filedf.sort_index()
@@ -849,7 +800,9 @@ class kymograph_cluster:
 
         timepoint_indices = working_filedf["timepoints"].unique().tolist()
         image_indices = working_filedf.index.get_level_values("Image Index").unique().tolist()
-        first_idx,last_idx = (timepoint_indices[0],timepoint_indices[-1])
+#         first_idx,last_idx = (timepoint_indices[0]-self.t_range[0],timepoint_indices[-1]-self.t_range[0])  #CHANGED
+        first_idx,last_idx = (timepoint_indices[0],timepoint_indices[-1])  #CHANGED
+
 
         channel_arr_list,lane_y_coords_list = self.crop_y(file_idx,drift_orientation_and_initend_future,padding_y,trench_len_y)
         num_rows = channel_arr_list[0].shape[1]
@@ -868,7 +821,7 @@ class kymograph_cluster:
 
     def save_coords(self,fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future):
         fovdf = self.meta_handle.read_df("global",read_metadata=False)
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
         fovdf = fovdf.loc[fov_idx]
 
         x_coords_list = in_bounds_future[1]
@@ -878,8 +831,7 @@ class kymograph_cluster:
         for j,file_idx in enumerate(fovdf["File Index"].unique().tolist()):
             working_filedf = fovdf[fovdf["File Index"]==file_idx]
             img_indices = working_filedf["Image Index"].unique()
-            first_idx,last_idx = (img_indices[0],img_indices[-1])
-            y_coords_list += x_crop_futures[j][first_idx:last_idx+1] # t x row list
+            y_coords_list += x_crop_futures[j] # t x row list
 
         pixel_microns = self.metadata['pixel_microns']
         y_coords = np.array(y_coords_list) # t x row array
@@ -932,7 +884,7 @@ class kymograph_cluster:
         dask_controller.futures = {}
         fovdf = self.meta_handle.read_df("global",read_metadata=True)
         self.metadata = fovdf.metadata
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
 
         filedf = fovdf.reset_index(inplace=False)
         filedf = filedf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
@@ -1034,7 +986,7 @@ class kymograph_cluster:
 
     def collect_metadata(self):
         fovdf = self.meta_handle.read_df("global",read_metadata=True)
-        fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
+#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
         fov_list = fovdf.index.get_level_values("fov").unique().values
 
         completed_list = []
@@ -1150,7 +1102,6 @@ class kymograph_cluster:
         dask_controller.futures["Kymographs Cleaned Up"] = future
 
     def post_process(self,dask_controller):
-        dask_controller.daskclient.restart()
         self.collect_metadata()
         self.reorg_all_kymographs(dask_controller)
 
@@ -1211,7 +1162,8 @@ class kymograph_multifov(multifov):
         """
         fov = self.fov_list[i]
         fovdf = self.metadf.loc[fov]
-        fovdf = fovdf.loc[(slice(self.t_range[0],self.t_range[1],self.t_subsample_step)),:]
+        last_idx = fovdf.index.get_level_values(0).unique().tolist()[-1]
+        fovdf = fovdf.loc[slice(0,last_idx,self.t_subsample_step),:]
         file_indices = fovdf["File Index"].unique().tolist()
 
         channel_list = []
@@ -1228,13 +1180,12 @@ class kymograph_multifov(multifov):
             channel_array = sk.util.invert(channel_array)
         return channel_array
 
-    def import_hdf5_files(self,all_channels,seg_channel,invert,fov_list,t_range,t_subsample_step):
+    def import_hdf5_files(self,all_channels,seg_channel,invert,fov_list,t_subsample_step):
         seg_channel_idx = all_channels.index(seg_channel)
         all_channels.insert(0, all_channels.pop(seg_channel_idx))
         self.all_channels = all_channels
         self.seg_channel = all_channels[0]
         self.fov_list = fov_list
-        self.t_range = (t_range[0],t_range[1]+1)
         self.t_subsample_step = t_subsample_step
         self.invert = invert
 

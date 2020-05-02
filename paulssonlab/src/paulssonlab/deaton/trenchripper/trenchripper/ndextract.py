@@ -28,6 +28,34 @@ class hdf5_fov_extractor:
         self.microscope = ''
         self.notes = ''
 
+    def writemetadata(self,t_range=None):
+        ndmeta_handle = nd_metadata_handler(self.nd2filename,ignore_fovmetadata=self.ignore_fovmetadata,nd2reader_override=self.nd2reader_override)
+        if self.ignore_fovmetadata:
+            exp_metadata = ndmeta_handle.get_metadata()
+        else:
+            exp_metadata,fov_metadata = ndmeta_handle.get_metadata()
+
+        if t_range is not None:
+            exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]
+            exp_metadata["num_frames"] = len(exp_metadata["frames"])
+            fov_metadata = fov_metadata.loc[pd.IndexSlice[:,slice(t_range[0],t_range[1])],:]  #4 -> 70
+
+        self.chunk_shape = (1,exp_metadata["height"],exp_metadata["width"])
+        chunk_bytes = (2*np.multiply.accumulate(np.array(self.chunk_shape))[-1])
+        self.chunk_cache_mem_size = 2*chunk_bytes
+        exp_metadata["chunk_shape"],exp_metadata["chunk_cache_mem_size"] = (self.chunk_shape,self.chunk_cache_mem_size)
+        exp_metadata["Organism"],exp_metadata["Microscope"],exp_metadata["Notes"] = (self.organism,self.microscope,self.notes)
+        self.meta_handle = pandas_hdf5_handler(self.metapath)
+
+        if self.ignore_fovmetadata:
+            assignment_metadata = self.assignidx(exp_metadata,metadf=None)
+            assignment_metadata.astype({"File Index":int,"Image Index":int})
+        else:
+            assignment_metadata = self.assignidx(exp_metadata,metadf=fov_metadata)
+            assignment_metadata.astype({"t":float,"x": float,"y":float,"z":float,"File Index":int,"Image Index":int})
+
+        self.meta_handle.write_df("global",assignment_metadata,metadata=exp_metadata)
+
     def assignidx(self,expmeta,metadf=None):
         numfovs = len(expmeta["fields_of_view"])
         timepoints_per_fov = len(expmeta["frames"])
@@ -54,56 +82,43 @@ class hdf5_fov_extractor:
             outdf["Image Index"] = img_idx
         return outdf
 
-    def get_notes(self,organism,microscope,notes):
+    def read_metadata(self):
+        writedir(self.hdf5path,overwrite=True)
+        self.writemetadata()
+        metadf = self.meta_handle.read_df("global",read_metadata=True)
+        self.metadata = metadf.metadata
+        metadf = metadf.reset_index(inplace=False)
+        metadf = metadf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
+        self.metadf = metadf.sort_index()
+
+    def set_params(self,t_range,organism,microscope,notes):
+        self.t_range = t_range
         self.organism = organism
         self.microscope = microscope
         self.notes = notes
 
-    def inter_get_notes(self):
-        selection = ipyw.interactive(self.get_notes, {"manual":True}, organism=ipyw.Textarea(value='',\
+    def inter_set_params(self):
+        self.read_metadata()
+        t0,tf = (self.metadata['frames'][0],self.metadata['frames'][-1])
+        selection = ipyw.interactive(self.set_params, {"manual":True}, t_range=ipyw.IntRangeSlider(value=[t0, tf],\
+                min=t0,max=tf,step=1,description='Time Range:',disabled=False), organism=ipyw.Textarea(value='',\
                 placeholder='Organism imaged in this experiment.',description='Organism:',disabled=False),\
                 microscope=ipyw.Textarea(value='',placeholder='Microscope used in this experiment.',\
                 description='Microscope:',disabled=False),notes=ipyw.Textarea(value='',\
                 placeholder='General experiment notes.',description='Notes:',disabled=False),)
         display(selection)
 
-    def writemetadata(self):
-        ndmeta_handle = nd_metadata_handler(self.nd2filename,ignore_fovmetadata=self.ignore_fovmetadata,nd2reader_override=self.nd2reader_override)
-        if self.ignore_fovmetadata:
-            exp_metadata = ndmeta_handle.get_metadata()
-        else:
-            exp_metadata,fov_metadata = ndmeta_handle.get_metadata()
-
-        self.chunk_shape = (1,exp_metadata["height"],exp_metadata["width"])
-        chunk_bytes = (2*np.multiply.accumulate(np.array(self.chunk_shape))[-1])
-        self.chunk_cache_mem_size = 2*chunk_bytes
-        exp_metadata["chunk_shape"],exp_metadata["chunk_cache_mem_size"] = (self.chunk_shape,self.chunk_cache_mem_size)
-        exp_metadata["Organism"],exp_metadata["Microscope"],exp_metadata["Notes"] = (self.organism,self.microscope,self.notes)
-        self.meta_handle = pandas_hdf5_handler(self.metapath)
-
-        if self.ignore_fovmetadata:
-            assignment_metadata = self.assignidx(exp_metadata,metadf=None)
-            assignment_metadata.astype({"File Index":int,"Image Index":int})
-        else:
-            assignment_metadata = self.assignidx(exp_metadata,metadf=fov_metadata)
-            assignment_metadata.astype({"t":float,"x": float,"y":float,"z":float,"File Index":int,"Image Index":int})
-
-        self.meta_handle.write_df("global",assignment_metadata,metadata=exp_metadata)
-
     def extract(self,dask_controller):
-
-        writedir(self.hdf5path,overwrite=True)
-
-        self.writemetadata()
-
         dask_controller.futures = {}
+
+        self.writemetadata(t_range=self.t_range)
         metadf = self.meta_handle.read_df("global",read_metadata=True)
         self.metadata = metadf.metadata
         metadf = metadf.reset_index(inplace=False)
         metadf = metadf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
-        metadf = metadf.sort_index()
+        self.metadf = metadf.sort_index()
 
-        def writehdf5(fovnum,num_entries,timepoint_list,file_idx, num_fovs):
+        def writehdf5(fovnum,num_entries,timepoint_list,file_idx,num_fovs):
             with ND2Reader(self.nd2filename) as nd2file:
                 for key,item in self.nd2reader_override.items():
                     nd2file.metadata[key] = item
@@ -119,13 +134,13 @@ class hdf5_fov_extractor:
                             hdf5_dataset[j,:,:] = nd2_image
             return "Done."
 
-        file_list = metadf.index.get_level_values("File Index").unique().values
+        file_list = self.metadf.index.get_level_values("File Index").unique().values
         num_jobs = len(file_list)
         random_priorities = np.random.uniform(size=(num_jobs,))
 
         for k,file_idx in enumerate(file_list):
             priority = random_priorities[k]
-            filedf = metadf.loc[file_idx]
+            filedf = self.metadf.loc[file_idx]
 
             fovnum = filedf[0:1]["fov"].values[0]
             num_entries = len(filedf.index.get_level_values("Image Index").values)
@@ -147,6 +162,12 @@ class hdf5_fov_extractor:
         failed_fovs = tempmeta.loc[failed_file_idx]["fov"].unique().tolist()
 
         outdf  = outdf.drop(failed_fovs)
+
+        if self.t_range is not None:
+            outdf = outdf.reset_index(inplace=False)
+            outdf["timepoints"] = outdf["timepoints"] - self.t_range[0]
+            outdf = outdf.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
+
         self.meta_handle.write_df("global",outdf,metadata=self.metadata)
 
 class tiff_to_hdf5_extractor:
