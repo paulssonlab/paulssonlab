@@ -218,12 +218,11 @@ class kymograph_interactive(kymograph_multifov):
         fig.show()
 
     def preview_x_percentiles(self,cropped_in_y_list, t, x_percentile, background_kernel_x,smoothing_kernel_x,\
-                              otsu_nbins, otsu_scaling,vertical_spacing):
+                              otsu_scaling):
 
         self.final_params['X Percentile'] = x_percentile
         self.final_params['X Background Kernel'] = background_kernel_x
         self.final_params['X Smoothing Kernel'] = smoothing_kernel_x
-        self.final_params['Otsu Threshold Bins'] = otsu_nbins
         self.final_params['Otsu Threshold Scaling'] = otsu_scaling
 
         smoothed_x_percentiles_list = self.map_to_fovs(self.get_smoothed_x_percentiles,cropped_in_y_list,x_percentile,\
@@ -232,22 +231,34 @@ class kymograph_interactive(kymograph_multifov):
         for smoothed_x_percentiles_row in smoothed_x_percentiles_list:
             for smoothed_x_percentiles in smoothed_x_percentiles_row:
                 x_percentiles_t = smoothed_x_percentiles[:,t]
-                thresholds.append(self.get_midpoints(x_percentiles_t,otsu_nbins,otsu_scaling)[1])
-        self.plot_x_percentiles(smoothed_x_percentiles_list,self.fov_list, t, thresholds,vertical_spacing,num_rows=2)
+                thresholds.append(self.get_midpoints(x_percentiles_t,otsu_scaling)[1])
+        self.plot_x_percentiles(smoothed_x_percentiles_list,self.fov_list, t, thresholds,num_rows=2)
 
         self.smoothed_x_percentiles_list = smoothed_x_percentiles_list
+        all_midpoints_list,x_drift_list = self.preview_midpoints(self.smoothed_x_percentiles_list)
 
-        return smoothed_x_percentiles_list
+        return smoothed_x_percentiles_list,all_midpoints_list,x_drift_list
+
+    def preview_midpoints(self,smoothed_x_percentiles_list):
+        otsu_scaling = self.final_params['Otsu Threshold Scaling']
+
+        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling)
+        self.plot_midpoints(all_midpoints_list,self.fov_list)
+        x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
+
+        self.all_midpoints_list,self.x_drift_list = (all_midpoints_list,x_drift_list)
+
+        return all_midpoints_list,x_drift_list
+
 
     def preview_x_percentiles_interactive(self):
         trench_detection = interactive(self.preview_x_percentiles, {"manual":True}, cropped_in_y_list=fixed(self.cropped_in_y_list),t=IntSlider(value=0, min=0, max=self.cropped_in_y_list[0].shape[4]-1, step=1),\
                 x_percentile=IntSlider(value=85, min=50, max=100, step=1),background_kernel_x=IntSlider(value=21, min=1, max=601, step=20), smoothing_kernel_x=IntSlider(value=9, min=1, max=31, step=2),\
-               otsu_nbins=IntSlider(value=50, min=10, max=200, step=10),otsu_scaling=FloatSlider(value=0.25, min=0., max=2., step=0.01),\
-               vertical_spacing=FloatSlider(value=0.9, min=0., max=2., step=0.01));
+               otsu_scaling=FloatSlider(value=0.25, min=0., max=2., step=0.01));
 
         display(trench_detection)
 
-    def plot_x_percentiles(self,smoothed_x_percentiles_list,fov_list,t,thresholds,vertical_spacing,num_rows=2):
+    def plot_x_percentiles(self,smoothed_x_percentiles_list,fov_list,t,thresholds,num_rows=2):
         fig = plt.figure()
 
         ncol=num_rows
@@ -270,41 +281,7 @@ class kymograph_interactive(kymograph_multifov):
 
         plt.show()
 
-    def preview_midpoints(self,smoothed_x_percentiles_list,vertical_spacing):
-        otsu_nbins = self.final_params['Otsu Threshold Bins']
-        otsu_scaling = self.final_params['Otsu Threshold Scaling']
-
-        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,smoothed_x_percentiles_list,otsu_nbins,otsu_scaling)
-        self.plot_midpoints(all_midpoints_list,self.fov_list,vertical_spacing)
-        x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
-
-        self.all_midpoints_list,self.x_drift_list = (all_midpoints_list,x_drift_list)
-
-        return all_midpoints_list,x_drift_list
-
-    def preview_midpoints_interactive(self):
-        midpoint_drift = interactive(self.preview_midpoints,{"manual":True},smoothed_x_percentiles_list=fixed(self.smoothed_x_percentiles_list),\
-               vertical_spacing=FloatSlider(value=0.8, min=0., max=2., step=0.01));
-        display(midpoint_drift)
-
-    def preview_kymographs(self,cropped_in_y_list,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr,vertical_spacing):
-        self.final_params['Trench Width'] = trench_width_x
-        self.final_params['Trench Presence Threshold'] = trench_present_thr
-
-        cropped_in_x_list = self.map_to_fovs(self.get_crop_in_x,cropped_in_y_list,all_midpoints_list,x_drift_list,\
-                                             trench_width_x,trench_present_thr)
-        corrected_midpoints_list = self.map_to_fovs(self.get_corrected_midpoints,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr)
-
-        self.plot_kymographs(cropped_in_x_list,self.fov_list,vertical_spacing)
-        self.plot_midpoints(corrected_midpoints_list,self.fov_list,vertical_spacing)
-
-    def preview_kymographs_interactive(self):
-            interact_manual(self.preview_kymographs,cropped_in_y_list=fixed(self.cropped_in_y_list),all_midpoints_list=fixed(self.all_midpoints_list),\
-            x_drift_list=fixed(self.x_drift_list),trench_width_x=IntSlider(value=30, min=2, max=1000, step=2),\
-            trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05),\
-            vertical_spacing=FloatSlider(value=0.8, min=0., max=2., step=0.01))
-
-    def plot_midpoints(self,all_midpoints_list,fov_list,vertical_spacing):
+    def plot_midpoints(self,all_midpoints_list,fov_list):
         fig = plt.figure()
         ax = fig.gca()
 
@@ -323,10 +300,25 @@ class kymograph_interactive(kymograph_multifov):
                 ax.set_ylabel('time')
 
         plt.tight_layout()
-        plt.subplots_adjust(top=vertical_spacing)
         plt.show()
 
-    def plot_kymographs(self,cropped_in_x_list,fov_list,vertical_spacing,num_rows=2):
+    def preview_kymographs(self,cropped_in_y_list,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr):
+        self.final_params['Trench Width'] = trench_width_x
+        self.final_params['Trench Presence Threshold'] = trench_present_thr
+
+        cropped_in_x_list = self.map_to_fovs(self.get_crop_in_x,cropped_in_y_list,all_midpoints_list,x_drift_list,\
+                                             trench_width_x,trench_present_thr)
+        corrected_midpoints_list = self.map_to_fovs(self.get_corrected_midpoints,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr)
+
+        self.plot_kymographs(cropped_in_x_list,self.fov_list)
+        self.plot_midpoints(corrected_midpoints_list,self.fov_list)
+
+    def preview_kymographs_interactive(self):
+            interact_manual(self.preview_kymographs,cropped_in_y_list=fixed(self.cropped_in_y_list),all_midpoints_list=fixed(self.all_midpoints_list),\
+            x_drift_list=fixed(self.x_drift_list),trench_width_x=IntSlider(value=30, min=2, max=1000, step=2),\
+            trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05))
+
+    def plot_kymographs(self,cropped_in_x_list,fov_list,num_rows=2):
         plt.figure()
         idx = 0
         ncol = num_rows
@@ -343,7 +335,6 @@ class kymograph_interactive(kymograph_multifov):
                 ax.set_title("row=" + str(j) + ",fov=" + str(fov_list[i]) + ",trench=" + str(rand_k))
 
         plt.tight_layout()
-        plt.subplots_adjust(top=vertical_spacing)
         plt.show()
 
 

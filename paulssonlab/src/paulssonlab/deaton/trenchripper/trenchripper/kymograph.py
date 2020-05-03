@@ -21,7 +21,7 @@ class kymograph_cluster:
     def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,\
                  invert=False,y_percentile=85,y_min_edge_dist=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
                  top_orientation=0,expected_num_rows=None,orientation_on_fail=None,x_percentile=85,background_kernel_x=(1,21),\
-                 smoothing_kernel_x=(1,9),otsu_nbins=50,otsu_scaling=1.,trench_present_thr=0.):
+                 smoothing_kernel_x=(1,9),otsu_scaling=1.,trench_present_thr=0.):
 
         if paramfile:
             parampath = headpath + "/kymograph.par"
@@ -44,7 +44,6 @@ class kymograph_cluster:
             x_percentile = param_dict["X Percentile"]
             background_kernel_x = (1,param_dict["X Background Kernel"])
             smoothing_kernel_x = (1,param_dict["X Smoothing Kernel"])
-            otsu_nbins = param_dict["Otsu Threshold Bins"]
             otsu_scaling = param_dict["Otsu Threshold Scaling"]
             trench_present_thr =  param_dict["Trench Presence Threshold"]
 
@@ -85,7 +84,6 @@ class kymograph_cluster:
         self.background_kernel_x = background_kernel_x
         self.smoothing_kernel_x = smoothing_kernel_x
         ## parameters for threshold finding
-        self.otsu_nbins = otsu_nbins
         self.otsu_scaling = otsu_scaling
         ## New
         self.trench_present_thr = trench_present_thr
@@ -101,7 +99,7 @@ class kymograph_cluster:
                                  "top_orientation":top_orientation,"expected_num_rows":expected_num_rows,\
                                  "orientation_on_fail":orientation_on_fail,"x_percentile":x_percentile,\
                                  "background_kernel_x":background_kernel_x,"smoothing_kernel_x":smoothing_kernel_x,\
-                                "otsu_nbins":otsu_nbins,"otsu_scaling":otsu_scaling,"trench_present_thr":trench_present_thr}
+                                "otsu_scaling":otsu_scaling,"trench_present_thr":trench_present_thr}
 
     def median_filter_2d(self,array,smoothing_kernel):
         """Two-dimensional median filter, with average smoothing at the signal
@@ -515,7 +513,7 @@ class kymograph_cluster:
             midpoints = []
         return midpoints
 
-    def get_x_row_midpoints(self,x_percentiles_t,otsu_nbins,otsu_scaling):
+    def get_x_row_midpoints(self,x_percentiles_t,otsu_scaling):
         """Given an array of signal in x, determines the position of trench
         midpoints.
 
@@ -528,13 +526,13 @@ class kymograph_cluster:
             array: array of trench midpoint x positions.
         """
 
-        otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=otsu_nbins)*otsu_scaling
+        otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=50)*otsu_scaling
 
         x_mask = x_percentiles_t>otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints
 
-    def get_x_midpoints(self,x_percentiles_smoothed,otsu_nbins,otsu_scaling):
+    def get_x_midpoints(self,x_percentiles_smoothed,otsu_scaling):
         """Given an x percentile array of shape (rows,t,x), determines the
         trench midpoints of each row array at each time t.
 
@@ -550,13 +548,13 @@ class kymograph_cluster:
         for row in range(x_percentiles_smoothed.shape[0]):
             row_x_percentiles = x_percentiles_smoothed[row]
             all_midpoints = []
-            midpoints = self.get_x_row_midpoints(row_x_percentiles[0],otsu_nbins,otsu_scaling)
+            midpoints = self.get_x_row_midpoints(row_x_percentiles[0],otsu_scaling)
             if len(midpoints) == 0:
                 return None
             all_midpoints.append(midpoints)
 
             for t in range(1,row_x_percentiles.shape[0]):
-                midpoints = self.get_x_row_midpoints(row_x_percentiles[t],otsu_nbins,otsu_scaling)
+                midpoints = self.get_x_row_midpoints(row_x_percentiles[t],otsu_scaling)
                 if len(midpoints)/(len(all_midpoints[-1])+1) < 0.5:
                     all_midpoints.append(all_midpoints[-1])
                 else:
@@ -937,7 +935,7 @@ class kymograph_cluster:
         for k,file_idx in enumerate(file_list):
             smoothed_x_future = dask_controller.futures["Smoothed X Percentiles: " + str(file_idx)]
             future = dask_controller.daskclient.submit(self.get_x_midpoints,smoothed_x_future,\
-                                                       self.otsu_nbins,self.otsu_scaling,retries=1)
+                                                       self.otsu_scaling,retries=1)
             dask_controller.futures["X Midpoints: " + str(file_idx)] = future
 
         ### get x drift ###
@@ -1577,7 +1575,7 @@ class kymograph_multifov(multifov):
             midpoints = []
         return midpoints
 
-    def get_midpoints(self,x_percentiles_t,otsu_nbins,otsu_scaling):
+    def get_midpoints(self,x_percentiles_t,otsu_scaling):
         """Given an array of signal in x, determines the position of trench
         midpoints.
 
@@ -1589,13 +1587,13 @@ class kymograph_multifov(multifov):
         Returns:
             array: array of trench midpoint x positions.
         """
-        otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=otsu_nbins)*otsu_scaling
+        otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=50)*otsu_scaling
 
         x_mask = x_percentiles_t>otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints,otsu_threshold
 
-    def get_all_midpoints(self,i,x_percentiles_smoothed_list,otsu_nbins,otsu_scaling):
+    def get_all_midpoints(self,i,x_percentiles_smoothed_list,otsu_scaling):
         """Given an x percentile array of shape (rows,x,t), determines the
         trench midpoints of each row array at each time t.
 
@@ -1613,12 +1611,12 @@ class kymograph_multifov(multifov):
         for j in range(x_percentiles_smoothed_row.shape[0]):
             x_percentiles_smoothed = x_percentiles_smoothed_row[j]
             all_midpoints = []
-            midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,0],otsu_nbins,otsu_scaling)
+            midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,0],otsu_scaling)
             if len(midpoints) == 0:
                 return None
             all_midpoints.append(midpoints)
             for t in range(1,x_percentiles_smoothed.shape[1]):
-                midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,t],otsu_nbins,otsu_scaling)
+                midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,t],otsu_scaling)
                 if len(midpoints)/(len(all_midpoints[-1])+1) < 0.5:
                     all_midpoints.append(all_midpoints[-1])
                 else:
@@ -1835,7 +1833,7 @@ class kymograph_multifov(multifov):
         """
         smoothed_x_percentiles_list = self.map_to_fovs(self.get_smoothed_x_percentiles,cropped_in_y_list,self.x_percentile,\
                                                                  self.background_kernel_x,self.smoothing_kernel_x)
-        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,smoothed_x_percentiles_list,self.otsu_nbins,self.otsu_scaling)
+        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,smoothed_x_percentiles_list,self.otsu_scaling)
         x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
         cropped_in_x_list = self.map_to_fovs(self.get_crop_in_x,cropped_in_y_list,all_midpoints_list,x_drift_list,self.trench_width_x,self.trench_present_thr)
         return cropped_in_x_list
