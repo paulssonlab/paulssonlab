@@ -1114,7 +1114,7 @@ class kymograph_cluster:
         trenches_proc = len(df_in.groupby(["fov","row","trench"]).size())
 
         print("fovs processed: " + str(fovs_proc) + "/" + str(len(fov_list)))
-        print("lanes processed: " + str(rows_proc))
+        print("rows processed: " + str(rows_proc))
         print("trenches processed: " + str(trenches_proc))
         print("row/fov: " + str(rows_proc/fovs_proc))
         print("trenches/fov: " + str(trenches_proc/fovs_proc))

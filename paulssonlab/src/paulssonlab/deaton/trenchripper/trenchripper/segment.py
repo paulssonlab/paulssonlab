@@ -71,7 +71,6 @@ class fluo_segmentation:
 
         return img_smooth
 
-#     def cell_region_mask(self,img_arr,method='global',global_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15):
     def cell_region_mask(self,img_arr,method='global',global_threshold=1000,cell_otsu_scaling=1.,local_otsu_r=15):
         global_mask_kymo = []
         for t in range(img_arr.shape[0]):

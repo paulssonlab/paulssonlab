@@ -351,7 +351,6 @@ class kymograph_interactive(kymograph_multifov):
 
     def process_results(self):
         self.final_params["All Channels"] = self.all_channels
-#         self.final_params["Time Range"] = self.t_range
         self.final_params["Invert"] = self.invert
 
         for key,value in self.final_params.items():
@@ -382,13 +381,18 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.all_channels = globaldf.metadata['channels']
 
         timepoint_num = len(self.kymodf.index.get_level_values("timepoints").unique().tolist())
-#         self.t_range = (0,timepoint_num)
+        self.t_range = (0,timepoint_num)
         self.trenchid_arr = self.kymodf.index.get_level_values("trenchid").unique().values
 
         self.final_params = {}
 
     def choose_seg_channel(self,seg_channel):
         self.seg_channel = seg_channel
+
+    def choose_seg_channel_inter(self):
+        choose_channel = interactive(self.choose_seg_channel,{"manual": True},\
+        seg_channel=Dropdown(options=self.all_channels,value=self.all_channels[0]))
+        display(choose_channel)
 
     def plot_img_list(self,img_list):
         nrow = ((len(img_list)-1)//self.img_per_row)+1
@@ -409,8 +413,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         plt.tight_layout()
         plt.show()
 
-
-    def import_array(self,n_trenches,t_subsample_step=1,fig_size_y=9,fig_size_x=6,img_per_row=2):
+    def import_array(self,n_trenches,t_range=(0,None),t_subsample_step=1,fig_size_y=9,fig_size_x=6,img_per_row=2):
         self.fig_size = (fig_size_y,fig_size_x)
         self.img_per_row = img_per_row
 
@@ -421,12 +424,26 @@ class fluo_segmentation_interactive(fluo_segmentation):
         array_list = []
         for item in selectedlist:
             with h5py.File(self.kymographpath + "/kymograph_" + str(item[0]) + ".hdf5", "r") as hdf5_handle:
-                array = hdf5_handle[self.seg_channel][item[1],::t_subsample_step]
+                if t_range[1] == None:
+                    array = hdf5_handle[self.seg_channel][item[1],t_range[0]::t_subsample_step]
+                else:
+                    array = hdf5_handle[self.seg_channel][item[1],t_range[0]:t_range[1]+1:t_subsample_step]
             array_list.append(array)
         output_array = np.concatenate(np.expand_dims(array_list,axis=0),axis=0)
         self.t_tot = output_array.shape[1]
         self.plot_kymographs(output_array)
         return output_array
+
+    def import_array_inter(self):
+        kymo_arr_int = interactive(self.import_array,{"manual": True},n_trenches=IntText(value=12,\
+                       description="Number of trenches:", disabled=False),t_range=IntRangeSlider(value=[self.t_range[0],\
+                       self.t_range[1] - 1],description="Time Range:",min=self.t_range[0],max=self.t_range[1] - 1,step=1,\
+                       disabled=False),t_subsample_step=IntSlider(value=1, description="Time Subsampling Step:", min=1,\
+                       max=20, step=1),fig_size_y=IntSlider(value=20, description="Figure Size (Y Dimension):", min=1,\
+                       max=30, step=1),fig_size_x=IntSlider(value=12, description="Figure Size (X Dimension):", min=1,\
+                       max=30, step=1),img_per_row=IntSlider(value=6, description="Images per Row:", min=1, max=30,\
+                       step=1))
+        display(kymo_arr_int)
 
     def plot_kymographs(self,kymo_arr):
         input_kymo = kymo_handle()
@@ -468,38 +485,12 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         return proc_list
 
-#         for scaled in scaled_list:
-#             scaled_kymo = kymo_handle()
-#             scaled_kymo.import_unwrap(scaled,self.t_tot,padding=self.wrap_pad)
-#             wrap_scaled = scaled_kymo.return_wrap()
-
-#             proc_img = self.preprocess_img(wrap_scaled,sigma=smooth_sigma,bit_max=bit_max)
-
-#             proc_kymo = kymo_handle()
-#             proc_kymo.import_wrap(proc_img)
-#             unwrap_proc = proc_kymo.return_unwrap(padding=0)
-#             proc_list.append(proc_img)
-#             unwrap_proc_list.append(unwrap_proc)
-#         self.plot_img_list(unwrap_proc_list)
-
-#         plt.hist(np.array(scaled_list).flatten(),bins=50)
-#         plt.show()
-
-#         return proc_list
-
     def plot_eigval(self,proc_list):
         eigval_list = []
         unwrap_eigval_list = []
         for proc in proc_list:
             inverted = np.array([sk.util.invert(proc[t]) for t in range(proc.shape[0])])
-#             plt.imshow(inverted[0])
-#             plt.show()
-#             plt.imshow(self.to_8bit(self.hessian_contrast_enc(inverted[0],self.hess_pad)))
-#             plt.show()
-#             min_eigvals = np.array([self.to_8bit(self.hessian_contrast_enc(inverted[t],self.hess_pad)) for t in range(inverted.shape[0])])
             min_eigvals = np.array([self.hessian_contrast_enc(inverted[t],self.hess_pad) for t in range(inverted.shape[0])])
-#             inverted = sk.util.invert(proc)
-#             min_eigvals = self.to_8bit(self.hessian_contrast_enc(inverted,self.hess_pad))
             eigval_kymo = kymo_handle()
             eigval_kymo.import_wrap(min_eigvals)
             unwrap_eigvals = eigval_kymo.return_unwrap(padding=0)
