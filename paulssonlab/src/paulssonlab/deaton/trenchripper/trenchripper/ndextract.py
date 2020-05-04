@@ -28,7 +28,7 @@ class hdf5_fov_extractor:
         self.microscope = ''
         self.notes = ''
 
-    def writemetadata(self,t_range=None):
+    def writemetadata(self,t_range=None,fov_list=None):
         ndmeta_handle = nd_metadata_handler(self.nd2filename,ignore_fovmetadata=self.ignore_fovmetadata,nd2reader_override=self.nd2reader_override)
         if self.ignore_fovmetadata:
             exp_metadata = ndmeta_handle.get_metadata()
@@ -39,6 +39,10 @@ class hdf5_fov_extractor:
             exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]
             exp_metadata["num_frames"] = len(exp_metadata["frames"])
             fov_metadata = fov_metadata.loc[pd.IndexSlice[:,slice(t_range[0],t_range[1])],:]  #4 -> 70
+
+        if fov_list is not None:
+            fov_metadata = fov_metadata.loc[list(fov_list)]
+            exp_metadata["fields_of_view"] = list(fov_list)
 
         self.chunk_shape = (1,exp_metadata["height"],exp_metadata["width"])
         chunk_bytes = (2*np.multiply.accumulate(np.array(self.chunk_shape))[-1])
@@ -57,8 +61,15 @@ class hdf5_fov_extractor:
         self.meta_handle.write_df("global",assignment_metadata,metadata=exp_metadata)
 
     def assignidx(self,expmeta,metadf=None):
-        numfovs = len(expmeta["fields_of_view"])
-        timepoints_per_fov = len(expmeta["frames"])
+
+        if metadf is None:
+            numfovs = len(expmeta["fields_of_view"])
+            timepoints_per_fov = len(expmeta["frames"])
+
+        else:
+            numfovs = len(metadf.index.get_level_values(0).unique().tolist())
+            timepoints_per_fov = len(metadf.index.get_level_values(1).unique().tolist())
+
         files_per_fov = (timepoints_per_fov//self.tpts_per_file) + 1
         remainder = timepoints_per_fov%self.tpts_per_file
         ttlfiles = numfovs*files_per_fov
@@ -91,7 +102,8 @@ class hdf5_fov_extractor:
         metadf = metadf.set_index(["File Index","Image Index"], drop=True, append=False, inplace=False)
         self.metadf = metadf.sort_index()
 
-    def set_params(self,t_range,organism,microscope,notes):
+    def set_params(self,fov_list,t_range,organism,microscope,notes):
+        self.fov_list = fov_list
         self.t_range = t_range
         self.organism = organism
         self.microscope = microscope
@@ -100,7 +112,9 @@ class hdf5_fov_extractor:
     def inter_set_params(self):
         self.read_metadata()
         t0,tf = (self.metadata['frames'][0],self.metadata['frames'][-1])
-        selection = ipyw.interactive(self.set_params, {"manual":True}, t_range=ipyw.IntRangeSlider(value=[t0, tf],\
+        available_fov_list = self.metadf["fov"].unique().tolist()
+        selection = ipyw.interactive(self.set_params, {"manual":True}, fov_list=ipyw.SelectMultiple(options=available_fov_list),\
+                t_range=ipyw.IntRangeSlider(value=[t0, tf],\
                 min=t0,max=tf,step=1,description='Time Range:',disabled=False), organism=ipyw.Textarea(value='',\
                 placeholder='Organism imaged in this experiment.',description='Organism:',disabled=False),\
                 microscope=ipyw.Textarea(value='',placeholder='Microscope used in this experiment.',\
@@ -111,7 +125,7 @@ class hdf5_fov_extractor:
     def extract(self,dask_controller):
         dask_controller.futures = {}
 
-        self.writemetadata(t_range=self.t_range)
+        self.writemetadata(t_range=self.t_range,fov_list=self.fov_list)
         metadf = self.meta_handle.read_df("global",read_metadata=True)
         self.metadata = metadf.metadata
         metadf = metadf.reset_index(inplace=False)
@@ -169,6 +183,95 @@ class hdf5_fov_extractor:
             outdf = outdf.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
 
         self.meta_handle.write_df("global",outdf,metadata=self.metadata)
+
+class nd_metadata_handler:
+    def __init__(self,nd2filename,ignore_fovmetadata=False,nd2reader_override={}):
+        self.nd2filename = nd2filename
+        self.ignore_fovmetadata = ignore_fovmetadata
+        self.nd2reader_override = nd2reader_override
+
+    def decode_unidict(self,unidict):
+        outdict = {}
+        for key, val in unidict.items():
+            if type(key) == bytes:
+                key = key.decode('utf8')
+            if type(val) == bytes:
+                val = val.decode('utf8')
+            outdict[key] = val
+        return outdict
+
+    def read_specsettings(self,SpecSettings):
+        spec_list = SpecSettings.decode('utf-8').split('\r\n')[1:]
+        spec_list = [item for item in spec_list if ":" in item]
+        spec_dict = {item.split(": ")[0].replace(" ", "_"):item.split(": ")[1].replace(" ", "_") for item in spec_list}
+        return spec_dict
+
+    def get_imaging_settings(self,nd2file):
+        raw_metadata = nd2file.parser._raw_metadata
+        imaging_settings = {}
+        for key,meta in raw_metadata.image_metadata_sequence[b'SLxPictureMetadata'][b'sPicturePlanes'][b'sSampleSetting'].items():
+            camera_settings = meta[b'pCameraSetting']
+            camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
+            channel_name = camera_settings[b'Metadata'][b'Channels'][b'Channel_0'][b'Name'].decode('utf-8')
+            obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
+            spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
+            imaging_settings[channel_name] = {'camera_name':camera_name,'obj_settings':obj_settings,**spec_settings}
+        return imaging_settings
+
+    def make_fov_df(self,nd2file, exp_metadata): #only records values for single timepoints, does not seperate between channels....
+        img_metadata = nd2file.parser._raw_metadata
+        num_fovs = exp_metadata['num_fovs']
+        num_frames = exp_metadata['num_frames']
+        num_images_expected = num_fovs*num_frames
+
+        if img_metadata.x_data is not None:
+            x = np.reshape(img_metadata.x_data,(-1,num_fovs)).T
+            y = np.reshape(img_metadata.y_data,(-1,num_fovs)).T
+            z = np.reshape(img_metadata.z_data,(-1,num_fovs)).T
+        else:
+            positions = img_metadata.image_metadata[b'SLxExperiment'][b'ppNextLevelEx'][b''][b'uLoopPars'][b'Points'][b'']
+            x = []
+            y = []
+            z = []
+            for position in positions:
+                x.append([position[b'dPosX']]*num_frames)
+                y.append([position[b'dPosY']]*num_frames)
+                z.append([position[b'dPosZ']]*num_frames)
+            x = np.array(x)
+            y = np.array(y)
+            z = np.array(z)
+
+
+        time_points = x.shape[1]
+        acq_times = np.reshape(np.array(list(img_metadata.acquisition_times)[:num_images_expected]),(-1,num_fovs)).T
+        pos_label = np.repeat(np.expand_dims(np.add.accumulate(np.ones(num_fovs,dtype=int))-1,1),time_points,1) ##???
+        time_point_labels = np.repeat(np.expand_dims(np.add.accumulate(np.ones(time_points,dtype=int))-1,1),num_fovs,1).T
+
+        output = pd.DataFrame({'fov':pos_label.flatten(),'timepoints':time_point_labels.flatten(),'t':acq_times.flatten(),'x':x.flatten(),'y':y.flatten(),'z':z.flatten()})
+        output = output.astype({'fov': int, 'timepoints':int, 't': float, 'x': float,'y': float,'z': float})
+
+        output = output[~((output['x'] == 0.)&(output['y'] == 0.)&(output['z'] == 0.))].reset_index(drop=True) ##bootstrapped to fix issue when only some FOVs are selected (return if it causes problems in the future)
+        output = output.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
+
+        return output
+
+    def get_metadata(self):
+        # Manual numbers are for broken .nd2 files (from when Elements crashes)
+        nd2file = ND2Reader(self.nd2filename)
+        for key,item in self.nd2reader_override.items():
+            nd2file.metadata[key] = item
+        exp_metadata = copy.copy(nd2file.metadata)
+        wanted_keys = ['height', 'width', 'date', 'fields_of_view', 'frames', 'z_levels', 'z_coordinates', 'total_images_per_channel', 'channels', 'pixel_microns', 'num_frames', 'experiment']
+        exp_metadata = dict([(k, exp_metadata[k]) for k in wanted_keys if k in exp_metadata])
+        exp_metadata["num_fovs"] = len(exp_metadata['fields_of_view'])
+        exp_metadata["settings"] = self.get_imaging_settings(nd2file)
+        if not self.ignore_fovmetadata:
+            fov_metadata = self.make_fov_df(nd2file, exp_metadata)
+            nd2file.close()
+            return exp_metadata,fov_metadata
+        else:
+            nd2file.close()
+            return exp_metadata
 
 class tiff_to_hdf5_extractor:
     """Utility to convert individual tiff files to hdf5 archives.
@@ -396,97 +499,3 @@ class tiff_fov_extractor: ###needs some work
 
 
         ndmeta_handle = nd_metadata_handler(self.nd2filename,nd2reader_override=nd2reader_override)
-
-class nd_metadata_handler:
-    def __init__(self,nd2filename,ignore_fovmetadata=False,nd2reader_override={}):
-        self.nd2filename = nd2filename
-        self.ignore_fovmetadata = ignore_fovmetadata
-        self.nd2reader_override = nd2reader_override
-
-    def decode_unidict(self,unidict):
-        outdict = {}
-        for key, val in unidict.items():
-            if type(key) == bytes:
-                key = key.decode('utf8')
-            if type(val) == bytes:
-                val = val.decode('utf8')
-            outdict[key] = val
-        return outdict
-
-    def read_specsettings(self,SpecSettings):
-        spec_list = SpecSettings.decode('utf-8').split('\r\n')[1:]
-        spec_list = [item for item in spec_list if ":" in item]
-        spec_dict = {item.split(": ")[0].replace(" ", "_"):item.split(": ")[1].replace(" ", "_") for item in spec_list}
-        return spec_dict
-
-    def get_imaging_settings(self,nd2file):
-        raw_metadata = nd2file.parser._raw_metadata
-        imaging_settings = {}
-        for key,meta in raw_metadata.image_metadata_sequence[b'SLxPictureMetadata'][b'sPicturePlanes'][b'sSampleSetting'].items():
-            camera_settings = meta[b'pCameraSetting']
-            camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
-            channel_name = camera_settings[b'Metadata'][b'Channels'][b'Channel_0'][b'Name'].decode('utf-8')
-            obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
-            spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
-            imaging_settings[channel_name] = {'camera_name':camera_name,'obj_settings':obj_settings,**spec_settings}
-        return imaging_settings
-
-    def make_fov_df(self,nd2file, exp_metadata): #only records values for single timepoints, does not seperate between channels....
-        img_metadata = nd2file.parser._raw_metadata
-        num_fovs = exp_metadata['num_fovs']
-        num_frames = exp_metadata['num_frames']
-        num_images_expected = num_fovs*num_frames
-
-        if img_metadata.x_data is not None:
-            x = np.reshape(img_metadata.x_data,(-1,num_fovs)).T
-            y = np.reshape(img_metadata.y_data,(-1,num_fovs)).T
-            z = np.reshape(img_metadata.z_data,(-1,num_fovs)).T
-        else:
-            positions = img_metadata.image_metadata[b'SLxExperiment'][b'ppNextLevelEx'][b''][b'uLoopPars'][b'Points'][b'']
-            x = []
-            y = []
-            z = []
-            for position in positions:
-                x.append([position[b'dPosX']]*num_frames)
-                y.append([position[b'dPosY']]*num_frames)
-                z.append([position[b'dPosZ']]*num_frames)
-            x = np.array(x)
-            y = np.array(y)
-            z = np.array(z)
-
-
-        time_points = x.shape[1]
-        ## This doesn't work when there's wait times????
-#         if img_metadata.x_data is not None:
-#             acq_times = np.reshape(np.array(list(img_metadata.acquisition_times)),(-1,num_fovs)).T #quick fix for inconsistancies beteen the number of timepoints recorded in acquisition times and the x/y/z positions
-#             acq_times = acq_times[:,:time_points]
-#         else:
-        acq_times = np.reshape(np.array(list(img_metadata.acquisition_times)[:num_images_expected]),(-1,num_fovs)).T
-        pos_label = np.repeat(np.expand_dims(np.add.accumulate(np.ones(num_fovs,dtype=int))-1,1),time_points,1) ##???
-        time_point_labels = np.repeat(np.expand_dims(np.add.accumulate(np.ones(time_points,dtype=int))-1,1),num_fovs,1).T
-
-        output = pd.DataFrame({'fov':pos_label.flatten(),'timepoints':time_point_labels.flatten(),'t':acq_times.flatten(),'x':x.flatten(),'y':y.flatten(),'z':z.flatten()})
-        output = output.astype({'fov': int, 'timepoints':int, 't': float, 'x': float,'y': float,'z': float})
-
-        output = output[~((output['x'] == 0.)&(output['y'] == 0.)&(output['z'] == 0.))].reset_index(drop=True) ##bootstrapped to fix issue when only some FOVs are selected (return if it causes problems in the future)
-        output = output.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
-
-        return output
-
-    def get_metadata(self):
-        # Manual numbers are for broken .nd2 files (from when Elements crashes)
-        nd2file = ND2Reader(self.nd2filename)
-        for key,item in self.nd2reader_override.items():
-            nd2file.metadata[key] = item
-        exp_metadata = copy.copy(nd2file.metadata)
-        wanted_keys = ['height', 'width', 'date', 'fields_of_view', 'frames', 'z_levels', 'z_coordinates', 'total_images_per_channel', 'channels', 'pixel_microns', 'num_frames', 'experiment']
-        exp_metadata = dict([(k, exp_metadata[k]) for k in wanted_keys if k in exp_metadata])
-        exp_metadata["num_fovs"] = len(exp_metadata['fields_of_view'])
-        exp_metadata["settings"] = self.get_imaging_settings(nd2file)
-        if not self.ignore_fovmetadata:
-            fov_metadata = self.make_fov_df(nd2file, exp_metadata)
-            nd2file.close()
-            return exp_metadata,fov_metadata
-        else:
-            nd2file.close()
-            return exp_metadata

@@ -5,7 +5,7 @@ import skimage as sk
 import h5py
 import pickle
 
-from ipywidgets import interact, interactive, fixed, interact_manual, FloatSlider, IntSlider, Dropdown, IntText, SelectMultiple, IntRangeSlider, FloatRangeSlider
+from ipywidgets import interact, interactive, fixed, interact_manual, FloatSlider, IntSlider, Dropdown, IntText, SelectMultiple, Select, IntRangeSlider, FloatRangeSlider
 from skimage import filters
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
@@ -46,7 +46,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def view_image_interactive(self):
 
-        interact(self.view_image,fov_idx=IntText(value=0,description='FOV number:',disabled=False),\
+        interact(self.view_image,fov_idx=Select(description='FOV number:',options=self.fov_list),\
              t=IntSlider(value=0, min=0, max=self.timepoints_len-1, step=1,continuous_update=False),
             channel=Dropdown(options=self.channels,value=self.channels[0],description='Channel:',disabled=False),\
             invert=Dropdown(options=[True,False],value=False))
