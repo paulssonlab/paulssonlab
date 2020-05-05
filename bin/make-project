@@ -30,8 +30,8 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - numpy
   - nodejs
+  - numpy
   - pandas
   - pip
   - pre-commit
