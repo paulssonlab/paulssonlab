@@ -132,13 +132,14 @@ class kymograph_interactive(kymograph_multifov):
         plt.show()
 
     def preview_y_crop(self,y_percentiles_smoothed_list, imported_array_list,y_min_edge_dist, padding_y,\
-                       trench_len_y,expected_num_rows,orientation_detection,orientation_on_fail,images_per_row):
+                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,images_per_row):
 
         self.final_params['Minimum Trench Length'] = y_min_edge_dist
         self.final_params['Y Padding'] = padding_y
         self.final_params['Trench Length'] = trench_len_y
         self.final_params['Orientation Detection Method'] = orientation_detection
         self.final_params['Expected Number of Rows (Manual Orientation Detection)'] = expected_num_rows
+        self.final_params['Alternate Orientation'] = alternate_orientation
         self.final_params['Top Orientation when Row Drifts Out (Manual Orientation Detection)'] = orientation_on_fail
 
         y_percentile_threshold = self.final_params['Y Percentile Threshold']
@@ -148,8 +149,9 @@ class kymograph_interactive(kymograph_multifov):
         start_above_lists = [item[1] for item in get_trench_edges_y_output]
         end_above_lists = [item[2] for item in get_trench_edges_y_output]
 
-        get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations,trench_edges_y_lists,start_above_lists,end_above_lists,expected_num_rows,\
-                                             orientation_detection,orientation_on_fail,y_min_edge_dist)
+        get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations,trench_edges_y_lists,start_above_lists,end_above_lists,\
+                                                          alternate_orientation,expected_num_rows,orientation_detection,orientation_on_fail,y_min_edge_dist)
+
         orientations_list = [item[0] for item in get_manual_orientations_output]
         drop_first_row_list = [item[1] for item in get_manual_orientations_output]
         drop_last_row_list = [item[2] for item in get_manual_orientations_output]
@@ -176,7 +178,8 @@ class kymograph_interactive(kymograph_multifov):
                 padding_y=IntSlider(value=20, min=0, max=500, step=5),\
                 trench_len_y=IntSlider(value=270, min=0, max=1000, step=5),
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
-               orientation_detection=Dropdown(options=[0, 1, 'phase'],value=0,description='Orientation:',disabled=False),
+                alternate_orientation=Dropdown(options=[True,False],value=True,description='Alternate Orientation?:',disabled=False),\
+               orientation_detection=Dropdown(options=[0, 1, 'phase'],value=0,description='Orientation:',disabled=False),\
                 orientation_on_fail=Dropdown(options=[None,0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
                  images_per_row=IntSlider(value=3, min=1, max=10, step=1))
 
@@ -218,12 +221,13 @@ class kymograph_interactive(kymograph_multifov):
         fig.show()
 
     def preview_x_percentiles(self,cropped_in_y_list, t, x_percentile, background_kernel_x,smoothing_kernel_x,\
-                              otsu_scaling):
+                              otsu_scaling,min_threshold):
 
         self.final_params['X Percentile'] = x_percentile
         self.final_params['X Background Kernel'] = background_kernel_x
         self.final_params['X Smoothing Kernel'] = smoothing_kernel_x
         self.final_params['Otsu Threshold Scaling'] = otsu_scaling
+        self.final_params['Minimum X Threshold'] = min_threshold
 
         smoothed_x_percentiles_list = self.map_to_fovs(self.get_smoothed_x_percentiles,cropped_in_y_list,x_percentile,\
                                                          (background_kernel_x,1),(smoothing_kernel_x,1))
@@ -231,8 +235,8 @@ class kymograph_interactive(kymograph_multifov):
         for smoothed_x_percentiles_row in smoothed_x_percentiles_list:
             for smoothed_x_percentiles in smoothed_x_percentiles_row:
                 x_percentiles_t = smoothed_x_percentiles[:,t]
-                thresholds.append(self.get_midpoints(x_percentiles_t,otsu_scaling)[1])
-        self.plot_x_percentiles(smoothed_x_percentiles_list,self.fov_list, t, thresholds,num_rows=2)
+                thresholds.append(self.get_midpoints(x_percentiles_t,otsu_scaling,min_threshold)[1])
+        self.plot_x_percentiles(smoothed_x_percentiles_list,self.fov_list, t, thresholds)
 
         self.smoothed_x_percentiles_list = smoothed_x_percentiles_list
         all_midpoints_list,x_drift_list = self.preview_midpoints(self.smoothed_x_percentiles_list)
@@ -241,8 +245,9 @@ class kymograph_interactive(kymograph_multifov):
 
     def preview_midpoints(self,smoothed_x_percentiles_list):
         otsu_scaling = self.final_params['Otsu Threshold Scaling']
+        min_threshold = self.final_params['Minimum X Threshold']
 
-        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling)
+        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling,min_threshold)
         self.plot_midpoints(all_midpoints_list,self.fov_list)
         x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
 
@@ -254,15 +259,14 @@ class kymograph_interactive(kymograph_multifov):
     def preview_x_percentiles_interactive(self):
         trench_detection = interactive(self.preview_x_percentiles, {"manual":True}, cropped_in_y_list=fixed(self.cropped_in_y_list),t=IntSlider(value=0, min=0, max=self.cropped_in_y_list[0].shape[4]-1, step=1),\
                 x_percentile=IntSlider(value=85, min=50, max=100, step=1),background_kernel_x=IntSlider(value=21, min=1, max=601, step=20), smoothing_kernel_x=IntSlider(value=9, min=1, max=31, step=2),\
-               otsu_scaling=FloatSlider(value=0.25, min=0., max=2., step=0.01));
+               otsu_scaling=FloatSlider(value=0.25, min=0., max=2., step=0.01),min_threshold=IntSlider(value=0, min=0., max=65535, step=1));
 
         display(trench_detection)
 
-    def plot_x_percentiles(self,smoothed_x_percentiles_list,fov_list,t,thresholds,num_rows=2):
+    def plot_x_percentiles(self,smoothed_x_percentiles_list,fov_list,t,thresholds):
         fig = plt.figure()
-
-        ncol=num_rows
-        nrow=len(smoothed_x_percentiles_list)
+        nrow = len(self.cropped_in_y_list) #fovs
+        ncol = (sum([len(item) for item in self.cropped_in_y_list])//nrow)+1
 
         idx = 0
         for i,smoothed_x_percentiles_lanes in enumerate(smoothed_x_percentiles_list):
@@ -432,6 +436,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
         output_array = np.concatenate(np.expand_dims(array_list,axis=0),axis=0)
         self.t_tot = output_array.shape[1]
         self.plot_kymographs(output_array)
+        self.output_array = output_array
+
         return output_array
 
     def import_array_inter(self):
@@ -454,16 +460,16 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.plot_img_list(img_list)
         return img_list
 
-    def plot_processed(self,kymo_arr,smooth_sigma,bit_max,scale,scaling_percentile):
+    def plot_processed(self,smooth_sigma,bit_max,scale,scaling_percentile):
         self.final_params['Gaussian Kernel Sigma:'] = smooth_sigma
         self.final_params['8 Bit Maximum:'] = bit_max
         self.final_params['Scale Fluorescence?'] = scale
         self.final_params["Scaling Percentile:"] = scaling_percentile
 
-        percentile = int(np.percentile(kymo_arr.flatten(), 99))
+        percentile = int(np.percentile(self.output_array.flatten(), 99))
         print("99th percentile:" + str(percentile))
         fig, ax = plt.subplots(1, 1)
-        ax.hist(kymo_arr.flatten(),bins=50)
+        ax.hist(self.output_array.flatten(),bins=50)
         ax.axvline(bit_max,c="r",linewidth=3,zorder=10)
         ax.set_title("Pixel Value Histogram w/ 8-bit Maximum",fontsize=20)
         ax.set_xlabel("Pixel Value",fontsize=15)
@@ -472,8 +478,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         proc_list = []
         unwrap_proc_list = []
-        for k in range(kymo_arr.shape[0]):
-            proc_img = self.preprocess_img(kymo_arr[k],sigma=smooth_sigma,bit_max=bit_max,\
+        for k in range(self.output_array.shape[0]):
+            proc_img = self.preprocess_img(self.output_array[k],sigma=smooth_sigma,bit_max=bit_max,\
                                            scale_timepoints=scale,scaling_percentage=scaling_percentile)
 
             proc_kymo = kymo_handle()
@@ -482,15 +488,15 @@ class fluo_segmentation_interactive(fluo_segmentation):
             proc_list.append(proc_img)
             unwrap_proc_list.append(unwrap_proc)
         self.plot_img_list(unwrap_proc_list)
+        self.proc_list = proc_list
+        self.plot_eigval()
 
-        return proc_list
-
-    def plot_eigval(self,proc_list):
+    def plot_eigval(self):
         eigval_list = []
         unwrap_eigval_list = []
-        for proc in proc_list:
+        for proc in self.proc_list:
             inverted = np.array([sk.util.invert(proc[t]) for t in range(proc.shape[0])])
-            min_eigvals = np.array([self.hessian_contrast_enc(inverted[t],self.hess_pad) for t in range(inverted.shape[0])])
+            min_eigvals = np.array([self.to_8bit(self.hessian_contrast_enc(inverted[t],self.hess_pad)) for t in range(inverted.shape[0])])
             eigval_kymo = kymo_handle()
             eigval_kymo.import_wrap(min_eigvals)
             unwrap_eigvals = eigval_kymo.return_unwrap(padding=0)
@@ -498,9 +504,47 @@ class fluo_segmentation_interactive(fluo_segmentation):
             eigval_list.append(min_eigvals)
             unwrap_eigval_list.append(unwrap_eigvals)
         self.plot_img_list(unwrap_eigval_list)
-        return eigval_list
+        self.eigval_list = eigval_list
 
-    def plot_cell_mask(self,proc_list,global_threshold,cell_mask_method,cell_otsu_scaling,local_otsu_r):
+    def plot_processed_inter(self):
+        proc_list_int = interactive(
+            self.plot_processed,
+            {"manual": True},
+            smooth_sigma=FloatSlider(
+                value=0.75,
+                description="Gaussian Kernel Sigma:",
+                min=0.0,
+                max=3.0,
+                step=0.25,
+                disabled=False,
+            ),
+            bit_max=IntSlider(
+                value=1000,
+                description="8-bit Maximum:",
+                min=0,
+                max=65535,
+                step=250,
+                disabled=False,
+            ),
+            scale=Dropdown(
+                options=[True, False],
+                value=True,
+                description="Scale Fluorescence?",
+                disabled=False,
+            ),
+            scaling_percentile=IntSlider(
+                value=90,
+                description="Scaling Percentile:",
+                min=0,
+                max=100,
+                step=1,
+                disabled=False,
+            ),
+        )
+
+        display(proc_list_int)
+
+    def plot_cell_mask(self,global_threshold,cell_mask_method,cell_otsu_scaling,local_otsu_r):
         self.final_params['Cell Mask Thresholding Method:'] = cell_mask_method
         self.final_params['Global Threshold:'] = global_threshold
         self.final_params['Cell Threshold Scaling:'] = cell_otsu_scaling
@@ -509,7 +553,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         cell_mask_list = []
         unwrap_cell_mask_list = []
 
-        for proc in proc_list:
+        for proc in self.proc_list:
             cell_mask = self.cell_region_mask(proc,method=cell_mask_method,global_threshold=global_threshold,cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r)
             cell_mask_list.append(cell_mask)
 
@@ -520,16 +564,53 @@ class fluo_segmentation_interactive(fluo_segmentation):
             unwrap_cell_mask_list.append(unwrap_cell_mask)
         self.plot_img_list(unwrap_cell_mask_list)
 
-        plt.hist(np.array(proc_list).flatten(),bins=50)
+        plt.hist(np.array(self.proc_list).flatten(),bins=50)
         plt.show()
 
-        return cell_mask_list
+        self.cell_mask_list = cell_mask_list
 
-    def plot_threshold_result(self,eigval_list,cell_mask_list,edge_threshold_scaling,min_obj_size):
+    def plot_cell_mask_inter(self):
+        cell_mask_list_int = interactive(
+            self.plot_cell_mask,
+            {"manual": True},
+            cell_mask_method=Dropdown(
+                options=["local", "global"],
+                value="local",
+                description="Cell Mask Thresholding Method:",
+                disabled=False,
+            ),
+            global_threshold=IntSlider(
+                value=50,
+                description="Global Threshold:",
+                min=0,
+                max=255,
+                step=1,
+                disabled=False,
+            ),
+            cell_otsu_scaling=FloatSlider(
+                value=0.95,
+                description="Cell Threshold Scaling:",
+                min=0.0,
+                max=2.0,
+                step=0.01,
+                disabled=False,
+            ),
+            local_otsu_r=IntSlider(
+                value=15,
+                description="Local Otsu Radius:",
+                min=0,
+                max=30,
+                step=1,
+                disabled=False,
+            ),
+        )
+        display(cell_mask_list_int)
+
+    def plot_threshold_result(self,edge_threshold_scaling,min_obj_size):
         composite_mask_list = []
         edge_mask_list = []
-        for i,min_eigvals in enumerate(eigval_list):
-            cell_mask = cell_mask_list[i]
+        for i,min_eigvals in enumerate(self.eigval_list):
+            cell_mask = self.cell_mask_list[i]
 
             edge_threshold = self.get_mid_threshold_arr(min_eigvals,edge_threshold_scaling=edge_threshold_scaling,padding=self.wrap_pad)
 
@@ -545,18 +626,41 @@ class fluo_segmentation_interactive(fluo_segmentation):
             composite_mask_list.append(composite_mask)
 
         self.plot_img_list(composite_mask_list)
-        return composite_mask_list
+        self.composite_mask_list = composite_mask_list
+
+    def plot_threshold_result_inter(self):
+        composite_mask_list_int = interactive(
+            self.plot_threshold_result,
+            {"manual": True},
+            edge_threshold_scaling=FloatSlider(
+                value=1.0,
+                description="Edge Threshold Scaling",
+                min=0.0,
+                max=2.0,
+                step=0.01,
+                disabled=False,
+            ),
+            min_obj_size=IntSlider(
+                value=30,
+                description="Minimum Object Size:",
+                min=0,
+                max=100,
+                step=2,
+                disabled=False,
+            ),
+        )
+        display(composite_mask_list_int)
 
 
-    def plot_scores(self,eigval_list,cell_mask_list,edge_threshold_scaling,threshold_step_perc,threshold_perc_num_steps,min_obj_size):
+    def plot_scores(self,edge_threshold_scaling,threshold_step_perc,threshold_perc_num_steps,min_obj_size):
         self.final_params['Edge Threshold Scaling:'] = edge_threshold_scaling
         self.final_params['Threshold Step Percent:'] = threshold_step_perc
         self.final_params['Number of Threshold Steps:'] = threshold_perc_num_steps
         self.final_params['Minimum Object Size:'] = min_obj_size
 
         conv_scores_list = []
-        for i,min_eigvals in enumerate(eigval_list):
-            cell_mask = cell_mask_list[i]
+        for i,min_eigvals in enumerate(self.eigval_list):
+            cell_mask = self.cell_mask_list[i]
 
             mid_threshold_arr = self.get_mid_threshold_arr(min_eigvals,edge_threshold_scaling=edge_threshold_scaling,padding=self.wrap_pad)
 
@@ -572,18 +676,72 @@ class fluo_segmentation_interactive(fluo_segmentation):
                                           threshold_step_perc=threshold_step_perc,threshold_perc_num_steps=threshold_perc_num_steps,min_obj_size=min_obj_size)
             conv_scores_list.append(conv_scores)
         self.plot_img_list(conv_scores_list)
-        return conv_scores_list
+        self.conv_scores_list = conv_scores_list
 
-    def plot_final_mask(self,conv_scores_list,convex_threshold):
+    def plot_scores_inter(self):
+        conv_scores_list_int = interactive(
+            self.plot_scores,
+            {"manual": True},
+            edge_threshold_scaling=FloatSlider(
+                value=0.9,
+                description="Edge Threshold Scaling",
+                min=0.0,
+                max=2.0,
+                step=0.01,
+                disabled=False,
+            ),
+            threshold_step_perc=FloatSlider(
+                value=0.05,
+                description="Threshold Step Percent",
+                min=0.0,
+                max=0.5,
+                step=0.01,
+                disabled=False,
+            ),
+            threshold_perc_num_steps=IntSlider(
+                value=2,
+                description="Number of Threshold Steps",
+                min=0,
+                max=5,
+                step=1,
+                disabled=False,
+            ),
+            min_obj_size=IntSlider(
+                value=30,
+                description="Minimum Object Size:",
+                min=0,
+                max=100,
+                step=2,
+                disabled=False,
+            ),
+        )
+        display(conv_scores_list_int)
+
+    def plot_final_mask(self,convex_threshold):
         self.final_params['Convexity Threshold:'] = convex_threshold
 
         final_mask_list = []
-        for conv_scores in conv_scores_list:
+        for conv_scores in self.conv_scores_list:
             final_mask = (conv_scores>convex_threshold)
             final_mask = sk.measure.label(final_mask)
             final_mask_list.append(final_mask)
         self.plot_img_list(final_mask_list)
-        return final_mask_list
+        self.final_mask_list = final_mask_list
+
+    def plot_final_mask_inter(self):
+        final_mask_list_int = interactive(
+            self.plot_final_mask,
+            {"manual": True},
+            convex_threshold=FloatSlider(
+                value=0.75,
+                description="Convexity Threshold:",
+                min=0.0,
+                max=1.0,
+                step=0.01,
+                disabled=False,
+            ),
+        )
+        display(final_mask_list_int)
 
     def process_results(self):
         self.final_params["Segmentation Channel:"] = self.seg_channel

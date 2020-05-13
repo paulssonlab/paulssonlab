@@ -289,12 +289,12 @@ class scorefn:
         ax_dist.set_xlim(0.,dist_avg+(3.*dist_std))
         ax_size.set_xlim(0.,size_avg+(3.*size_std))
 
-        ax_dist.hist(neighbor_dists,bins=30)
+        ax_dist.hist(neighbor_dists,bins=30,range=(0.,dist_avg+(3.*dist_std)))
         ax_dist.set_title('Nearest-neighbor Normalized Centroid Distance')
         ax_dist.axvline(x=self.u_pos,c="r",linewidth=3,zorder=10)
         ax_dist.axvspan(self.u_pos-self.sig_pos, self.u_pos+self.sig_pos, alpha=0.3, color='r',zorder=10)
 
-        ax_size.hist(neighbor_sizes,bins=30)
+        ax_size.hist(neighbor_sizes,bins=30,range=(0.,size_avg+(3.*size_std)))
         ax_size.set_title('Nearest-neighbor Normalized Size Difference')
         ax_size.axvline(x=self.u_size,c="r",linewidth=3,zorder=10)
         ax_size.axvspan(self.u_size-self.sig_size, self.u_size+self.sig_size, alpha=0.3, color='r',zorder=10)

@@ -161,7 +161,7 @@ class fluo_segmentation:
             weight_arr[obj_mask] = obj_weight
         return weight_arr
 
-    def get_mid_threshold_arr(self,wrap_eig,edge_threshold_scaling=1.,padding=3):
+    def get_mid_threshold_arr(self,wrap_eig,edge_threshold_scaling=1.,padding=3): ##???BAD
         edge_threshold_kymo = []
         for t in range(wrap_eig.shape[0]):
             edge_threshold = sk.filters.threshold_otsu(wrap_eig[t])
@@ -195,6 +195,10 @@ class fluo_segmentation:
         t_tot = img_arr.shape[0]
         working_img = self.preprocess_img(img_arr,sigma=self.smooth_sigma,bit_max=self.bit_max,\
                                          scale_timepoints=self.scale_timepoints,scaling_percentage=self.scaling_percentage) #8_bit
+
+        temp = kymo_handle()
+        temp.import_wrap(working_img)
+        temp = temp.return_unwrap(padding=self.wrap_pad)
 
         inverted = np.array([sk.util.invert(working_img[t]) for t in range(working_img.shape[0])])
         min_eigvals = np.array([self.to_8bit(self.hessian_contrast_enc(inverted[t],self.hess_pad)) for t in range(inverted.shape[0])])
@@ -268,6 +272,8 @@ class fluo_segmentation_cluster(fluo_segmentation):
         self.meta_handle = pandas_hdf5_handler(self.metapath)
 
     def generate_segmentation(self,file_idx):
+        with open("/home/de64/log.txt","w") as outfile:
+            outfile.write(str(self.edge_threshold_scaling))
         with h5py.File(self.kymographpath + "/kymograph_" + str(file_idx) + ".hdf5","r") as input_file:
             input_data = input_file[self.seg_channel]
             trench_output = []

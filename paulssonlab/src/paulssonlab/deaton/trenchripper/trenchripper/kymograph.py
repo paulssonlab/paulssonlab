@@ -20,8 +20,8 @@ from tifffile import imread
 class kymograph_cluster:
     def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,\
                  invert=False,y_percentile=85,y_min_edge_dist=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
-                 top_orientation=0,expected_num_rows=None,orientation_on_fail=None,x_percentile=85,background_kernel_x=(1,21),\
-                 smoothing_kernel_x=(1,9),otsu_scaling=1.,trench_present_thr=0.):
+                 top_orientation=0,expected_num_rows=None,alternate_orientation=True,orientation_on_fail=None,x_percentile=85,background_kernel_x=(1,21),\
+                 smoothing_kernel_x=(1,9),otsu_scaling=1.,min_threshold=0,trench_present_thr=0.):
 
         if paramfile:
             parampath = headpath + "/kymograph.par"
@@ -40,11 +40,13 @@ class kymograph_cluster:
             y_percentile_threshold = param_dict['Y Percentile Threshold']
             top_orientation = param_dict["Orientation Detection Method"]
             expected_num_rows = param_dict["Expected Number of Rows (Manual Orientation Detection)"]
+            alternate_orientation = param_dict['Alternate Orientation']
             orientation_on_fail = param_dict["Top Orientation when Row Drifts Out (Manual Orientation Detection)"]
             x_percentile = param_dict["X Percentile"]
             background_kernel_x = (1,param_dict["X Background Kernel"])
             smoothing_kernel_x = (1,param_dict["X Smoothing Kernel"])
             otsu_scaling = param_dict["Otsu Threshold Scaling"]
+            min_threshold= param_dict['Minimum X Threshold']
             trench_present_thr =  param_dict["Trench Presence Threshold"]
 
         self.headpath = headpath
@@ -76,6 +78,7 @@ class kymograph_cluster:
         ###
         self.top_orientation = top_orientation
         self.expected_num_rows = expected_num_rows
+        self.alternate_orientation = alternate_orientation
         self.orientation_on_fail = orientation_on_fail
         #### params for x
         ## parameter for reducing signal to one dim
@@ -85,6 +88,7 @@ class kymograph_cluster:
         self.smoothing_kernel_x = smoothing_kernel_x
         ## parameters for threshold finding
         self.otsu_scaling = otsu_scaling
+        self.min_threshold = min_threshold
         ## New
         self.trench_present_thr = trench_present_thr
 
@@ -96,10 +100,10 @@ class kymograph_cluster:
                                  "trench_width_x":trench_width_x,"y_percentile":y_percentile,"invert":invert,\
                              "y_min_edge_dist":y_min_edge_dist,"smoothing_kernel_y":smoothing_kernel_y,\
                                  "y_percentile_threshold":y_percentile_threshold,\
-                                 "top_orientation":top_orientation,"expected_num_rows":expected_num_rows,\
+                                 "top_orientation":top_orientation,"expected_num_rows":expected_num_rows,"alternate_orientation":alternate_orientation,\
                                  "orientation_on_fail":orientation_on_fail,"x_percentile":x_percentile,\
                                  "background_kernel_x":background_kernel_x,"smoothing_kernel_x":smoothing_kernel_x,\
-                                "otsu_scaling":otsu_scaling,"trench_present_thr":trench_present_thr}
+                                "otsu_scaling":otsu_scaling,"min_x_threshold":min_threshold,"trench_present_thr":trench_present_thr}
 
     def median_filter_2d(self,array,smoothing_kernel):
         """Two-dimensional median filter, with average smoothing at the signal
@@ -241,7 +245,7 @@ class kymograph_cluster:
             repaired_trench_edges_y = repaired_trench_edges_y[:-2]
         return orientations,drop_first_row,drop_last_row,repaired_trench_edges_y
 
-    def get_manual_orientations(self,trench_edges_y_list,start_above_list,end_above_list,expected_num_rows,top_orientation,orientation_on_fail,y_min_edge_dist):
+    def get_manual_orientations(self,trench_edges_y_list,start_above_list,end_above_list,expected_num_rows,alternate_orientation,top_orientation,orientation_on_fail,y_min_edge_dist):
         trench_edges_y = trench_edges_y_list[0]
         start_above = start_above_list[0]
         end_above = end_above_list[0]
@@ -254,14 +258,16 @@ class kymograph_cluster:
             orientation = top_orientation
             for row in range(repaired_trench_edges_y.shape[0]//2):
                 orientations.append(orientation)
-                orientation = (orientation+1)%2
+                if alternate_orientation:
+                    orientation = (orientation+1)%2
             orientations,drop_first_row,drop_last_row,repaired_trench_edges_y = self.remove_out_of_frame(orientations,repaired_trench_edges_y,start_above,end_above)
 
         elif (repaired_trench_edges_y.shape[0]//2 < expected_num_rows) and orientation_on_fail is not None:
             orientation = orientation_on_fail
             for row in range(repaired_trench_edges_y.shape[0]//2):
                 orientations.append(orientation)
-                orientation = (orientation+1)%2
+                if alternate_orientation:
+                    orientation = (orientation+1)%2
             orientations,drop_first_row,drop_last_row,repaired_trench_edges_y = self.remove_out_of_frame(orientations,repaired_trench_edges_y,start_above,end_above)
         else:
             print("Start frame does not have expected number of rows!")
@@ -366,7 +372,7 @@ class kymograph_cluster:
 
         return valid_y_ends,valid_orientations
 
-    def get_ends_and_orientations(self,fov_idx,edges_futures,expected_num_rows,top_orientation,orientation_on_fail,y_min_edge_dist,padding_y,trench_len_y):
+    def get_ends_and_orientations(self,fov_idx,edges_futures,expected_num_rows,alternate_orientation,top_orientation,orientation_on_fail,y_min_edge_dist,padding_y,trench_len_y):
 
         fovdf = self.meta_handle.read_df("global",read_metadata=False)
 #         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
@@ -384,7 +390,7 @@ class kymograph_cluster:
             start_above_list += edges_futures[j][1][first_idx:last_idx+1]
             end_above_list += edges_futures[j][2][first_idx:last_idx+1]
 
-        orientations,drop_first_row,drop_last_row = self.get_manual_orientations(trench_edges_y_list,start_above_list,end_above_list,expected_num_rows,top_orientation,orientation_on_fail,y_min_edge_dist)
+        orientations,drop_first_row,drop_last_row = self.get_manual_orientations(trench_edges_y_list,start_above_list,end_above_list,expected_num_rows,alternate_orientation,top_orientation,orientation_on_fail,y_min_edge_dist)
         y_ends_list = self.get_trench_ends(trench_edges_y_list,start_above_list,end_above_list,orientations,drop_first_row,drop_last_row,y_min_edge_dist)
         y_drift = self.get_y_drift(y_ends_list)
         valid_y_ends,valid_orientations = self.keep_in_frame_kernels(y_ends_list,y_drift,orientations,padding_y,trench_len_y)
@@ -513,7 +519,7 @@ class kymograph_cluster:
             midpoints = []
         return midpoints
 
-    def get_x_row_midpoints(self,x_percentiles_t,otsu_scaling):
+    def get_x_row_midpoints(self,x_percentiles_t,otsu_scaling,min_threshold):
         """Given an array of signal in x, determines the position of trench
         midpoints.
 
@@ -527,12 +533,13 @@ class kymograph_cluster:
         """
 
         otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=50)*otsu_scaling
+        modified_otsu_threshold = max(otsu_threshold,min_threshold)
 
-        x_mask = x_percentiles_t>otsu_threshold
+        x_mask = x_percentiles_t>modified_otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
         return midpoints
 
-    def get_x_midpoints(self,x_percentiles_smoothed,otsu_scaling):
+    def get_x_midpoints(self,x_percentiles_smoothed,otsu_scaling,min_threshold):
         """Given an x percentile array of shape (rows,t,x), determines the
         trench midpoints of each row array at each time t.
 
@@ -548,13 +555,13 @@ class kymograph_cluster:
         for row in range(x_percentiles_smoothed.shape[0]):
             row_x_percentiles = x_percentiles_smoothed[row]
             all_midpoints = []
-            midpoints = self.get_x_row_midpoints(row_x_percentiles[0],otsu_scaling)
+            midpoints = self.get_x_row_midpoints(row_x_percentiles[0],otsu_scaling,min_threshold)
             if len(midpoints) == 0:
                 return None
             all_midpoints.append(midpoints)
 
             for t in range(1,row_x_percentiles.shape[0]):
-                midpoints = self.get_x_row_midpoints(row_x_percentiles[t],otsu_scaling)
+                midpoints = self.get_x_row_midpoints(row_x_percentiles[t],otsu_scaling,min_threshold)
                 if len(midpoints)/(len(all_midpoints[-1])+1) < 0.5:
                     all_midpoints.append(all_midpoints[-1])
                 else:
@@ -915,7 +922,7 @@ class kymograph_cluster:
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
             edges_futures = [dask_controller.futures["Y Trench Edges: " + str(file_idx)] for file_idx in working_files]
-            future = dask_controller.daskclient.submit(self.get_ends_and_orientations,fov_idx,edges_futures,self.expected_num_rows,\
+            future = dask_controller.daskclient.submit(self.get_ends_and_orientations,fov_idx,edges_futures,self.expected_num_rows,self.alternate_orientation,\
                                                        self.top_orientation,self.orientation_on_fail,self.y_min_edge_dist,self.padding_y,self.trench_len_y,retries=1)
             dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)] = future
 
@@ -935,7 +942,7 @@ class kymograph_cluster:
         for k,file_idx in enumerate(file_list):
             smoothed_x_future = dask_controller.futures["Smoothed X Percentiles: " + str(file_idx)]
             future = dask_controller.daskclient.submit(self.get_x_midpoints,smoothed_x_future,\
-                                                       self.otsu_scaling,retries=1)
+                                                       self.otsu_scaling,self.min_threshold,retries=1)
             dask_controller.futures["X Midpoints: " + str(file_idx)] = future
 
         ### get x drift ###
@@ -1334,7 +1341,7 @@ class kymograph_multifov(multifov):
 
 
 
-    def get_manual_orientations(self,i,trench_edges_y_lists,start_above_lists,end_above_lists,\
+    def get_manual_orientations(self,i,trench_edges_y_lists,start_above_lists,end_above_lists,alternate_orientation,\
                                 expected_num_rows,top_orientation,orientation_on_fail,y_min_edge_dist):
         trench_edges_y = trench_edges_y_lists[i][0]
         start_above = start_above_lists[i][0]
@@ -1350,14 +1357,16 @@ class kymograph_multifov(multifov):
             orientation = top_orientation
             for row in range(repaired_trench_edges_y.shape[0]//2):
                 orientations.append(orientation)
-                orientation = (orientation+1)%2
+                if alternate_orientation:
+                    orientation = (orientation+1)%2
             orientations,drop_first_row,drop_last_row,repaired_trench_edges_y = self.remove_out_of_frame(orientations,repaired_trench_edges_y,start_above,end_above)
 
         elif (repaired_trench_edges_y.shape[0]//2 < expected_num_rows) and orientation_on_fail is not None:
             orientation = orientation_on_fail
             for row in range(repaired_trench_edges_y.shape[0]//2):
                 orientations.append(orientation)
-                orientation = (orientation+1)%2
+                if alternate_orientation:
+                    orientation = (orientation+1)%2
             orientations,drop_first_row,drop_last_row,repaired_trench_edges_y = self.remove_out_of_frame(orientations,repaired_trench_edges_y,start_above,end_above)
         else:
             print("Start frame does not have expected number of rows!")
@@ -1575,7 +1584,7 @@ class kymograph_multifov(multifov):
             midpoints = []
         return midpoints
 
-    def get_midpoints(self,x_percentiles_t,otsu_scaling):
+    def get_midpoints(self,x_percentiles_t,otsu_scaling,min_threshold):
         """Given an array of signal in x, determines the position of trench
         midpoints.
 
@@ -1588,12 +1597,13 @@ class kymograph_multifov(multifov):
             array: array of trench midpoint x positions.
         """
         otsu_threshold = sk.filters.threshold_otsu(x_percentiles_t[:,np.newaxis],nbins=50)*otsu_scaling
+        modified_otsu_threshold = max(otsu_threshold,min_threshold)
 
-        x_mask = x_percentiles_t>otsu_threshold
+        x_mask = x_percentiles_t>modified_otsu_threshold
         midpoints = self.get_midpoints_from_mask(x_mask)
-        return midpoints,otsu_threshold
+        return midpoints,modified_otsu_threshold
 
-    def get_all_midpoints(self,i,x_percentiles_smoothed_list,otsu_scaling):
+    def get_all_midpoints(self,i,x_percentiles_smoothed_list,otsu_scaling,min_threshold):
         """Given an x percentile array of shape (rows,x,t), determines the
         trench midpoints of each row array at each time t.
 
@@ -1611,12 +1621,12 @@ class kymograph_multifov(multifov):
         for j in range(x_percentiles_smoothed_row.shape[0]):
             x_percentiles_smoothed = x_percentiles_smoothed_row[j]
             all_midpoints = []
-            midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,0],otsu_scaling)
+            midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,0],otsu_scaling,min_threshold)
             if len(midpoints) == 0:
                 return None
             all_midpoints.append(midpoints)
             for t in range(1,x_percentiles_smoothed.shape[1]):
-                midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,t],otsu_scaling)
+                midpoints,_ = self.get_midpoints(x_percentiles_smoothed[:,t],otsu_scaling,min_threshold)
                 if len(midpoints)/(len(all_midpoints[-1])+1) < 0.5:
                     all_midpoints.append(all_midpoints[-1])
                 else:
