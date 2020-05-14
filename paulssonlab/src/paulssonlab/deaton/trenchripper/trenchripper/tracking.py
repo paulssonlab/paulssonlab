@@ -62,12 +62,14 @@ def get_segment_props(labeled_data,interpolate_empty_trenches=False):
         return all_centroids,all_sizes,all_bboxes
 
 class scorefn:
-    def __init__(self,headpath,segfolder,u_pos=0.2,sig_pos=0.4,u_size=0.,sig_size=0.2,w_merge=0.8):
+    def __init__(self,headpath,segfolder,u_pos=0.2,sig_pos=0.4,u_size=0.,sig_size=0.2,w_pos=1.,w_size=1.,w_merge=0.8):
         self.headpath = headpath
         self.segpath = headpath + "/" + segfolder
         self.u_pos,self.sig_pos = (u_pos,sig_pos)
         self.u_size,self.sig_size = (u_size,sig_size)
-        self.w_merge = w_merge
+        self.w_pos,self.w_size,self.w_merge = w_pos,w_size,w_merge
+        self.pos_coef,self.size_coef = (2*(w_pos/(w_pos+w_size)),2*(w_size/(w_pos+w_size)))
+
         self.viewpadding = 0
 
     def fpos(self,xT,xt,bbox_T,bbox_t,u_pos=0.2,sig_pos=0.4):
@@ -200,11 +202,10 @@ class scorefn:
         Ce = []
 
         for t in range(len(posij)):
-
-            f_ij = posij[t]+sizeij[t]
-            f_ik = posik[t]+sizeik[t]
-            f_ki = poski[t]+sizeki[t]
-            f_e = pos_e[t]+size_e[t]
+            f_ij = self.pos_coef*posij[t]+self.size_coef*sizeij[t]
+            f_ik = self.pos_coef*posik[t]+self.size_coef*sizeik[t]
+            f_ki = self.pos_coef*poski[t]+self.size_coef*sizeki[t]
+            f_e = self.pos_coef*pos_e[t]+self.size_coef*size_e[t]
 
             pad_f_ki = np.pad(f_ki,((1,1),(0,0)),"constant",constant_values=0.)
 
@@ -443,9 +444,9 @@ class scorefn:
         ax.scatter(adjusted_centroids[:,0],adjusted_centroids[:,1],c="r",s=100,zorder=10)
         ax.scatter(adjusted_merged_centroids[:,0],adjusted_merged_centroids[:,1],c="white",s=100,zorder=10)
 
-    def plot_score_metrics(self,kymo_df,trenchid,t_range=(0,-1),u_size=0.25,sig_size=0.05,u_pos=0.25,sig_pos=0.1,w_merge=0.8,viewpadding=0):
+    def plot_score_metrics(self,kymo_df,trenchid,t_range=(0,-1),u_size=0.25,sig_size=0.05,u_pos=0.25,sig_pos=0.1,w_pos=1.,w_size=1.,w_merge=0.8,viewpadding=0):
         self.viewpadding = viewpadding
-
+        print("moo")
         trench = kymo_df.loc[trenchid]
         file_idx = trench["File Index"].unique().tolist()[0]
         trench_idx = trench["File Trench Index"].unique().tolist()[0]
@@ -455,22 +456,23 @@ class scorefn:
 
         with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5") as infile:
             data = infile["data"][trench_idx]
-
+        print("moo")
         t0,tf = t_range
         self.u_pos,self.sig_pos = (u_pos,sig_pos)
         self.u_size,self.sig_size = (u_size,sig_size)
         self.w_merge = w_merge
+        self.pos_coef,self.size_coef = (2*(w_pos/(w_pos+w_size)),2*(w_size/(w_pos+w_size)))
         labeled_data = get_labeled_data(data,orientation)
 
         centroids,sizes,bboxes,empty_trenches = get_segment_props(labeled_data,interpolate_empty_trenches=True)
         Cij,Cik,Cki,_,_,_,_ = self.compute_score_arrays(centroids,sizes,bboxes)
-
+        print("moo")
         fig1, (ax1, ax2) = plt.subplots(1, 2)
         fig1.set_size_inches(18, 4)
 
 
         self.plot_neighbor_stats(ax1,ax2,centroids,bboxes,sizes)
-
+        print("moo")
         fig2, axs = plt.subplots(4)
         fig2.set_size_inches(18, 24)
 
@@ -482,6 +484,7 @@ class scorefn:
         axs[2].set_title('Division Transition Score')
         self.plot_ki_scores(axs[3],labeled_data,centroids,Cki,t0=t0,tf=tf,cmap='coolwarm')
         axs[3].set_title('Merge Transition Score')
+        print("moo")
 
         plt.show()
 
@@ -501,6 +504,8 @@ class scorefn:
                  sig_size=FloatSlider(value=self.sig_size, min=0., max=0.5, step=0.01),\
                  u_pos=FloatSlider(value=self.u_pos, min=0., max=1., step=0.01),\
                  sig_pos=FloatSlider(value=self.sig_pos, min=0., max=0.5, step=0.01),\
+                 w_pos=FloatSlider(value=self.w_pos, min=0., max=1., step=0.01),\
+                 w_size=FloatSlider(value=self.w_size, min=0., max=1., step=0.01),\
                  w_merge=FloatSlider(value=self.w_merge, min=0., max=1., step=0.01),\
                  viewpadding=IntSlider(value=0, min=0, max=20, step=1));
 
@@ -509,9 +514,7 @@ class scorefn:
 class tracking_solver:
     def __init__(self,headpath,segfolder,paramfile=False,ScoreFn=False,intensity_channel_list=None,props_list=['centroid','area'],\
                  props_to_unpack={'centroid':['centroid y','centroid x']},pixel_scaling_factors={'centroid y': 1,'centroid x': 1, 'area': 2},\
-                 intensity_props_list=['mean_intensity'],merge_per_iter=0,conv_tolerence=2,edge_limit=3,\
-                 u_size=0.22,sig_size=0.08,u_pos=0.21,sig_pos=0.1,w_merge=0.8):
-
+                 intensity_props_list=['mean_intensity'],edge_limit=3,t_chunk=20,u_size=0.22,sig_size=0.08,u_pos=0.21,sig_pos=0.1,w_pos=1.,w_size=1.,w_merge=0.8):
 
         if paramfile:
             parampath = headpath + "/lineage_tracing.par"
@@ -519,13 +522,16 @@ class tracking_solver:
                 param_dict = pkl.load(infile)
 
             intensity_channel_list = param_dict["Channels:"]
-            merge_per_iter = param_dict["Merges Detected Per Iteration:"]
-            conv_tolerence = param_dict["# Unimproved Iterations Before Stopping:"]
+#             merge_per_iter = param_dict["Merges Detected Per Iteration:"]
+#             conv_tolerence = param_dict["# Unimproved Iterations Before Stopping:"]
             edge_limit = param_dict["Closest N Objects to Consider:"]
+            t_chunk = param_dict["Time Chunk:"]
             u_size = param_dict["Mean Size Increase:"]
             sig_size = param_dict["Standard Deviation of Size Increase:"]
             u_pos = param_dict["Mean Position Increase:"]
             sig_pos = param_dict["Standard Deviation of Position Increase:"]
+            w_pos = param_dict["Cell Position Weight:"]
+            w_size = param_dict["Cell Size Weight:"]
             w_merge = param_dict["Cell Merging Weight:"]
 
         self.headpath = headpath
@@ -547,16 +553,17 @@ class tracking_solver:
         if ScoreFn:
             self.ScoreFn = ScoreFn
         else:
-            self.ScoreFn = scorefn(headpath,segfolder,u_size=u_size,sig_size=sig_size,u_pos=u_pos,sig_pos=sig_pos,w_merge=w_merge)
-        self.merge_per_iter = merge_per_iter
-        self.conv_tolerence = conv_tolerence
+            self.ScoreFn = scorefn(headpath,segfolder,u_size=u_size,sig_size=sig_size,u_pos=u_pos,sig_pos=sig_pos,w_pos=w_pos,w_size=w_size,w_merge=w_merge)
+#         self.merge_per_iter = merge_per_iter
+#         self.conv_tolerence = conv_tolerence
         self.edge_limit = edge_limit
+        self.t_chunk = t_chunk
 
         self.viewpadding = 0
 
-    def define_tracking_problem(self,Cij,Cik,Cki,posij,posik,poski,sizes,merge_per_iter,edge_limit):
+    def solve_tracking_problem(self,Cij,Cik,Cki,posij,posik,poski,sizes,edge_limit,t_chunk):
 
-        prob = LpProblem("Lineage",LpMinimize)
+        prob_list = []
 
         Aij = {}
         Aik = {}
@@ -568,154 +575,175 @@ class tracking_solver:
 
         valid_j_list = []
 
-        for t in range(len(Cij)):
-            cij = Cij[t]
+        chunk_step = t_chunk//2
 
-            Aij[t] = {"ij":{}, "ji":{}}
-            Aik[t] = {"ik":{}, "ki":{}}
-            Aki[t] = {"ki":{}, "ik":{}}
+        for c,init_t in enumerate(range(0,len(Cij),chunk_step)):
+            prob = LpProblem("Lineage",LpMinimize)
+            working_t_chunk = min(len(Cij)-init_t,t_chunk)
+            for sub_t in range(working_t_chunk):
+                t = init_t+sub_t
+                cij = Cij[t]
 
-            for i in range(cij.shape[0]):
-                Aij[t]["ij"][i] = {}
-                Aik[t]["ik"][i] = {}
-                if i < (cij.shape[0]-1):
-                    Aki[t]["ki"][i] = {}
+                Aij[t] = {"ij":{}, "ji":{}}
+                Aik[t] = {"ik":{}, "ki":{}}
+                Aki[t] = {"ki":{}, "ik":{}}
 
-            for j in range(cij.shape[1]):
-                Aij[t]["ji"][j] = {}
-                Aki[t]["ik"][j] = {}
-                if j < (cij.shape[1]-1):
-                    Aik[t]["ki"][j] = {}
+                for i in range(cij.shape[0]):
+                    Aij[t]["ij"][i] = {}
+                    Aik[t]["ik"][i] = {}
+                    if i < (cij.shape[0]-1):
+                        Aki[t]["ki"][i] = {}
 
-            working_posij = posij[t]
-            working_posik = posik[t]
-            working_poski = poski[t]
-
-            valid_posij = np.argsort(-working_posij,axis=1)[:,:edge_limit]
-            valid_posik = np.argsort(-working_posik,axis=1)[:,:edge_limit]
-            valid_poski = np.argsort(-working_poski,axis=1)[:,:edge_limit]
-
-            for i in range(cij.shape[0]):
-
-                valid_posij_slice = valid_posij[i]
                 for j in range(cij.shape[1]):
-                    if j >= i:
-                        if j in valid_posij_slice:
-                            var = LpVariable("ai="+str(i)+",j="+str(j)+",t="+str(t),0,1,cat='Continuous')
-                            Aij[t]["ij"][i][j] = var
-                            Aij[t]["ji"][j][i] = var
-                            cijt = cij[i,j]
-                            obj_fn_terms.append(var)
-                            obj_fn_coeff.append(cijt)
+                    Aij[t]["ji"][j] = {}
+                    Aki[t]["ik"][j] = {}
+                    if j < (cij.shape[1]-1):
+                        Aik[t]["ki"][j] = {}
 
-                        if j < (cij.shape[1]-1):
-                            valid_posik_slice = valid_posik[i]
-                            if j in valid_posik_slice:
-                                var = LpVariable("ai="+str(i)+",k="+str(j)+",t="+str(t),0,1,cat='Continuous')
-                                Aik[t]["ik"][i][j] = var
-                                Aik[t]["ki"][j][i] = var
-                                cikt = Cik[t][i,j]
+                working_posij = posij[t]
+                working_posik = posik[t]
+                working_poski = poski[t]
+
+                valid_posij = np.argsort(-working_posij,axis=1)[:,:edge_limit]
+                valid_posik = np.argsort(-working_posik,axis=1)[:,:edge_limit]
+                valid_poski = np.argsort(-working_poski,axis=1)[:,:edge_limit]
+
+                for i in range(cij.shape[0]):
+
+                    valid_posij_slice = valid_posij[i]
+                    for j in range(cij.shape[1]):
+                        if j >= i:
+                            if j in valid_posij_slice:
+                                var = LpVariable("ai="+str(i)+",j="+str(j)+",t="+str(t)+",c="+str(c),0,1,cat='Continuous')
+                                var.setInitialValue(0.)
+                                Aij[t]["ij"][i][j] = var
+                                Aij[t]["ji"][j][i] = var
+                                cijt = cij[i,j]
                                 obj_fn_terms.append(var)
-                                obj_fn_coeff.append(cikt)
+                                obj_fn_coeff.append(cijt)
 
-                        if i < (cij.shape[0]-1):
-                            valid_poski_slice = valid_poski[i]
-                            if j in valid_poski_slice:
-                                var = LpVariable("ak="+str(i)+",i="+str(j)+",t="+str(t),0,1,cat='Continuous')
-                                Aki[t]["ki"][i][j] = var
-                                Aki[t]["ik"][j][i] = var
-                                ckit = Cki[t][i,j]
-                                obj_fn_terms.append(var)
-                                obj_fn_coeff.append(ckit)
+                            if j < (cij.shape[1]-1):
+                                valid_posik_slice = valid_posik[i]
+                                if j in valid_posik_slice:
+                                    var = LpVariable("ai="+str(i)+",k="+str(j)+",t="+str(t)+",c="+str(c),0,1,cat='Continuous')
+                                    var.setInitialValue(0.)
+                                    Aik[t]["ik"][i][j] = var
+                                    Aik[t]["ki"][j][i] = var
+                                    cikt = Cik[t][i,j]
+                                    obj_fn_terms.append(var)
+                                    obj_fn_coeff.append(cikt)
 
-                Ai[(i,t)] = LpVariable("ai="+str(i)+",t="+str(t),0,1,cat='Continuous')
-                obj_fn_terms.append(Ai[(i,t)])
-                obj_fn_coeff.append(0.)
+                            if i < (cij.shape[0]-1):
+                                valid_poski_slice = valid_poski[i]
+                                if j in valid_poski_slice:
+                                    var = LpVariable("ak="+str(i)+",i="+str(j)+",t="+str(t)+",c="+str(c),0,1,cat='Continuous')
+                                    var.setInitialValue(0.)
+                                    Aki[t]["ki"][i][j] = var
+                                    Aki[t]["ik"][j][i] = var
+                                    ckit = Cki[t][i,j]
+                                    obj_fn_terms.append(var)
+                                    obj_fn_coeff.append(ckit)
 
-        prob += lpSum([obj_fn_coeff[n]*obj_fn_term for n,obj_fn_term in enumerate(obj_fn_terms)]), "Objective Function"
+                    var = LpVariable("ai="+str(i)+",t="+str(t)+",c="+str(c),0,1,cat='Continuous')
+                    var.setInitialValue(0.)
+                    Ai[(i,t)] = var
+                    obj_fn_terms.append(Ai[(i,t)])
+                    obj_fn_coeff.append(0.)
 
-        for t in range(0,len(sizes)):
-            if t == 0:
-                N_detect = len(sizes[t])
+            prob += lpSum([obj_fn_coeff[n]*obj_fn_term for n,obj_fn_term in enumerate(obj_fn_terms)]), "Objective Function"
 
-                for j in range(N_detect):
-                    neg_Aij = list(Aij[t]["ij"].get(j,{}).values())
-                    neg_Aik = list(Aik[t]["ik"].get(j,{}).values())
-                    neg_Aki = list(Aki[t]["ki"].get(j-1,{}).values()) + list(Aki[t]["ki"].get(j,{}).values())
-                    neg_Ai = Ai[(j,t)]
+            for sub_t in range(working_t_chunk):
+                t = init_t+sub_t
+                if t == 0:
+                    N_detect = len(sizes[t])
 
-                    prob += lpSum(neg_Aij) + lpSum(neg_Aik) + lpSum(neg_Aki) + neg_Ai <= 1,\
-                    "Constraint 7 (" + str(t) + "," + str(j) + ")"
+                    for j in range(N_detect):
+                        neg_Aij = list(Aij[t]["ij"].get(j,{}).values())
+                        neg_Aik = list(Aik[t]["ik"].get(j,{}).values())
+                        neg_Aki = list(Aki[t]["ki"].get(j-1,{}).values()) + list(Aki[t]["ki"].get(j,{}).values())
+                        neg_Ai = Ai[(j,t)]
 
-            elif t < len(sizes)-1:
-                N_detect_i = len(sizes[t-1])
-                N_detect_f = len(sizes[t])
-
-                for j in range(N_detect_f):
-                    pos_Aij = list(Aij[t-1]["ji"].get(j,{}).values())
-                    pos_Aik = list(Aik[t-1]["ki"].get(j-1,{}).values()) + list(Aik[t-1]["ki"].get(j,{}).values())
-                    pos_Aki = list(Aki[t-1]["ik"].get(j,{}).values())
-
-
-                    neg_Aij = list(Aij[t]["ij"].get(j,{}).values())
-                    neg_Aik = list(Aik[t]["ik"].get(j,{}).values())
-                    neg_Aki = list(Aki[t]["ki"].get(j-1,{}).values()) + list(Aki[t]["ki"].get(j,{}).values())
-                    neg_Ai = Ai[(j,t)]
-
-                    prob += lpSum(pos_Aij) + lpSum(pos_Aik) + lpSum(pos_Aki) - \
-                        lpSum(neg_Aij) - lpSum(neg_Aik) - lpSum(neg_Aki) - neg_Ai == 0,\
-                        "Constraint 9 (" + str(t) + "," + str(j) + ")"
-
-                    prob += lpSum(pos_Aij) + lpSum(pos_Aik) + lpSum(pos_Aki) <= 1,\
-                    "Constraint 6 (" + str(t) + "," + str(j) + ")"
-
-                    prob += lpSum(neg_Aij) + lpSum(neg_Aik) + lpSum(neg_Aki) + neg_Ai <= 1,\
+                        prob += lpSum(neg_Aij) + lpSum(neg_Aik) + lpSum(neg_Aki) + neg_Ai <= 1,\
                         "Constraint 7 (" + str(t) + "," + str(j) + ")"
 
-                    if j != N_detect_f - 1:
+                elif t < len(sizes)-1:
+                    N_detect_i = len(sizes[t-1])
+                    N_detect_f = len(sizes[t])
 
-                        i_above = list(range(j+1,N_detect_f))
+                    for j in range(N_detect_f):
+                        pos_Aij = list(Aij[t-1]["ji"].get(j,{}).values())
+                        pos_Aik = list(Aik[t-1]["ki"].get(j-1,{}).values()) + list(Aik[t-1]["ki"].get(j,{}).values())
+                        pos_Aki = list(Aki[t-1]["ik"].get(j,{}).values())
 
-                        above_Aij = []
-                        above_Aik = []
-                        above_Aki = list(Aki[t]["ki"].get(j,{}).values())
-                        above_Ai = []
-                        for i in i_above:
-                            above_Aij += list(Aij[t]["ij"].get(i,{}).values())
-                            above_Aik += list(Aik[t]["ik"].get(i,{}).values())
-                            above_Aki += list(Aki[t]["ki"].get(i,{}).values())
-                            above_Ai.append((i,t))
+                        neg_Aij = list(Aij[t]["ij"].get(j,{}).values())
+                        neg_Aik = list(Aik[t]["ik"].get(j,{}).values())
+                        neg_Aki = list(Aki[t]["ki"].get(j-1,{}).values()) + list(Aki[t]["ki"].get(j,{}).values())
+                        neg_Ai = Ai[(j,t)]
 
-                        prob += N_detect_f*neg_Ai + lpSum(above_Aij) + \
-                        lpSum(above_Aik) + lpSum(above_Aki) <= N_detect_f,\
-                        "Contraint 8 (" + str(t) + "," + str(j) + ")"
+                        if sub_t==0:
+                            pos_Aij = [item.varValue for item in pos_Aij]
+                            pos_Aik = [item.varValue for item in pos_Aik]
+                            pos_Aki = [item.varValue for item in pos_Aki]
 
-            else:
-                N_detect = len(sizes[t])
+                            prob += sum(pos_Aij) + sum(pos_Aik) + sum(pos_Aki) - \
+                                lpSum(neg_Aij) - lpSum(neg_Aik) - lpSum(neg_Aki) - neg_Ai == 0,\
+                                "Constraint 9 (" + str(t) + "," + str(j) + ")"
 
-                for j in range(N_detect):
-                    pos_Aij = list(Aij[t-1]["ji"].get(j,{}).values())
-                    pos_Aki = list(Aki[t-1]["ik"].get(j,{}).values())
-                    pos_Aik = list(Aik[t-1]["ki"].get(j-1,{}).values()) + list(Aik[t-1]["ki"].get(j,{}).values())
+                            prob += lpSum(neg_Aij) + lpSum(neg_Aik) + lpSum(neg_Aki) + neg_Ai <= 1,\
+                                "Constraint 7 (" + str(t) + "," + str(j) + ")"
 
-                    if j == N_detect_f - 1:
+                        else:
 
-                        prob += lpSum(pos_Aij) + lpSum(pos_Aik) + \
-                        lpSum(pos_Aki) <= 1, "Constraint 6 (" + str(t) + "," + str(j) + ")"
+                            prob += lpSum(pos_Aij) + lpSum(pos_Aik) + lpSum(pos_Aki) - \
+                                lpSum(neg_Aij) - lpSum(neg_Aik) - lpSum(neg_Aki) - neg_Ai == 0,\
+                                "Constraint 9 (" + str(t) + "," + str(j) + ")"
 
-                    else:
+                            prob += lpSum(pos_Aij) + lpSum(pos_Aik) + lpSum(pos_Aki) <= 1,\
+                            "Constraint 6 (" + str(t) + "," + str(j) + ")"
 
-                        prob += lpSum(pos_Aij) + lpSum(pos_Aik) + \
-                        lpSum(pos_Aki) <= 1, "Constraint 6 (" + str(t) + "," + str(j) + ")"
+                            prob += lpSum(neg_Aij) + lpSum(neg_Aik) + lpSum(neg_Aki) + neg_Ai <= 1,\
+                                "Constraint 7 (" + str(t) + "," + str(j) + ")"
 
-        all_Aki_vars = []
-        for _,tpt in Aki.items():
-            for _,subdict in tpt["ki"].items():
-                all_Aki_vars += list(subdict.values())
+                        if j != N_detect_f - 1:
 
-        prob += lpSum(all_Aki_vars) <= merge_per_iter, "Merge Limit"
+                            i_above = list(range(j+1,N_detect_f))
 
-        return prob,Aij,Aik,Aki,Ai
+                            above_Aij = []
+                            above_Aik = []
+                            above_Aki = list(Aki[t]["ki"].get(j,{}).values())
+                            above_Ai = []
+                            for i in i_above:
+                                above_Aij += list(Aij[t]["ij"].get(i,{}).values())
+                                above_Aik += list(Aik[t]["ik"].get(i,{}).values())
+                                above_Aki += list(Aki[t]["ki"].get(i,{}).values())
+                                above_Ai.append((i,t))
+
+                            prob += N_detect_f*neg_Ai + lpSum(above_Aij) + \
+                            lpSum(above_Aik) + lpSum(above_Aki) <= N_detect_f,\
+                            "Contraint 8 (" + str(t) + "," + str(j) + ")"
+
+                else:
+                    N_detect = len(sizes[t])
+
+                    for j in range(N_detect):
+                        if sub_t != 0:
+                            pos_Aij = list(Aij[t-1]["ji"].get(j,{}).values())
+                            pos_Aki = list(Aki[t-1]["ik"].get(j,{}).values())
+                            pos_Aik = list(Aik[t-1]["ki"].get(j-1,{}).values()) + list(Aik[t-1]["ki"].get(j,{}).values())
+
+                            prob += lpSum(pos_Aij) + lpSum(pos_Aik) + \
+                            lpSum(pos_Aki) <= 1, "Constraint 6 (" + str(t) + "," + str(j) + ")"
+
+#             all_Aki_vars = []
+#             for t in range(init_t,init_t+working_t_chunk):
+#                 tpt = Aki[t]
+#                 for _,subdict in tpt["ki"].items():
+#                     all_Aki_vars += list(subdict.values())
+#             prob += lpSum(all_Aki_vars) <= merge_per_iter, "Merge Limit"
+            prob.solve(PULP_CBC_CMD(mip_start=True))
+            prob_list.append(prob)
+
+        return prob_list,Aij,Aik,Aki,Ai
 
     def get_sln_params(self,Aij,Aik,Aki,Ai,posij,posik,poski,sizes,edge_limit):
         Aij_arr_list = [np.zeros((len(sizes[t]),len(sizes[t+1])),dtype=bool) for t in range(len(sizes)-1)]
@@ -757,108 +785,109 @@ class tracking_solver:
 
         return Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list
 
-    def split_all_merged(self,labeled_data,Aki_arr_list):
-        new_labeled_data = copy.copy(labeled_data)
-        for t in range(len(Aki_arr_list)):
-            if np.any(Aki_arr_list[t]):
-                merged_label_list = (np.where(np.any(Aki_arr_list[t],axis=1))[0]+1).tolist()
-                output_arr = self.split_cells(labeled_data[t+1],merged_label_list)
-                new_labeled_data[t+1] = output_arr
-        return new_labeled_data
+#     def split_all_merged(self,labeled_data,Aki_arr_list):
+#         new_labeled_data = copy.copy(labeled_data)
+#         for t in range(len(Aki_arr_list)):
+#             if np.any(Aki_arr_list[t]):
+#                 merged_label_list = (np.where(np.any(Aki_arr_list[t],axis=1))[0]+1).tolist()
+#                 print(merged_label_list)
+#                 output_arr = self.split_cells(labeled_data[t+1],merged_label_list)
+#                 new_labeled_data[t+1] = output_arr
+#         return new_labeled_data
 
-    def split_cells(self,labeled_arr,merged_label_list):
-        output_arr = copy.copy(labeled_arr)
-        current_idx = 1
-        for idx in range(1,np.max(labeled_arr)+1):
+#     def split_cells(self,labeled_arr,merged_label_list):
+#         output_arr = copy.copy(labeled_arr)
+#         current_idx = 1
+#         for idx in range(1,np.max(labeled_arr)+1):
 
-            if idx in merged_label_list:
+#             if idx in merged_label_list:
 
-                bool_arr = (output_arr==idx)
-                cell_indices = np.where(bool_arr)
-                X = np.array(list(zip(cell_indices[0],cell_indices[1])))
-                kmeans = skl.cluster.KMeans(n_clusters=2, random_state=0)
+#                 bool_arr = (output_arr==idx)
+#                 cell_indices = np.where(bool_arr)
+#                 X = np.array(list(zip(cell_indices[0],cell_indices[1])))
+#                 kmeans = skl.cluster.KMeans(n_clusters=2, random_state=0)
 
-                C = kmeans.fit_predict(X)
-                centroids = kmeans.cluster_centers_.astype(int)
-                C0 = (C==0)
-                zero_indices = (cell_indices[0][C0],cell_indices[1][C0])
-                one_indices = (cell_indices[0][~C0],cell_indices[1][~C0])
+#                 C = kmeans.fit_predict(X)
+#                 centroids = kmeans.cluster_centers_.astype(int)
+#                 C0 = (C==0)
+#                 zero_indices = (cell_indices[0][C0],cell_indices[1][C0])
+#                 one_indices = (cell_indices[0][~C0],cell_indices[1][~C0])
 
-                zero_first = centroids[0,0] < centroids[1,0]
-                if zero_first:
-                    output_arr[zero_indices] = current_idx
-                    output_arr[one_indices] = current_idx+1
-                else:
-                    output_arr[zero_indices] = current_idx+1
-                    output_arr[one_indices] = current_idx
+#                 zero_first = centroids[0,0] < centroids[1,0]
+#                 if zero_first:
+#                     output_arr[zero_indices] = current_idx
+#                     output_arr[one_indices] = current_idx+1
+#                 else:
+#                     output_arr[zero_indices] = current_idx+1
+#                     output_arr[one_indices] = current_idx
 
-                current_idx += 2
+#                 current_idx += 2
 
-            else:
-                output_arr[labeled_arr==idx] = current_idx
+#             else:
+#                 output_arr[labeled_arr==idx] = current_idx
 
-                current_idx += 1
+#                 current_idx += 1
 
-        return output_arr
+#         return output_arr
 
-    def plot_tracking_sln(self,kymo_arr,centroids,Aij_arr_list,Aik_arr_list,Aki_arr_list,t0=0,tf=-1,x_size=18,y_size=6):
+#     def plot_tracking_sln(self,kymo_arr,centroids,Aij_arr_list,Aik_arr_list,Aki_arr_list,t0=0,tf=-1,x_size=18,y_size=6):
 
-        img_shape = kymo_arr.shape[1:][::-1]
-        x_dim = img_shape[0]+(self.viewpadding*2)
-        if tf == -1:
-            tf = len(centroids)-1
+#         img_shape = kymo_arr.shape[1:][::-1]
+#         x_dim = img_shape[0]+(self.viewpadding*2)
+#         if tf == -1:
+#             tf = len(centroids)-1
 
-        fig, ax = plt.subplots(1)
-        fig.set_size_inches(x_size, y_size)
+#         fig, ax = plt.subplots(1)
+#         fig.set_size_inches(x_size, y_size)
 
-        ax.set_xlim(x_dim*t0,x_dim*tf)
-        ax.set_ylim(0,img_shape[1])
-        for t in range(t0,tf):
-            padded_img = np.pad(kymo_arr[t][::-1],((0,0),(self.viewpadding,self.viewpadding)),'constant')
-            ax.imshow(np.ma.array(padded_img, mask=(padded_img == 0)), extent=[t*x_dim, (t+1)*x_dim, 0, img_shape[1]], cmap="Set1", vmin=0)
+#         ax.set_xlim(x_dim*t0,x_dim*tf)
+#         ax.set_ylim(0,img_shape[1])
+#         for t in range(t0,tf):
+#             padded_img = np.pad(kymo_arr[t][::-1],((0,0),(self.viewpadding,self.viewpadding)),'constant')
+#             ax.imshow(np.ma.array(padded_img, mask=(padded_img == 0)), extent=[t*x_dim, (t+1)*x_dim, 0, img_shape[1]], cmap="Set1", vmin=0)
 
-            adjusted_centroids = centroids[t] + t*np.array([x_dim,0]) + np.array([self.viewpadding,0])
-            ax.scatter(adjusted_centroids[:,0],adjusted_centroids[:,1],c="r")
+#             adjusted_centroids = centroids[t] + t*np.array([x_dim,0]) + np.array([self.viewpadding,0])
+#             ax.scatter(adjusted_centroids[:,0],adjusted_centroids[:,1],c="r")
 
-            Aij_cords = np.where(Aij_arr_list[t])
-            for idx in range(len(Aij_cords[0])):
-                i = Aij_cords[0][idx]
-                j = Aij_cords[1][idx]
-                centroid_i = centroids[t][i]
-                centroid_j = centroids[t+1][j]
+#             Aij_cords = np.where(Aij_arr_list[t])
+#             for idx in range(len(Aij_cords[0])):
+#                 i = Aij_cords[0][idx]
+#                 j = Aij_cords[1][idx]
+#                 centroid_i = centroids[t][i]
+#                 centroid_j = centroids[t+1][j]
 
-                ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_j[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_j[1]],c="c",linewidth=3)
+#                 ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_j[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_j[1]],c="c",linewidth=3)
 
-            Aik_cords = np.where(Aik_arr_list[t])
-            for idx in range(len(Aik_cords[0])):
-                i = Aik_cords[0][idx]
-                k = Aik_cords[1][idx]
-                centroid_i = centroids[t][i]
+#             Aik_cords = np.where(Aik_arr_list[t])
+#             for idx in range(len(Aik_cords[0])):
+#                 i = Aik_cords[0][idx]
+#                 k = Aik_cords[1][idx]
+#                 centroid_i = centroids[t][i]
 
-                centroid_k1 = centroids[t+1][k]
-                centroid_k2 = centroids[t+1][k+1]
+#                 centroid_k1 = centroids[t+1][k]
+#                 centroid_k2 = centroids[t+1][k+1]
 
-                ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_k1[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_k1[1]],c="c",linewidth=3)
-                ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_k2[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_k2[1]],c="c",linewidth=3)
+#                 ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_k1[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_k1[1]],c="c",linewidth=3)
+#                 ax.plot([centroid_i[0] + t*x_dim + self.viewpadding, centroid_k2[0] + (t+1)*x_dim + self.viewpadding],[centroid_i[1],centroid_k2[1]],c="c",linewidth=3)
 
-            Aki_cords = np.where(Aki_arr_list[t])
-            for idx in range(len(Aki_cords[0])):
-                k = Aki_cords[0][idx]
-                i = Aki_cords[1][idx]
-                centroid_k1 = centroids[t][k]
-                centroid_k2 = centroids[t][k+1]
+#             Aki_cords = np.where(Aki_arr_list[t])
+#             for idx in range(len(Aki_cords[0])):
+#                 k = Aki_cords[0][idx]
+#                 i = Aki_cords[1][idx]
+#                 centroid_k1 = centroids[t][k]
+#                 centroid_k2 = centroids[t][k+1]
 
-                centroid_i = centroids[t+1][i]
+#                 centroid_i = centroids[t+1][i]
 
-                ax.plot([centroid_k1[0] + t*x_dim + self.viewpadding, centroid_i[0] + (t+1)*x_dim + self.viewpadding],[centroid_k1[1],centroid_i[1]],c="c",linewidth=3)
-                ax.plot([centroid_k2[0] + t*x_dim + self.viewpadding, centroid_i[0] + (t+1)*x_dim + self.viewpadding],[centroid_k2[1],centroid_i[1]],c="c",linewidth=3)
+#                 ax.plot([centroid_k1[0] + t*x_dim + self.viewpadding, centroid_i[0] + (t+1)*x_dim + self.viewpadding],[centroid_k1[1],centroid_i[1]],c="c",linewidth=3)
+#                 ax.plot([centroid_k2[0] + t*x_dim + self.viewpadding, centroid_i[0] + (t+1)*x_dim + self.viewpadding],[centroid_k2[1],centroid_i[1]],c="c",linewidth=3)
 
-        padded_img = np.pad(kymo_arr[tf][::-1],((0,0),(self.viewpadding,self.viewpadding)),'constant')
-        ax.imshow(padded_img, extent=[tf*x_dim, (tf+1)*x_dim, 0, img_shape[1]])
-        adjusted_centroids = centroids[tf] + tf*np.array([x_dim,0])
-        ax.scatter(adjusted_centroids[:,0],adjusted_centroids[:,1],c="r")
+#         padded_img = np.pad(kymo_arr[tf][::-1],((0,0),(self.viewpadding,self.viewpadding)),'constant')
+#         ax.imshow(padded_img, extent=[tf*x_dim, (tf+1)*x_dim, 0, img_shape[1]])
+#         adjusted_centroids = centroids[tf] + tf*np.array([x_dim,0])
+#         ax.scatter(adjusted_centroids[:,0],adjusted_centroids[:,1],c="r")
 
-        plt.show()
+#         plt.show()
 
     def plot_cleaned_sln(self,kymo_arr,centroids,Aij_arr_list,Aik_arr_list,Aki_arr_list,t0=0,tf=-1,x_size=18,y_size=6):
 
@@ -914,14 +943,13 @@ class tracking_solver:
 
         plt.show()
 
-    def run_iteration(self,labeled_data,merge_per_iter,edge_limit):
+    def run_iteration(self,labeled_data,edge_limit,t_chunk):
         centroids,sizes,bboxes,empty_trenches = get_segment_props(labeled_data,interpolate_empty_trenches=True)
         Cij,Cik,Cki,_,posij,posik,poski = self.ScoreFn.compute_score_arrays(centroids,sizes,bboxes)
-        prob,Aij,Aik,Aki,Ai = self.define_tracking_problem(Cij,Cik,Cki,posij,posik,poski,sizes,merge_per_iter,edge_limit)
-        prob.solve()
+        prob_list,Aij,Aik,Aki,Ai = self.solve_tracking_problem(Cij,Cik,Cki,posij,posik,poski,sizes,edge_limit,t_chunk)
         Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list = self.get_sln_params(Aij,Aik,Aki,Ai,posij,posik,poski,sizes,edge_limit)
 
-        return centroids,sizes,prob,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches
+        return centroids,sizes,prob_list,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches
 
     def compute_lineage(self,data,orientation):
         labeled_data = get_labeled_data(data,orientation)
@@ -932,61 +960,63 @@ class tracking_solver:
         iter_labeled_data = []
         iter_labeled_data.append(labeled_data)
 
-        iter_outputs.append(self.run_iteration(working_labeled_data,self.merge_per_iter,self.edge_limit))
+        iter_outputs.append(self.run_iteration(working_labeled_data,self.edge_limit,self.t_chunk))
 
-        centroids,sizes,prob,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches = iter_outputs[-1]
+        centroids,sizes,prob_list,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches = iter_outputs[-1]
 
         merged_cells = np.any([np.any(Aki_arr) for Aki_arr in Aki_arr_list])
-        objective_val = value(prob.objective)
-        active_edges = sum([v.varValue for v in prob.variables()])
+        objective_val = sum([value(prob.objective) for prob in prob_list])
+        active_edges = sum([sum([v.varValue for v in prob.variables()]) for prob in prob_list])
         edge_normalized_objective = objective_val/active_edges
 
         print("Objective = ", objective_val)
         print("Number of Active Edges = ", active_edges)
         print("Edge Normalized Objective = ", edge_normalized_objective)
 
-        if self.merge_per_iter == 0:
-
-            return working_labeled_data,centroids,sizes,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,edge_normalized_objective,empty_trenches
-
-        iter_scores.append(edge_normalized_objective)
-        iter_since_incr = 0
-
-        while merged_cells:
-            working_labeled_data = self.split_all_merged(working_labeled_data,Aki_arr_list)
-            iter_labeled_data.append(working_labeled_data)
-            iter_outputs.append(self.run_iteration(working_labeled_data,self.merge_per_iter,self.edge_limit))
-            _,_,prob,_,_,Aki_arr_list,_,_ = iter_outputs[-1]
-
-            merged_cells = np.any([np.any(Aki_arr) for Aki_arr in Aki_arr_list])
-
-            objective_val = value(prob.objective)
-            active_edges = sum([v.varValue for v in prob.variables()])
-            edge_normalized_objective = objective_val/active_edges
-
-            print("Objective = ", objective_val)
-            print("Number of Active Edges = ", active_edges)
-            print("Edge Normalized Objective = ", edge_normalized_objective)
-
-            iter_scores.append(edge_normalized_objective)
-            min_iter_score = min(iter_scores)
-
-            if iter_scores[-1]<=min_iter_score:
-                iter_since_incr = 0
-            else:
-                iter_since_incr += 1
-
-            if iter_since_incr>self.conv_tolerence:
-                break
-
-        best_iter_idx = np.argmin(iter_scores)
-        working_labeled_data = iter_labeled_data[best_iter_idx]
-        centroids,sizes,prob,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches = self.run_iteration(working_labeled_data,0,self.edge_limit)
-        objective_val = value(prob.objective)
-        active_edges = sum([v.varValue for v in prob.variables()])
-        edge_normalized_objective = objective_val/active_edges
-
         return working_labeled_data,centroids,sizes,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,edge_normalized_objective,empty_trenches
+
+#         if self.merge_per_iter == 0:
+
+#             return working_labeled_data,centroids,sizes,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,edge_normalized_objective,empty_trenches
+
+#         iter_scores.append(edge_normalized_objective)
+#         iter_since_incr = 0
+
+#         while merged_cells:
+#             working_labeled_data = self.split_all_merged(working_labeled_data,Aki_arr_list)
+#             iter_labeled_data.append(working_labeled_data)
+#             iter_outputs.append(self.run_iteration(working_labeled_data,self.merge_per_iter,self.edge_limit))
+#             _,_,prob_list,_,_,Aki_arr_list,_,_ = iter_outputs[-1]
+
+#             merged_cells = np.any([np.any(Aki_arr) for Aki_arr in Aki_arr_list])
+
+#             objective_val = sum([value(prob.objective) for prob in prob_list])
+#             active_edges = sum([sum([v.varValue for v in prob.variables()]) for prob in prob_list])
+#             edge_normalized_objective = objective_val/active_edges
+
+#             print("Objective = ", objective_val)
+#             print("Number of Active Edges = ", active_edges)
+#             print("Edge Normalized Objective = ", edge_normalized_objective)
+
+#             iter_scores.append(edge_normalized_objective)
+#             min_iter_score = min(iter_scores)
+
+#             if iter_scores[-1]<=min_iter_score:
+#                 iter_since_incr = 0
+#             else:
+#                 iter_since_incr += 1
+
+#             if iter_since_incr>self.conv_tolerence:
+#                 break
+
+#         best_iter_idx = np.argmin(iter_scores)
+#         working_labeled_data = iter_labeled_data[best_iter_idx]
+#         centroids,sizes,prob_list,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,empty_trenches = self.run_iteration(working_labeled_data,0,self.edge_limit)
+#         objective_val = sum([value(prob.objective) for prob in prob_list])
+#         active_edges = sum([sum([v.varValue for v in prob.variables()]) for prob in prob_list])
+#         edge_normalized_objective = objective_val/active_edges
+
+#         return working_labeled_data,centroids,sizes,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,edge_normalized_objective,empty_trenches
 
     def get_nuclear_lineage(self,sizes,empty_trenches,Aik_arr_list):
 
@@ -1274,15 +1304,16 @@ class tracking_solver:
         except:
             raise
 
-    def test_tracking(self,data,orientation,intensity_channel_list=None,t_range=(0,-1),merge_per_iter=0,edge_limit=3,conv_tolerence=2,viewpadding=0,x_size=18,y_size=6):
+    def test_tracking(self,data,orientation,intensity_channel_list=None,t_range=(0,-1),edge_limit=3,t_chunk=50,viewpadding=0,x_size=18,y_size=6):
         if len(intensity_channel_list) == 0:
             self.intensity_channel_list = None
         else:
             self.intensity_channel_list = list(intensity_channel_list)
         self.viewpadding = viewpadding
-        self.merge_per_iter = merge_per_iter
+#         self.merge_per_iter = merge_per_iter
         self.edge_limit = edge_limit
-        self.conv_tolerence = conv_tolerence
+        self.t_chunk = t_chunk
+#         self.conv_tolerence = conv_tolerence
 
         labeled_data,centroids,sizes,Aij_arr_list,Aik_arr_list,Aki_arr_list,Ai_arr_list,lineage_score,empty_trenches = self.compute_lineage(data,orientation)
 
@@ -1296,9 +1327,8 @@ class tracking_solver:
                  intensity_channel_list = SelectMultiple(options=available_channels),\
                  t_range=IntRangeSlider(value=[0, data.shape[0]-1],min=0,max=data.shape[0]-1,\
                  step=1,disabled=False,continuous_update=False),\
-                 merge_per_iter=IntSlider(value=self.merge_per_iter, min=0, max=10, step=1),\
                  edge_limit=IntSlider(value=self.edge_limit, min=1, max=6, step=1),\
-                 conv_tolerence=IntSlider(value=self.conv_tolerence, min=1, max=4, step=1),\
+                 t_chunk=IntSlider(value=self.t_chunk, min=10, max=200, step=10),\
                  viewpadding=IntSlider(value=0, min=0, max=20, step=1),\
                  x_size=IntSlider(value=18, min=0, max=30, step=1),\
                  y_size=IntSlider(value=8, min=0, max=20, step=1));
@@ -1309,13 +1339,16 @@ class tracking_solver:
         param_dict = {}
 
         param_dict["Channels:"] = self.intensity_channel_list
-        param_dict["Merges Detected Per Iteration:"] = self.merge_per_iter
-        param_dict["# Unimproved Iterations Before Stopping:"] = self.conv_tolerence
+#         param_dict["Merges Detected Per Iteration:"] = self.merge_per_iter
+#         param_dict["# Unimproved Iterations Before Stopping:"] = self.conv_tolerence
         param_dict["Closest N Objects to Consider:"] = self.edge_limit
+        param_dict["Time Chunk:"] = self.t_chunk
         param_dict["Mean Size Increase:"] = self.ScoreFn.u_size
         param_dict["Standard Deviation of Size Increase:"] = self.ScoreFn.sig_size
         param_dict["Mean Position Increase:"] = self.ScoreFn.u_pos
         param_dict["Standard Deviation of Position Increase:"] = self.ScoreFn.sig_pos
+        param_dict["Cell Position Weight:"] = self.ScoreFn.w_pos
+        param_dict["Cell Size Weight:"] = self.ScoreFn.w_size
         param_dict["Cell Merging Weight:"] = self.ScoreFn.w_merge
 
         for key,value in param_dict.items():
