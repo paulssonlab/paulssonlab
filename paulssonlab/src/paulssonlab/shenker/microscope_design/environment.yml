@@ -15,5 +15,7 @@ dependencies:
   - nodejs
   - numpy
   - pandas
+  - pint
   - pip
   - pre-commit
+  - scipy
