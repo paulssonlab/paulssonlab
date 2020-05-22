@@ -3,6 +3,7 @@ import pandas as pd
 import xarray as xr
 import scipy
 import pint
+import re
 
 # FROM: https://pint.readthedocs.io/en/latest/tutorial.html#using-pint-in-your-projects
 ureg = pint.UnitRegistry()
@@ -20,32 +21,43 @@ def offset_xarray(a, b, offsets):
     return a.interp_like(b.assign_coords(**offsets)).assign_coords(b.coords)
 
 
+def generalized_normal_pdf(x, loc=0, scale=1, p=2, sigma=None):
+    if loc != 0:
+        x = x - loc
+    if sigma is not None:
+        scale = sigma / np.sqrt(scipy.special.gamma(3 / p) / scipy.special.gamma(1 / p))
+    return scipy.stats.gennorm.pdf(x / scale, p) / scale
+
+
 def draw_excitation_line(
     width,
+    height,
     edge_defocus,
-    base_defocus,
-    falloff,
+    falloff=0,
+    p_vertical=2,
+    p_horizontal=2,
     width_px=6500,
     height_px=300,
-    height_sigma=3,
+    height_padding_factor=3,
 ):
     if not ((0 <= falloff) and (falloff <= 1)):
         raise ValueError("falloff must be between 0 and 1")
     # expect defocus parameters in um
-    width = float(width / ureg.um)
-    edge_defocus = float(edge_defocus / ureg.um)
-    base_defocus = float(base_defocus / ureg.um)
+    width = np.float_(width / ureg.um)
+    height = np.float_(height / ureg.um)
+    edge_defocus = np.float_(edge_defocus / ureg.um)
     x_dependence = np.abs(np.linspace(-1, 1, width_px)) ** 2
-    sigma = edge_defocus * x_dependence + base_defocus
+    scale = edge_defocus * x_dependence + height / 2
     x_max = width / 2
     xs = np.linspace(-x_max, x_max, width_px)
-    y_max = height_sigma * sigma.max()
+    y_max = height_padding_factor * scale.max()
     ys = np.linspace(-y_max, y_max, height_px)
-    #     img = scipy.stats.norm.pdf(
-    #         np.arange(height_px)[:, np.newaxis], height_px / 2, sigma,
-    #     ) * (1 - falloff * x_dependence)
-    img = scipy.stats.norm.pdf(ys[:, np.newaxis], 0, sigma) * (
-        1 - falloff * x_dependence
+    falloff_profile = (1 - falloff) + falloff * generalized_normal_pdf(
+        np.linspace(-1, 1, width_px), p=p_horizontal
+    )
+    img = (
+        generalized_normal_pdf(ys[:, np.newaxis], scale=scale, p=p_vertical)
+        * falloff_profile
     )
     return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
 

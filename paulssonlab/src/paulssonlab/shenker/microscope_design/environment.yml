@@ -19,5 +19,6 @@ dependencies:
   - pint
   - pip
   - pre-commit
+  - scikit-image
   - scipy
   - xarray
