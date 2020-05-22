@@ -12,6 +12,7 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
+  - nd2reader
   - nodejs
   - numpy
   - pandas
@@ -19,3 +20,4 @@ dependencies:
   - pip
   - pre-commit
   - scipy
+  - xarray
