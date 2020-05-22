@@ -1,5 +1,53 @@
 import numpy as np
 import pandas as pd
+import xarray as xr
+import scipy
+import pint
+
+# FROM: https://pint.readthedocs.io/en/latest/tutorial.html#using-pint-in-your-projects
+ureg = pint.UnitRegistry()
+Q_ = ureg.Quantity
+
+
+def image_to_xarray(img, scale):
+    xs = scale * np.arange(img.shape[1])
+    ys = scale * np.arange(img.shape[0])[::-1]
+    return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
+
+
+def offset_xarray(a, b, offsets):
+    offsets = {name: getattr(b, name) + val for name, val in offsets.items()}
+    return a.interp_like(b.assign_coords(**offsets)).assign_coords(b.coords)
+
+
+def draw_excitation_line(
+    width,
+    edge_defocus,
+    base_defocus,
+    falloff,
+    width_px=6500,
+    height_px=300,
+    height_sigma=3,
+):
+    if not ((0 <= falloff) and (falloff <= 1)):
+        raise ValueError("falloff must be between 0 and 1")
+    # expect defocus parameters in um
+    width = float(width / ureg.um)
+    edge_defocus = float(edge_defocus / ureg.um)
+    base_defocus = float(base_defocus / ureg.um)
+    x_dependence = np.abs(np.linspace(-1, 1, width_px)) ** 2
+    sigma = edge_defocus * x_dependence + base_defocus
+    x_max = width / 2
+    xs = np.linspace(-x_max, x_max, width_px)
+    y_max = height_sigma * sigma.max()
+    ys = np.linspace(-y_max, y_max, height_px)
+    #     img = scipy.stats.norm.pdf(
+    #         np.arange(height_px)[:, np.newaxis], height_px / 2, sigma,
+    #     ) * (1 - falloff * x_dependence)
+    img = scipy.stats.norm.pdf(ys[:, np.newaxis], 0, sigma) * (
+        1 - falloff * x_dependence
+    )
+    return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
 
 
 def bin_spectrum(df, bins):
