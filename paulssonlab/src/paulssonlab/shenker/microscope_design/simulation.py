@@ -10,6 +10,21 @@ ureg = pint.UnitRegistry()
 Q_ = ureg.Quantity
 
 
+def import_fpbase_spectrum(url):
+    df = pd.read_csv(url, index_col="wavelength")
+    name = re.sub(r"\s*ex|em|2p\s*", "", df.columns[0])
+    df.columns = [c.replace(f"{name} ", "") for c in df.columns]
+    return df, name
+
+
+def import_fpbase_spectra(urls):
+    spectra = {}
+    for url in urls:
+        spectrum, name = import_fpbase_spectrum(url)
+        spectra[name] = spectrum
+    return spectra
+
+
 def image_to_xarray(img, scale):
     xs = scale * np.arange(img.shape[1])
     ys = scale * np.arange(img.shape[0])[::-1]
