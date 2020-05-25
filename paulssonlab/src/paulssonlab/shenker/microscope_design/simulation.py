@@ -56,31 +56,38 @@ def draw_excitation_line(
     height_padding_factor=3,
 ):
     # expect defocus parameters in um
-    width = np.atleast_1d(np.float_(width / ureg.um)).reshape((-1, 1, 1))
-    height = np.atleast_1d(np.float_(height / ureg.um)).reshape((-1, 1, 1))
-    edge_defocus = np.atleast_1d(np.float_(edge_defocus / ureg.um)).reshape((-1, 1, 1))
+    width = np.atleast_1d((width / ureg.um).to("dimensionless").magnitude).reshape(
+        (-1, 1, 1)
+    )
+    height = np.atleast_1d((height / ureg.um).to("dimensionless").magnitude).reshape(
+        (-1, 1, 1)
+    )
+    edge_defocus = np.atleast_1d(
+        (edge_defocus / ureg.um).to("dimensionless").magnitude
+    ).reshape((-1, 1, 1))
     falloff = np.atleast_1d(falloff).reshape((-1, 1, 1))
+    p_vertical = np.atleast_1d(p_vertical).reshape((-1, 1, 1))
+    p_horizontal = np.atleast_1d(p_horizontal).reshape((-1, 1, 1))
     if not (np.all(0 <= falloff) and np.all(falloff <= 1)):
         raise ValueError("falloff must be between 0 and 1")
-    xs_normalized = np.linspace(-1, 1, width_px)[np.newaxis, np.newaxis, :]
-    x_dependence = np.abs(xs_normalized) ** 2
-    scale = edge_defocus * x_dependence + height / 2
-    x_max = width / 2
-    xs = x_max * xs_normalized
+    width_max = width.max()
+    xs_normalized = np.linspace(-1, 1, width_px)
+    xs = width_max / 2 * xs_normalized
+    xs_scaled = width_max / width * xs_normalized[np.newaxis, np.newaxis, :]
+    scale = edge_defocus * np.abs(xs_normalized) ** 2 + height / 2
     y_max = height_padding_factor * scale.max()
-    ys = np.linspace(-y_max, y_max, height_px)[np.newaxis, :, np.newaxis]
+    ys = np.linspace(-y_max, y_max, height_px)
     falloff_profile = (1 - falloff) + falloff * generalized_normal_pdf(
-        xs_normalized, p=p_horizontal
+        xs_scaled, p=p_horizontal
     )
-    img = generalized_normal_pdf(ys, scale=scale, p=p_vertical) * falloff_profile
+    img = (
+        generalized_normal_pdf(ys[np.newaxis, :, np.newaxis], scale=scale, p=p_vertical)
+        * falloff_profile
+    )
     if img.shape[0] == 1:
-        return xr.DataArray(
-            img[0], coords=dict(x=xs.squeeze(), y=ys.squeeze()), dims=["y", "x"]
-        )
+        return xr.DataArray(img[0], coords=dict(x=xs, y=ys), dims=["y", "x"])
     else:
-        return xr.DataArray(
-            img, coords=dict(x=xs.squeeze(), y=ys.squeeze()), dims=["ex", "y", "x"]
-        )
+        return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["ex", "y", "x"])
 
 
 def bin_spectrum(df, bins):
