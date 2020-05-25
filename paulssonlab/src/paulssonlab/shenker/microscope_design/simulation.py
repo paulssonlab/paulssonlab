@@ -55,26 +55,32 @@ def draw_excitation_line(
     height_px=300,
     height_padding_factor=3,
 ):
-    if not ((0 <= falloff) and (falloff <= 1)):
-        raise ValueError("falloff must be between 0 and 1")
     # expect defocus parameters in um
-    width = np.float_(width / ureg.um)
-    height = np.float_(height / ureg.um)
-    edge_defocus = np.float_(edge_defocus / ureg.um)
-    x_dependence = np.abs(np.linspace(-1, 1, width_px)) ** 2
+    width = np.atleast_1d(np.float_(width / ureg.um)).reshape((-1, 1, 1))
+    height = np.atleast_1d(np.float_(height / ureg.um)).reshape((-1, 1, 1))
+    edge_defocus = np.atleast_1d(np.float_(edge_defocus / ureg.um)).reshape((-1, 1, 1))
+    falloff = np.atleast_1d(falloff).reshape((-1, 1, 1))
+    if not (np.all(0 <= falloff) and np.all(falloff <= 1)):
+        raise ValueError("falloff must be between 0 and 1")
+    xs_normalized = np.linspace(-1, 1, width_px)[np.newaxis, np.newaxis, :]
+    x_dependence = np.abs(xs_normalized) ** 2
     scale = edge_defocus * x_dependence + height / 2
     x_max = width / 2
-    xs = np.linspace(-x_max, x_max, width_px)
+    xs = x_max * xs_normalized
     y_max = height_padding_factor * scale.max()
-    ys = np.linspace(-y_max, y_max, height_px)
+    ys = np.linspace(-y_max, y_max, height_px)[np.newaxis, :, np.newaxis]
     falloff_profile = (1 - falloff) + falloff * generalized_normal_pdf(
-        np.linspace(-1, 1, width_px), p=p_horizontal
+        xs_normalized, p=p_horizontal
     )
-    img = (
-        generalized_normal_pdf(ys[:, np.newaxis], scale=scale, p=p_vertical)
-        * falloff_profile
-    )
-    return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
+    img = generalized_normal_pdf(ys, scale=scale, p=p_vertical) * falloff_profile
+    if img.shape[0] == 1:
+        return xr.DataArray(
+            img[0], coords=dict(x=xs.squeeze(), y=ys.squeeze()), dims=["y", "x"]
+        )
+    else:
+        return xr.DataArray(
+            img, coords=dict(x=xs.squeeze(), y=ys.squeeze()), dims=["ex", "y", "x"]
+        )
 
 
 def bin_spectrum(df, bins):
