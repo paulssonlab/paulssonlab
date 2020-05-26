@@ -4,9 +4,10 @@ import numpy as np
 import skimage as sk
 import h5py
 import pickle
+import copy
 
 from ipywidgets import interact, interactive, fixed, interact_manual, FloatSlider, IntSlider, Dropdown, IntText, SelectMultiple, Select, IntRangeSlider, FloatRangeSlider
-from skimage import filters
+from skimage import filters,transform
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
 from .kymograph import kymograph_multifov
@@ -132,7 +133,8 @@ class kymograph_interactive(kymograph_multifov):
         plt.show()
 
     def preview_y_crop(self,y_percentiles_smoothed_list, imported_array_list,y_min_edge_dist, padding_y,\
-                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,images_per_row):
+                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,use_median_drift,\
+                       images_per_row):
 
         self.final_params['Minimum Trench Length'] = y_min_edge_dist
         self.final_params['Y Padding'] = padding_y
@@ -141,6 +143,7 @@ class kymograph_interactive(kymograph_multifov):
         self.final_params['Expected Number of Rows (Manual Orientation Detection)'] = expected_num_rows
         self.final_params['Alternate Orientation'] = alternate_orientation
         self.final_params['Top Orientation when Row Drifts Out (Manual Orientation Detection)'] = orientation_on_fail
+        self.final_params['Use Median Drift?'] = use_median_drift
 
         y_percentile_threshold = self.final_params['Y Percentile Threshold']
 
@@ -158,6 +161,9 @@ class kymograph_interactive(kymograph_multifov):
 
         y_ends_lists = self.map_to_fovs(self.get_trench_ends,trench_edges_y_lists,start_above_lists,end_above_lists,orientations_list,drop_first_row_list,drop_last_row_list,y_min_edge_dist)
         y_drift_list = self.map_to_fovs(self.get_y_drift,y_ends_lists)
+        if use_median_drift:
+            median_drift = np.round(np.median(np.array(y_drift_list),axis=0)).astype(int)
+            y_drift_list = [copy.copy(median_drift) for item in y_drift_list]
 
         keep_in_frame_kernels_output = self.map_to_fovs(self.keep_in_frame_kernels,y_ends_lists,y_drift_list,imported_array_list,orientations_list,padding_y,trench_len_y)
         valid_y_ends_list = [item[0] for item in keep_in_frame_kernels_output]
@@ -179,9 +185,10 @@ class kymograph_interactive(kymograph_multifov):
                 trench_len_y=IntSlider(value=270, min=0, max=1000, step=5),
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
                 alternate_orientation=Dropdown(options=[True,False],value=True,description='Alternate Orientation?:',disabled=False),\
-               orientation_detection=Dropdown(options=[0, 1, 'phase'],value=0,description='Orientation:',disabled=False),\
-                orientation_on_fail=Dropdown(options=[None,0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
-                 images_per_row=IntSlider(value=3, min=1, max=10, step=1))
+               orientation_detection=Dropdown(options=[0, 1],value=0,description='Orientation:',disabled=False),\
+                orientation_on_fail=Dropdown(options=[0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
+                use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False),\
+                    images_per_row=IntSlider(value=3, min=1, max=10, step=1))
 
         display(y_cropping)
 
@@ -306,13 +313,22 @@ class kymograph_interactive(kymograph_multifov):
         plt.tight_layout()
         plt.show()
 
-    def preview_kymographs(self,cropped_in_y_list,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr):
+    def preview_kymographs(self,cropped_in_y_list,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr,use_median_drift):
         self.final_params['Trench Width'] = trench_width_x
         self.final_params['Trench Presence Threshold'] = trench_present_thr
+        self.final_params['Use Median Drift?'] = use_median_drift
+        if use_median_drift:
+            if use_median_drift:
+                median_drift = np.round(np.median(np.array([row_x_drift for fov_x_drift in x_drift_list for row_x_drift in fov_x_drift]),axis=0)).astype(int)
+                for i in range(len(x_drift_list)):
+                    for j in range(len(x_drift_list[i])):
+                        x_drift_list[i][j] = copy.copy(median_drift)
 
         cropped_in_x_list = self.map_to_fovs(self.get_crop_in_x,cropped_in_y_list,all_midpoints_list,x_drift_list,\
                                              trench_width_x,trench_present_thr)
+
         corrected_midpoints_list = self.map_to_fovs(self.get_corrected_midpoints,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr)
+
 
         self.plot_kymographs(cropped_in_x_list,self.fov_list)
         self.plot_midpoints(corrected_midpoints_list,self.fov_list)
@@ -320,7 +336,8 @@ class kymograph_interactive(kymograph_multifov):
     def preview_kymographs_interactive(self):
             interact_manual(self.preview_kymographs,cropped_in_y_list=fixed(self.cropped_in_y_list),all_midpoints_list=fixed(self.all_midpoints_list),\
             x_drift_list=fixed(self.x_drift_list),trench_width_x=IntSlider(value=30, min=2, max=1000, step=2),\
-            trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05))
+            trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05),\
+            use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False))
 
     def plot_kymographs(self,cropped_in_x_list,fov_list,num_rows=2):
         plt.figure()
@@ -366,11 +383,11 @@ class kymograph_interactive(kymograph_multifov):
 
 class fluo_segmentation_interactive(fluo_segmentation):
 
-    def __init__(self,headpath,scale_timepoints=False,scaling_percentage=0.9,smooth_sigma=0.75,wrap_pad=0,hess_pad=6,min_obj_size=30,cell_mask_method='local',\
+    def __init__(self,headpath,img_scaling=1.,scale_timepoints=False,scaling_percentage=0.9,smooth_sigma=0.75,wrap_pad=0,hess_pad=6,min_obj_size=30,cell_mask_method='local',\
                  global_threshold=1000,cell_otsu_scaling=1.,local_otsu_r=15,edge_threshold_scaling=1.,threshold_step_perc=0.1,\
                  threshold_perc_num_steps=2,convex_threshold=0.8):
 
-        fluo_segmentation.__init__(self,scale_timepoints=scale_timepoints,scaling_percentage=scaling_percentage,smooth_sigma=smooth_sigma,\
+        fluo_segmentation.__init__(self,img_scaling=img_scaling,scale_timepoints=scale_timepoints,scaling_percentage=scaling_percentage,smooth_sigma=smooth_sigma,\
                                    wrap_pad=wrap_pad,hess_pad=hess_pad,min_obj_size=min_obj_size,\
                                    cell_mask_method=cell_mask_method,global_threshold=global_threshold,cell_otsu_scaling=cell_otsu_scaling,\
                                    local_otsu_r=local_otsu_r,edge_threshold_scaling=edge_threshold_scaling,threshold_step_perc=threshold_step_perc,\
@@ -422,8 +439,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.img_per_row = img_per_row
 
         rand_trench_arr = np.random.choice(self.trenchid_arr,size=(n_trenches,),replace=False)
-        selecteddf = self.kymodf.loc[list(zip(rand_trench_arr,np.zeros(len(rand_trench_arr)).astype(int)))]
-        selectedlist = list(zip(selecteddf["File Index"].tolist(),selecteddf["File Trench Index"].tolist()))
+        self.selecteddf = self.kymodf.loc[list(zip(rand_trench_arr,np.zeros(len(rand_trench_arr)).astype(int)))]
+        selectedlist = list(zip(self.selecteddf["File Index"].tolist(),self.selecteddf["File Trench Index"].tolist()))
 
         array_list = []
         for item in selectedlist:
@@ -460,13 +477,23 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.plot_img_list(img_list)
         return img_list
 
-    def plot_processed(self,smooth_sigma,bit_max,scale,scaling_percentile):
+    def plot_processed(self,img_scaling,smooth_sigma,bit_max,scale,scaling_percentile):
+        self.final_params["Image Scaling Factor:"] = img_scaling
         self.final_params['Gaussian Kernel Sigma:'] = smooth_sigma
         self.final_params['8 Bit Maximum:'] = bit_max
         self.final_params['Scale Fluorescence?'] = scale
         self.final_params["Scaling Percentile:"] = scaling_percentile
 
-        percentile = int(np.percentile(self.output_array.flatten(), 99))
+        output_array = []
+        for k in range(self.output_array.shape[0]):
+            output_array_k = []
+            for t in range(self.output_array.shape[1]):
+                image_rescaled = transform.rescale(self.output_array[k,t], img_scaling, anti_aliasing=False, preserve_range=True)
+                output_array_k.append(image_rescaled)
+            output_array.append(output_array_k)
+        output_array = np.array(output_array,dtype="uint16")
+
+        percentile = int(np.percentile(output_array.flatten(), 99))
         print("99th percentile:" + str(percentile))
         fig, ax = plt.subplots(1, 1)
         ax.hist(self.output_array.flatten(),bins=50)
@@ -478,8 +505,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         proc_list = []
         unwrap_proc_list = []
-        for k in range(self.output_array.shape[0]):
-            proc_img = self.preprocess_img(self.output_array[k],sigma=smooth_sigma,bit_max=bit_max,\
+        for k in range(output_array.shape[0]):
+            proc_img = self.preprocess_img(output_array[k],sigma=smooth_sigma,bit_max=bit_max,\
                                            scale_timepoints=scale,scaling_percentage=scaling_percentile)
 
             proc_kymo = kymo_handle()
@@ -510,6 +537,14 @@ class fluo_segmentation_interactive(fluo_segmentation):
         proc_list_int = interactive(
             self.plot_processed,
             {"manual": True},
+            img_scaling=FloatSlider(
+                value=1.,
+                description="Image Upsampling Factor:",
+                min=1.,
+                max=3.,
+                step=0.25,
+                disabled=False,
+            ),
             smooth_sigma=FloatSlider(
                 value=0.75,
                 description="Gaussian Kernel Sigma:",
@@ -719,12 +754,20 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
     def plot_final_mask(self,convex_threshold):
         self.final_params['Convexity Threshold:'] = convex_threshold
+        img_scaling = self.final_params["Image Scaling Factor:"]
 
         final_mask_list = []
         for conv_scores in self.conv_scores_list:
             final_mask = (conv_scores>convex_threshold)
+            final_mask_new = []
+            for t in range(final_mask.shape[0]):
+                image_rescaled = transform.rescale(final_mask[t], 1./img_scaling, anti_aliasing=False,order=0,preserve_range=True)
+                final_mask_new.append(image_rescaled)
+            del final_mask
+            final_mask = np.array(final_mask_new,dtype=bool)
             final_mask = sk.measure.label(final_mask)
             final_mask_list.append(final_mask)
+
         self.plot_img_list(final_mask_list)
         self.final_mask_list = final_mask_list
 

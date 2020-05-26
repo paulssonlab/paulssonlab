@@ -18,7 +18,7 @@ from .utils import multifov,pandas_hdf5_handler,writedir
 from tifffile import imread
 
 class kymograph_cluster:
-    def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,\
+    def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,use_median_drift=False,\
                  invert=False,y_percentile=85,y_min_edge_dist=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
                  top_orientation=0,expected_num_rows=None,alternate_orientation=True,orientation_on_fail=None,x_percentile=85,background_kernel_x=(1,21),\
                  smoothing_kernel_x=(1,9),otsu_scaling=1.,min_threshold=0,trench_present_thr=0.):
@@ -32,6 +32,7 @@ class kymograph_cluster:
             trench_len_y = param_dict["Trench Length"]
             padding_y = param_dict["Y Padding"]
             trench_width_x = param_dict["Trench Width"]
+            use_median_drift = param_dict['Use Median Drift?']
 #             t_range = param_dict["Time Range"]
             invert = param_dict["Invert"]
             y_percentile = param_dict["Y Percentile"]
@@ -67,6 +68,7 @@ class kymograph_cluster:
         ttl_len_y = trench_len_y+padding_y
         self.ttl_len_y = ttl_len_y
         self.trench_width_x = trench_width_x
+        self.use_median_drift = use_median_drift
 
         #### params for y
         ## parameter for reducing signal to one dim
@@ -300,9 +302,6 @@ class kymograph_cluster:
             y_ends_list.append(y_ends)
         return y_ends_list
 
-
-
-
     def get_y_drift(self,y_ends_list):
         """Given a list of midpoints, computes the average drift in y for every
         timepoint.
@@ -396,6 +395,15 @@ class kymograph_cluster:
         valid_y_ends,valid_orientations = self.keep_in_frame_kernels(y_ends_list,y_drift,orientations,padding_y,trench_len_y)
 
         return y_drift,valid_orientations,valid_y_ends
+
+    def get_median_y_drift(self,drift_orientation_and_initend_futures):
+        y_drift_list = [item[0] for item in drift_orientation_and_initend_futures]
+        median_drift = np.round(np.median(np.array(y_drift_list),axis=0)).astype(int)
+        return median_drift
+
+    def update_y_drift_futures(self,new_y_drift,drift_orientation_and_initend_future):
+        drift_orientation_and_initend_future = tuple((new_y_drift,drift_orientation_and_initend_future[1],drift_orientation_and_initend_future[2]))
+        return drift_orientation_and_initend_future
 
     def crop_y(self,file_idx,drift_orientation_and_initend_future,padding_y,trench_len_y):
         """Performs cropping of the images in the y-dimension.
@@ -605,6 +613,15 @@ class kymograph_cluster:
             x_drift_list.append(net_x_drift)
         return x_drift_list
 
+    def get_median_x_drift(self,x_drift_futures):
+        uppacked_x_drift_futures = [row for fov in x_drift_futures for row in fov]
+        median_drift = np.round(np.median(np.array(uppacked_x_drift_futures),axis=0)).astype(int)
+        return median_drift
+
+    def update_x_drift_futures(self,new_x_drift,x_drift_future):
+        x_drift_future = [copy.copy(new_x_drift) for row in x_drift_future]
+        return x_drift_future
+
     def filter_midpoints(self,all_midpoints,x_drift,trench_width_x,trench_present_thr):
 
         drift_corrected_midpoints = []
@@ -652,13 +669,13 @@ class kymograph_cluster:
         midpoints_up,midpoints_dn = (corrected_midpoints-trench_width_x//2,\
                                      corrected_midpoints+trench_width_x//2+1)
         stays_in_frame = np.all(midpoints_up>=0,axis=0)*np.all(midpoints_dn<=self.metadata["width"],axis=0) #filters out midpoints that stay in the frame for the whole time...
-        no_overlap = np.append(np.array([True]),(corrected_midpoints[0,1:]-corrected_midpoints[0,:-1])>=(trench_width_x+1)) #corrects for overlap
-        if np.sum(no_overlap)/len(no_overlap)<0.9:
-            print("Trench overlap issue!!!")
+#         no_overlap = np.append(np.array([True]),(corrected_midpoints[0,1:]-corrected_midpoints[0,:-1])>=(trench_width_x+1)) #corrects for overlap
+#         if np.sum(no_overlap)/len(no_overlap)<0.9:
+#             print("Trench overlap issue!!!")
 
-        valid_mask = stays_in_frame*no_overlap
-        in_bounds = np.array([midpoints_up[:,valid_mask],\
-                            midpoints_dn[:,valid_mask]])
+#         valid_mask = stays_in_frame*no_overlap
+        in_bounds = np.array([midpoints_up[:,stays_in_frame],\
+                            midpoints_dn[:,stays_in_frame]])
         k_tot = in_bounds.shape[2]
 
         x_coords = in_bounds[0].T
@@ -697,68 +714,7 @@ class kymograph_cluster:
 
         return in_bounds_list,x_coords_list,k_tot_list
 
-    def init_counting_arr(self,x_dim):
-        """Initializes a counting array of shape (x_dim,) which counts from 0
-        to x_dim on axis 0.
-
-        Args:
-            x_dim (int): Size of x axis to use.
-
-        Returns:
-            array: Counting array to be used for masking out trenches in x.
-        """
-        ones_arr = np.ones(x_dim)
-        counting_arr = np.add.accumulate(np.ones(x_dim)).astype(int) - 1
-        return counting_arr
-
-    def get_trench_mask(self,in_bounds,counting_arr):
-        """Produce a trench mask of shape (y_dim,t_dim,x_dim) which will
-        correspond to the reshaped "cropped_in_y" array that will be made
-        later.
-
-        Args:
-            array_tuple (tuple): Singleton tuple containing the trench boundary array of shape
-            (2,t_dim,num_trenches)
-            cropped_in_y (array): A y-cropped hdf5 array of shape (rows,y,x,t) containing y-cropped image data.
-            counting_arr (array): Counting array to be used for masking out trenches in x, of shape (x_dim,).
-
-        Returns:
-            array: A trench mask of shape (y_dim,t_dim,x_dim).
-        """
-        counting_arr_repeated = np.repeat(counting_arr[:,np.newaxis],in_bounds.shape[1],axis=1)
-        masks = []
-        for k in range(in_bounds.shape[2]):
-            mask = np.logical_and(counting_arr_repeated>in_bounds[0,:,k],counting_arr_repeated<in_bounds[1,:,k]).T
-            masks.append(mask)
-        all_mask = np.any(np.array(masks),axis=0)
-        k_mask = np.repeat(all_mask[np.newaxis,:,:],self.ttl_len_y,axis=0)
-        return k_mask
-
-    def apply_kymo_mask(self,k_mask,img_arr,k_tot):
-        """Given a y-cropped image and a boolean trench mask of shape
-        (y_dim,t_dim,x_dim), masks that image to generate an output kymograph
-        of shape (trench_num,y_dim,x_dim,t_dim). Masked trenches must be a
-        fized size, so this only detects trenches that are totally in frame for
-        the whole timelapse.
-
-        Args:
-            array_tuple (tuple): Tuple containing the y-cropped hdf5 array of shape (t,y,x), and
-            the boolean trench mask of shape (y_dim,t_dim,x_dim).
-            row_num (int): Int specifying the current row.
-            k_tot (int): Int specifying the total number of detected trenches in the fov.
-
-        Returns:
-            array: Kymograph array of shape (trench_num,y_dim,x_dim,t_dim).
-        """
-
-        img_arr_swap = np.moveaxis(img_arr,(0,1,2),(1,0,2))
-        cropped_img_arr = img_arr_swap[k_mask]
-        cropped_img_arr = cropped_img_arr.reshape(img_arr_swap.shape[0],img_arr_swap.shape[1],-1)
-        cropped_img_arr = np.moveaxis(cropped_img_arr,(0,1,2),(1,0,2)) # t x y x x
-        kymo_out = np.stack(np.split(cropped_img_arr,k_tot,axis=2),axis=0) # k x t x y x x
-        return kymo_out
-
-    def crop_with_k_masks(self,output_kymograph,cropped_in_y_list,kymo_mask,k_tot,row_num):
+    def crop_with_bounds(self,output_kymograph,cropped_in_y_list,working_in_bounds,k_tot,row_num):
         """Generates and writes kymographs of a single row from the already
         y-cropped image data, using a pregenerated kymograph mask of shape
         (y_dim,t_dim,x_dim).
@@ -774,8 +730,16 @@ class kymograph_cluster:
 
         for c,channel in enumerate(self.all_channels):
             dataset_name = str(row_num) + "/" + str(channel)
-            cropped_in_y = cropped_in_y_list[c][:,row_num]
-            kymo_out = self.apply_kymo_mask(kymo_mask,cropped_in_y,k_tot) # k x t x y x x
+            cropped_in_y = cropped_in_y_list[c][:,row_num] # t,y,x
+            k_len,t_len,y_len,x_len = (working_in_bounds.shape[2],working_in_bounds.shape[1],cropped_in_y.shape[1],working_in_bounds[1,0,0]-working_in_bounds[0,0,0])
+            kymo_out = np.zeros((k_len,t_len,y_len,x_len),dtype="uint16")
+
+            for t in range(working_in_bounds.shape[1]):
+                for k in range(working_in_bounds.shape[2]):
+                    bounds = working_in_bounds[:,t,k]
+                    kymo_out[k,t] = cropped_in_y[t,:,bounds[0]:bounds[1]]
+
+#             kymo_out = self.apply_kymo_mask(kymo_mask,cropped_in_y,k_tot) # k x t x y x x
 
             hdf5_dataset = output_kymograph.create_dataset(dataset_name,data=kymo_out,chunks=self.output_chunk_shape, dtype='uint16')
 
@@ -813,14 +777,13 @@ class kymograph_cluster:
         num_rows = channel_arr_list[0].shape[1]
 
         in_bounds_list,x_coords_list,k_tot_list = in_bounds_future
-        counting_arr = self.init_counting_arr(self.metadata["width"])
-
+#         counting_arr = self.init_counting_arr(self.metadata["width"])
         with h5py_cache.File(self.kymographpath+"/kymograph_processed_"+str(file_idx)+".hdf5","w",chunk_cache_mem_size=self.output_chunk_cache_mem_size) as output_kymograph:
             for row_num in range(num_rows):
                 in_bounds,k_tot = (in_bounds_list[row_num],k_tot_list[row_num])
-                kymo_mask = self.get_trench_mask(in_bounds[:,first_idx:last_idx+1],counting_arr)
-
-                self.crop_with_k_masks(output_kymograph,channel_arr_list,kymo_mask,k_tot,row_num)
+                working_in_bounds = in_bounds[:,first_idx:last_idx+1]
+#                 kymo_mask = self.get_trench_mask(in_bounds[:,first_idx:last_idx+1],counting_arr)
+                self.crop_with_bounds(output_kymograph,channel_arr_list,working_in_bounds,k_tot,row_num)
 
         return lane_y_coords_list
 
@@ -926,12 +889,27 @@ class kymograph_cluster:
                                                        self.top_orientation,self.orientation_on_fail,self.y_min_edge_dist,self.padding_y,self.trench_len_y,retries=1)
             dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)] = future
 
+        ### optionally get median drift ###
+        if self.use_median_drift:
+            drift_orientation_and_initend_futures = [dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)] for fov_idx in fov_list]
+            drift_orientation_and_initend_futures = dask_controller.daskclient.gather(drift_orientation_and_initend_futures,errors="skip")
+            future = dask_controller.daskclient.submit(self.get_median_y_drift,drift_orientation_and_initend_futures,retries=1)
+            dask_controller.futures["Y Median Drift"] = future
+            for k,fov_idx in enumerate(fov_list):
+                new_y_drift = dask_controller.futures["Y Median Drift"]
+                drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+                future = dask_controller.daskclient.submit(self.update_y_drift_futures,new_y_drift,drift_orientation_and_initend_future,retries=1)
+                dask_controller.futures["Median Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)] = future
+
         ### smoothed x percentiles ###
 
         for k,file_idx in enumerate(file_list):
             working_filedf = filedf.loc[file_idx]
             fov_idx = working_filedf["fov"].unique().tolist()[0]
-            drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            if self.use_median_drift:
+                drift_orientation_and_initend_future = dask_controller.futures["Median Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            else:
+                drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
             future = dask_controller.daskclient.submit(self.get_smoothed_x_percentiles,file_idx,drift_orientation_and_initend_future,\
                                                        self.padding_y,self.trench_len_y,self.x_percentile,self.background_kernel_x,\
                                                        self.smoothing_kernel_x,retries=1)
@@ -954,13 +932,29 @@ class kymograph_cluster:
             future = dask_controller.daskclient.submit(self.get_x_drift,midpoint_futures,retries=1)
             dask_controller.futures["X Drift: " + str(fov_idx)] = future
 
+        ### optionally get median drift ###
+
+        if self.use_median_drift:
+            x_drift_futures = [dask_controller.futures["X Drift: " + str(fov_idx)] for fov_idx in fov_list]
+            x_drift_futures = dask_controller.daskclient.gather(x_drift_futures,errors="skip")
+            future = dask_controller.daskclient.submit(self.get_median_x_drift,x_drift_futures,retries=1)
+            dask_controller.futures["X Median Drift"] = future
+            for k,fov_idx in enumerate(fov_list):
+                new_x_drift = dask_controller.futures["X Median Drift"]
+                x_drift_future = dask_controller.futures["X Drift: " + str(fov_idx)]
+                future = dask_controller.daskclient.submit(self.update_x_drift_futures,new_x_drift,x_drift_future,retries=1)
+                dask_controller.futures["Median X Drift: " + str(fov_idx)] = future
+
         ### get kymograph masks ###
 
         for k,fov_idx in enumerate(fov_list):
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
             midpoint_futures = [dask_controller.futures["X Midpoints: " + str(file_idx)] for file_idx in working_files]
-            x_drift_future = dask_controller.futures["X Drift: " + str(fov_idx)]
+            if self.use_median_drift:
+                x_drift_future = dask_controller.futures["Median X Drift: " + str(fov_idx)]
+            else:
+                x_drift_future = dask_controller.futures["X Drift: " + str(fov_idx)]
             future = dask_controller.daskclient.submit(self.get_all_in_bounds,midpoint_futures,x_drift_future,\
                                                 self.trench_width_x,self.trench_present_thr,retries=1)
             dask_controller.futures["X In Bounds: " + str(fov_idx)] = future
@@ -971,7 +965,10 @@ class kymograph_cluster:
         for k,file_idx in enumerate(file_list):
             working_filedf = filedf.loc[file_idx]
             fov_idx = working_filedf["fov"].unique().tolist()[0]
-            drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            if self.use_median_drift:
+                drift_orientation_and_initend_future = dask_controller.futures["Median Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            else:
+                drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
             in_bounds_future = dask_controller.futures["X In Bounds: " + str(fov_idx)]
 
             future = dask_controller.daskclient.submit(self.crop_x,file_idx,drift_orientation_and_initend_future,in_bounds_future,self.padding_y,self.trench_len_y,retries=0)
@@ -984,7 +981,10 @@ class kymograph_cluster:
             working_files = working_fovdf["File Index"].unique().tolist()
             x_crop_futures = [dask_controller.futures["X Crop: " + str(file_idx)] for file_idx in working_files]
             in_bounds_future = dask_controller.futures["X In Bounds: " + str(fov_idx)]
-            drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            if self.use_median_drift:
+                drift_orientation_and_initend_future = dask_controller.futures["Median Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
+            else:
+                drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
 
             future = dask_controller.daskclient.submit(self.save_coords,fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future,retries=1)#,priority=priority)
             dask_controller.futures["Coords: " + str(fov_idx)] = future
@@ -1103,7 +1103,7 @@ class kymograph_cluster:
             dask_controller.futures["Kymograph Reorganized: " + str(k)] = future
 
         reorg_futures = [dask_controller.futures["Kymograph Reorganized: " + str(k)] for k in range(num_files)]
-        future = dask_controller.daskclient.submit(self.cleanup_kymographs,reorg_futures,file_list,retries=1,priority=priority)
+        future = dask_controller.daskclient.submit(self.cleanup_kymographs,reorg_futures,retries=1,priority=priority)
         dask_controller.futures["Kymographs Cleaned Up"] = future
 
     def post_process(self,dask_controller):
@@ -1658,6 +1658,7 @@ class kymograph_multifov(multifov):
                 x_drift.append(median_translation)
             net_x_drift = np.append(np.array([0]),np.add.accumulate(x_drift))
             x_drift_row_list.append(net_x_drift)
+
         return x_drift_row_list
 
     def init_counting_arr(self,x_dim,t_dim):
