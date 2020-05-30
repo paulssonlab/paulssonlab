@@ -6,6 +6,8 @@ import pandas as pd
 import pickle as pkl
 import dask.dataframe as dd
 import dask.delayed as delayed
+from time import sleep
+from distributed.client import futures_of
 
 import os
 import copy
@@ -471,6 +473,7 @@ class scorefn:
 
     def plot_score_metrics(self,kymo_df,trenchid,t_range=(0,-1),u_size=0.25,sig_size=0.05,u_pos=0.25,sig_pos=0.1,w_pos=1.,w_size=1.,w_merge=0.8,viewpadding=0):
         self.viewpadding = viewpadding
+
         trench = kymo_df.loc[trenchid]
         file_idx = trench["File Index"].unique().tolist()[0]
         trench_idx = trench["File Trench Index"].unique().tolist()[0]
@@ -478,7 +481,7 @@ class scorefn:
         orientation = trench["lane orientation"].unique().tolist()[0]
         orientation = orientation_dict[orientation]
 
-        with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5") as infile:
+        with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5", "r") as infile:
             data = infile["data"][trench_idx]
         t0,tf = t_range
         self.u_pos,self.sig_pos = (u_pos,sig_pos)
@@ -511,10 +514,10 @@ class scorefn:
         return data,orientation
 
     def interactive_scorefn(self):
-        meta_handle = pandas_hdf5_handler(self.headpath+"/metadata.hdf5")
-        kymo_df = meta_handle.read_df("kymograph")
-        num_trenches = len(kymo_df.index.get_level_values(0).unique())
-        timepoints = len(kymo_df.index.get_level_values(1).unique())
+        kymo_df = pd.read_parquet(self.headpath+"/kymograph/metadata",columns=["trenchid","timepoints","File Index","File Trench Index","lane orientation"])
+        num_trenches = len(kymo_df["trenchid"].unique())
+        timepoints = len(kymo_df["timepoints"].unique())
+        kymo_df = kymo_df.set_index("trenchid")
 
         self.output = interactive(self.plot_score_metrics,{"manual":True},\
                  kymo_df = fixed(kymo_df),trenchid=IntSlider(value=0, min=0, max=num_trenches-1, step=1),\
@@ -1301,12 +1304,15 @@ class tracking_solver:
 
 
     def lineage_trace(self,kymo_meta,file_idx,file_trench_idx):
-        trench = kymo_meta.loc[file_idx,file_trench_idx]
+        file_trench_idx_i = int(f'{file_idx:04}{file_trench_idx:04}{0:04}')
+        file_trench_idx_f = int(f'{file_idx:04}{file_trench_idx+1:04}{0:04}')-1
+        trench = kymo_meta.loc[file_trench_idx_i:file_trench_idx_f]
+
         orientation_dict = {"top":0,"bottom":1}
         orientation = trench["lane orientation"].unique().tolist()[0]
         orientation = orientation_dict[orientation]
 
-        with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5") as infile:
+        with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5", "r") as infile:
             data = infile["data"][file_trench_idx]
 
         labeled_data,centroids,sizes,_,Aik_arr_list,_,_,lineage_score = self.compute_lineage(data,orientation)
@@ -1320,49 +1326,69 @@ class tracking_solver:
     def lineage_trace_file(self,file_idx):
         writedir(self.lineagepath,overwrite=False)
 
-        kymo_meta = self.meta_handle.read_df("kymograph") ### HERE
-        kymo_meta = kymo_meta.reset_index(inplace=False)
-        kymo_meta = kymo_meta.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
-        kymo_meta = kymo_meta.sort_index()
-        kymo_meta = kymo_meta.loc[file_idx:file_idx]
-        trench_idx_list = kymo_meta.loc[file_idx].index.get_level_values(0).unique().tolist()
+        kymo_df = dd.read_parquet(self.headpath+"/kymograph/metadata").persist()
+        kymo_df["FOV Parquet Index"] = kymo_df.index
+        kymo_df = kymo_df.set_index("File Parquet Index").persist()
+        file_idx_i = int(f'{file_idx:04}{0:04}{0:04}')
+        file_idx_f = int(f'{(file_idx+1):04}{0:04}{0:04}')-1
+        kymo_df = kymo_df.loc[file_idx_i:file_idx_f].compute()
+        trench_idx_list = kymo_df["File Trench Index"].unique().tolist()
+
+#         kymo_meta = self.meta_handle.read_df("kymograph") ### HERE
+#         kymo_meta = kymo_meta.reset_index(inplace=False)
+#         kymo_meta = kymo_meta.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
+#         kymo_meta = kymo_meta.sort_index()
+#         kymo_meta = kymo_meta.loc[file_idx:file_idx]
+#         trench_idx_list = kymo_meta.loc[file_idx].index.get_level_values(0).unique().tolist()
 
         mergeddf = []
         for file_trench_idx in trench_idx_list:
             try:
-                df_out = self.lineage_trace(kymo_meta,file_idx,file_trench_idx)
+                df_out = self.lineage_trace(kymo_df,file_idx,file_trench_idx)
                 mergeddf.append(df_out)
             except:
                 pass
-        mergeddf = pd.concat(mergeddf)
-        mergeddf = mergeddf.reset_index(inplace=False)
-        mergeddf = mergeddf.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
-        mergeddf = mergeddf.sort_index()
-        mergeddf = mergeddf.join(kymo_meta)
-        mergeddf = mergeddf.reset_index(inplace=False)
-        mergeddf = mergeddf.set_index(["File Index","File Trench Index","timepoints","CellID"], drop=True, append=False, inplace=False)
+        mergeddf = pd.concat(mergeddf).reset_index()
+        parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):04}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1)
+        parq_file_idx.index = mergeddf.index
+        mergeddf["File Parquet Index"] = parq_file_idx
+        del mergeddf["File Index"]
+        del mergeddf["File Trench Index"]
+        del mergeddf["timepoints"]
         del mergeddf["index"]
-        mergeddf = mergeddf.sort_index()
 
-        new_index = mergeddf.index.map(lambda x: int(f'{x[0]:04}{x[1]:04}{x[2]:04}{x[3]:04}'))
-        mergeddf = mergeddf.reset_index(drop=False,inplace=False)
-        mergeddf.index = [item for item in new_index]
-        mergeddf = mergeddf.dropna()
+        kymo_df = kymo_df.join(mergeddf.set_index("File Parquet Index")).dropna()
+
+        kymo_df["Mother CellID"] = kymo_df["Mother CellID"].astype(int)
+        kymo_df["Daughter CellID 1"] = kymo_df["Daughter CellID 1"].astype(int)
+        kymo_df["Daughter CellID 2"] = kymo_df["Daughter CellID 2"].astype(int)
+        kymo_df["Sister CellID"] = kymo_df["Sister CellID"].astype(int)
+
+        #remove old indices
+        del kymo_df["FOV Parquet Index"]
+
+        parq_file_idx = kymo_df.apply(lambda x: int(f'{int(x["File Index"]):04}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}{int(x["CellID"]):04}'), axis=1)
+        parq_fov_idx = kymo_df.apply(lambda x: int(f'{int(x["fov"]):04}{int(x["row"]):04}{int(x["trench"]):04}{int(x["timepoints"]):04}{int(x["CellID"]):04}'), axis=1)
+
+        kymo_df["File Parquet Index"] = parq_file_idx
+        kymo_df["FOV Parquet Index"] = parq_fov_idx
+
+        kymo_df = kymo_df.set_index("File Parquet Index")
+
+#         kymo_df = kymo_df.set_index("FOV Parquet Index")
 
 #         mergeddf = dd.from_pandas(mergeddf,npartitions=1)
 
 #         df_path = self.lineagepath + "/block_" + str(file_idx) + ".parquet"
 
-        del kymo_meta
-
 #         mergeddf.to_parquet(df_path,engine='fastparquet',compression='gzip')
         print("Done.")
 
-        return mergeddf
+        return kymo_df
 
     def lineage_trace_all_files(self,dask_cont):
-        kymo_meta = self.meta_handle.read_df("kymograph")
-        file_list = kymo_meta["File Index"].unique().tolist()
+        kymo_meta = dd.read_parquet(self.headpath+"/kymograph/metadata").persist()
+        file_list = kymo_meta["File Index"].unique().compute().tolist()
         num_file_jobs = len(file_list)
         random_priorities = np.random.uniform(size=(num_file_jobs,))
         delayed_list = []
@@ -1370,9 +1396,31 @@ class tracking_solver:
             df_delayed = delayed(self.lineage_trace_file)(file_idx)
 #             future = dask_cont.daskclient.submit(self.lineage_trace_file,file_idx,retries=1,priority=priority)
 #             dask_cont.futures["File Index: " + str(file_idx)] = future
-            delayed_list.append(df_delayed)
-        df_out = dd.from_delayed(delayed_list).repartition(partition_size="500MB")
+            delayed_list.append(df_delayed.persist())
+
+        all_delayed_futures = []
+        for item in delayed_list:
+            all_delayed_futures+=futures_of(item)
+        while any(future.status == 'pending' for future in all_delayed_futures):
+            sleep(0.1)
+
+        good_delayed = []
+        for item in delayed_list:
+            if all([future.status == 'finished' for future in futures_of(item)]):
+                good_delayed.append(item)
+
+        df_out = dd.from_delayed(good_delayed).persist()
+        df_out = df_out.repartition(partition_size="500MB").persist()
         dd.to_parquet(df_out, self.lineagepath + "/output/",engine='fastparquet',compression='gzip',write_metadata_file=True)
+
+    def get_stats(self):
+        input_df = dd.read_parquet(self.headpath+"/kymograph/metadata").persist()
+        output_df = dd.read_parquet(self.lineagepath + "/output/").persist()
+
+        num_initial_trenches = len(input_df["trenchid"].unique().compute())
+        num_final_trenches = len(output_df["trenchid"].unique().compute())
+
+        print("# Trenches Processed / # Trenches = " + str(num_final_trenches) + "/" + str(num_initial_trenches))
 
 #     def reorg_parquet(self,dask_cont,futures_list):
 #         df_futures = dask_cont.daskclient.gather(futures_list)
@@ -1397,8 +1445,10 @@ class tracking_solver:
         dask_cont.futures = {}
         try:
             self.lineage_trace_all_files(dask_cont)
+            self.get_stats()
         except:
             raise
+
 
     def test_tracking(self,data,orientation,intensity_channel_list=None,t_range=(0,-1),edge_limit=3,viewpadding=0,x_size=18,y_size=6,dot_size=50):
         if len(intensity_channel_list) == 0:

@@ -8,8 +8,11 @@ import copy
 import pickle
 import shutil
 import pandas as pd
+import dask.dataframe as dd
+from scipy import ndimage as ndi
 
 from skimage import measure,feature,segmentation,future,util,morphology,filters,exposure,transform
+from skimage.segmentation import watershed
 from .utils import kymo_handle,pandas_hdf5_handler,writedir
 from .trcluster import hdf5lock
 from time import sleep
@@ -18,38 +21,30 @@ import scipy.ndimage.morphology as morph
 from dask.distributed import worker_client
 from pandas import HDFStore
 
-
 from matplotlib import pyplot as plt
 
-
 class fluo_segmentation:
-    def __init__(self,img_scaling=1.,scale_timepoints=False,scaling_percentage=0.9,smooth_sigma=0.75,bit_max=0,wrap_pad=3,hess_pad=6,min_obj_size=30,cell_mask_method='global',global_threshold=1000,\
-                 cell_otsu_scaling=1.,local_otsu_r=15,edge_threshold_scaling=1.,threshold_step_perc=0.1,threshold_perc_num_steps=2,convex_threshold=0.8):
+    def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,niblack_scaling=1.,\
+                 hess_pad=6,global_threshold=25,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30,distance_threshold=2):
+        self.bit_max = bit_max
+
+        self.scale_timepoints=scale_timepoints
+        self.scaling_percentile=scaling_percentile
 
         self.img_scaling = img_scaling
-        self.scale_timepoints=scale_timepoints
-        self.scaling_percentage=scaling_percentage
+
         self.smooth_sigma = smooth_sigma
-        self.bit_max = bit_max
-        self.wrap_pad = wrap_pad
+
+        self.niblack_scaling = niblack_scaling
         self.hess_pad = hess_pad
-        self.min_obj_size = min_obj_size
+
         self.global_threshold = global_threshold
-        self.cell_mask_method = cell_mask_method
+        self.triangle_threshold_scaling = triangle_threshold_scaling
         self.cell_otsu_scaling = cell_otsu_scaling
         self.local_otsu_r = local_otsu_r
-        self.edge_threshold_scaling = edge_threshold_scaling
-        self.threshold_step_perc = threshold_step_perc
-        self.threshold_perc_num_steps = threshold_perc_num_steps
-        self.convex_threshold = convex_threshold
+        self.min_obj_size = min_obj_size
 
-    def scale_kymo(self,wrap_arr,percentile):
-        perc_t = np.percentile(wrap_arr[:].reshape(wrap_arr.shape[0],-1),percentile,axis=1)
-        norm_perc_t = perc_t/np.max(perc_t)
-        scaled_arr = wrap_arr.astype(float)/norm_perc_t[:,np.newaxis,np.newaxis]
-        scaled_arr[scaled_arr>255.] = 255.
-        scaled_arr = scaled_arr.astype("uint8")
-        return scaled_arr
+        self.distance_threshold = distance_threshold
 
     def to_8bit(self,img_arr,bit_max=None):
         img_max = np.max(img_arr)+0.0001
@@ -63,243 +58,124 @@ class fluo_segmentation:
         norm_byte_array = sk.img_as_ubyte(norm_array)
         return norm_byte_array
 
-    def preprocess_img(self,img_arr,sigma=1.,bit_max=0,scale_timepoints=False,scaling_percentage=None):
-        img_smooth = copy.copy(img_arr)
-        for t in range(img_arr.shape[0]):
-            img_smooth[t] = self.to_8bit(sk.filters.gaussian(img_arr[t],sigma=sigma,preserve_range=True,mode='reflect'),bit_max=bit_max)
-        if scale_timepoints:
-            img_smooth = self.scale_kymo(img_smooth,scaling_percentage)
+    def scale_kymo(self,wrap_arr,percentile):
+        perc_t = np.percentile(wrap_arr[:].reshape(wrap_arr.shape[0],-1),percentile,axis=1)
+        norm_perc_t = perc_t/np.max(perc_t)
+        scaled_arr = wrap_arr.astype(float)/norm_perc_t[:,np.newaxis,np.newaxis]
+        scaled_arr[scaled_arr>255.] = 255.
+        scaled_arr = scaled_arr.astype("uint8")
+        return scaled_arr
 
-        return img_smooth
+    def get_eig_img(self,img_arr,edge_padding=6):
+        inverted = sk.util.invert(img_arr)
+        del img_arr
+        inverted = np.pad(inverted, edge_padding, 'reflect')
+        hessian = sk.feature.hessian_matrix(inverted,order="rc")
+        del inverted
+        eig_img = sk.feature.hessian_matrix_eigvals(hessian)
+        del hessian
+        eig_img = np.min(eig_img,axis=0)
+        eig_img = eig_img[edge_padding:-edge_padding,edge_padding:-edge_padding]
+        max_val,min_val = np.max(eig_img),np.min(eig_img)
+        eig_img = self.to_8bit(eig_img)
+        return eig_img
 
-    def cell_region_mask(self,img_arr,method='global',global_threshold=1000,cell_otsu_scaling=1.,local_otsu_r=15):
-        global_mask_kymo = []
-        for t in range(img_arr.shape[0]):
-            cell_mask = img_arr[t,:,:]>global_threshold
-            global_mask_kymo.append(cell_mask)
-        global_mask_kymo = np.array(global_mask_kymo)
+    def get_eig_mask(self,eig_img,niblack_scaling=1.):
+        eig_thr = sk.filters.threshold_niblack(eig_img)*niblack_scaling
+        eig_mask = eig_img>eig_thr
+        return eig_mask
 
-        if method == 'global':
-            return global_mask_kymo
+    def get_cell_mask(self,img_arr,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
+        otsu_selem = sk.morphology.disk(local_otsu_r)
+        tri_thr = sk.filters.threshold_triangle(img_arr)*triangle_threshold_scaling
+        otsu_thr = sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling
+        del otsu_selem
+        thr = np.maximum(tri_thr,otsu_thr)
+        cell_mask = (img_arr>thr)*(img_arr>global_threshold)
+        del img_arr
+        cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+        cell_mask = sk.morphology.remove_small_holes(cell_mask)
 
-        elif method == 'local':
-            otsu_selem = sk.morphology.disk(local_otsu_r)
-            local_mask_kymo = []
-            for t in range(img_arr.shape[0]):
-                above_threshold = np.any(global_mask_kymo[t,:,:]) # time saving
-                if above_threshold:
-                    local_thr_arr = sk.filters.rank.otsu(img_arr[t,:,:], otsu_selem)
-                    local_mask = img_arr[t,:,:]>local_thr_arr
-                else:
-                    local_mask = np.zeros(img_arr[t,:,:].shape,dtype=bool)
-                local_mask_kymo.append(local_mask)
-            local_mask_kymo = np.array(local_mask_kymo)
-
-            final_cell_mask = global_mask_kymo*local_mask_kymo
-            del global_mask_kymo
-            del local_mask_kymo
-            return final_cell_mask
-
-        else:
-            print("no valid cell threshold method chosen!!!")
-
-    def hessian_contrast_enc(self,img_arr,edge_padding=0):
-        img_arr = np.pad(img_arr, edge_padding, 'reflect')
-        hessian = sk.feature.hessian_matrix(img_arr,order="rc")
-        eigvals = sk.feature.hessian_matrix_eigvals(hessian)
-        min_eigvals = np.min(eigvals,axis=0)
-        if edge_padding>0:
-            min_eigvals = min_eigvals[edge_padding:-edge_padding,edge_padding:-edge_padding]
-        max_val,min_val = np.max(min_eigvals),np.min(min_eigvals)
-        min_eigvals = (min_eigvals-min_val)/(max_val-min_val)
-        return min_eigvals
-
-    def find_mask(self,cell_local_mask,min_eigvals,edge_threshold,min_obj_size=30):
-        edge_mask = min_eigvals>edge_threshold
-        composite_mask = cell_local_mask*edge_mask
-        composite_mask = sk.morphology.remove_small_objects(composite_mask,min_size=min_obj_size)
-        composite_mask = sk.morphology.remove_small_holes(composite_mask)
-        return composite_mask
-
-    def compute_convexity(self,curr_obj):
-        area = np.sum(curr_obj)
-        convex_hull = sk.morphology.convex_hull_image(curr_obj)
-        convex_hull_area = np.sum(convex_hull)
-        convexity = area/convex_hull_area
-        return convexity
-
-    def get_object_coords(self,obj_thresh,padding=1):
-        x_dim_max = np.max(obj_thresh,axis=0)
-        x_indices = np.where(x_dim_max)[0]
-        x_min = max(np.min(x_indices)-padding,0)
-        x_max = min(np.max(x_indices)+padding+1,obj_thresh.shape[1])
-
-        y_dim_max = np.max(obj_thresh,axis=1)
-        y_indices = np.where(y_dim_max)[0]
-        y_min = max(np.min(y_indices)-padding,0)
-        y_max = min(np.max(y_indices)+padding+1,obj_thresh.shape[0])
-
-        return x_min,x_max,y_min,y_max
-
-    def crop_object(self,conn_comp,obj_idx,padding=1):
-        obj_thresh = (conn_comp==obj_idx)
-        x_min,x_max,y_min,y_max = self.get_object_coords(obj_thresh,padding=padding)
-        curr_obj = obj_thresh[y_min:y_max,x_min:x_max]
-        return curr_obj
-
-    def get_image_weights(self,conn_comp,padding=1):
-        objects = np.unique(conn_comp)[1:]
-        conv_weights = []
-        for obj_idx in objects:
-            curr_obj = self.crop_object(conn_comp,obj_idx,padding=padding)
-            conv_weight = self.compute_convexity(curr_obj)
-            conv_weights.append(conv_weight)
-        return np.array(conv_weights)
-
-    def make_weight_arr(self,conn_comp,weights):
-        weight_arr = np.zeros(conn_comp.shape)
-        for i,obj_weight in enumerate(weights):
-            obj_idx = i+1
-            obj_mask = (conn_comp==obj_idx)
-            weight_arr[obj_mask] = obj_weight
-        return weight_arr
-
-#     def get_mid_threshold_arr(self,wrap_eig,edge_threshold_scaling=1.,padding=3): ##???BAD
-#         edge_threshold_kymo = []
-#         for t in range(wrap_eig.shape[0]):
-#             edge_threshold = sk.filters.threshold_otsu(wrap_eig[t])
-#             edge_thr_arr = edge_threshold*np.ones(wrap_eig.shape[1:],dtype='uint8')
-#             edge_threshold_kymo.append(edge_thr_arr)
-#         edge_threshold_kymo = np.array(edge_threshold_kymo)*edge_threshold_scaling
-#         edge_threshold_kymo = np.moveaxis(edge_threshold_kymo,(0,1,2),(2,0,1))
-
-        edge_thr_kymo = kymo_handle()
-        edge_thr_kymo.import_wrap(edge_threshold_kymo,scale=False)
-        mid_threshold_arr = edge_thr_kymo.return_unwrap(padding=padding)
-        return mid_threshold_arr
-
-    def get_scores(self,cell_mask,min_eigvals,edge_threshold,threshold_step_perc=0.05,threshold_perc_num_steps=2,min_obj_size=30):
-        threshold_percs = [1. + threshold_step_perc*step for step in range(-threshold_perc_num_steps,threshold_perc_num_steps+1)]
-        edge_thresholds = [edge_threshold*threshold_perc for threshold_perc in threshold_percs]
-        conv_weight_arrs = []
-        for edge_threshold in edge_thresholds:
-            composite_mask = self.find_mask(cell_mask,min_eigvals,edge_threshold,min_obj_size=min_obj_size)
-            conn_comp = sk.measure.label(composite_mask,neighbors=4,connectivity=2)
-            conv_weights = self.get_image_weights(conn_comp)
-            conv_weight_arr = self.make_weight_arr(conn_comp,conv_weights)
-            conv_weight_arrs.append(conv_weight_arr)
-        conv_weight_arrs = np.array(conv_weight_arrs)
-        conv_max_merged = np.max(conv_weight_arrs,axis=0)
-        return conv_max_merged
+        return cell_mask
 
     def segment(self,img_arr): #img_arr is t,y,x
-#         input_kymo = kymo_handle()
-#         input_kymo.import_wrap(img_arr,scale=self.scale_timepoints,scale_perc=self.scaling_percentage)
         t_tot = img_arr.shape[0]
-        img_arr_new = []
-        for t in range(t_tot):
-            image_rescaled = transform.rescale(img_arr[t], self.img_scaling, anti_aliasing=False, preserve_range=True)
-            img_arr_new.append(image_rescaled)
-        img_arr = np.array(img_arr_new,dtype="uint16")
-        del image_rescaled
-        del img_arr_new
+        img_arr = self.to_8bit(img_arr,self.bit_max)
+        if self.scale_timepoints:
+            img_arr = self.scale_kymo(img_arr,self.scaling_percentile)
 
-        working_img = self.preprocess_img(img_arr,sigma=self.smooth_sigma,bit_max=self.bit_max,\
-                                         scale_timepoints=self.scale_timepoints,scaling_percentage=self.scaling_percentage) #8_bit
+        input_kymo = kymo_handle()
+        input_kymo.import_wrap(img_arr)
+        del img_arr
 
-        inverted = np.array([sk.util.invert(working_img[t]) for t in range(working_img.shape[0])])
+        input_kymo = input_kymo.return_unwrap()
+        original_shape = input_kymo.shape
+        input_kymo = transform.rescale(input_kymo,self.img_scaling,anti_aliasing=False, preserve_range=True).astype("uint8")
+        input_kymo = sk.filters.gaussian(input_kymo,sigma=self.smooth_sigma,preserve_range=True,mode='reflect').astype("uint8")
 
-        inverted_kymo = kymo_handle()
-        inverted_kymo.import_wrap(inverted)
-        del inverted
-        inverted_kymo = inverted_kymo.return_unwrap(padding=self.wrap_pad)
+        eig_img = self.get_eig_img(input_kymo,edge_padding=self.hess_pad)
+        eig_mask = self.get_eig_mask(eig_img,niblack_scaling=self.niblack_scaling)
+        del eig_img
 
-        min_eigvals = self.to_8bit(self.hessian_contrast_enc(inverted_kymo,self.hess_pad))
-        del inverted_kymo
-        cell_mask = self.cell_region_mask(working_img,method=self.cell_mask_method,global_threshold=self.global_threshold,cell_otsu_scaling=self.cell_otsu_scaling,local_otsu_r=self.local_otsu_r)
-        edge_threshold = sk.filters.threshold_otsu(min_eigvals)*self.edge_threshold_scaling
+        cell_mask = self.get_cell_mask(input_kymo,global_threshold=self.global_threshold,\
+                    triangle_threshold_scaling = self.triangle_threshold_scaling,\
+                    cell_otsu_scaling=self.cell_otsu_scaling,local_otsu_r=self.local_otsu_r,\
+                    min_obj_size=self.min_obj_size)
+        del input_kymo
 
+        dist_img = ndi.distance_transform_edt(cell_mask).astype("uint8")
+        dist_mask = dist_img>self.distance_threshold
+        marker_mask = dist_mask*eig_mask
+        del dist_mask
+        marker_mask = sk.measure.label(marker_mask)
 
-        #         for t in range(wrap_eig.shape[0]):
-#             edge_threshold = sk.filters.threshold_otsu(wrap_eig[t])
-#             edge_thr_arr = edge_threshold*np.ones(wrap_eig.shape[1:],dtype='uint8')
-#             edge_threshold_kymo.append(edge_thr_arr)
-#         edge_threshold_kymo = np.array(edge_threshold_kymo)*edge_threshold_scaling
-#         edge_threshold_kymo = np.moveaxis(edge_threshold_kymo,(0,1,2),(2,0,1))
-#         mid_threshold_arr = self.get_mid_threshold_arr(min_eigvals,edge_threshold_scaling=self.edge_threshold_scaling,padding=self.wrap_pad)
+        output_labels = watershed(-dist_img, markers=marker_mask, mask=cell_mask)
 
-        cell_mask_kymo = kymo_handle()
-        cell_mask_kymo.import_wrap(cell_mask)
-        cell_mask = cell_mask_kymo.return_unwrap(padding=self.wrap_pad)
-        del cell_mask_kymo
-
-#         min_eigvals_kymo = kymo_handle()
-#         min_eigvals_kymo.import_wrap(min_eigvals)
-#         min_eigvals = min_eigvals_kymo.return_unwrap(padding=self.wrap_pad)
-
-        convex_scores = self.get_scores(cell_mask,min_eigvals,edge_threshold,\
-                                          threshold_step_perc=self.threshold_step_perc,threshold_perc_num_steps=self.threshold_perc_num_steps,\
-                                                  min_obj_size=self.min_obj_size)
+        del dist_img
+        del marker_mask
         del cell_mask
-#         del min_eigvals
-#         del mid_threshold_arr
-
-        final_mask = (convex_scores>self.convex_threshold)
-
-        final_mask = sk.morphology.remove_small_objects(final_mask,min_size=self.min_obj_size)
-        final_mask = sk.morphology.remove_small_holes(final_mask)
+        output_labels = sk.transform.resize(output_labels,original_shape,order=0,anti_aliasing=False, preserve_range=True).astype("uint32")
 
         output_kymo = kymo_handle()
-        output_kymo.import_unwrap(final_mask,t_tot,padding=self.wrap_pad)
-        segmented = output_kymo.return_wrap()
-
-        segmented_new = []
-        for t in range(segmented.shape[0]):
-            image_rescaled = transform.rescale(segmented[t], 1./self.img_scaling, anti_aliasing=False,order=0,preserve_range=True)
-            segmented_new.append(image_rescaled)
-        del segmented
-        segmented = np.array(segmented_new,dtype=bool)
-
-        return segmented,min_eigvals
+        output_kymo.import_unwrap(output_labels,t_tot)
+        del output_labels
+        output_kymo = output_kymo.return_wrap()
+        return output_kymo
 
 class fluo_segmentation_cluster(fluo_segmentation):
-    def __init__(self,headpath,paramfile=True,seg_channel="",img_scaling=1.,scale_timepoints=False,scaling_percentage=0.9,smooth_sigma=0.75,bit_max=0,wrap_pad=0,\
-                 hess_pad=6,min_obj_size=30,cell_mask_method='local',global_threshold=255,cell_otsu_scaling=1.,local_otsu_r=15,\
-                 edge_threshold_scaling=1.,threshold_step_perc=.1,threshold_perc_num_steps=2,convex_threshold=0.8):
+    def __init__(self,headpath,paramfile=True,seg_channel="",bit_max=0,scale_timepoints=False,scaling_percentile=0.9,\
+                 img_scaling=1.,smooth_sigma=0.75,niblack_scaling=1.,hess_pad=6,global_threshold=25,cell_otsu_scaling=1.,\
+                 local_otsu_r=15,min_obj_size=30,distance_threshold=2):
 
         if paramfile:
             parampath = headpath + "/fluorescent_segmentation.par"
             with open(parampath, 'rb') as infile:
                 param_dict = pickle.load(infile)
 
-            img_scaling = param_dict["Image Scaling Factor:"]
-            scale_timepoints = param_dict["Scale Fluorescence?"]
-            scaling_percentage = param_dict["Scaling Percentile:"]
-            seg_channel = param_dict["Segmentation Channel:"]
-            smooth_sigma = param_dict["Gaussian Kernel Sigma:"]
-            bit_max = param_dict['8 Bit Maximum:']
-            min_obj_size = param_dict["Minimum Object Size:"]
-            cell_mask_method = param_dict["Cell Mask Thresholding Method:"]
-            global_threshold = param_dict["Global Threshold:"]
-            cell_otsu_scaling = param_dict["Cell Threshold Scaling:"]
-            local_otsu_r = param_dict["Local Otsu Radius:"]
-            edge_threshold_scaling = param_dict["Edge Threshold Scaling:"]
-            threshold_step_perc = param_dict["Threshold Step Percent:"]
-            threshold_perc_num_steps = param_dict["Number of Threshold Steps:"]
-            convex_threshold = param_dict["Convexity Threshold:"]
+        seg_channel = param_dict["Segmentation Channel:"]
+        bit_max = param_dict['8 Bit Maximum:']
+        scale_timepoints = param_dict['Scale Fluorescence?']
+        scaling_percentile = param_dict["Scaling Percentile:"]
+        img_scaling = param_dict["Image Scaling Factor:"]
+        smooth_sigma = param_dict['Gaussian Kernel Sigma:']
+        global_threshold = param_dict['Global Threshold:']
+        triangle_threshold_scaling = param_dict['Triangle Threshold Scaling:']
+        cell_otsu_scaling = param_dict['Cell Threshold Scaling:']
+        local_otsu_r = param_dict['Local Otsu Radius:']
+        min_obj_size = param_dict['Minimum Object Size:']
+        niblack_scaling = param_dict['Niblack Scaling:']
+        distance_threshold = param_dict['Distance Threshold:']
 
-        super(fluo_segmentation_cluster, self).__init__(img_scaling=img_scaling,scale_timepoints=scale_timepoints,scaling_percentage=scaling_percentage,smooth_sigma=smooth_sigma,bit_max=bit_max,\
-                                                        wrap_pad=wrap_pad,hess_pad=hess_pad,min_obj_size=min_obj_size,cell_mask_method=cell_mask_method,\
-                                                        global_threshold=global_threshold,cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,\
-                                                        edge_threshold_scaling=edge_threshold_scaling,threshold_step_perc=threshold_step_perc,\
-                                                        threshold_perc_num_steps=threshold_perc_num_steps,convex_threshold=convex_threshold)
+        super(fluo_segmentation_cluster, self).__init__(bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,\
+                                                        img_scaling=img_scaling,smooth_sigma=smooth_sigma,niblack_scaling=niblack_scaling,\
+                                                        hess_pad=hess_pad,global_threshold=global_threshold,triangle_threshold_scaling=triangle_threshold_scaling,\
+                                                        cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,min_obj_size=min_obj_size,distance_threshold=distance_threshold)
 
         self.headpath = headpath
         self.seg_channel = seg_channel
         self.kymographpath = headpath + "/kymograph"
         self.fluorsegmentationpath = headpath + "/fluorsegmentation"
-        self.metapath = headpath + "/metadata.hdf5"
-        self.meta_handle = pandas_hdf5_handler(self.metapath)
+        self.metapath = headpath + "/kymograph/metadata"
 
     def generate_segmentation(self,file_idx):
         with h5py.File(self.kymographpath + "/kymograph_" + str(file_idx) + ".hdf5","r") as input_file:
@@ -312,7 +188,7 @@ class fluo_segmentation_cluster(fluo_segmentation):
                 del trench_array
         trench_output = np.concatenate(trench_output,axis=0)
         with h5py.File(self.fluorsegmentationpath + "/segmentation_" + str(file_idx) + ".hdf5", "w") as h5pyfile:
-            hdf5_dataset = h5pyfile.create_dataset("data", data=trench_output, dtype=bool)
+            hdf5_dataset = h5pyfile.create_dataset("data", data=trench_output, dtype="uint16")
         return file_idx
 
     def segmentation_completed(self,seg_future):
@@ -322,8 +198,8 @@ class fluo_segmentation_cluster(fluo_segmentation):
         writedir(self.fluorsegmentationpath,overwrite=True)
         dask_controller.futures = {}
 
-        kymodf = self.meta_handle.read_df("kymograph",read_metadata=True)
-        file_list = kymodf["File Index"].unique().tolist()
+        kymodf = dd.read_parquet(self.metapath).persist()
+        file_list = kymodf["File Index"].unique().compute().tolist()
         num_file_jobs = len(file_list)
 
         random_priorities = np.random.uniform(size=(num_file_jobs,))
