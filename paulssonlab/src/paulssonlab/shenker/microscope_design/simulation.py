@@ -10,6 +10,13 @@ ureg = pint.UnitRegistry()
 Q_ = ureg.Quantity
 
 
+def valid_range(ary):
+    is_valid = ~np.isnan(ary)
+    idx1 = is_valid.argmax()
+    idx2 = len(ary) - is_valid[::-1].argmax()
+    return idx1, idx2
+
+
 def import_fpbase_spectrum(url):
     df = pd.read_csv(url, index_col="wavelength")
     name = re.sub(r"\s*ex|em|2p\s*", "", df.columns[0])
@@ -25,15 +32,50 @@ def import_fpbase_spectra(urls):
     return spectra
 
 
+def interpolate_dataframe(df, bins, union=False):
+    old_index = df.index.astype(np.float)
+    new_index = pd.Index(bins, name=df.index.name)
+    union_index = new_index.union(old_index)
+    new_df = df.reindex(index=union_index)
+    new_df.interpolate(method="nearest", inplace=True)
+    if not union:
+        new_df = new_df.loc[new_index]
+    return new_df
+
+
+def bin_dataframe(df, bins):
+    bin_assignment = pd.cut(df.index, bins).rename_categories(
+        (bins.right + bins.left) / 2
+    )
+    return df.groupby(bin_assignment).mean()
+
+
+def seesaw_spectrum(spectrum, amount):
+    x = np.zeros(len(spectrum))
+    idx1, idx2 = valid_range(spectrum)
+    x[idx1:idx2] = np.linspace(-1, 1, idx2 - idx1)
+    x = x.reshape((-1,) + (1,) * (np.ndim(spectrum) - 1))
+    shape = -(x - 1) * (x + 1) * x * 3 * np.sqrt(3) / 4
+    new_spectrum = (amount * shape + 1 / 2) * spectrum
+    new_spectrum /= np.nanmax(new_spectrum, axis=0)
+    return new_spectrum
+
+
+def xarray_like(ary, data):
+    return xr.DataArray(data, coords=ary.coords, dims=ary.dims)
+
+
 def image_to_xarray(img, scale):
     xs = scale * np.arange(img.shape[1])
     ys = scale * np.arange(img.shape[0])[::-1]
     return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
 
 
-def offset_xarray(a, b, offsets):
-    offsets = {name: getattr(b, name) + val for name, val in offsets.items()}
-    return a.interp_like(b.assign_coords(**offsets)).assign_coords(b.coords)
+def shift_and_interp(a, b, shifts, method="linear"):
+    offsets = {name: getattr(b, name) + val for name, val in shifts.items()}
+    return a.interp_like(b.assign_coords(**offsets), method=method).assign_coords(
+        b.coords
+    )
 
 
 def generalized_normal_pdf(x, loc=0, scale=1, p=2, sigma=None):
@@ -54,61 +96,49 @@ def draw_excitation_line(
     width_px=6500,
     height_px=300,
     height_padding_factor=3,
+    dtype=np.float32,
 ):
     # expect defocus parameters in um
-    width = np.atleast_1d((width / ureg.um).to("dimensionless").magnitude).reshape(
-        (-1, 1, 1)
+    width = (
+        np.atleast_1d((width / ureg.um).to("dimensionless").magnitude)
+        .reshape((-1, 1, 1))
+        .astype(dtype)
     )
-    height = np.atleast_1d((height / ureg.um).to("dimensionless").magnitude).reshape(
-        (-1, 1, 1)
+    height = (
+        np.atleast_1d((height / ureg.um).to("dimensionless").magnitude)
+        .reshape((-1, 1, 1))
+        .astype(dtype)
     )
-    edge_defocus = np.atleast_1d(
-        (edge_defocus / ureg.um).to("dimensionless").magnitude
-    ).reshape((-1, 1, 1))
-    falloff = np.atleast_1d(falloff).reshape((-1, 1, 1))
-    p_vertical = np.atleast_1d(p_vertical).reshape((-1, 1, 1))
-    p_horizontal = np.atleast_1d(p_horizontal).reshape((-1, 1, 1))
+    edge_defocus = (
+        np.atleast_1d((edge_defocus / ureg.um).to("dimensionless").magnitude)
+        .reshape((-1, 1, 1))
+        .astype(dtype)
+    )
+    falloff = np.atleast_1d(falloff).reshape((-1, 1, 1)).astype(dtype)
+    p_vertical = np.atleast_1d(p_vertical).reshape((-1, 1, 1)).astype(dtype)
+    p_horizontal = np.atleast_1d(p_horizontal).reshape((-1, 1, 1)).astype(dtype)
     if not (np.all(0 <= falloff) and np.all(falloff <= 1)):
         raise ValueError("falloff must be between 0 and 1")
     width_max = width.max()
-    xs_normalized = np.linspace(-1, 1, width_px)
+    xs_normalized = np.linspace(-1, 1, width_px, dtype=dtype)
     xs = width_max / 2 * xs_normalized
     xs_scaled = width_max / width * xs_normalized[np.newaxis, np.newaxis, :]
     scale = edge_defocus * np.abs(xs_normalized) ** 2 + height / 2
     y_max = height_padding_factor * scale.max()
-    ys = np.linspace(-y_max, y_max, height_px)
+    ys = np.linspace(-y_max, y_max, height_px, dtype=dtype)
     falloff_profile = (1 - falloff) + falloff * generalized_normal_pdf(
         xs_scaled, p=p_horizontal
-    )
+    ).astype(dtype)
     img = (
-        generalized_normal_pdf(ys[np.newaxis, :, np.newaxis], scale=scale, p=p_vertical)
+        generalized_normal_pdf(
+            ys[np.newaxis, :, np.newaxis], scale=scale, p=p_vertical
+        ).astype(dtype)
         * falloff_profile
     )
     if img.shape[0] == 1:
         return xr.DataArray(img[0], coords=dict(x=xs, y=ys), dims=["y", "x"])
     else:
         return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["ex", "y", "x"])
-
-
-def bin_spectrum(df, bins):
-    bin_assignment = pd.cut(df.index, bins).rename_categories(
-        (bins.right + bins.left) / 2
-    )
-    return df.groupby(bin_assignment).mean()
-
-
-def load_fpbase_spectra(urls, bins=None):
-    spectra = {
-        name: pd.read_csv(url)
-        .rename(columns={f"{name} {kind}": kind for kind in ("ex", "em", "2p")})
-        .set_index("wavelength")
-        for name, url in urls.items()
-    }
-    if bins is not None:
-        binned_spectra = {
-            name: bin_spectrum(spectrum, bins) for name, spectrum in spectra.items()
-        }
-    return spectra
 
 
 def clean_multiindex_csv(df):
