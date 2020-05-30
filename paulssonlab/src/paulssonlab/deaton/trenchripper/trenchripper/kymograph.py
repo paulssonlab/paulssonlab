@@ -10,7 +10,13 @@ import pickle
 import sys
 import h5py_cache
 import copy
+import pickle as pkl
 from parse import compile
+from time import sleep
+from distributed.client import futures_of
+
+import dask.dataframe as dd
+import dask.delayed as delayed
 
 from skimage import filters
 from .trcluster import hdf5lock
@@ -843,13 +849,19 @@ class kymograph_cluster:
         else:
             df = pd.DataFrame(pd_output,columns=["fov","row","trench","timepoints","File Index","Image Index","lane orientation","y (local)","x (local)"])
             df = df.astype({"fov":int,"row":int,"trench":int,"timepoints":int,"File Index":int,"Image Index":int,"lane orientation":str,"y (local)":float,"x (local)":float,})
-        temp_meta_handle = pandas_hdf5_handler(self.kymographpath + "/temp_metadata_" + str(fov_idx) + ".hdf5")
-        temp_meta_handle.write_df("temp",df)
+
+        fov_idx = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}{x["timepoints"]:04}'), axis=1)
+        df["FOV Parquet Index"] = [item for item in fov_idx]
+        df = df.set_index("FOV Parquet Index")
+        df = df.dropna()
+
+        return df
 
     def generate_kymographs(self,dask_controller):
         writedir(self.kymographpath,overwrite=True)
 
         dask_controller.futures = {}
+
         fovdf = self.meta_handle.read_df("global",read_metadata=True)
         self.metadata = fovdf.metadata
 #         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
@@ -974,8 +986,9 @@ class kymograph_cluster:
             future = dask_controller.daskclient.submit(self.crop_x,file_idx,drift_orientation_and_initend_future,in_bounds_future,self.padding_y,self.trench_len_y,retries=0)
             dask_controller.futures["X Crop: " + str(file_idx)] = future
 
-        ### get coords ###
 
+        ### get coords ###
+        self.delayed_list = []
         for k,fov_idx in enumerate(fov_list):
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
@@ -986,58 +999,63 @@ class kymograph_cluster:
             else:
                 drift_orientation_and_initend_future = dask_controller.futures["Y Trench Drift, Orientations and Initial Trench Ends: " + str(fov_idx)]
 
-            future = dask_controller.daskclient.submit(self.save_coords,fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future,retries=1)#,priority=priority)
-            dask_controller.futures["Coords: " + str(fov_idx)] = future
+            df_delayed = delayed(self.save_coords)(fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future)
+            self.delayed_list.append(df_delayed.persist())
 
-    def collect_metadata(self):
+        ## filtering out non-failed dataframes ##
+        all_delayed_futures = []
+        for item in self.delayed_list:
+            all_delayed_futures+=futures_of(item)
+        while any(future.status == 'pending' for future in all_delayed_futures):
+            sleep(0.1)
+
+        good_delayed = []
+        for item in self.delayed_list:
+            if all([future.status == 'finished' for future in futures_of(item)]):
+                good_delayed.append(item)
+
+        ## compiling output dataframe ##
+        df_out = dd.from_delayed(good_delayed).persist()
+        df_out = df_out.repartition(partition_size="25MB").persist()
+        df_out = self.add_trenchids(df_out).persist()
+
+#         ## writing metadata to disk ##
+        dd.to_parquet(df_out, self.kymographpath + "/metadata/",engine='fastparquet',compression='gzip',write_metadata_file=True)
+
         fovdf = self.meta_handle.read_df("global",read_metadata=True)
-#         fovdf = fovdf.loc[(slice(None), slice(self.t_range[0],self.t_range[1])),:]
         fov_list = fovdf.index.get_level_values("fov").unique().values
 
-        completed_list = []
-        for filename in os.listdir(self.kymographpath):
-            if "temp_metadata" in filename:
-                filename_list = filename.split("_")
-                endstr = filename_list[-1]
-                idx = int(endstr.split(".")[0])
-                completed_list.append(idx)
-
-        df_list = []
-        for fov_idx in completed_list:
-            temp_meta_path = self.kymographpath + "/temp_metadata_" + str(fov_idx) + ".hdf5"
-            temp_meta_handle = pandas_hdf5_handler(temp_meta_path)
-            temp_df = temp_meta_handle.read_df("temp")
-            df_list.append(temp_df)
-            os.remove(temp_meta_path)
-
-        df_out = pd.concat(df_list)
-        df_out = df_out.set_index(["fov","row","trench","timepoints"], drop=True, append=False, inplace=False)
-
-        idx_df = df_out.groupby(["fov","row","trench"]).size().reset_index().drop(0,axis=1).reset_index()
-        idx_df = idx_df.set_index(["fov","row","trench"], drop=True, append=False, inplace=False)
-        idx_df = idx_df.reindex(labels=df_out.index)
-        df_out["trenchid"] = idx_df["index"]
-
-        successful_fovs = df_out.index.get_level_values("fov").unique().tolist()
+        successful_fovs = df_out["fov"].unique().compute().tolist()
         failed_fovs = list(set(fov_list)-set(successful_fovs))
 
-        meta_out_handle = pandas_hdf5_handler(self.metapath)
         kymograph_metadata = {"attempted_fov_list":fov_list,"successful_fov_list":successful_fovs,"failed_fov_list":failed_fovs,"kymograph_params":self.kymograph_params}
-        meta_out_handle.write_df("temp_kymograph",df_out,metadata=kymograph_metadata)
 
-    def reorg_kymograph(self,k):
-        fovdf = self.meta_handle.read_df("temp_kymograph",read_metadata=True)
-        metadata = fovdf.metadata
-        trenchiddf = fovdf.reset_index(inplace=False)
-        trenchiddf = trenchiddf.set_index(["trenchid","timepoints"], drop=True, append=False, inplace=False)
-        trenchiddf = trenchiddf.sort_index()
-        trenchid_list = trenchiddf.index.get_level_values("trenchid").unique().tolist()
+        with open(self.kymographpath + "/metadata.pkl", 'wb') as handle:
+            pickle.dump(kymograph_metadata, handle)
+
+    def add_trenchids(self,df):
+        trench_preindex = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}'), axis=1)
+        df["key"] = trench_preindex
+        trenchids = df.groupby(["fov","row","trench"]).size().reset_index().drop(0,axis=1).reset_index().compute()
+        trenchids["key"]= trench_preindex.unique()
+        del trenchids["fov"]
+        del trenchids["row"]
+        del trenchids["trench"]
+        trenchids.columns = ["trenchid","key"]
+        df = df.join(trenchids.set_index('key'),how="left",on="key",rsuffix="moo")
+        del df["key"]
+        return df
+
+    def reorg_kymograph(self,k,df,trenchid_list,trenchiddf):
+#         df = dd.read_parquet(self.kymographpath + "/metadata/")
+#         trenchid_list = df["trenchid"].unique().compute().tolist()
+#         trenchiddf = df.set_index("trenchid")
 
         output_file_path = self.kymographpath+"/kymograph_"+str(k)+".hdf5"
         with h5py.File(output_file_path,"w") as outfile:
             for channel in self.all_channels:
                 trenchids = trenchid_list[k*self.trenches_per_file:(k+1)*self.trenches_per_file]
-                working_trenchdf = trenchiddf.loc[trenchids]
+                working_trenchdf = trenchiddf.loc[trenchids].compute()
                 fov_list = working_trenchdf["fov"].unique().tolist()
                 trench_arr_fovs = []
                 for fov in fov_list:
@@ -1069,20 +1087,21 @@ class kymograph_cluster:
         for file_idx in file_list:
             proc_file_path = self.kymographpath+"/kymograph_processed_"+str(file_idx)+".hdf5"
             os.remove(proc_file_path)
+        return 1
 
-    def reorg_all_kymographs(self,dask_controller):
+    def post_process(self,dask_controller):
         dask_controller.futures = {}
 
-        fovdf = self.meta_handle.read_df("temp_kymograph",read_metadata=True)
-        file_list = fovdf["File Index"].unique().tolist()
-        metadata = fovdf.metadata
-        trenchiddf = fovdf.reset_index(inplace=False)
-        trenchiddf = trenchiddf.set_index(["trenchid","timepoints"], drop=True, append=False, inplace=False)
-        trenchiddf = trenchiddf.sort_index()
-        trenchid_list = trenchiddf.index.get_level_values("trenchid").unique().tolist()
+        df = dd.read_parquet(self.kymographpath + "/metadata/").persist()
+        trenchid_list = df["trenchid"].unique().compute().tolist()
+        file_list = df["File Index"].unique().compute().tolist()
+        outputdf = df.drop(columns = ["File Index","Image Index"]).persist()
+        trenchiddf = df.set_index("trenchid").persist()
 
-        outputdf = trenchiddf.drop(columns = ["File Index","Image Index"])
-        num_tpts = len(outputdf.index.get_level_values("timepoints").unique().tolist())
+#         with open(self.kymographpath + "/metadata.pkl", 'rb') as handle:
+#             metadata = pickle.load(handle)
+
+        num_tpts = len(trenchiddf["timepoints"].unique().compute().tolist())
         chunk_size = self.trenches_per_file*num_tpts
         if len(trenchid_list)%self.trenches_per_file == 0:
             num_files = (len(trenchid_list)//self.trenches_per_file)
@@ -1092,33 +1111,42 @@ class kymograph_cluster:
         file_indices = np.repeat(np.array(range(num_files)),chunk_size)[:len(outputdf)]
         file_trenchid = np.repeat(np.array(range(self.trenches_per_file)),num_tpts)
         file_trenchid = np.repeat(file_trenchid[:,np.newaxis],num_files,axis=1).T.flatten()[:len(outputdf)]
-        outputdf["File Index"] = file_indices
-        outputdf["File Trench Index"] = file_trenchid
-        fovdf = self.meta_handle.write_df("kymograph",outputdf,metadata=metadata)
+        file_indices = pd.DataFrame(file_indices)
+        file_trenchid = pd.DataFrame(file_trenchid)
+        file_indices.index = outputdf.index
+        file_trenchid.index = outputdf.index
+
+        outputdf["File Index"] = file_indices[0]
+        outputdf["File Trench Index"] = file_trenchid[0]
+        parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):04}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1, meta=int)
+        outputdf["File Parquet Index"] = parq_file_idx
+        outputdf = outputdf.astype({"File Index":int,"File Trench Index":int,"File Parquet Index":int})
 
         random_priorities = np.random.uniform(size=(num_files,))
         for k in range(0,num_files):
             priority = random_priorities[k]
-            future = dask_controller.daskclient.submit(self.reorg_kymograph,k,retries=1,priority=priority)
+            future = dask_controller.daskclient.submit(self.reorg_kymograph,k,df,trenchid_list,trenchiddf,retries=1,priority=priority)
             dask_controller.futures["Kymograph Reorganized: " + str(k)] = future
 
         reorg_futures = [dask_controller.futures["Kymograph Reorganized: " + str(k)] for k in range(num_files)]
-        future = dask_controller.daskclient.submit(self.cleanup_kymographs,reorg_futures,retries=1,priority=priority)
+        future = dask_controller.daskclient.submit(self.cleanup_kymographs,reorg_futures,file_list,retries=1,priority=priority)
         dask_controller.futures["Kymographs Cleaned Up"] = future
+        dask_controller.daskclient.gather([future])
 
-    def post_process(self,dask_controller):
-        self.collect_metadata()
-        self.reorg_all_kymographs(dask_controller)
+        dd.to_parquet(outputdf, self.kymographpath + "/metadata/",engine='fastparquet',compression='gzip',write_metadata_file=True)
+
 
     def kymo_report(self):
-        df_in = self.meta_handle.read_df("kymograph",read_metadata=True)
+        df = dd.read_parquet(self.kymographpath + "/metadata/").persist()
+        with open(self.kymographpath + "/metadata.pkl", 'rb') as handle:
+            metadata = pickle.load(handle)
 
-        fov_list = df_in.metadata["attempted_fov_list"]
-        failed_fovs = df_in.metadata["failed_fov_list"]
+        fov_list = metadata["attempted_fov_list"]
+        failed_fovs = metadata["failed_fov_list"]
 
-        fovs_proc = len(df_in.groupby(["fov"]).size())
-        rows_proc = len(df_in.groupby(["fov","row"]).size())
-        trenches_proc = len(df_in.groupby(["fov","row","trench"]).size())
+        fovs_proc = len(df.groupby(["fov"]).size().compute())
+        rows_proc = len(df.groupby(["fov","row"]).size().compute())
+        trenches_proc = len(df.groupby(["fov","row","trench"]).size().compute())
 
         print("fovs processed: " + str(fovs_proc) + "/" + str(len(fov_list)))
         print("rows processed: " + str(rows_proc))
