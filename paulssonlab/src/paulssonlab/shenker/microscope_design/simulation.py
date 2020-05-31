@@ -32,6 +32,10 @@ def import_fpbase_spectra(urls):
     return spectra
 
 
+def bin_size(x):
+    return (x[-1] - x[0]) / len(x)
+
+
 def interpolate_dataframe(df, bins, union=False):
     old_index = df.index.astype(np.float)
     new_index = pd.Index(bins, name=df.index.name)
@@ -71,9 +75,14 @@ def image_to_xarray(img, scale):
     return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["y", "x"])
 
 
+def shift_xarray(ary, shifts):
+    new_coords = {name: getattr(ary, name) + val for name, val in shifts.items()}
+    return ary.assign_coords(**new_coords)
+
+
 def shift_and_interp(a, b, shifts, method="linear"):
-    offsets = {name: getattr(b, name) + val for name, val in shifts.items()}
-    return a.interp_like(b.assign_coords(**offsets), method=method).assign_coords(
+    new_coords = {name: getattr(b, name) + val for name, val in shifts.items()}
+    return a.interp_like(b.assign_coords(**new_coords), method=method).assign_coords(
         b.coords
     )
 
