@@ -188,53 +188,39 @@ def read_thorlabs(filename):
     else:
         skiprows = 0
         header = 0
-    print("skip", skiprows)
     sheets = pd.read_excel(filename, sheet_name=None, skiprows=skiprows, header=header)
-    # equivalent to usecols=lambda x: "Unnamed" not in x,
-    # but works for MultiIndex
     dfs = {}
     for sheet_name, sheet in sheets.items():
-        # print(">>", sheet.columns)
-        # print("$$", sheet)
-        # print(sheet.columns.get_level_values(0).str.startswith("Unnamed"))
-        print("$", sheet.columns.get_level_values(0))
+        # strip AOI from sheet name
+        sheet_name = sheet_name.replace(" AOI", "")
         sheet = sheet.loc[
             :, ~sheet.columns.get_level_values(0).str.startswith("Unnamed")
         ]
         for col in sheet.columns:
-            print(">", col)
             if (isinstance(col, tuple) and col[0].startswith("Wavelength (µm)")) or (
                 not isinstance(col, tuple) and col.startswith("Wavelength (µm)")
             ):
-                print("FIX")
                 sheet[col].values[:] *= 1000
         is_index = sheet.columns.get_level_values(0).str.startswith("Wavelength")
-        print("index", is_index)
         splits = np.concatenate((np.where(is_index)[0], (len(sheet.columns),)))
-        print("s", splits)
         if len(splits) > 2:
             column_sets = np.vstack((splits[:-1], splits[1:]))
         else:
             column_sets = [splits]
-        print(column_sets, column_sets[0])
         for column_set in column_sets:
             df = sheet.iloc[:, slice(*column_set)]
-            # print(df)
-            print("COLS", df.columns.values)
             if isinstance(df.columns, pd.MultiIndex):
                 col_names = df.columns.get_level_values(1)
                 col_names0 = df.columns.get_level_values(0)
                 col_names = [col_names0[0], *col_names[1:]]
             else:
                 col_names = df.columns.get_level_values(0)
-            print("COL NAMES", col_names)
             assert col_names[0].startswith("Wavelength")
             col_names = ["Wavelength", *col_names[1:]]
             m = re.match(THORLABS_COLUMN_RE, col_names[1])
             if m and m.group(1):
                 sheet_name = m.group(1)
             # split df
-            print(df.columns)
             col_names = [
                 re.sub(
                     r"^(?:% Reflectance|Reflectance \(%\))$",
@@ -246,7 +232,6 @@ def read_thorlabs(filename):
             df.columns = pd.Index(col_names)
             # df.columns.set_levels(col_names, level=0, inplace=True)
             ###TODO
-            print(df.columns.values)
             df.set_index("Wavelength", inplace=True)
             df = df.loc[: df.last_valid_index()]
             df.sort_index(inplace=True)
