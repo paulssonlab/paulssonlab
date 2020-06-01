@@ -13,6 +13,9 @@
 # GDS files
 *.gds
 
+# Microsoft Office swap
+~*
+
 ## Windows
 
 # Windows thumbnail cache files

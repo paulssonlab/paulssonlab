@@ -9,6 +9,8 @@ import re
 ureg = pint.UnitRegistry()
 Q_ = ureg.Quantity
 
+THORLABS_COLUMN_RE = r"(?:% )?Reflectance(?: \((?:((?:(?![()%,]).)+), )?((?:(?![()%,]).)+)\)|, (\S+) \(%\))"
+
 
 def valid_range(ary):
     is_valid = ~np.isnan(ary)
@@ -161,7 +163,7 @@ def clean_multiindex_csv(df):
     return df
 
 
-def load_filter_spectra(filename):
+def read_filter_spectra(filename):
     filters_all = clean_multiindex_csv(pd.read_csv(filename, header=[2, 3]).iloc[:, 1:])
     filters = {}
     filter_peaks = {}
@@ -173,3 +175,85 @@ def load_filter_spectra(filename):
         filters[name] /= 100  # convert to fraction
         filter_peaks[name] = filters[name].iloc[:, 0].idxmax()
     return filters, filter_peaks
+
+
+def read_thorlabs(filename):
+    first_row = pd.read_excel(filename, sheet_name=0, header=None, nrows=1)
+    if (~first_row.isnull()).values.sum() == 1:
+        skiprows = 1
+        if first_row[first_row.T.first_valid_index()].values[0].startswith("Variation"):
+            header = (0, 1)
+        else:
+            header = 0
+    else:
+        skiprows = 0
+        header = 0
+    print("skip", skiprows)
+    sheets = pd.read_excel(filename, sheet_name=None, skiprows=skiprows, header=header)
+    # equivalent to usecols=lambda x: "Unnamed" not in x,
+    # but works for MultiIndex
+    dfs = {}
+    for sheet_name, sheet in sheets.items():
+        # print(">>", sheet.columns)
+        # print("$$", sheet)
+        # print(sheet.columns.get_level_values(0).str.startswith("Unnamed"))
+        print("$", sheet.columns.get_level_values(0))
+        sheet = sheet.loc[
+            :, ~sheet.columns.get_level_values(0).str.startswith("Unnamed")
+        ]
+        for col in sheet.columns:
+            print(">", col)
+            if (isinstance(col, tuple) and col[0].startswith("Wavelength (µm)")) or (
+                not isinstance(col, tuple) and col.startswith("Wavelength (µm)")
+            ):
+                print("FIX")
+                sheet[col].values[:] *= 1000
+        is_index = sheet.columns.get_level_values(0).str.startswith("Wavelength")
+        print("index", is_index)
+        splits = np.concatenate((np.where(is_index)[0], (len(sheet.columns),)))
+        print("s", splits)
+        if len(splits) > 2:
+            column_sets = np.vstack((splits[:-1], splits[1:]))
+        else:
+            column_sets = [splits]
+        print(column_sets, column_sets[0])
+        for column_set in column_sets:
+            df = sheet.iloc[:, slice(*column_set)]
+            # print(df)
+            print("COLS", df.columns.values)
+            if isinstance(df.columns, pd.MultiIndex):
+                col_names = df.columns.get_level_values(1)
+                col_names0 = df.columns.get_level_values(0)
+                col_names = [col_names0[0], *col_names[1:]]
+            else:
+                col_names = df.columns.get_level_values(0)
+            print("COL NAMES", col_names)
+            assert col_names[0].startswith("Wavelength")
+            col_names = ["Wavelength", *col_names[1:]]
+            m = re.match(THORLABS_COLUMN_RE, col_names[1])
+            if m and m.group(1):
+                sheet_name = m.group(1)
+            # split df
+            print(df.columns)
+            col_names = [
+                re.sub(
+                    r"^(?:% Reflectance|Reflectance \(%\))$",
+                    "Reflectance",
+                    re.sub(THORLABS_COLUMN_RE, "\\2\\3", c),
+                )
+                for c in col_names
+            ]
+            df.columns = pd.Index(col_names)
+            # df.columns.set_levels(col_names, level=0, inplace=True)
+            ###TODO
+            print(df.columns.values)
+            df.set_index("Wavelength", inplace=True)
+            df = df.loc[: df.last_valid_index()]
+            df.sort_index(inplace=True)
+            df.values[:] /= 100  # % to fraction
+            dfs[sheet_name] = df
+    if len(dfs) == 1:
+        merged_df = next(iter(dfs.values()))
+    else:
+        merged_df = pd.concat(dfs, axis=1)
+    return merged_df
