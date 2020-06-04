@@ -38,12 +38,13 @@ def bin_size(x):
     return (x[-1] - x[0]) / len(x)
 
 
-def interpolate_dataframe(df, bins, union=False):
+def interpolate_dataframe(df, new_index, union=False):
     old_index = df.index.astype(np.float)
-    new_index = pd.Index(bins, name=df.index.name)
+    if not isinstance(new_index, pd.core.indexes.base.Index):
+        new_index = pd.Index(new_index, name=df.index.name)
     union_index = new_index.union(old_index)
     new_df = df.reindex(index=union_index)
-    new_df.interpolate(method="nearest", inplace=True)
+    new_df.interpolate(method="linear", inplace=True)
     if not union:
         new_df = new_df.loc[new_index]
     return new_df
