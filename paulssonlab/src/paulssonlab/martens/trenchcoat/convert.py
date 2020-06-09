@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Using nd2reader version 2.1.3
+# Using nd2reader version 2.1.3, with modifications for loading F-ordered channel stacks
 import nd2reader
 from multiprocessing import Pool
 import pathlib
@@ -8,9 +8,9 @@ import os
 import time
 import tables
 import numpy
-import argparse
 import xmltodict
 import xml.etree.ElementTree as ElementTree
+from tqdm import tqdm
 
 import warnings
 
@@ -21,15 +21,13 @@ warnings.simplefilter(action="ignore", category=tables.NaturalNameWarning)
 
 # TODO:
 # - sanity checking on input, output directories
-# - alternative linking method (e.g. to encode flow lanes) (NOTE: could also make this a separate utility? Re-link afterwards.)
-# - case sensitivity when checking ".nd2" -- allow ".ND2" etc.
+# - Before copying data, check that the channels are all the same in all the files:
+#   otherwise, it's inappropriate to convert these files together!
+# - Could also enforce same dimensions, if this helps with browsing e.g. using Napari?
+#   But it mightn't make sense to enforce FOV count, because that could conceivably vary from one file to another.
 
 # Main conversion process, which makes a new H5 file for each Frame
 def conversion(out_dir, path, fov, frame):
-    # Complevel 9 vs 1 is not worth. Very minimal gains in compression amount.
-    filters = tables.Filters(complevel=1, complib="zlib")
-    chunk_dimensions = (128, 128)
-
     # Create all parent directories
     (file_root, extension) = os.path.splitext(os.path.basename(path))
     dir_path = "{}/{}/FOV_{}/".format(out_dir, file_root, fov, frame)
@@ -43,18 +41,19 @@ def conversion(out_dir, path, fov, frame):
     reader = nd2reader.Nd2(path)
 
     for z in reader.z_levels:
-        for c in reader.channels:
-            img = reader.get_image(
-                channel_name=c, field_of_view=fov, frame_number=frame, z_level=z
-            )
+        # Read in a 3D array, width x height x channels, in F-order
+        stack = reader.get_image_stack(field_of_view=fov, frame_number=frame, z_level=z)
 
+        # NOTE this iteration will work if the channel ordering is preserved, which it should be!
+        for i, c in enumerate(reader.channels):
             # Copy image into HDF5 file hierarchy
             h5file.create_carray(
                 "/Z_{}".format(z),
                 c,
-                obj=img,
-                chunkshape=chunk_dimensions,
-                filters=filters,
+                obj=stack[..., i],
+                chunkshape=(128, 128),
+                # Complevel 9 vs 1 is not worth it. Very minimal gains in compression amount.
+                filters=tables.Filters(complevel=1, complib="zlib"),
                 createparents=True,
             )
 
@@ -64,16 +63,18 @@ def conversion(out_dir, path, fov, frame):
 
 
 # A standard linking system, which recapitulates the directory structure
-# TODO: alternative linking, for example to specify "lanes" or other types of related FOVs
-def link_files(dir, frames, fields_of_view):
-    out_file = os.path.join(dir, "data.h5")
+def link_files(in_dir, frames, fields_of_view):
+    out_file = os.path.join(in_dir, "data.h5")
     h5file_top = tables.open_file(out_file, mode="w")
 
+    out_file_metadata = os.path.join(in_dir, "metadata.h5")
+    h5file_metadata = tables.open_file(out_file_metadata, mode="w")
+
     # ND2 file directories
-    for nd2_entry in os.scandir(dir):
+    for nd2_entry in os.scandir(in_dir):
         if nd2_entry.is_dir():
             # H5 file for each ND2 file
-            nd2_h5_outfile = os.path.join(dir, "{}.h5".format(nd2_entry.name))
+            nd2_h5_outfile = os.path.join(in_dir, "{}.h5".format(nd2_entry.name))
             h5file_nd2file = tables.open_file(
                 nd2_h5_outfile, mode="w", title=nd2_entry.name
             )
@@ -127,14 +128,17 @@ def link_files(dir, frames, fields_of_view):
                 createparents=True,
             )
 
-            # Link metadata into the main file, too
-            # Metadata will be copied in later
-            h5file_top.create_external_link(
-                "/Metadata",
-                "File_{}".format(nd2_entry.name),
-                "{}_metadata.h5:/".format(nd2_entry.name),
-                createparents=True,
+        # Link metadata into the overall metadata file
+        elif nd2_entry.name.endswith("_metadata.h5"):
+            name = nd2_entry.name.split("_metadata.h5")[0]
+            h5file_metadata.create_external_link(
+                "/", "File_{}".format(name), "{}_metadata.h5:/".format(name)
             )
+
+    h5file_metadata.close()
+
+    # And the final link of the metadata into the main file
+    h5file_top.create_external_link("/", "Metadata", "metadata.h5:/")
 
     h5file_top.close()
 
@@ -221,7 +225,7 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
 
 #
 
-# Copy ND2 metadata into an existing HDF5 hierarchy
+# Copy ND2 metadata into an HDF5 hierarchy
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
     reader = nd2reader.Nd2(in_file)
     (name, extension) = os.path.splitext(os.path.basename(in_file))
@@ -389,153 +393,113 @@ def copy_fov_metadata(h5file, frames, fields_of_view, reader):
     fov_metadata_table.flush()
 
 
-# Modified from https://rosettacode.org/wiki/Range_expansion#Python
-# Input a range, such as: 1,4-7
-# Return a list with all elements within the range.
-def range_expand(range_string):
-    result = []
+# Input list of nodes from the metadata node
+# Returns an error if not all nodes have identical channels arrays in their metadata
+def metadata_channels_equal(metadata_nodes):
+    first_node = metadata_nodes.pop(0)
+    first_channels = first_node.get_node("channels").read()
 
-    for r in range_string.split(","):
-        # Start at 1, because the first number might be negative,
-        # meaning that the first char is a minus (dash) sign.
-        if "-" in r[1:]:
-            first, second = r[1:].split("-", 1)
-            result += range(int(r[0] + first), int(second) + 1)
+    for n in metadata_nodes:
+        channels = n.get_node("channels").read()
+        if not numpy.array_equal(first_channels, channels):
+            return False
 
-        else:
-            result.append(int(r))
-
-    return result
-
-
-# TODO: throw errors if the arguments don't make sense?
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Convert an ND2 file to an HDF5 file equivalent."
-    )
-
-    parser.add_argument("-o", "--out-dir", type=str, help="Output directory.")
-    parser.add_argument(
-        "-i", "--in-dir", type=str, help="Input directory, with 1 or more ND2 files."
-    )
-    parser.add_argument(
-        "-n",
-        "--num-cpu",
-        type=int,
-        help="Number of CPUs to use. Default: use all CPUs.",
-    )
-    parser.add_argument(
-        "-f",
-        "--frames",
-        type=str,
-        help="List of frames to copy. Default: copy all frames.",
-    )
-    parser.add_argument(
-        "-F", "--fovs", type=str, help="List of FOVs to copy. Default: copy all FOVs."
-    )
-
-    return parser.parse_args()
+    return True
 
 
 ###
 
-if __name__ == "__main__":
-    # Parse command-line arguments
-    # TODO do some basic sanity checking on the inputs (not empty, etc.)
-    args = parse_args()
 
-    # 1. HDF directory to store new FOV files (out-dir)
-    # Store a separate HDF5 file for each FOV in this directory
-    hdf_dir = args.out_dir
+def main_conversion_function(hdf_dir, nd2_dir, num_cpu, frames, fields_of_view):
+    ## Copy the metadata
+    pathlib.Path(hdf_dir).mkdir(parents=True, exist_ok=True)
 
-    # 2. Path of ND2 file to be converted (in-file)
-    nd2_dir = args.in_dir
+    files = []
+    for f in os.scandir(nd2_dir):
+        if f.path.lower().endswith(".nd2"):
+            files.append(f)
 
-    # 3. Number of processes to run in parallel
-    if args.num_cpu:
-        num_cpu = args.num_cpu
-    else:
-        num_cpu = None  # defaults to use all available CPUs
+    pbar = tqdm(total=len(files), desc="File metadata")
 
-    # 4. Parse the frame and fov ranges
-    # a. Range of time frames to be analyzed, if the user doesn't want to copy all the frames
-    if args.frames:
-        frames = range_expand(args.frames)
-    else:
-        frames = None
-
-    # b. Range of FOVs to be analyzed
-    if args.fovs:
-        fields_of_view = range_expand(args.fovs)
-    else:
-        fields_of_view = None
-
-    ###
-
-    # Write the images
-    print("Writing files...")
-    start = time.time()
+    def update_pbar(*a):
+        pbar.update()
 
     with Pool(processes=num_cpu) as p:
-        # Iterate the ND2 files in the directory
-        # Use sorted order, to be more consistent.
-        files = sorted([file for file in os.scandir(nd2_dir)], key=lambda f: f.path)
-
         for in_file in files:
-            if in_file.path.endswith(".nd2"):
-                nd2_file = nd2reader.Nd2(in_file.path)
-
-                if not fields_of_view:
-                    fields_of_view = nd2_file.fields_of_view
-
-                if not frames:
-                    frames = nd2_file.frames
-
-                z_levels = nd2_file.z_levels
-
-                nd2_file.close()
-
-                for fov in fields_of_view:
-                    for frame in frames:
-                        args = [hdf_dir, in_file.path, fov, frame]
-                        p.apply_async(conversion, args)
+            args = [hdf_dir, in_file.path, frames, fields_of_view]
+            p.apply_async(copy_metadata, args, callback=update_pbar)
 
         p.close()
         p.join()
 
-    end = time.time()
-    print("Done writing images, which took {} seconds.".format(end - start))
+    pbar.close()
 
-    # Link the files
+    ## Write the images
+    total_frames = 0
+
+    # Iterate the ND2 files in the directory
+    # Use sorted order, to be more consistent.
+    files = sorted(
+        [file for file in os.scandir(nd2_dir) if file.path.lower().endswith(".nd2")],
+        key=lambda f: f.path,
+    )
+
+    # First, loop the files & calculate how many frames there are total (for the progress bar):
+    for in_file in files:
+        nd2_file = nd2reader.Nd2(in_file.path)
+
+        if not fields_of_view:
+            fields_of_view = nd2_file.fields_of_view
+
+        if not frames:
+            frames = nd2_file.frames
+
+        total_frames += len(fields_of_view) * len(frames)
+
+    pbar_frames = tqdm(total=total_frames, desc="Frame image data")
+
+    def update_pbar_frames(*a):
+        pbar_frames.update()
+
+    # Now, loop again
+    with Pool(processes=num_cpu) as p:
+        for in_file in files:
+            nd2_file = nd2reader.Nd2(in_file.path)
+
+            if not fields_of_view:
+                fields_of_view = nd2_file.fields_of_view
+
+            if not frames:
+                frames = nd2_file.frames
+
+            nd2_file.close()
+
+            for fov in fields_of_view:
+                for frame in frames:
+                    args = [hdf_dir, in_file.path, fov, frame]
+                    p.apply_async(conversion, args, callback=update_pbar_frames)
+
+        p.close()
+        p.join()
+
+    pbar_frames.close()
+
+    ## Link the files
     print("Linking files...")
     start = time.time()
     link_files(hdf_dir, frames, fields_of_view)
     end = time.time()
     print("Done linking files, which took {} seconds.".format(end - start))
 
-    # Copy the metadata
-    print("Copying metadata...")
-    start = time.time()
+    ## FIXME TODO implement errors here!
+    # Or maybe just print a warning...
+    ## Run a check that the channels in each of the files' metadata are the same,
+    ## and abort conversion process if not.
+    # channels_equal = metadata_channels_equal(h5file_metadata.list_nodes("/"))
 
-    # Don't use more processes than files
-    files = []
-    for f in os.scandir(nd2_dir):
-        if f.path.endswith(".nd2"):
-            files.append(f)
-
-    if num_cpu:
-        if num_cpu > len(files):
-            num_cpu = len(files)
-
-    with Pool(processes=num_cpu) as p:
-        for in_file in files:
-            args = [hdf_dir, in_file.path, frames, fields_of_view]
-            p.apply_async(copy_metadata, args)
-
-        p.close()
-        p.join()
-
-    end = time.time()
-    print("Done copying metadata, which took {} seconds.".format(end - start))
+    # if channels_equal:
+    # pass # no error!
+    # else:
+    # pass # error!
 
     # Done!
