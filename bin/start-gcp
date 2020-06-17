@@ -61,9 +61,9 @@ gcloud container node-pools create dask-worker-pool \
     --enable-autoscaling --min-nodes=0 --max-nodes=3 \
     --node-taints="$DASK_TAINTS" \
     --node-labels="$DASK_LABELS"
-echo "📓  ${bold}Disabling kube-dns autoscaling...${normal}"
+echo "🌐  ${bold}Disabling kube-dns autoscaling...${normal}"
 kubectl scale --replicas=0 deployment/kube-dns-autoscaler --namespace=kube-system
 kubectl scale --replicas=1 deployment/kube-dns --namespace=kube-system
-echo "📓  ${bold}Reducing resource requests for fluentd...${normal}"
+echo "🇪🇺  ${bold}Reducing resource requests for fluentd...${normal}"
 kubectl apply -f "${root}/cloud/minimal_fluentd.yaml"
 resume-gcp
