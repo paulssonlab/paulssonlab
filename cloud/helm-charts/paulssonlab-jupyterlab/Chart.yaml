@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+name: paulssonlab-jupyterlab
+version: 0.0.1
+appVersion: 0.0.1
+description: A single-user JupyterLab instance
+home: https://paulssonlab.org
+sources:
+  - https://github.com/paulssonlab/paulssonlab
+maintainers:
+  - name: shenker
+    email: jacob@shenker.net

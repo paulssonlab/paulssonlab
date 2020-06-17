@@ -1,0 +1,8 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${bin_dir}/../cloud/common.sh"
+#echo "❌  ${bold}Getting credentials for GCP cluster ${CLUSTER_NAME}...${normal}"
+gcloud container clusters get-credentials "$CLUSTER_NAME"
+helm uninstall paulssonlab-gcp
