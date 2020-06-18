@@ -4,96 +4,137 @@ import os
 import time
 from tqdm import tqdm
 import numpy
-
 from scipy.signal import find_peaks
 from skimage.filters import unsharp_mask
-
 import tables
 from multiprocessing import Pool
-
 from params import read_params_file
 
+"""
+Write a PyTables table to each HDF5 FOV file, containing the trench co-ordinates for that FOV (and all time frames therein).
+"""
 
-### Write a PyTables table to each HDF5 FOV file, containing the trench co-ordinates for that FOV
-### (and all time frames therein)
+# TODO add code to detect trench rows!
+# TODO what needs to change if the images are now stored with F-ordering?
 
-# Run basic trench analysis on an HDF5 file:
-# detect trenches using the first time frame, then measure trench properties in all time frames
-# Store detected trenches in a PyTables  table.
-# TODO also allow cropping left & right? (e.g. maybe it's blurry or something)
+
 def run_trench_analysis(
-    hdf5_file_path,
-    min_peak_distance,
-    cutoff,
-    trench_half_width,
-    crop_top,
-    crop_bottom,
-    identifier,
-    channel_name,
-    x_dimension,
-    y_dimension,
+    in_file,
+    out_dir,
+    filename,
+    fov,
+    frame,
+    z_level,
+    params,
+    trench_width,
+    trench_length,
+    min_distance,
 ):
+    """
+    Run basic trench analysis on an HDF5 file: detect trenches for each time frame,
+    or just using the first time frame. Then, measure trench properties in all time frames.
 
-    fov_h5file = tables.open_file(hdf5_file_path, mode="r+")
+    Store detected trenches in a PyTables array.
 
-    ### Detect trenches in phase; return pairs of x_min, x_max co-ordinates, for each trench
-    ranges = run_trench_detection(
-        fov_h5file.root.images.Frame_0,
-        channel_name,
-        crop_top,
-        crop_bottom,
-        cutoff,
-        trench_half_width,
+    Each array entry (row) has 4 values (min_row, min_col, max_row, max_col), and there is 1 row per region (trench).
+    Regions must be rectangular, and must have the same dimension (for stacking purposes).
+    """
+    h5file = tables.open_file(in_file, mode="r")
+    node_path = "/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+        filename, fov, frame, z_level, params["channel"]
     )
-    # TODO: this will return the ndarray
 
-    # FIXME instead of writing to a table, just use a ndarray with 4 uint16 values: x_min, x_max, y_min, y_max
+    if params["crop"]:
+        img = h5file.get_node(node_path)[
+            params["crop"]["top"] : params["crop"]["bottom"],
+            params["crop"]["left"] : params["crop"]["right"],
+        ]
+    else:
+        img = h5file.get_node(node_path).read()
 
-    ### Create distinct properties tables for each FOV, then merge them together at the end
-    # Coordinates of the detected trenches
-    table_name = "trench_coordinates_{}".format(identifier)
-    table_path = "/tables/{}".format(table_name)
+    h5file.close()
 
-    # TODO write a fixed-size array, no chunking.
+    # Write coordinates of the detected trenches to HDF5
+    path_string = "/{}/FOV_{}/Frame_{}/Z_{}".format(filename, fov, frame, z_level)
+    out_file_path = os.path.join(out_dir, "{}/regions.h5".format(path_string))
+    regions_file = tables.open_file(out_dir, mode="w")
 
-    print("Detected {} trenches in FOV {}".format(ranges.shape[0], fov))
+    # Find all the trench rows in the image
+    # Need to pass in the crop params, because these values have to be taken into consideration when returning co-ordinates
+    # w.r.t. the original, uncropped image (which is the one which remains stored on disk).
+    rows = detect_trench_rows(img, params["crop"])
+
+    # For each row, find all the trenches
+    # TODO does it make sense to store the rows all together, or separately?
+    # Probably separately, because it might be the case that the trenches in different rows have different dimensions.
+    for i, row in enumerate(rows):
+        regions = detect_trenches(img, trench_width, trench_length, min_distance)
+        # print("Detected {} trenches in File {} FOV {} Frame {} Z {} Row {}".format(regions.shape[0], filename, fov, frame, z_level, i)) # DEBUG
+        regions_file.create_array(
+            path_string, "row_{}".format(i), obj=regions, createparents=True
+        )
+
+    regions_file.close()
 
 
-# node is the first frame in this fov, which will be used for trench detection
-#
-# Return pairs of x_min, x_max co-ordinates, for each trench
-# Trenches must have identical dimensions
-# FIXME pass in the true image width, not a constant value of 2048
-def run_trench_detection(
-    node, channel_name, crop_top, crop_bottom, cutoff, trench_half_width
-):
-    # TODO Write top left, bottom right corners to HDF5 table (for future reference) = 4 integers
-    # TODO auto-detect cropping top & bottom
+def detect_trench_rows(img, crop_params):
+    """
+    Find rows of trenches.
+    Input a single image, and parameters [TBD].
+    Return a numpy array, each row containing 4 co-ordinates:
+    min_row, min_col, max_row, max_col, defining the rectangular region corresponding to that row of trenches.
+    TODO sanity checking on the result, to make sure that it's within the boundaries of the image?
+    FIXME what are the necessary parameters?
+    """
+    # List of lists: each sub-list has 4 values, and there is 1 sub-list per detected row
+    coords = []
 
-    # Get the very first phase image in this FOV position (zeroth time frame)
-    img_phase_zeroth = node._f_get_child(channel_name)[crop_top:crop_bottom]
+    # Flatten in the x-dimension
+    peaks_data = img.mean(axis=1)
 
-    # Run the unsharp mask to enhance edges & to normalize from 0.0 - 1.0
-    # TODO tweak the radius & amount parameters? Pass in as variables?
-    img_phase_zeroth = unsharp_mask(img_phase_zeroth, radius=2, amount=40)
+    # more steps TBD
+
+    # Numpy conversion to 2D list from 2D list works as long as every sub-list has identical dimensions
+    return numpy.array(coords)
+
+
+def detect_trenches(img, trench_width, trench_length, min_distance):
+    """
+    Input an image, and some parameters.
+    Output an numpy array of rectangular trench co-ordinates.
+    """
+    # TODO make sure that this is right
+    img_width = img.shape[3] - img.shape[1]
+
+    # Detect trenches (usually in phase contrast images).
+    # Return (x_min, x_max, y_min, y_max) co-ordinates, for each trench,
+    # OR min_row, min_col, max_row, max_col
+
+    # Run the unsharp mask to enhance edges & to normalize from 0.0 - 1.0 # Values that worked: radius=2, amount=40
+    img = unsharp_mask(
+        img, radius=params["unsharp_mask_radius"], amount=params["unsharp_mask_amount"]
+    )
 
     # Flatten in the y-dimension
-    peaks_data = img_phase_zeroth.mean(axis=0)
+    peaks_data = img.mean(axis=0)
 
     # Use scipy's peak detection algorithm
     peaks, _ = find_peaks(peaks_data)
 
     # Remove non-trench peaks
-    trench_peaks = remove_non_trenches(peaks_data, peaks, cutoff)
+    trench_peaks = remove_non_trenches(peaks_data, peaks, params["cutoff"])
 
     # Merge peaks which are close to each other
-    merged_peaks = merge_peaks(trench_peaks, min_peak_distance)
+    merged_peaks = merge_peaks(trench_peaks, min_distance)
 
     # Starting, ending x-coordinates for each trench.
     # These can be used to define rectangular regions of interest.
+    # FIXME converting trench width to half width? best way?
+    # If it's always the same, then pass this in rather than the whole width?
+    trench_half_width = trench_width // 2
     ranges = define_trenches(merged_peaks, trench_half_width)
 
-    ### 2 cleanup steps:
+    # TODO 2 cleanup steps:
 
     # 1. Filter out overlapping trenches
     # UNIMPLEMENTED!
@@ -107,14 +148,17 @@ def run_trench_detection(
 
     # FIXME: input true image width, not this constant value
     if len(ranges) != 0:
-        if ranges[-1][1] > 2048:
+        if ranges[-1][1] > img_width:
             ranges.pop()
 
-    return ranges
+    # Convert to numpy array
+    return numpy.array(ranges)
 
 
-# Remove non-trenches
 def remove_non_trenches(peaks_data, peaks, cutoff):
+    """
+    Remove non-trenches.
+    """
     # Filter out: only keep inter-trench peak indices
     threshold = (peaks_data[peaks] > cutoff) * peaks
 
@@ -124,13 +168,14 @@ def remove_non_trenches(peaks_data, peaks, cutoff):
     return peaks[nz]
 
 
-# Merge the nearby peaks in peaks, a numpy array resulting from find_peaks()
-# TODO: also add a sanity check: only merge them if both are above or below the threshold line
 def merge_peaks(peaks, min_peak_distance):
+    """
+    Merge the nearby peaks in peaks, a numpy array resulting from find_peaks().
+    TODO: also add a sanity check: only merge them if both are above or below the threshold line
+    """
     merged_peaks = []
 
-    # Alternative version: double while loops
-    # This allows for merging clusters of nearby peaks
+    # Use double while loops to allow for merging clusters of nearby peaks
     i = 0
     while i < len(peaks) - 1:
         cluster = []
@@ -147,30 +192,29 @@ def merge_peaks(peaks, min_peak_distance):
         merged_peaks.append(avg)
         i = j
 
-    ## Done looping
-
     # Finally, the last peak
-    # If i > len(peaks), then we merged the last one, and so can skip it
-    # but if it's ==, then we have to keep it.
+    # If i > len(peaks) - 1, then we merged the last one, and so can skip it,
+    # but if i == len(peaks) - 1, then we have to keep it.
     if i == len(peaks) - 1:
         merged_peaks.append(peaks[i])
 
-    ## Done with last peak
-
-    # Convert to numpy array
-    merged_peaks = numpy.array(merged_peaks)
-
-    return merged_peaks
+    # Convert from numpy list to numpy array
+    return numpy.array(merged_peaks)
 
 
-# Detect Trenches
 def define_trenches(trench_peaks, trench_half_width):
-    # Using just the trench midpoints & the pre-specified widths, define left-> right boundaries for each trench
-    # Assume each trench spans from top to bottom
+    """
+    Detect Trenches
+    Using just the trench midpoints & the pre-specified widths, define left -> right boundaries for each trench.
+    Assume each trench spans from top to bottom.
 
-    # TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
-    # Before making ranges, check whether would overlap?
+    TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
+    Before making ranges, check whether would overlap?
 
+    TODO: return 4 co-ordinates: either
+    min_row, min_col, max_row, max_col,
+    OR x_min, x_max, y_min, y_max
+    """
     # ranges = []
     # for t in trench_peaks:
     # ranges.append( (t - trench_half_width, t + trench_half_width) )
@@ -180,109 +224,119 @@ def define_trenches(trench_peaks, trench_half_width):
     return ranges
 
 
-# TODO: instead of having these as separate tables, instead can *link* all of the output
-# into a new HDF5 file, like we've been doing elsewhere.
-# Merge the trench co-ordinates tables, store the result in the parent HDF5 file
-def merge_tables(parent_file, in_dir, identifier):
-    h5file = tables.open_file(os.path.join(in_dir, parent_file), mode="r+")
-
-    # Create the table type
-    Trench_Coords = make_trench_info_type()
-
-    table_path = "/tables/trench_coordinates_{}".format(identifier)
-
-    # Create a table for storing the properties of the entire trench
-    # If table exists, delete it and start over
-    if h5file.__contains__(table_path):
-        node = h5file.get_node(table_path)
-        node._f_remove()
-
-    trench_coordinates_table_global = h5file.create_table(
-        "/tables",
-        "trench_coordinates_{}".format(identifier),
-        Trench_Coords,
-        "Trench_coordinates",
-        createparents=True,
-    )
-
-    # For appending new entries
-    trench_coordinates_row_global = trench_coordinates_table_global.row
-
-    ### See: https://stackoverflow.com/questions/24891014/append-all-rows-from-one-table-to-another-using-pytables
-
-    print("Merging tables...")
-    start = time.time()
-
-    directory = os.path.join(in_dir, "FOV")
-    for filename in os.listdir(directory):
-        if filename.endswith("h5"):
-            table_file = tables.open_file(os.path.join(directory, filename), "r")
-            local_table_path = "/tables/trench_coordinates_{}".format(identifier)
-            table = table_file.get_node(table_path)
-
-            for next_row in table.iterrows():
-                trench_coordinates_table_global.append([next_row[:]])
-
-            table.close()
-            table_file.close()
-
-    # Done copying trench properties
-    trench_coordinates_table_global.close()
-    h5file.close()
-
-    ### Done merging!
-    print("Done merging tables.")
-
-
-### Main
+def shared_region_linking(out_dir):
+    """
+    If regions are shared between time frames, then make symlinks within the HDF5 file
+    so that each time frame still appears to have its own region data.
+    """
+    pass
 
 
 def main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions):
+    """
+    Main detection function.
+    """
+    h5file = tables.open_file(in_file, mode="r")
+
+    # Iterate all the files & get their metadata
+    # Loop the nodes immediately under Images to get the file names
+    file_names = [i._v_name for i in h5file.list_nodes("/Images")]
+
+    # Generate dict. of FOVs to process, for each ND2 file
+    file_to_frames = {}
+
+    # Progress bar
+    total = 0
+
+    # Metadata from each ND2 file
+    metadata = {}
+    if share_regions:
+        for f in file_names:
+            # Get metadata for each file
+            n = h5file.get_node("/Metadata/{}".format(f))()
+            m = get_metadata(n)
+
+            # Total # of frames to be processed, for progress bar
+            total += m["fields_of_view"] * m["z_levels"] * m["channels"]
+
+            # Use the lowest numbered time frame to detect trenches in all time frames
+            # (share the region across time frames).
+            # NOTE is the sorting necessary, or do they always come out sorted from the conversion program?
+            # Make it a list, so that the code in the main loop still works
+            file_to_frames[f] = [sorted(m["frames"][0])]
+
+            # store in a dictionary
+            metadata[f] = m
+    else:
+        for f in file_names:
+            # Get metadata for each file
+            n = h5file.get_node("/Metadata/{}".format(f))()
+            m = get_metadata(n)
+
+            # Total # of frames to be processed, for progress bar
+            total += m["fields_of_view"] * m["frames"] * m["z_levels"] * m["channels"]
+
+            # Each time frame has its own detection (do not share the regions across time frames).
+            # NOTE is the sorting necessary, or do they always come out sorted from the conversion program?
+            file_to_frames[f] = sorted(m["frames"])
+
+            # store in a dictionary
+            metadata[f] = m
+
+    h5file.close()
+
+    # Read the parameters, and then convert the distances using pixel microns
     params = read_params_file(params_file)
 
-    ### Convert the parameters
+    # Use the pixel microns for each file to convert distances to pixels
+    file_trench_width = {}
+    file_trench_length = {}
+    file_min_distance = {}
+    for f in file_names:
+        pixel_microns = metadata[f]["pixel_microns"]
+        # Dimensions (widths & lengths) of each trench
+        file_trench_width[f] = int(params["trench_width"] / pixel_microns)
+        file_trench_length[f] = int(params["trench_length"] / pixel_microns)
+        # Minimum distance between trenches
+        file_min_distance[f] = int(params["min_distance"] / pixel_microns)
 
-    h5file_in = tables.open_file(in_file, mode="r")
-    # Assume that all files have the same pixel_microns value
-    # Pick the first available file, read its metadata, extract pixel_microns
-    # FIXME
-    node_list = []  # = h5file_in. ??
-    pixel_microns = 1.0  # ? # TODO: read from file
+    pbar = tqdm(total=total, desc="Frame #")
 
-    # FIXME: read pixel microns from the H5 file & convert the micron values to integer pixel numbers
-    # Dimensions (widths & lengths) of each trench
-    trench_width = int(params["trench_width"] / pixel_microns)
-    trench_length = int(params["trench_length"] / pixel_microns)
-    min_distance = int(params["min_distance"] / pixel_microns)
+    def update_pbar(*a):
+        pbar.update()
 
-    ### Iterate all the files
-
-    print("Detecting trenches...")
-    start = time.time()
-
-    # Run in parallel
-    # Each File & FOV or Frame, can be processed independently.
+    # Run in parallel. Each File & FOV or Frame, can be processed independently.
     with Pool(processes=num_cpu) as p:
-        if share_regions:
-            # Files
-            for filename in []:  # FIXME
-                # FOVs
-                for fov in h5file.iter_nodes("/"):
-                    # Cannot assume that there is a Frame_0,
-                    # but *can* sort the list of frames and pick out the lowest (earliest) one.
-                    args = [params, frame_node, filename, fov, out_dir]
-                    p.apply_async(run_trench_analysis, args)
+        for f in file_names:
+            for fov in metadata[f]["fields_of_view"]:
+                for frame in file_to_frames[f]:
+                    # FIXME which z_level to use for trench detection? Probably makes sense to always share the same z_level,
+                    # but that doesn't mean that the zeroth one should necessarily be the default.
+                    # Could make this an additional parameter, and if None, then use the lowest one available.
+                    z_level = 0  # (is there always a Z_0?)
+                    args = [
+                        in_file,
+                        out_dir,
+                        f,
+                        fov,
+                        frame,
+                        z_level,
+                        params,
+                        file_trench_width[f],
+                        file_trench_length[f],
+                        file_min_distance[f],
+                    ]
+                    p.apply_async(run_trench_analysis, args, callback=update_pbar)
                     # run_trench_analysis(*args) # DEBUG
-        else:
-            pass  # TODO: also iterate frames
 
-    ### Done looping all FOV files
-    end = time.time()
-    print(end - start)
-    print("Done detecting trenches.")
+        pool.join()
+        pool.close()
 
-    # Merge all the detected regions
-    merge_tables(parent_file, in_dir, identifier)
-    # Done merging tables
+    # Done looping all files
+    pbar.close()
 
-    # FIXME there is still an HDF5 file not closed?
+    # TODO
+    # FIXME What about linking into a super file, even if there aren't shared regions?
+    # Linking, if share_regions
+    if share_regions:
+        shared_region_linking(out_dir)

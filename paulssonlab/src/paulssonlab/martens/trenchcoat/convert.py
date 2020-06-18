@@ -62,8 +62,10 @@ def conversion(out_dir, path, fov, frame):
     h5file.close()
 
 
-# A standard linking system, which recapitulates the directory structure
 def link_files(in_dir, frames, fields_of_view):
+    """
+    A standard linking system, which recapitulates the directory structure
+    """
     out_file = os.path.join(in_dir, "data.h5")
     h5file_top = tables.open_file(out_file, mode="w")
 
@@ -143,9 +145,11 @@ def link_files(in_dir, frames, fields_of_view):
     h5file_top.close()
 
 
-# Define the data types for a PyTables table.
-# Table for looking up FOV, Frame, and returning the timestamp in seconds and X, Y, Z positions.
 def make_fov_metadata_table_info_type():
+    """
+    Define the data types for a PyTables table.
+    Table for looking up FOV, Frame, and returning the timestamp in seconds and X, Y, Z positions.
+    """
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -161,8 +165,10 @@ def make_fov_metadata_table_info_type():
     return type("FOV_Metadata", (tables.IsDescription,), column_types)
 
 
-# Recursively walk through a dictionary of metadata & copy over the metadata to an HDF5 file.
 def dict_to_h5_metadata(dictionary, parent_node, h5file):
+    """
+    Recursively walk through a dictionary of metadata & copy over the metadata to an HDF5 file.
+    """
     for k in dictionary.keys():
         name = k.decode("utf-8")
         if name == "":
@@ -183,8 +189,10 @@ def dict_to_h5_metadata(dictionary, parent_node, h5file):
             new_node = h5file.create_array(parent_node, name, obj=numpy.array(elem))
 
 
-# Recursively walk through a list of metadata & copy over the metadata to an HDF5 file.
 def list_to_h5_metadata(elem, parent_node, h5file, name):
+    """
+    Recursively walk through a list of metadata & copy over the metadata to an HDF5 file.
+    """
     if type(elem) == dict:
         new_group = h5file.create_group(parent_node, name)
         dict_to_h5_metadata(elem, new_group, h5file)
@@ -198,11 +206,13 @@ def list_to_h5_metadata(elem, parent_node, h5file, name):
         new_node = h5file.create_array(parent_node, name, obj=numpy.array(elem))
 
 
-# After re-converting the nested OrderedDicts (JSON-like) back into XML,
-# iterate all the xml elements & copy over the metadata to an HDF5 file.
-# NOTE: Unicode -> ASCII conversion to handle degree symbol and micron symbol
-# (problems storing unicode symbols in pytables arrays?)
 def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
+    """
+    After re-converting the nested OrderedDicts (JSON-like) back into XML,
+    iterate all the xml elements & copy over the metadata to an HDF5 file.
+    NOTE: Unicode -> ASCII conversion to handle degree symbol and micron symbol
+    (problems storing unicode symbols in pytables arrays?)
+    """
     for child in elem:
         # Make a new group node
         if child.attrib["runtype"] == "CLxListVariant":
@@ -225,8 +235,11 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
 
 #
 
-# Copy ND2 metadata into an HDF5 hierarchy
+
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
+    """
+    Copy ND2 metadata into an HDF5 hierarchy
+    """
     reader = nd2reader.Nd2(in_file)
     (name, extension) = os.path.splitext(os.path.basename(in_file))
 
@@ -246,6 +259,9 @@ def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
 
 
 def copy_basic_metadata(h5file, reader, frames, fields_of_view):
+    """
+    Copy the "basic" metadata, which the ND2 library allows easy access for.
+    """
     # Fields of view
     if not fields_of_view:
         fields_of_view = reader.fields_of_view
@@ -278,6 +294,9 @@ def copy_basic_metadata(h5file, reader, frames, fields_of_view):
 
 
 def copy_raw_metadata(h5file, reader):
+    """
+    Copy the "raw" metadata, which are accessible but with more effort.
+    """
     types_xml = {
         "CLxStringW": numpy.unicode,
         "lx_int32": numpy.int32,
@@ -341,8 +360,10 @@ def copy_raw_metadata(h5file, reader):
     xml_to_h5_metadata_ascii(tree, root_node, h5file, types_xml)
 
 
-# Make a table of X, Y, Z, Timestamp, PFS information for each FOV
 def copy_fov_metadata(h5file, frames, fields_of_view, reader):
+    """
+    Make a table of X, Y, Z, Timestamp, PFS information for each FOV
+    """
     # Check whether the user specified lists of frames & fields of view to process
     # (thereby excluding those not in the list)
     if not frames:
@@ -393,9 +414,11 @@ def copy_fov_metadata(h5file, frames, fields_of_view, reader):
     fov_metadata_table.flush()
 
 
-# Input list of nodes from the metadata node
-# Returns an error if not all nodes have identical channels arrays in their metadata
 def metadata_channels_equal(metadata_nodes):
+    """
+    Input list of nodes from the metadata node
+    Returns an error if not all nodes have identical channels arrays in their metadata
+    """
     first_node = metadata_nodes.pop(0)
     first_channels = first_node.get_node("channels").read()
 
@@ -411,7 +434,9 @@ def metadata_channels_equal(metadata_nodes):
 
 
 def main_conversion_function(hdf_dir, nd2_dir, num_cpu, frames, fields_of_view):
-    ## Copy the metadata
+    """
+    Copy the metadata
+    """
     pathlib.Path(hdf_dir).mkdir(parents=True, exist_ok=True)
 
     files = []

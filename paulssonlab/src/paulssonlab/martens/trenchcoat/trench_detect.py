@@ -14,14 +14,9 @@ from multiprocessing import Pool
 
 
 ### Write a PyTables table to each HDF5 FOV file, containing the trench co-ordinates for that FOV
-### (and all time frames therein)
-###
+### (and all time frames therein).
 
 
-# Run basic trench analysis on an HDF5 file:
-# detect trenches using the first time frame, then measure trench properties in all time frames
-# Store detected trenches in a PyTables  table.
-# TODO also allow cropping left & right? (e.g. maybe it's blurry or something)
 def run_trench_analysis(
     hdf5_file_path,
     min_peak_distance,
@@ -34,7 +29,12 @@ def run_trench_analysis(
     x_dimension,
     y_dimension,
 ):
-
+    """
+    Run basic trench analysis on an HDF5 file:
+    detect trenches using the first time frame, then measure trench properties in all time frames
+    Store detected trenches in a PyTables  table.
+    TODO also allow cropping left & right? (e.g. maybe it's blurry or something)
+    """
     fov_h5file = tables.open_file(hdf5_file_path, mode="r+")
 
     # Create the table type
@@ -92,17 +92,19 @@ def run_trench_analysis(
     print("Detected {} trenches in FOV {}".format(len(ranges), fov))
 
 
-# node is the first frame in this fov, which will be used for trench detection
-#
-# Return pairs of x_min, x_max co-ordinates, for each trench
-# Trenches must have identical dimensions
-# FIXME pass in the true image width, not a constant value of 2048
 def run_trench_detection(
     node, channel_name, crop_top, crop_bottom, cutoff, trench_half_width
 ):
-    # TODO Write top left, bottom right corners to HDF5 table (for future reference) = 4 integers
-    # TODO auto-detect cropping top & bottom
+    """
+    node is the first frame in this fov, which will be used for trench detection
 
+    Return pairs of x_min, x_max co-ordinates, for each trench
+    Trenches must have identical dimensions
+    FIXME pass in the true image width, not a constant value of 2048
+
+    TODO Write top left, bottom right corners to HDF5 table (for future reference) = 4 integers
+    TODO auto-detect cropping top & bottom
+    """
     # Get the very first phase image in this FOV position (zeroth time frame)
     img_phase_zeroth = node._f_get_child(channel_name)[crop_top:crop_bottom]
 
@@ -146,8 +148,10 @@ def run_trench_detection(
     return ranges
 
 
-# Remove non-trenches
 def remove_non_trenches(peaks_data, peaks, cutoff):
+    """
+    Remove non-trenches
+    """
     # Filter out: only keep inter-trench peak indices
     threshold = (peaks_data[peaks] > cutoff) * peaks
 
@@ -157,9 +161,11 @@ def remove_non_trenches(peaks_data, peaks, cutoff):
     return peaks[nz]
 
 
-# Merge the nearby peaks in peaks, a numpy array resulting from find_peaks()
-# TODO: also add a sanity check: only merge them if both are above or below the threshold line
 def merge_peaks(peaks, min_peak_distance):
+    """
+    Merge the nearby peaks in peaks, a numpy array resulting from find_peaks()
+    TODO: also add a sanity check: only merge them if both are above or below the threshold line
+    """
     merged_peaks = []
 
     # Alternative version: double while loops
@@ -196,14 +202,16 @@ def merge_peaks(peaks, min_peak_distance):
     return merged_peaks
 
 
-# Detect Trenches
 def define_trenches(trench_peaks, trench_half_width):
-    # Using just the trench midpoints & the pre-specified widths, define left-> right boundaries for each trench
-    # Assume each trench spans from top to bottom
+    """
+    Detect Trenches
 
-    # TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
-    # Before making ranges, check whether would overlap?
+    Using just the trench midpoints & the pre-specified widths, define left-> right boundaries for each trench
+    Assume each trench spans from top to bottom
 
+    TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
+    Before making ranges, check whether would overlap?
+    """
     # ranges = []
     # for t in trench_peaks:
     # ranges.append( (t - trench_half_width, t + trench_half_width) )
@@ -213,9 +221,11 @@ def define_trenches(trench_peaks, trench_half_width):
     return ranges
 
 
-# 4 columns to store top left, bottom right corner coordinates of detected trenches,
-# as well as FOV number & trench number.
 def make_trench_info_type():
+    """
+    4 columns to store top left, bottom right corner coordinates of detected trenches,
+    as well as FOV number & trench number.
+    """
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -229,8 +239,10 @@ def make_trench_info_type():
     return type("Trench_Coords", (tables.IsDescription,), column_types)
 
 
-# Merge the trench co-ordinates tables, store the result in the parent HDF5 file
 def merge_tables(parent_file, in_dir, identifier):
+    """
+    Merge the trench co-ordinates tables, store the result in the parent HDF5 file
+    """
     h5file = tables.open_file(os.path.join(in_dir, parent_file), mode="r+")
 
     # Create the table type

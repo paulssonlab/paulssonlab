@@ -1,13 +1,37 @@
+#!/usr/bin/env python3
+
 import numpy
 import tables
 
-# Once a given trench has a segmentation mask, then write the properties of the masked region to the table.
-# NOTE future versions of skimage will allow spitting out a properties object all at once, rather than lazily calculating them one at a time.
+"""
+Functions for handling ND2 metadata and cell properties (measurements), including HDF5 tables.
+"""
+
+
+def get_metadata(n):
+    """
+    Input a node in the HDF5 metadata section, return a dict. with the following metadata
+    """
+    metadata = {
+        "channels": n.channels.read(),
+        "fields_of_view": n.fields_of_view.read(),
+        "frames": n.frames.read(),
+        "width": n.width.read(),
+        "height": n.height.read(),
+        "pixel_microns": n.pixel_microns.read(),
+        "unix_timestamp": n.unix_timestamp.read(),
+        "z_levels": n.z_levels.read(),
+    }
+
+    return metadata
+
+
 def write_properties_to_table(
     name,
     fov,
     frame,
     z_level,
+    region_set_number,
     region_number,
     properties,
     sc,
@@ -16,6 +40,10 @@ def write_properties_to_table(
     stack,
     ch_to_index,
 ):
+    """
+    Once a given trench has a segmentation mask, then write the properties of the masked region to the table.
+    NOTE future versions of skimage will allow spitting out a properties object all at once, rather than lazily calculating them one at a time.
+    """
     # NOTE skimage is changing their coordinates -- do we still want to transpose??? I think so...
     coords = properties.coords.T
 
@@ -30,9 +58,9 @@ def write_properties_to_table(
     row["info_filename"] = name
     row["info_fov"] = fov
     row["info_frame"] = frame
-    z_num = int(z_level.split("_")[1])
-    row["info_z_level"] = z_num
-    row["info_region_number"] = region_number
+    row["info_z_level"] = int(z_level.split("_")[1])
+    row["info_region_set_number"] = region_set_number  # e.g. a row of trenches
+    row["info_region_number"] = region_number  # e.g. a trench
     row["info_label"] = properties.label
     row["info_seg_channel"] = sc
 
@@ -60,10 +88,12 @@ def write_properties_to_table(
     row.append()
 
 
-# Define the column types for the PyTable: this stores segmented cell information
-# NOTE: calling it a "Cell" because it stores information about biological cells,
-# not because we're working with cells in a table.
 def make_cell_type(channels, seg_channels, file_names):
+    """
+    Define the column types for the PyTable: this stores segmented cell information
+    NOTE: calling it a "Cell" because it stores information about biological cells,
+    not because we're working with cells in a table.
+    """
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -105,8 +135,10 @@ def make_cell_type(channels, seg_channels, file_names):
     return type("Cell", (tables.IsDescription,), column_types)
 
 
-# Input a list, return the length of the longest element
 def get_max_length(items):
+    """
+    Input a list, return the length of the longest element
+    """
     longest = 0
 
     for n in items:
@@ -117,20 +149,24 @@ def get_max_length(items):
     return longest
 
 
-# Input a list of pixel co-ordinates (as per skimage.measure.regionpprops),
-# an associated image (2d numpy array) to read intensities from, and and a background signal value.
-# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
-# NOTE is it faster to use the coords[] array, or to "multiply" by the mask?
 def subtract_background_from_coords(coords, image, background):
+    """
+    Input a list of pixel co-ordinates (as per skimage.measure.regionpprops),
+    an associated image (2d numpy array) to read intensities from, and and a background signal value.
+    Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+    NOTE is it faster to use the coords[] array, or to "multiply" by the mask?
+    """
     summed_intensity = image[coords[0], coords[1]].sum()
     total_background = len(coords) * background
 
     return summed_intensity - total_background
 
 
-# Input an image, a binary mask, and a background value per pixel
-# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
 def subtract_background_from_region(image, image_mask, background):
+    """
+    Input an image, a binary mask, and a background value per pixel
+    Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+    """
     # Use mask to zero out unwanted pixels, and sum the intensities of the remaining ones
     summed_intensity = (image * image_mask).sum()
 
@@ -141,8 +177,10 @@ def subtract_background_from_region(image, image_mask, background):
     return summed_intensity - total_background
 
 
-# Merge the tables at the very end
 def merge_tables(in_file, out_file, channels, seg_channels, file_names):
+    """
+    Merge the tables at the very end
+    """
     Cell = make_cell_type(channels, seg_channels, file_names)
 
     h5file_in = tables.open_file(in_file, mode="r")

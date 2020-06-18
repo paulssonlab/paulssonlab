@@ -1,303 +1,28 @@
-import tables
+import numpy
+
 import skimage.morphology
 import skimage.segmentation
 import skimage.measure
 import skimage.filters
 
-import numpy
-import pathlib
-
-from properties import (
-    make_cell_type,
-    subtract_background_from_coords,
-    write_properties_to_table,
-)
-
 from ipywidgets import fixed, interactive
 
 # TODO: finish the basic dual or multi-channel thresholding algo
 
-# TODO: Modularize this & the noregions version for shared parts, or not worth it? (Python has high cost for function calls)
-def run_segmentation_analysis_regions(
-    in_file,
-    name,
-    fov,
-    frame,
-    z_level,
-    seg_params,
-    channels,
-    out_dir_masks,
-    out_dir_tables,
-    algo_dict,
-    h5file_regions_file,
-    file_names,
-):
-    # For writing tables
-    Cell = make_cell_type(channels, seg_params.keys(), file_names)
-
-    h5file = tables.open_file(in_file, mode="r")
-    h5file_regions = tables.open_file(h5file_regions_file, mode="r")
-
-    # Create directory structure to store the masks
-    dir_path = "{}/{}/FOV_{}/".format(out_dir_masks, name, fov)
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
-    h5file_masks = tables.open_file(
-        "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_masks, name, fov, frame), mode="w"
-    )
-
-    # Create directory structure to store the tables
-    dir_path = "{}/{}/FOV_{}/".format(out_dir_tables, name, fov)
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
-    h5file_tables = tables.open_file(
-        "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_tables, name, fov, frame), mode="w"
-    )
-
-    table = h5file_tables.create_table("/", "measurements", Cell, createparents=True)
-
-    z_node = h5file.get_node(
-        "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(name, fov, frame, z_level)
-    )
-
-    ### Stack of image regions. Must have identical dimensions.
-    regions = h5file_regions.get_node(
-        "/{}/FOV_{}/Frame_{}/{}".format(name, fov, frame, z_node._v_name)
-    ).read()
-
-    (stack, ch_to_index) = make_ch_to_img_stack(h5file, z_node, channels, regions)
-    z_level = z_node._v_name
-    write_masks_tables(
-        h5file_masks,
-        h5file_tables,
-        name,
-        fov,
-        frame,
-        z_level,
-        table.row,
-        seg_params,
-        stack,
-        ch_to_index,
-        algo_dict,
-    )
-
-    # Done!
-    table.flush()
-    h5file_masks.close()
-    h5file_tables.close()
-    h5file.close()
-    h5file_regions.close()
-
-
-# Write masks & measurements to HDF5 files.
-# Don't grab regions from each image. Analyze entire images.
-# h5file_regions_file should be None
-def run_segmentation_analysis_noregions(
-    in_file,
-    name,
-    fov,
-    frame,
-    z_level,
-    seg_params,
-    channels,
-    out_dir_masks,
-    out_dir_tables,
-    algo_dict,
-    h5file_regions_file,
-    file_names,
-):
-    # For writing tables
-    Cell = make_cell_type(channels, seg_params.keys(), file_names)
-
-    h5file = tables.open_file(in_file, mode="r")
-
-    # Create directory structure to store the masks
-    dir_path = "{}/{}/FOV_{}/".format(out_dir_masks, name, fov)
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
-    h5file_masks = tables.open_file(
-        "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_masks, name, fov, frame), mode="w"
-    )
-
-    # Create directory structure to store the tables
-    dir_path = "{}/{}/FOV_{}/".format(out_dir_tables, name, fov)
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
-    h5file_tables = tables.open_file(
-        "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_tables, name, fov, frame), mode="w"
-    )
-
-    table = h5file_tables.create_table("/", "measurements", Cell, createparents=True)
-
-    z_node = h5file.get_node(
-        "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(name, fov, frame, z_level)
-    )
-
-    ### Whole image, no regions
-    (stack, ch_to_index) = make_ch_to_img_stack(h5file, z_node, channels, None)
-    z_level = z_node._v_name
-    write_masks_tables(
-        h5file_masks,
-        h5file_tables,
-        name,
-        fov,
-        frame,
-        z_level,
-        table.row,
-        seg_params,
-        stack,
-        ch_to_index,
-        algo_dict,
-    )
-
-    # Done!
-    table.flush()
-    h5file_masks.close()
-    h5file_tables.close()
-    h5file.close()
-
-
-# Compute masks using specified segmentation algorithm.
-# Write masks & measurements to HDF5 files.
-# Analyze regions within images. (e.g. trenches, cropped images...)
-def write_masks_tables(
-    h5file_masks,
-    h5file_tables,
-    name,
-    fov,
-    frame,
-    z_level,
-    row,
-    seg_params,
-    stack,
-    ch_to_img,
-    algo_dict,
-):
-    for sc in seg_params.keys():
-        # Calculate the mask(s)
-        masks = algo_dict[sc](stack, ch_to_img, seg_params[sc])
-
-        # Write the masks & tables
-        for region_number in range(masks.shape[2]):
-            mask = masks[..., region_number]
-            # Write to disk
-            h5file_masks.create_carray(
-                "/{}/{}".format(z_level, sc),
-                "region_{}".format(region_number),
-                obj=mask,
-                createparents=True,
-                chunkshape=(128, 128),
-                filters=tables.Filters(complevel=1, complib="zlib"),
-            )
-
-            # Compute the properties
-            properties = skimage.measure.regionprops(mask)
-
-            # Once a given trench has a segmentation mask, then write the properties of the masked region to the table.
-            # NOTE / TODO: future versions of skimage will allow spitting out a properties object all at once, rather than lazily calculating them one at a time.
-            for p in properties:
-                write_properties_to_table(
-                    name,
-                    fov,
-                    frame,
-                    z_level,
-                    region_number,
-                    p,
-                    sc,
-                    seg_params[sc],
-                    row,
-                    stack,
-                    ch_to_img,
-                )
-
-
-# NOTE: the skimage libraries technically follow the convention that images are between 0 and 1.
-# This requires resampling data to that range, and then converting it back to the original range.
-# Need to check for which algorithms this matters (Niblack? Otsu?).
-
-# Input an H5file, Z-node, channel names, region locations
-# Returns a 4-D stack of all channels & regions
-# 0. channel 1. regions 2. X 3. Y
-# Ranges is a numpy array with (min_row, min_col, max_row, max_col) for each region.
-# NOTE: Pass in the node reference, not the whole image, into this sub-routine.
-# Then, when using the slice notation below, will take advantage of
-# the chunking so as to not load the entire image.
-
-# Forcibly load all images as single-precision floats.
-# TODO test regions part. Still need to fix utf-8 decoding?
-def make_ch_to_img_stack(h5file, z_node, channels, regions):
-    # Cut up an images into sub-regions, all with the same dimensions
-    if regions:
-        x_dimension = regions[0, 2] - regions[0, 0]
-        y_dimension = regions[0, 3] - regions[0, 1]
-
-        ch_to_index = {}
-        # TODO The idea, then, is to init the array as empty, with the 'F' ordering, and then to load it x/y/z/c
-        stack = numpy.empty(
-            (x_dimension, y_dimension, regions.shape[0], len(channels)),
-            dtype=numpy.float32,
-            order="F",
-        )
-
-        # FIXME utf8 crap
-        for i, ch in enumerate(channels):
-            ch_to_index[ch] = i
-
-            image_node = h5file.get_node(z_node, ch)
-
-            # min_row, min_col, max_row, max_col
-            for j, r in enumerate(regions):
-                stack[..., j, i] = image_node[r[0] : r[2], r[1] : r[3]].astype(
-                    numpy.float32, casting="safe", copy=False
-                )
-                # NOTE Does copy flag actually make a difference?
-
-        return (stack, ch_to_index)
-
-    # Store the entire image (no regions)
-    else:
-        ch_to_index = {}
-
-        # Have to process the zeroth image to get its dimensions, before looping over the remaining ones
-        zeroth_channel = channels[0].decode("utf-8")
-        zeroth_img = h5file.get_node(z_node, zeroth_channel)
-        zeroth_img = zeroth_img.read()
-        # Pad an extra axis
-        zeroth_img = zeroth_img[..., numpy.newaxis]
-
-        stack = numpy.empty(
-            (zeroth_img.shape[0], zeroth_img.shape[1], 1, len(channels)),
-            dtype=numpy.float32,
-            order="F",
-        )
-        stack[..., 0] = zeroth_img
-        ch_to_index[zeroth_channel] = 0
-
-        # Loop over the remaining images (channels)
-        for i, ch in enumerate(channels):
-            # FIXME is there a way to just skip the first element in an iterator?
-            if i != 0:
-                ch = ch.decode("utf-8")
-                ch_to_index[ch] = i
-
-                image_node = h5file.get_node(z_node, ch)
-
-                # NOTE Does copy flag actually make a difference?
-                image = image_node.read().astype(
-                    numpy.float32, casting="safe", copy=False
-                )
-
-                image = image[..., numpy.newaxis]
-                stack[..., i] = image
-
-        return (stack, ch_to_index)
-
-
-### Very simple max thresholding example.
-
 
 def run_single_threshold(stack, ch_to_index, params):
+    """
+    Very simple max thresholding example.
+    """
     data = stack[ch_to_index[params["channel"]]]
     return single_threshold(data, **params["parameters"])
 
 
 def run_single_threshold_interactive(stack, ch_to_index, params):
+    """
+    Very simple max thresholding example.
+    Interactive version, with ipywidgets.
+    """
     data = stack[ch_to_index[params["channel"]]]
     return interactive(single_threshold, data=fixed(data), **params["parameters"])
 
@@ -306,11 +31,11 @@ def single_threshold(data, cutoff):
     return data < cutoff
 
 
-### A version which uses thresholding on fluor & phase channels
-# Thresholding which also uses Niblack (mean, std dev) & watershedding
-
-
 def run_niblack_phase_segmentation(stack, ch_to_index, params):
+    """
+    A version which uses thresholding on fluor & phase channels
+    Thresholding which also uses Niblack (mean, std dev) & watershedding
+    """
     stack_fl = stack[..., ch_to_index[params["fluorescent_channel"]]]
     stack_ph = stack[..., ch_to_index[params["phase_channel"]]]
 
@@ -318,6 +43,11 @@ def run_niblack_phase_segmentation(stack, ch_to_index, params):
 
 
 def run_niblack_phase_segmentation_interactive(stack, ch_to_index, params):
+    """
+    A version which uses thresholding on fluor & phase channels
+    Thresholding which also uses Niblack (mean, std dev) & watershedding.
+    Interactive version, with ipywidgets.
+    """
     stack_fl = stack[..., ch_to_index[params["fluorescent_channel"]]]
     stack_ph = stack[..., ch_to_index[params["phase_channel"]]]
 
@@ -329,15 +59,6 @@ def run_niblack_phase_segmentation_interactive(stack, ch_to_index, params):
     )
 
 
-# TODO: I bet this would be much faster if I loop individual steps which much be looped,
-# and use UFUNCS for all the other steps!
-
-# NOTE: preliminary benchmarking suggests this version is actually a bit slower?
-# BUT there is only 1 region, so this maybe isn't the best test case...
-
-# AND maybe it'll expand better to ArrayFire...
-# Also, didn't check the outputs to make sure they're identical.
-# TODO: free up memory as soon as possible, to reduce overhead?
 def niblack_phase_segmentation(
     stack_fl,
     stack_ph,
@@ -353,6 +74,17 @@ def niblack_phase_segmentation(
     fluor_background,
     phase_background,
 ):
+    """
+    TODO: I bet this would be much faster if I loop individual steps which much be looped,
+    and use UFUNCS for all the other steps!
+
+    NOTE: preliminary benchmarking suggests this version is actually a bit slower?
+    BUT there is only 1 region, so this maybe isn't the best test case...
+
+    AND maybe it'll expand better to ArrayFire...
+    Also, didn't check the outputs to make sure they're identical.
+    TODO: free up memory as soon as possible, to reduce overhead?
+    """
     # NOTE: worry about integer underflow?
     stack_fl -= fluor_background
     stack_ph -= phase_background
@@ -452,8 +184,6 @@ def niblack_phase_segmentation(
     return result
 
 
-# NOTE this version is ever so slightly faster... almost seems by a constant ~0.5-1.0 secs,
-# regardless of the # of processes?
 def niblack_phase_segmentation_old(
     stack_fl,
     stack_ph,
@@ -469,6 +199,11 @@ def niblack_phase_segmentation_old(
     fluor_background,
     phase_background,
 ):
+    """
+    NOTE this version is ever so slightly faster... almost seems by a constant ~0.5-1.0 secs,
+    regardless of the # of processes?
+    """
+
     ## DEBUG, just to see how quickly the code runs when doing a minimal amount of work
     # return numpy.zeros(stack_fl.shape, dtype=numpy.uint16, order='F')
 
@@ -556,13 +291,16 @@ def niblack_phase_segmentation_old(
 
 ###
 
-# Thresholding, Niblack (mean, std dev) & watershedding on a single channel
-# Input: 4-D numpy array (channel, stack, X, Y)
-#        dict converting channel names to channel position index in the stack
-#        segmentation params
-# Output: stack of binary masks
-# FIXME/TODO: some tweaks haven't made it over to this version yet, see version with phase info.
+
 def run_niblack_segmentation(stack, ch_to_index, params):
+    """
+    Thresholding, Niblack (mean, std dev) & watershedding on a single channel
+    Input: 4-D numpy array (channel, stack, X, Y)
+           dict converting channel names to channel position index in the stack
+           segmentation params
+    Output: stack of binary masks
+    FIXME/TODO: some tweaks haven't made it over to this version yet, see version with phase info.
+    """
     stack = stack[ch_to_index[params["channel"]]]
 
     # Store a stack of labeled segmentation masks

@@ -2,27 +2,23 @@
 
 import os
 import time
-
 import numpy
-
 from scipy import ndimage  # For Gaussian blur in numpy / scipy
-
-import mahotas
 import skimage.morphology
 import skimage.measure
-
 import tables
-import argparse
 from multiprocessing import Pool
 
+"""
+Measure properties of trenches, without segmentation.
+Update: include optional simple thresholding.
+"""
 
-### Measure properties of trenches
-### Update: include optional simple thresholding.
-###
-###
 
-# Open the ND2 metadata table & extract the channel names (as a list)
 def get_channel_names(in_dir, parent_file):
+    """
+    Open the ND2 metadata table & extract the channel names (as a list)
+    """
     h5file = tables.open_file(os.path.join(in_dir, parent_file), mode="r")
     metadata_table = h5file.get_node(
         "/tables/nd2_metadata"
@@ -37,8 +33,10 @@ def get_channel_names(in_dir, parent_file):
     return channel_names
 
 
-# Define the column types for the PyTable: this stores un-segmented, whole trench information
 def make_trench_type(channel_names):
+    """
+    Define the column types for the PyTable: this stores un-segmented, whole trench information
+    """
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -55,7 +53,6 @@ def make_trench_type(channel_names):
     return type("Trench", (tables.IsDescription,), column_types)
 
 
-# FIXME read ranges from the detected trenches table, extract from it the x_y dimensions & the stack size!!
 def run_trench_analysis(
     fov_file_path,
     parent_file_path,
@@ -67,7 +64,11 @@ def run_trench_analysis(
     y_dimension,
     background,
 ):
+    """
+    Run analysis on whole trenches (no cell segmentation).
 
+    FIXME read ranges from the detected trenches table, extract from it the x_y dimensions & the stack size!!
+    """
     Trench = make_trench_type(channel_names)
 
     # Open the parent file to get the timestamps table
@@ -170,8 +171,6 @@ def run_trench_analysis(
     fov_h5file.close()
 
 
-# Load stack of image slices with dimensions pre-determined by detected trench positions.
-# Also apply cropping to top, bottom of image, and apply constant background subtraction.
 def load_stack_trenches(
     image_node,
     crop_top,
@@ -182,6 +181,10 @@ def load_stack_trenches(
     ranges,
     background,
 ):
+    """
+    Load stack of image slices with dimensions pre-determined by detected trench positions.
+    Also apply cropping to top, bottom of image, and apply constant background subtraction.
+    """
     stack = numpy.empty(shape=(y_dimension, x_dimension, stack_size), dtype=numpy.int16)
     # NOTE: Pass in the node reference, not the whole image, into this sub-routine.
     # Then, when using the slice notation below, will take advantage of the chunking so as to not ever
@@ -201,10 +204,12 @@ def load_stack_trenches(
     return stack
 
 
-# Input a list of pixel co-ordinates (as per skimage.measure.regionpprops),
-# an associated image (2d numpy array) to read intensities from, and and a background signal value.
-# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
 def subtract_background_from_coords(coords, image, background):
+    """
+    Input a list of pixel co-ordinates (as per skimage.measure.regionpprops),
+    an associated image (2d numpy array) to read intensities from, and and a background signal value.
+    Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+    """
     transposed = cell.coords.T
     summed_intensity = image[transposed[0], transposed[1]].sum()
     total_background = len(transposed) * background
@@ -212,9 +217,11 @@ def subtract_background_from_coords(coords, image, background):
     return summed_intensity - total_background
 
 
-# Input an image, a binary mask, and a background value per pixel
-# Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
 def subtract_background_from_region(image, image_mask, background):
+    """
+    Input an image, a binary mask, and a background value per pixel
+    Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
+    """
     # Use mask to zero out unwanted pixels, and sum the intensities of the remaining ones
     summed_intensity = (image * image_mask).sum()
 
@@ -225,49 +232,11 @@ def subtract_background_from_region(image, image_mask, background):
     return summed_intensity - total_background
 
 
-# TODO: throw errors if the arguments don't make sense?
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Measure fluorescence values within trenches, without cell segmentation."
-    )
-    parser.add_argument("-i", "--in-dir", type=str, help="Input HDF5 directory path")
-    parser.add_argument(
-        "-p", "--parent", type=str, help="Parent HDF5 file (with links & merged tables)"
-    )
-    parser.add_argument("-n", "--num-cpu", type=int, help="Number of CPUs to use")
-    parser.add_argument("-I", "--identifier", type=str, help="Trench row identifier")
-    parser.add_argument("-T", "--crop-top", type=int, help="Crop top")
-    parser.add_argument("-B", "--crop-bottom", type=int, help="Crop bottom")
-    parser.add_argument(
-        "-t",
-        "--threshold-file",
-        type=int,
-        help="File with pixel value minimum thresholds per channek.",
-    )
-
-    return parser.parse_args()
-
-
 ###
 
-if __name__ == "__main__":
-    ### Parse command-line arguments
-    args = parse_args()
 
-    in_dir = args.in_dir
-    parent_file = args.parent
-    num_cpu = args.num_cpu
-    identifier = args.identifier
-    crop_top = args.crop_top
-    crop_bottom = args.crop_bottom
-    threshold_file = args.threshold_file
-
-    # FIXME what's the right way to read these in?
-    x_dimension = 30
-    y_dimension = crop_bottom - crop_top
-
-    ###
-
+def main_trench_measurements_function(out_dir, in_file, num_cpu, regions_file):
+    """ """
     # Load the ND2 metadata to get the channel names
     channel_names = get_channel_names(in_dir, parent_file)
 
@@ -289,42 +258,25 @@ if __name__ == "__main__":
     # Run in parallel
     # TODO: is it possible to pass in arguments non-explicitly, and therefore not need to use starmap?
     # Tradeoffs?
-    if num_cpu > 1:
-        args = [
-            (
-                os.path.join(fov_dir, filename),
-                os.path.join(in_dir, parent_file),
-                identifier,
-                channel_names,
-                crop_top,
-                crop_bottom,
-                x_dimension,
-                y_dimension,
-                threshold,
-            )
-            for filename in files
-        ]
+    args = [
+        (
+            os.path.join(fov_dir, filename),
+            os.path.join(in_dir, parent_file),
+            identifier,
+            channel_names,
+            crop_top,
+            crop_bottom,
+            x_dimension,
+            y_dimension,
+            threshold,
+        )
+        for filename in files
+    ]
 
-        # TODO: weed out any files which do not end in h5
+    # TODO: weed out any files which do not end in h5
 
-        with Pool(processes=num_cpu) as p:
-            p.starmap(run_trench_analysis, args)
-
-    # Do not run in parallel
-    else:
-        for filename in files:
-            if filename.endswith("h5"):
-                run_trench_analysis(
-                    os.path.join(fov_dir, filename),
-                    os.path.join(in_dir, parent_file),
-                    identifier,
-                    channel_names,
-                    crop_top,
-                    crop_bottom,
-                    x_dimension,
-                    y_dimension,
-                    threshold,
-                )
+    with Pool(processes=num_cpu) as p:
+        p.starmap(run_trench_analysis, args)
 
     ### Done looping all FOV
     end = time.time()

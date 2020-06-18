@@ -3,85 +3,60 @@
 import numpy
 import tables
 import os
-import argparse
 import time
 from multiprocessing import Pool
+from properties import get_metadata
+from tqdm import tqdm
 
-### Write kymographs to disk
-#
-#
+"""
+Write kymographs to disk
+"""
 
 
-def make_kymograph(
-    fov_number, channel, y_dimension, trench_width, num_frames, h5file, ranges
-):
+def make_kymograph(filename, fov_number, z_level, channel, frames, h5file, r):
+    """
+    Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    """
+    # TODO make sure that this is the correct co-ordinate system!!
+    width = r[2] - r[0]
+    height = r[3] - r[1]
+
+    # FIXME best way to figure out the dtype? assume it's float32?
     kymograph_array = numpy.empty(
-        shape=(y_dimension, trench_width * num_frames), dtype=numpy.uint16
+        shape=(height, width * num_frames), dtype=numpy.float32
     )
 
-    for f in range(num_frames):
-        kymograph_array[:, f * trench_width : (f + 1) * trench_width] = h5file.get_node(
-            "/images/Frame_{}/{}".format(f, channel)
-        )[crop_top:crop_bottom, ranges[0] : ranges[1]]
+    for f in frames:
+        # FIXME make sure this is still correct, with F-ordered arrays
+        kymograph_array[:, f * width : (f + 1) * width] = h5file.get_node(
+            "/Images/File_{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+                filename, fov_number, f, z_level, channel
+            )
+        )[r[2] : r[3], r[0] : r[1]]
+        # TODO make sure that this is the correct co-ordinate system!!
 
     return kymograph_array
 
 
-# Open the table of trench coordinates for this FOV & return the coordinates as a list of pairs (min_col, max_col).
-# TODO: also include the min_row & max_row information, always?
-def get_trench_coordinates(path, identifier, h5file):
-    trenches_table_name = "{}_{}".format(path, identifier)
-    trenches_table = h5file.get_node(trenches_table_name)
-    ranges = [
-        (row["bounding_box_min_col"], row["bounding_box_max_col"])
-        for row in trenches_table.read()
-    ]
-    trenches_table.close()
-
-    return ranges
-
-
 def run_kymographs(
-    fov_file_path, kymo_dir, crop_top, crop_bottom, y_dimension, channels, identifier
+    h5file_in, out_dir, filename, fov, channel, frames, z_level, regions
 ):
+    """
+    Input an HDF5 file and some regions information, write kymographs to a new HDF5 file.
+    """
 
-    # Extract the FOV number from the file name
-    base_name = os.path.basename(fov_file_path)
-    (root, extension) = os.path.splitext(base_name)
-    fov = int(root.split("_")[1])
-
-    print("FOV_{}".format(fov))
-
-    # For writing the segmentation masks
-    filters = tables.Filters(complevel=1, complib="zlib")
-    chunk_dimensions = (128, 128)
-
-    # Open this FOV file
-    fov_h5file = tables.open_file(fov_file_path, mode="r+")
-
-    # Open the detected trenches table
-    ranges = get_trench_coordinates(
-        "/tables/trench_coordinates", identifier, fov_h5file
-    )
-    # TODO infer automatically?
-    trench_width = 30
-
-    # How many frames?
-    num_frames = 0
-    for time_node in fov_h5file.root.images._f_iter_nodes():
-        num_frames += 1
+    # Open the HDF5 file
+    h5file = tables.open_file(h5file_in, mode="r")
 
     # Create the new file for storing this FOV's kymographs
-    out_path = os.path.join(kymo_dir, "kymographs_FOV_{}.h5".format(fov))
-    h5file_kym = tables.open_file(out_path, mode="w", title="Kymographs")
+    # FIXME nested directory structure
+    out_path = os.path.join(kymo_dir, "{}.h5".format(fov))
+    h5file_kym = tables.open_file(out_path, mode="w")
 
-    # Iterate each trench
-    for i, tr in enumerate(ranges):
-
-        # Iterate each channel
+    for i, r in enumerate(regions):
         for c in channels:
             kymograph_array = make_kymograph(
-                fov, c, y_dimension, trench_width, num_frames, fov_h5file, tr
+                filename, fov, z_level, c, frames, fov_h5file, r
             )
 
             # Foreach trench / channel, make the kymograph array & write to new file
@@ -89,121 +64,104 @@ def run_kymographs(
                 "/Trench_{}".format(i),
                 c,
                 obj=kymograph_array,
-                title="{}/{} kymograph".format(i, c),
-                chunkshape=chunk_dimensions,
-                filters=filters,
+                chunkshape=(128, 128),
+                filters=tables.Filters(complevel=1, complib="zlib"),
                 createparents=True,
             )
 
     h5file_kym.close()
+    h5file.close()
 
 
-# Iterate the files which were just created and externally link them into a common, super h5file.
-# This file stores external links to all the files stored in the HDF5 directory.
-def link_files(hdf_dir, title):
-    out_file = os.path.join(hdf_dir, "{}.h5".format(title))
-    h5file = tables.open_file(out_file, mode="w", title=title)
+def link_files(out_dir):
+    """
+    Iterate the files which were just created and externally link them into a common, super h5file.
+    This file stores external links to all the files stored in the HDF5 directory.
+    """
+    out_file = os.path.join(out_dir, "kymographs.h5")
+    h5file = tables.open_file(out_file, mode="w")
+    kym_dir = os.path.join(out_dir, title)
 
-    kym_dir = os.path.join(hdf_dir, title)
-
+    # FIXME need to recurse through all the levels, as appropriate!
     for filename in os.listdir(kym_dir):
-        if filename.endswith("h5"):
-            (file_root, extension) = os.path.splitext(os.path.basename(filename))
-            # Make an external link from this file (FOV) into the main HDF5 file
-            h5file.create_external_link(
-                "/",
-                "{}".format(file_root),
-                "kymographs/{}:/".format(filename),
-                createparents=True,
-            )
+        (file_root, extension) = os.path.splitext(os.path.basename(filename))
+        # Make an external link from this file (FOV) into the main HDF5 file
+        h5file.create_external_link(
+            "/",
+            "{}".format(file_root),
+            "kymographs/{}:/".format(filename),
+            createparents=True,
+        )
 
     h5file.close()
 
 
-# TODO: throw errors if the arguments don't make sense?
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Generate kymographs & write them to disk."
-    )
-    parser.add_argument("-o", "--out-file", type=str, help="Output HDF5 file")
-    parser.add_argument(
-        "-i",
-        "--in-dir",
-        type=str,
-        help="Input directory containing HDF5 files & directories",
-    )
-    parser.add_argument("-n", "--num-cpu", type=int, help="Number of CPUs to use")
-    parser.add_argument("-I", "--identifier", type=str, help="Trench row identifier")
-    parser.add_argument("-T", "--crop-top", type=int, help="Crop top")
-    parser.add_argument("-B", "--crop-bottom", type=int, help="Crop bottom")
+def main_kymographs_function(out_dir, in_file, num_cpu, regions_file):
+    """ """
+    # HDF5 file with images & metadata
+    h5file = tables.open_file(in_file, mode="r")
 
-    return parser.parse_args()
+    # Loop the nodes immediately under Images to get the file names
+    file_names = [i._v_name for i in h5file.list_nodes("/Images")]
 
+    total = 0
+    metadata = {}
+    for f in file_names:
+        # Get metadata for each file
+        n = h5file.get_node("/Metadata/{}".format(f))()
+        m = get_metadata(n)
 
-###
+        # Total # of frames to be processed, for progress bar
+        total += m["fields_of_view"] * m["z_levels"] * m["channels"]
 
-if __name__ == "__main__":
-    # Parse command-line arguments
-    args = parse_args()
+        # store in a dictionary
+        metadata[f] = m
 
-    in_dir = args.in_dir
-    out_file = args.out_file
-    num_cpu = args.num_cpu
-    identifier = args.identifier
-    crop_top = args.crop_top
-    crop_bottom = args.crop_bottom
+    h5file.close()
 
-    y_dimension = crop_bottom - crop_top
-
-    # TODO: read channels from metadata?
-    channels = ["BF", "mCherry", "YFP", "CFP"]
-
-    fov_dir = os.path.join(in_dir, "FOV")
-    files = os.listdir(fov_dir)
-    out_dir = os.path.join(in_dir, "kymographs")
-    os.makedirs(out_dir, exist_ok=True)
+    # For writing the kymographs
+    os.makedirs(out_dir, exist_ok=False)
 
     print("Generating kymographs...")
     start = time.time()
 
+    pbar = tqdm(total=total, desc="Kymograph")
+
+    def update_pbar(*a):
+        pbar.update()
+
     # Run in parallel
-    if num_cpu > 1:
-        args = [
-            (
-                os.path.join(fov_dir, filename),
-                out_dir,
-                crop_top,
-                crop_bottom,
-                y_dimension,
-                channels,
-                identifier,
-            )
-            for filename in os.listdir(fov_dir)
-        ]
+    with Pool(processes=num_cpu) as p:
+        for filename in os.listdir(fov_dir):
+            for fov in metadata[filename]["fields_of_view"]:
+                regions = get_regions(regions_file, filename, fov)
 
-        # TODO: weed out any files which do not end in h5
+                for z in metadata[filename]["z_levels"]:
+                    for c in metadata[filename]["channels"]:
+                        # kwargs = [h5file_in=h5file, out_dir=out_dir, filename=filename, fov=fov, channel=c, frames=metadata[filename]['frames'], z_level=z, regions=regions]
+                        args = [
+                            h5file,
+                            out_dir,
+                            filename,
+                            fov,
+                            c,
+                            metadata[filename]["frames"],
+                            z,
+                            regions,
+                        ]
+                        p.apply_async(run_kymographs, args, callback=update_pbar)
 
-        with Pool(processes=num_cpu) as p:
-            p.starmap(run_kymographs, args)
-    else:
-        for filename in files:
-            if filename.endswith("h5"):
-                run_kymographs(
-                    os.path.join(fov_dir, filename),
-                    out_dir,
-                    crop_top,
-                    crop_bottom,
-                    y_dimension,
-                    channels,
-                    identifier,
-                )
+        p.close()
+        p.join()
 
-    ### Done looping all FOV
+    pbar.close()
+
+    ### Done looping
     end = time.time()
     print(end - start)
     print("Done generating kymographs.")
 
     # Link in all the newly-created h5 files to the parent file
     print("Linking files...")
-    link_files(in_dir, "kymographs")
+    link_files(out_dir)
     print("Done linking files.")

@@ -9,12 +9,13 @@ from scipy.signal import find_peaks
 import argparse
 from multiprocessing import Pool
 
-### Find gaps between cells in trenches, and write bounding boxes to a table
-###
-###
+# ### Find gaps between cells in trenches, and write bounding boxes to a table ###
 
-# Input file path, output dict relating channel names to prominence values for peak detection
+
 def parse_prominence_values(file_path):
+    """
+    Input file path, output dict relating channel names to prominence values for peak detection
+    """
     channel_to_prominence = {}
     with open(file_path, "r") as filehandle:
         for line in filehandle:
@@ -28,25 +29,33 @@ def parse_prominence_values(file_path):
     return channel_to_prominence
 
 
-# Input an image, crope given x/y bounds, and subtract a background value
 def load_img_data(image_node, crop_top, crop_bottom, x_min, x_max, bg):
+    """
+    Input an image, crope given x/y bounds, and subtract a background value
+    """
     data = image_node[crop_top:crop_bottom, x_min:x_max]
     data = bg_correction(data, bg)
     return data
 
 
-# Basic background correction which doesn't allow underflow on pixels < bg
 def bg_correction(image, bg):
+    """
+    Basic background correction which doesn't allow underflow on pixels < bg
+    """
     return (((image > bg) * image) + ((image <= bg) * bg)) - bg
 
 
-# Inverts pixels within the range 0 _ max. Useful for detecting troughs (opposite of peaks)
 def invert_intensity(image):
+    """
+    Inverts pixels within the range 0 _ max. Useful for detecting troughs (opposite of peaks)
+    """
     return image.max() - image
 
 
-# For storing the bounding box information into the table
 def make_bbox_type():
+    """
+    For storing the bounding box information into the table
+    """
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -65,8 +74,6 @@ def make_bbox_type():
     return type("Bounding_Box", (tables.IsDescription,), column_types)
 
 
-# For a given FOV, scan each segmentation channel and search for dips in intensity. These probably correspond to gaps
-# between cells. Write bounding boxes to a table which delineate the regions between gaps.
 def run_bbox_detection(
     fov_file_path,
     identifier,
@@ -76,6 +83,10 @@ def run_bbox_detection(
     prominence_file_path,
     min_peak_distance,
 ):
+    """
+    For a given FOV, scan each segmentation channel and search for dips in intensity. These probably correspond to gaps
+    between cells. Write bounding boxes to a table which delineate the regions between gaps.
+    """
     # Load prominence values
     prominence = parse_prominence_values(prominence_file_path)
 
