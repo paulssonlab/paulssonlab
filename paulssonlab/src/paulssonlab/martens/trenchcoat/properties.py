@@ -58,7 +58,7 @@ def write_properties_to_table(
     row["info_filename"] = name
     row["info_fov"] = fov
     row["info_frame"] = frame
-    row["info_z_level"] = int(z_level.split("_")[1])
+    row["info_z_level"] = z_level
     row["info_region_set_number"] = region_set_number  # e.g. a row of trenches
     row["info_region_number"] = region_number  # e.g. a trench
     row["info_label"] = properties.label
@@ -99,6 +99,8 @@ def make_cell_type(channels, seg_channels, file_names):
         "info_fov": tables.UInt16Col(),
         "info_frame": tables.UInt16Col(),
         "info_z_level": tables.UInt16Col(),
+        # e.g. the trench row number
+        "info_region_set_number": tables.UInt16Col(),
         # e.g. trench number. The "region" within the whole image.
         "info_region_number": tables.UInt16Col(),
         # The labeled, connected component within the region

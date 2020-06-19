@@ -26,8 +26,11 @@ warnings.simplefilter(action="ignore", category=tables.NaturalNameWarning)
 # - Could also enforce same dimensions, if this helps with browsing e.g. using Napari?
 #   But it mightn't make sense to enforce FOV count, because that could conceivably vary from one file to another.
 
-# Main conversion process, which makes a new H5 file for each Frame
+
 def conversion(out_dir, path, fov, frame):
+    """
+    Main conversion process, which makes a new H5 file for each Frame
+    """
     # Create all parent directories
     (file_root, extension) = os.path.splitext(os.path.basename(path))
     dir_path = "{}/{}/FOV_{}/".format(out_dir, file_root, fov, frame)
