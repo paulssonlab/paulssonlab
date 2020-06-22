@@ -107,9 +107,12 @@ class hdf5lock:
         fn_output = self._apply_fn(function,iomode,*args,**kwargs)
         return fn_output
 
-def transferjob(sourcedir,targetdir):
-    mkdircmd = "mkdir -p " + targetdir
-    rsynccmd = "rsync -r " + sourcedir + "/ " + targetdir
+def transferjob(sourcedir,targetdir,single_file=False):
+    mkdircmd = "mkdir -p '" + targetdir + "'"
+    if single_file:
+        rsynccmd = "rsync -r '" + sourcedir + "' '" + targetdir + "'"
+    else:
+        rsynccmd = "rsync -r '" + sourcedir + "/' '" + targetdir + "'"
     wrapcmd = mkdircmd + " && " + rsynccmd
     cmd = "sbatch -p transfer -t 0-12:00 --wrap=\"" + wrapcmd + "\""
     os.system(cmd)

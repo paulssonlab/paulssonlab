@@ -24,8 +24,10 @@ from pandas import HDFStore
 from matplotlib import pyplot as plt
 
 class fluo_segmentation:
-    def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,niblack_scaling=1.,\
-                 hess_pad=6,global_threshold=25,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30,distance_threshold=2):
+    def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,\
+                 hess_pad=6,local_thr="otsu",background_thr="triangle",global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,\
+                 min_obj_size=30,distance_threshold=2,border_buffer=1):
+
         self.bit_max = bit_max
 
         self.scale_timepoints=scale_timepoints
@@ -35,16 +37,21 @@ class fluo_segmentation:
 
         self.smooth_sigma = smooth_sigma
 
-        self.niblack_scaling = niblack_scaling
+        self.hess_thr_scale = hess_thr_scale
         self.hess_pad = hess_pad
 
+        self.local_thr = local_thr
+        self.background_thr = background_thr
         self.global_threshold = global_threshold
-        self.triangle_threshold_scaling = triangle_threshold_scaling
+        self.window_size = window_size
         self.cell_otsu_scaling = cell_otsu_scaling
-        self.local_otsu_r = local_otsu_r
+        self.niblack_k = niblack_k
+        self.background_scaling = background_scaling
         self.min_obj_size = min_obj_size
 
         self.distance_threshold = distance_threshold
+
+        self.border_buffer = border_buffer
 
     def to_8bit(self,img_arr,bit_max=None):
         img_max = np.max(img_arr)+0.0001
@@ -80,23 +87,195 @@ class fluo_segmentation:
         eig_img = self.to_8bit(eig_img)
         return eig_img
 
-    def get_eig_mask(self,eig_img,niblack_scaling=1.):
-        eig_thr = sk.filters.threshold_niblack(eig_img)*niblack_scaling
-        eig_mask = eig_img>eig_thr
+    def get_background_dist(self,array,min_tail=30):
+        hist_range = (0,np.percentile(array.flatten(),90))
+        freq,val = np.histogram(array.flatten(),bins=50,range=hist_range)
+        mu_n = val[np.argmax(freq)]
+        lower_tail = array[array<mu_n].flatten()
+        if len(lower_tail) > min_tail:
+            std_n = sp.stats.halfnorm.fit(lower_tail)[1]
+        else:
+            std_n = np.std(array.flatten())
+        return mu_n,std_n
+
+    def get_eig_mask(self,eig_img,hess_thr_scale=1.):
+        hist_range = (0,np.percentile(eig_img.flatten(),90))
+        freq,val = np.histogram(eig_img.flatten(),bins=50,range=hist_range)
+        mu_n = val[np.argmax(freq)]
+
+        upper_tail = eig_img[eig_img>mu_n].flatten()
+        std_n = sp.stats.halfnorm.fit(upper_tail)[1]
+        background = mu_n - (hess_thr_scale*std_n)
+        eig_mask = eig_img>background
         return eig_mask
 
-    def get_cell_mask(self,img_arr,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
-        otsu_selem = sk.morphology.disk(local_otsu_r)
-        tri_thr = sk.filters.threshold_triangle(img_arr)*triangle_threshold_scaling
-        otsu_thr = sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling
-        del otsu_selem
-        thr = np.maximum(tri_thr,otsu_thr)
-        cell_mask = (img_arr>thr)*(img_arr>global_threshold)
-        del img_arr
-        cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
-        cell_mask = sk.morphology.remove_small_holes(cell_mask)
+#     def get_cell_mask(self,img_arr,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
+#         otsu_selem = sk.morphology.disk(local_otsu_r)
+#         tri_thr = sk.filters.threshold_triangle(img_arr)*triangle_threshold_scaling
+#         otsu_thr = sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling
+#         del otsu_selem
+#         thr = np.maximum(tri_thr,otsu_thr)
+#         cell_mask = (img_arr>thr)*(img_arr>global_threshold)
+#         del img_arr
+#         cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+#         cell_mask = sk.morphology.remove_small_holes(cell_mask)
+
+#         return cell_mask
+
+#     def get_cell_mask(self,img_arr,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
+#         otsu_selem = sk.morphology.disk(local_otsu_r)
+#         tri_thr = sk.filters.threshold_niblack(img_arr)*triangle_threshold_scaling
+#         otsu_thr = sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling
+#         del otsu_selem
+#         thr = np.maximum(tri_thr,otsu_thr)
+#         cell_mask = (img_arr>thr)*(img_arr>global_threshold)
+#         del img_arr
+#         cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+#         cell_mask = sk.morphology.remove_small_holes(cell_mask)
+
+#         return cell_mask
+
+#     def get_cell_mask(self,input_kymo,t_tot,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
+
+#         wrapped_kymo = kymo_handle()
+#         wrapped_kymo.import_unwrap(input_kymo,t_tot)
+#         wrapped_kymo = wrapped_kymo.return_wrap()
+#         del input_kymo
+
+#         wrapped_cell_mask = []
+
+#         for t in range(wrapped_kymo.shape[0]):
+#             img_arr = wrapped_kymo[t]
+
+#             otsu_selem = sk.morphology.disk(local_otsu_r)
+#             otsu_thr = sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling
+#             cell_mask = img_arr>otsu_thr
+#             labeled_mask = sk.morphology.label(cell_mask)
+#             del cell_mask
+
+#             try:
+
+#                 rps = sk.measure.regionprops(labeled_mask,intensity_image=img_arr)
+#                 obj_intensities = np.array([rp.mean_intensity for rp in rps])
+#                 del rps
+
+#                 tri_thr = sk.filters.threshold_triangle(obj_intensities)*triangle_threshold_scaling
+#                 init_cell_mask = obj_intensities>tri_thr
+#     #             if np.any(init_cell_mask):
+
+#                 cell_list = np.where(init_cell_mask)[0]+1
+#                 del init_cell_mask
+#                 cell_mask = np.isin(labeled_mask,cell_list)
+#                 del labeled_mask
+#                 del cell_list
+
+#                 cell_mask = cell_mask*(img_arr>global_threshold)
+#                 del img_arr
+
+#                 cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+#                 cell_mask = sk.morphology.remove_small_holes(cell_mask)
+
+#             except:
+#                 cell_mask = np.zeros(labeled_mask.shape,dtype=bool)
+
+#             wrapped_cell_mask.append(cell_mask)
+#             del cell_mask
+
+
+#         del wrapped_kymo
+#         wrapped_cell_mask = np.array(wrapped_cell_mask)
+
+#         cell_mask = kymo_handle()
+#         cell_mask.import_wrap(wrapped_cell_mask)
+#         del wrapped_cell_mask
+#         cell_mask = cell_mask.return_unwrap()
+
+#         return cell_mask
+
+    def get_cell_mask(self,input_kymo, t_tot, local_thr = "otsu" , background_thr = "triangle", global_threshold = 0, window_size = 15, cell_otsu_scaling= 1., niblack_k = 0.2, background_scaling = 1., min_obj_size = 30):
+
+        wrapped_kymo = kymo_handle()
+        wrapped_kymo.import_unwrap(input_kymo,t_tot)
+        wrapped_kymo = wrapped_kymo.return_wrap()
+
+        wrapped_cell_mask = []
+
+        for t in range(wrapped_kymo.shape[0]):
+            img_arr = wrapped_kymo[t]
+
+            try:
+                if local_thr == "otsu":
+                    otsu_selem = sk.morphology.disk(window_size)
+                    cell_mask = img_arr>(sk.filters.rank.otsu(img_arr,otsu_selem)*cell_otsu_scaling)
+
+                elif local_thr == "niblack":
+                    cell_mask = img_arr>sk.filters.threshold_niblack(img_arr, window_size=window_size, k=niblack_k)
+
+                else:
+                    raise
+
+                if background_thr == "triangle":
+
+                    tri_thr = sk.filters.threshold_triangle(img_arr)*background_scaling
+                    cell_mask = cell_mask*(img_arr>tri_thr)*(img_arr>global_threshold)
+                    del img_arr
+                    cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+
+                elif background_thr == "object-based":
+
+                    cell_mask = ~sk.morphology.binary_closing(~cell_mask) ##NEW
+                    cell_mask = sk.morphology.remove_small_objects(cell_mask,min_size=min_obj_size)
+
+                    labeled_mask = sk.morphology.label(cell_mask)
+                    del cell_mask
+
+                    background = img_arr[labeled_mask==0]
+                    mu_n,std_n = self.get_background_dist(background)
+                    del background
+
+                    rps = sk.measure.regionprops(labeled_mask,intensity_image=img_arr)
+                    obj_intensities = np.array([rp.mean_intensity for rp in rps])
+                    del rps
+
+                    back_thr = mu_n + background_scaling*std_n
+                    init_cell_mask = obj_intensities>back_thr
+
+                    cell_list = np.where(init_cell_mask)[0]+1
+                    del init_cell_mask
+                    cell_mask = np.isin(labeled_mask,cell_list)
+                    del cell_list
+                    del labeled_mask
+
+                    cell_mask = cell_mask*(img_arr>global_threshold)
+                    del img_arr
+
+
+
+            except:
+                raise
+#                 cell_mask = np.zeros(img_arr.shape,dtype=bool)
+
+            cell_mask = sk.morphology.remove_small_holes(cell_mask)
+            wrapped_cell_mask.append(cell_mask)
+            del cell_mask
+
+
+        del wrapped_kymo
+        wrapped_cell_mask = np.array(wrapped_cell_mask)
+
+        cell_mask = kymo_handle()
+        cell_mask.import_wrap(wrapped_cell_mask)
+        del wrapped_cell_mask
+        cell_mask = cell_mask.return_unwrap()
 
         return cell_mask
+
+    def reorder_ids(self,array):
+        unique_ids,inv = np.unique(array,return_inverse=True)
+        new_ids = np.array(range(len(unique_ids)))
+        lookup = dict(zip(unique_ids,new_ids))
+        output = np.array([lookup[unique_id] for unique_id in unique_ids])[inv].reshape(array.shape)
+        return output
 
     def segment(self,img_arr): #img_arr is t,y,x
         t_tot = img_arr.shape[0]
@@ -109,17 +288,25 @@ class fluo_segmentation:
         del img_arr
 
         input_kymo = input_kymo.return_unwrap()
+
         original_shape = input_kymo.shape
-        input_kymo = transform.rescale(input_kymo,self.img_scaling,anti_aliasing=False, preserve_range=True).astype("uint8")
+        len_per_tpt = (original_shape[1]*self.img_scaling)//t_tot
+        adjusted_scale_factor = (len_per_tpt*t_tot)/(original_shape[1])
+
+        input_kymo = transform.rescale(input_kymo,adjusted_scale_factor,anti_aliasing=False, preserve_range=True).astype("uint8")
         input_kymo = sk.filters.gaussian(input_kymo,sigma=self.smooth_sigma,preserve_range=True,mode='reflect').astype("uint8")
 
         eig_img = self.get_eig_img(input_kymo,edge_padding=self.hess_pad)
-        eig_mask = self.get_eig_mask(eig_img,niblack_scaling=self.niblack_scaling)
+        eig_mask = self.get_eig_mask(eig_img,hess_thr_scale=self.hess_thr_scale)
         del eig_img
 
-        cell_mask = self.get_cell_mask(input_kymo,global_threshold=self.global_threshold,\
-                    triangle_threshold_scaling = self.triangle_threshold_scaling,\
-                    cell_otsu_scaling=self.cell_otsu_scaling,local_otsu_r=self.local_otsu_r,\
+        cell_mask = self.get_cell_mask(input_kymo,t_tot,local_thr = self.local_thr,\
+                    background_thr = self.background_thr,\
+                    global_threshold=self.global_threshold,\
+                    window_size = self.window_size,\
+                    cell_otsu_scaling = self.cell_otsu_scaling,\
+                    niblack_k = self.niblack_k,\
+                    background_scaling=self.background_scaling,\
                     min_obj_size=self.min_obj_size)
         del input_kymo
 
@@ -134,17 +321,23 @@ class fluo_segmentation:
         del dist_img
         del marker_mask
         del cell_mask
+
+        output_labels = sk.morphology.remove_small_objects(output_labels,min_size=self.min_obj_size)
         output_labels = sk.transform.resize(output_labels,original_shape,order=0,anti_aliasing=False, preserve_range=True).astype("uint32")
 
         output_kymo = kymo_handle()
         output_kymo.import_unwrap(output_labels,t_tot)
         del output_labels
         output_kymo = output_kymo.return_wrap()
+        for i in range(output_kymo.shape[0]):
+            if self.border_buffer >= 0:
+                output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], buffer_size=self.border_buffer) ##NEW
+            output_kymo[i] = self.reorder_ids(output_kymo[i])
         return output_kymo
 
 class fluo_segmentation_cluster(fluo_segmentation):
     def __init__(self,headpath,paramfile=True,seg_channel="",bit_max=0,scale_timepoints=False,scaling_percentile=0.9,\
-                 img_scaling=1.,smooth_sigma=0.75,niblack_scaling=1.,hess_pad=6,global_threshold=25,cell_otsu_scaling=1.,\
+                 img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,hess_pad=6,global_threshold=25,cell_otsu_scaling=1.,\
                  local_otsu_r=15,min_obj_size=30,distance_threshold=2):
 
         if paramfile:
@@ -163,11 +356,11 @@ class fluo_segmentation_cluster(fluo_segmentation):
         cell_otsu_scaling = param_dict['Cell Threshold Scaling:']
         local_otsu_r = param_dict['Local Otsu Radius:']
         min_obj_size = param_dict['Minimum Object Size:']
-        niblack_scaling = param_dict['Niblack Scaling:']
+        hess_thr_scale = param_dict['Hessian Scaling:']
         distance_threshold = param_dict['Distance Threshold:']
 
         super(fluo_segmentation_cluster, self).__init__(bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,\
-                                                        img_scaling=img_scaling,smooth_sigma=smooth_sigma,niblack_scaling=niblack_scaling,\
+                                                        img_scaling=img_scaling,smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,\
                                                         hess_pad=hess_pad,global_threshold=global_threshold,triangle_threshold_scaling=triangle_threshold_scaling,\
                                                         cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,min_obj_size=min_obj_size,distance_threshold=distance_threshold)
 

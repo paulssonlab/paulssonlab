@@ -2,11 +2,9 @@
 import numpy as np
 import skimage as sk
 
-def object_f_scores(true_mask,pred_mask,eps = (10**-5)):
-    any_true,any_pred = (np.any(true_mask),np.any(pred_mask))
+def object_f_scores(true_labels,pred_labels,eps = (10**-5)):
+    any_true,any_pred = (np.any(true_labels>0),np.any(pred_labels>0))
     if any_true and any_pred:
-        true_labels = sk.measure.label(true_mask)
-        pred_labels = sk.measure.label(pred_mask)
         true_label_projection = np.array([true_labels==i for i in range(1,np.max(true_labels)+1)])
         pred_label_projection = np.array([pred_labels==i for i in range(1,np.max(pred_labels)+1)])
         true_label_flatten = true_label_projection.reshape(true_label_projection.shape[0],-1).astype(int)
@@ -28,7 +26,7 @@ def object_f_scores(true_mask,pred_mask,eps = (10**-5)):
 
         return Precision,Recall,f_score
     elif any_true:
-        num_cells = np.max(sk.measure.label(true_mask))
+        num_cells = np.max(true_labels)
         Precision = np.array([0. for i in range(num_cells)])
         Recall = np.array([0. for i in range(num_cells)])
         f_score = np.array([0. for i in range(num_cells)])
