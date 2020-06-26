@@ -3,9 +3,6 @@ import os
 import h5py
 import torch
 import copy
-import ipywidgets as ipyw
-import scipy
-import pandas as pd
 import datetime
 import time
 import itertools
@@ -13,617 +10,812 @@ import qgrid
 import shutil
 import subprocess
 
-from random import shuffle
-from torch.autograd import Variable
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import precision_recall_curve
-from scipy.ndimage.interpolation import map_coordinates
-from scipy.interpolate import RectBivariateSpline
-from scipy import interpolate,ndimage
-
-import skimage as sk
-import pickle as pkl
 import skimage.morphology
+
+import pandas as pd
+import numpy as np
+import ipywidgets as ipyw
+import skimage as sk
+import sklearn as skl
+import pickle as pkl
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
+import dask.dataframe as dd
+
+from torch.utils.data import Dataset, DataLoader
+from scipy import ndimage
+from imgaug import augmenters as iaa
+from imgaug.augmentables.segmaps import SegmentationMapsOnImage
+from imgaug.augmentables.heatmaps import HeatmapsOnImage
+from scipy.ndimage import convolve1d
+from torch._six import container_abcs, string_classes, int_classes
+
 from .utils import pandas_hdf5_handler,kymo_handle,writedir
 from .trcluster import hdf5lock,dask_controller
 from .metrics import object_f_scores
 
 from matplotlib import pyplot as plt
 
-class weightmap_generator:
-    def __init__(self,nndatapath,w0,wm_sigma):
-        self.nndatapath = nndatapath
-        self.w0 = w0
-        self.wm_sigma = wm_sigma
 
-    def make_weight_map(self,binary_mask):
-        ttl_count = binary_mask.size
-        cell_count = np.sum(binary_mask)
-        background_count = ttl_count - cell_count
-        class_weight = np.array([ttl_count/(background_count+1),ttl_count/(cell_count+1)])
-        class_weight = class_weight/np.sum(class_weight)
 
-        labeled = sk.measure.label(binary_mask)
-        labels = np.unique(labeled)[1:]
+def get_border(labeled):
+    mask = sk.segmentation.find_boundaries(labeled)
+    return mask
 
+def get_mask(labeled):
+    mask = np.zeros(labeled.shape,dtype=bool)
+    mask[labeled>0] = True
+    return mask
+
+def get_background(labeled):
+    mask = np.zeros(labeled.shape,dtype=bool)
+    mask[labeled==0] = True
+    return mask
+
+def get_masknoborder(labeled):
+    mask = get_mask(labeled)
+    border = get_border(labeled)
+    mask[border] = False
+    return mask
+
+def get_segmentation(labeled,mode_list=['background','mask','border']):
+    segmentation = np.zeros(labeled.shape,dtype="uint8")
+    for i,mode in enumerate(mode_list):
+        if mode == 'background':
+            segmentation[get_background(labeled)] = i
+        elif mode == 'mask':
+            segmentation[get_mask(labeled)] = i
+        elif mode == 'border':
+            segmentation[get_border(labeled)] = i
+        elif mode == 'masknoborder':
+            segmentation[get_masknoborder(labeled)] = i
+        else:
+            raise
+    return segmentation
+
+def get_standard_weightmap(segmentation):
+    num_labels = len(np.unique(segmentation))
+    label_count = []
+    label_masks = []
+    for label in range(num_labels):
+        label_mask = segmentation==label
+        num_label = np.sum(label_mask)
+        label_masks.append(label_mask)
+        label_count.append(num_label)
+
+    ttl_count = np.sum(label_count)
+    class_weight = ttl_count/(np.array(label_count)+1)
+    class_weight = class_weight / np.sum(class_weight)
+    weight_map = np.zeros(segmentation.shape, dtype=np.float32)
+    for i,label_mask in enumerate(label_masks):
+        weight_map[label_mask] = class_weight[i]
+
+    return weight_map
+
+def get_unet_weightmap(labeled,W0=5.0,Wsigma=2.0):
+    mask = labeled > 0
+
+    ttl_count = mask.size
+    mask_count = np.sum(mask)
+    background_count = ttl_count - mask_count
+
+    class_weight = np.array([ttl_count / (background_count + 1), ttl_count / (mask_count + 1)])
+    class_weight = class_weight / np.sum(class_weight)
+
+    labels = np.unique(labeled)[1:]
+    num_labels = len(labels)
+
+    if num_labels == 0:
+        weight_map = np.ones(labeled.shape) * class_weight[0]
+    elif num_labels == 1:
+        weight_map = np.ones(labeled.shape) * class_weight[0]
+        weight_map[mask] += class_weight[1]
+    else:
         dist_maps = []
         borders = []
-
-        num_labels = len(labels)
-
-        if num_labels == 0:
-            weight = np.ones(binary_mask.shape)*class_weight[0]
-        elif num_labels == 1:
-            cell = labeled==1
-#             dilated = sk.morphology.binary_dilation(cell)
+        for i in labels:
+            cell = labeled == i
             eroded = sk.morphology.binary_dilation(cell)
-            border = eroded^cell
-            weight = np.ones(binary_mask.shape)*class_weight[0]
-            weight[binary_mask] += class_weight[1]
-#             weight[border] = 0.
-        else:
-            for i in labels:
-                cell = labeled==i
-#                 dilated = sk.morphology.binary_dilation(cell)
-                eroded = sk.morphology.binary_dilation(cell)
-                border = eroded^cell
-                borders.append(border)
-                dist_map = scipy.ndimage.morphology.distance_transform_edt(~border)
-                dist_maps.append(dist_map)
-            dist_maps = np.array(dist_maps)
-            borders = np.array(borders)
-            borders = np.max(borders,axis=0)
-            dist_maps = np.sort(dist_maps,axis=0)
-            weight = self.w0*np.exp(-((dist_maps[0] + dist_maps[1])**2)/(2*(self.wm_sigma**2)))
-            weight[binary_mask] += class_weight[1]
-            weight[~binary_mask] += class_weight[0]
-#             weight[borders] = 0.
-        return weight
+            border = eroded ^ cell
+            borders.append(border)
+            dist_map = ndimage.morphology.distance_transform_edt(~border)
+            dist_maps.append(dist_map)
+        dist_maps = np.array(dist_maps)
+        borders = np.array(borders)
+        borders = np.max(borders, axis=0)
+        dist_maps = np.sort(dist_maps, axis=0)
+        weight_map = W0 * np.exp(
+            -((dist_maps[0] + dist_maps[1]) ** 2) / (2 * (Wsigma ** 2))
+        )
+        weight_map[mask] += class_weight[1]
+        weight_map[~mask] += class_weight[0]
 
-    def make_weightmaps(self,seg_arr):
-        num_indices = seg_arr.shape[0]
-        weightmap_arr = []
-        for t in range(0,num_indices):
-            working_seg_arr = seg_arr[t,0].astype(bool)
-            weightmap = self.make_weight_map(working_seg_arr).astype("float32")
-            weightmap_arr.append(weightmap)
-        weightmap_arr = np.array(weightmap_arr)[:,np.newaxis,:,:]
-        return weightmap_arr
+    return weight_map
 
-class data_augmentation:
-    def __init__(self,p_flip=0.5,max_rot=10,min_padding=20):
-        self.p_flip = p_flip
-        self.max_rot = max_rot
-        self.min_padding = min_padding
+def get_flows(labeled,eps=0.00001):
+    rps = sk.measure.regionprops(labeled)
+    centers = np.array([np.round(rp.centroid).astype("uint16") for rp in rps])
+    y_lens = np.array([rp.bbox[2]-rp.bbox[0] for rp in rps])
+    x_lens = np.array([rp.bbox[3]-rp.bbox[1] for rp in rps])
+    N_arr = 2*(y_lens+x_lens)
+    kernel = np.ones(3, float) / 3.
 
-#     def make_chunked_kymograph(self,img_arr,chunksize=10):
-#         pad = (chunksize - (img_arr.shape[2]%chunksize))*img_arr.shape[1]
-#         chunked_arr = np.swapaxes(img_arr,1,2)
-#         chunked_arr = chunked_arr.reshape(chunked_arr.shape[0],-1)
-#         chunked_arr = np.pad(chunked_arr,((0,0),(0,pad)),'constant',constant_values=0)
-#         chunked_arr = chunked_arr.reshape(chunked_arr.shape[0],-1,img_arr.shape[1]*chunksize)
-#         chunked_arr = np.swapaxes(chunked_arr,1,2)
-#         return chunked_arr
+    x_grad_arr = np.zeros(labeled.shape, dtype=np.float32)
+    y_grad_arr = np.zeros(labeled.shape, dtype=np.float32)
 
-    def random_crop(self,img_arr,seg_arr):
-        false_arr = np.zeros(img_arr.shape[2:4],dtype=bool)
-        random_crop_len_y = np.random.uniform(low=0.1,high=1.,size=(1,img_arr.shape[0]))
-        random_crop_len_x = np.random.uniform(low=0.4,high=1.,size=(1,img_arr.shape[0]))
+    for cell_idx in range(1,len(rps)+1):
+        cell_mask = labeled==cell_idx
+        cell_center = centers[cell_idx-1]
+        diffusion_arr = np.zeros(cell_mask.shape,dtype=np.float32)
+        for i in range(N_arr[cell_idx-1]):
+            diffusion_arr[cell_center] += 1.
+            diffusion_arr = convolve1d(convolve1d(diffusion_arr, kernel, axis=0), kernel, axis=1)
+            diffusion_arr[~cell_mask] = 0.
 
-        random_crop_len = np.concatenate([random_crop_len_y,random_crop_len_x],axis=0)
+        y_grad,x_grad = np.gradient(diffusion_arr)
 
-        random_crop_remainder = 1.-random_crop_len
-        random_crop_start = (np.random.uniform(low=0.,high=1.,size=(2,img_arr.shape[0])))*random_crop_remainder
-        low_crop = np.floor(random_crop_start*np.array(img_arr.shape[2:4])[:,np.newaxis]).astype('int32')
-        high_crop = np.floor(low_crop+(random_crop_len*np.array(img_arr.shape[2:4])[:,np.newaxis])).astype('int32')
-#         random_low_samples = np.random.uniform(low=0.,high=0.5,size=(2,img_arr.shape[0]))
-#         low_crop = (random_low_samples*np.array(img_arr.shape[2:4])[:,np.newaxis]).astype('int32')
-#         remainder = np.array(img_arr.shape[2:4])[:,np.newaxis]-low_crop
-#         random_high_samples = np.random.uniform(low=0.5,high=1.,size=(2,img_arr.shape[0]))
-#         high_crop = np.floor(random_high_samples*remainder).astype('int32')+low_crop
-        out_arr = []
-        out_seg_arr = []
-        center = (img_arr.shape[2]//2,img_arr.shape[3]//2)
-        for t in range(img_arr.shape[0]):
-            mask = copy.copy(false_arr)
-            working_arr = copy.copy(img_arr[t,0,:,:])
-            working_seg_arr = copy.copy(seg_arr[t,0,:,:])
+        norm = np.sqrt(y_grad**2 + x_grad**2)
 
-            dim_0_range = (high_crop[0,t] - low_crop[0,t])
-            dim_1_range = high_crop[1,t] - low_crop[1,t]
-            top_left = (center[0]-dim_0_range//2,center[1]-dim_1_range//2)
+        y_grad,x_grad = (y_grad/(norm+eps)),(x_grad/(norm+eps))
+        y_grad[~cell_mask] = 0.
+        x_grad[~cell_mask] = 0.
 
-            dim_0_maxscale = img_arr.shape[2]/dim_0_range
-            dim_1_maxscale = img_arr.shape[3]/dim_1_range
+        y_grad_arr += y_grad
+        x_grad_arr += x_grad
 
-            dim_0_scale = np.clip(np.random.normal(loc=1.0,scale=0.1),0.8,dim_0_maxscale)
-            dim_1_scale = np.clip(np.random.normal(loc=1.0,scale=0.1),0.8,dim_1_maxscale)
+    return y_grad_arr,x_grad_arr
 
-            rescaled_img = sk.transform.rescale(working_arr[low_crop[0,t]:high_crop[0,t],low_crop[1,t]:high_crop[1,t]],(dim_0_scale,dim_1_scale),preserve_range=True).astype(int)
-            rescaled_seg = (sk.transform.rescale(working_seg_arr[low_crop[0,t]:high_crop[0,t],low_crop[1,t]:high_crop[1,t]]==1,(dim_0_scale,dim_1_scale))>0.5).astype("int8")
-#             rescaled_border = (sk.transform.rescale(working_seg_arr[low_crop[0,t]:high_crop[0,t],low_crop[1,t]:high_crop[1,t]]==2,(dim_0_scale,dim_1_scale))>0.5)
-#             rescaled_seg[rescaled_border] = 2
+def get_two_class(labeled):
+    segmentation = get_segmentation(labeled,mode_list=['background','mask','border'])
+    weightmap = get_standard_weightmap(segmentation)
+    if np.any(np.isnan(segmentation)) or np.any(np.isnan(weightmap)):
+        segmentation = np.zeros(labeled.shape,dtype="uint8")
+        weightmap = np.ones(segmentation.shape, dtype=np.float32)
+    return segmentation, weightmap
 
-            top_left = (center[0]-rescaled_img.shape[0]//2,center[1]-rescaled_img.shape[1]//2)
-            working_arr[top_left[0]:top_left[0]+rescaled_img.shape[0],top_left[1]:top_left[1]+rescaled_img.shape[1]] = rescaled_img
-            working_seg_arr[top_left[0]:top_left[0]+rescaled_img.shape[0],top_left[1]:top_left[1]+rescaled_img.shape[1]] = rescaled_seg
+def get_one_class(labeled,W0=5.0,Wsigma=2.0):
+    segmentation = get_segmentation(labeled,mode_list=['background','masknoborder']).astype(bool)
+    weightmap = get_unet_weightmap(labeled,W0=W0,Wsigma=Wsigma)
+    if np.any(np.isnan(segmentation)) or np.any(np.isnan(weightmap)):
+        segmentation = np.zeros(labeled.shape,dtype="uint8")
+        weightmap = np.ones(segmentation.shape, dtype=np.float32)
+    return segmentation, weightmap
 
-            mask[top_left[0]:top_left[0]+rescaled_img.shape[0],top_left[1]:top_left[1]+rescaled_img.shape[1]] = True
-            working_arr[~mask] = 0
-            working_seg_arr[~mask] = False
+def get_cellpose(labeled):
+    segmentation = get_segmentation(labeled,mode_list=['background','mask']).astype(bool)
+    y_grad_arr,x_grad_arr = get_flows(labeled)
+    if np.any(np.isnan(segmentation)) or np.any(np.isnan(y_grad_arr)) or np.any(np.isnan(x_grad_arr)):
+        segmentation = np.zeros(labeled.shape,dtype="uint8")
+        x_grad_arr = np.zeros(labeled.shape, dtype=np.float32)
+        y_grad_arr = np.zeros(labeled.shape, dtype=np.float32)
+    return segmentation,y_grad_arr,x_grad_arr
 
-            out_arr.append(working_arr)
-            out_seg_arr.append(working_seg_arr)
-        out_arr = np.expand_dims(np.array(out_arr),1)
-        out_seg_arr = np.expand_dims(np.array(out_seg_arr),1)
-        return out_arr,out_seg_arr
+def numpy_collate(batch): #modified version of torch default
+    r"""Puts each data field into a numpy array with outer dimension batch size"""
 
-    def random_x_flip(self,img_arr,seg_arr,p=0.5):
-        choices = np.random.choice(np.array([True,False]),size=img_arr.shape[0],p=np.array([p,1.-p]))
-        out_img_arr = copy.copy(img_arr)
-        out_seg_arr = copy.copy(seg_arr)
-        out_img_arr[choices,0,:,:] = np.flip(img_arr[choices,0,:,:],axis=1)
-        out_seg_arr[choices,0,:,:] = np.flip(seg_arr[choices,0,:,:],axis=1)
-        return out_img_arr,out_seg_arr
-    def random_y_flip(self,img_arr,seg_arr,p=0.5):
-        choices = np.random.choice(np.array([True,False]),size=img_arr.shape[0],p=np.array([p,1.-p]))
-        out_img_arr = copy.copy(img_arr)
-        out_seg_arr = copy.copy(seg_arr)
-        out_img_arr[choices,0,:,:] = np.flip(img_arr[choices,0,:,:],axis=2)
-        out_seg_arr[choices,0,:,:] = np.flip(seg_arr[choices,0,:,:],axis=2)
-        return out_img_arr,out_seg_arr
+    elem = batch[0]
+    elem_type = type(elem)
+    if isinstance(elem, np.ndarray):
+        out = None
+        if torch.utils.data.get_worker_info() is not None:
+            # If we're in a background process, concatenate directly into a
+            # shared memory tensor to avoid an extra copy
+            numel = sum([x.numel() for x in batch])
+            storage = elem.storage()._new_shared(numel)
+            out = elem.new(storage)
+        return np.stack(batch, 0, out=out)
+    elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
+            and elem_type.__name__ != 'string_':
+        elem = batch[0]
+        if elem_type.__name__ == 'ndarray':
+            # array of string classes and object
+            if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
+                raise
 
-    def change_brightness(self,img_arr,num_control_points=3):
-        out_img_arr = copy.copy(img_arr)
-        for t in range(img_arr.shape[0]):
-            control_points = (np.add.accumulate(np.ones(num_control_points+2))-1.)/(num_control_points+1)
-            control_point_locations = (control_points*65535).astype(int)
-            orig_locations = copy.copy(control_point_locations)
-            random_points = np.random.uniform(low=0,high=65535,size=num_control_points).astype(int)
-            sorted_points = np.sort(random_points)
-            control_point_locations[1:-1] = sorted_points
-            mapping = interpolate.PchipInterpolator(orig_locations, control_point_locations)
-            out_img_arr[t,0,:,:] = mapping(img_arr[t,0,:,:])
-        return out_img_arr
+            return numpy_collate([np.array(b) for b in batch])
+        elif elem.shape == ():  # scalars
+            return np.array(batch)
+    elif isinstance(elem, float):
+        return np.array(batch, dtype=torch.float64)
+    elif isinstance(elem, int_classes):
+        return np.array(batch)
+    elif isinstance(elem, string_classes):
+        return batch
+    elif isinstance(elem, container_abcs.Mapping):
+        return {key: numpy_collate([d[key] for d in batch]) for key in elem}
+    elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+        return elem_type(*(numpy_collate(samples) for samples in zip(*batch)))
+    elif isinstance(elem, container_abcs.Sequence):
+        # check to make sure that the elements in batch have consistent size
+        it = iter(batch)
+        elem_size = len(next(it))
+        if not all(len(elem) == elem_size for elem in it):
+            raise RuntimeError('each element in list of batch should be of equal size')
+        transposed = zip(*batch)
+        return [numpy_collate(samples) for samples in transposed]
 
+    raise
 
-    def add_padding(self,img_arr,seg_arr,max_rot=20,min_padding=20):
-        hyp_length = np.ceil((img_arr.shape[2]**2+img_arr.shape[3]**2)**(1/2)).astype(int)
-        max_rads = ((90-max_rot)/360)*(2*np.pi)
-        min_rads = (90/360)*(2*np.pi)
-        max_y = np.maximum(np.ceil(hyp_length*np.sin(max_rads)),np.ceil(hyp_length*np.sin(min_rads))).astype(int)
-        max_x = np.maximum(np.ceil(hyp_length*np.cos(max_rads)),np.ceil(hyp_length*np.cos(min_rads))).astype(int)
-        delta_y = max_y-img_arr.shape[2]
-        delta_x = max_x-img_arr.shape[3]
-        if delta_x % 2 == 1:
-            delta_x+=1
-        if delta_y % 2 == 1:
-            delta_y+=1
-        delta_y = np.maximum(delta_y,2*min_padding)
-        delta_x = np.maximum(delta_x,2*min_padding)
-        padded_img_arr = np.pad(img_arr, ((0,0),(0,0),(delta_y//2,delta_y//2),(delta_x//2,delta_x//2)), 'constant', constant_values=0)
-        padded_seg_arr = np.pad(seg_arr, ((0,0),(0,0),(delta_y//2,delta_y//2),(delta_x//2,delta_x//2)), 'constant', constant_values=0)
-        return padded_img_arr,padded_seg_arr
+def get_cellpose_labels(fx,step_size=1.,n_iter=10): #N, (y,x,mask), y, x
+    labeled = np.zeros((fx.shape[0],fx.shape[2],fx.shape[3]),dtype="uint8")
+    for n in range(fx.shape[0]):
+        y_grad_arr = fx[n,0]
+        x_grad_arr = fx[n,1]
+        mask = fx[n,2]>0.5
+        pixel_arr = np.array(np.where(mask)).T
+        final_pixels = []
+        for pixel_idx in range(pixel_arr.shape[0]):
+            pixel_coord = pixel_arr[pixel_idx].astype(np.float32)
+            for N in range(n_iter):
+                near_coord = pixel_coord.astype(int)
+                near_coord[0] = np.clip(near_coord[0],0,y_grad_arr.shape[0]-1)
+                near_coord[1] = np.clip(near_coord[1],0,y_grad_arr.shape[1]-1)
 
-    def translate(self,pad_img_arr,pad_seg_arr,img_arr,seg_arr):
-        trans_img_arr = copy.copy(pad_img_arr)
-        trans_seg_arr = copy.copy(pad_seg_arr)
-        delta_y = pad_img_arr.shape[2] - img_arr.shape[2]
-        delta_x = pad_img_arr.shape[3] - img_arr.shape[3]
-        for t in range(pad_img_arr.shape[0]):
-            trans_y = np.random.randint(-(delta_y//2),high=delta_y//2)
-            trans_x = np.random.randint(-(delta_x//2),high=delta_x//2)
-            trans_img_arr[t,0,delta_y//2:delta_y//2+img_arr.shape[2],delta_x//2:delta_x//2+img_arr.shape[3]] = 0
-            trans_seg_arr[t,0,delta_y//2:delta_y//2+img_arr.shape[2],delta_x//2:delta_x//2+img_arr.shape[3]] = 0
-            trans_img_arr[t,0,delta_y//2+trans_y:delta_y//2+img_arr.shape[2]+trans_y,delta_x//2+trans_x:delta_x//2+img_arr.shape[3]+trans_x] =\
-            pad_img_arr[t,0,delta_y//2:delta_y//2+img_arr.shape[2],delta_x//2:delta_x//2+img_arr.shape[3]]
-            trans_seg_arr[t,0,delta_y//2+trans_y:delta_y//2+img_arr.shape[2]+trans_y,delta_x//2+trans_x:delta_x//2+img_arr.shape[3]+trans_x] =\
-            pad_seg_arr[t,0,delta_y//2:delta_y//2+img_arr.shape[2],delta_x//2:delta_x//2+img_arr.shape[3]]
-        return trans_img_arr,trans_seg_arr
+                y_grad = y_grad_arr[near_coord[0],near_coord[1]]
+                x_grad = x_grad_arr[near_coord[0],near_coord[1]]
+                pixel_coord += np.array([y_grad,x_grad])*step_size
+            final_pixels.append(pixel_coord)
 
-    def rotate(self,img_arr,seg_arr,max_rot=20):
-        rot_img_arr = copy.copy(img_arr)
-        rot_seg_arr = copy.copy(seg_arr)
-        for t in range(img_arr.shape[0]):
-            r = np.random.uniform(low=-max_rot,high=max_rot)
-            rot_img_arr[t,0,:,:] = sk.transform.rotate(img_arr[t,0,:,:],r,preserve_range=True).astype("int32")
-            rot_seg = (sk.transform.rotate(seg_arr[t,0,:,:]==1,r)>0.5).astype("int8")
-#             rot_border = sk.transform.rotate(seg_arr[t,:,:]==2,r)>0.5
-#             rot_seg[rot_border] = 2
-            rot_seg_arr[t,0,:,:] = rot_seg
-        return rot_img_arr,rot_seg_arr
+        if len(final_pixels) > 0:
+            dbsc = skl.cluster.DBSCAN(eps=2.)
+            cluster_assign = dbsc.fit_predict(final_pixels)
 
-    def deform_img_arr(self,img_arr,seg_arr):
-        def_img_arr = copy.copy(img_arr)
-        def_seg_arr = copy.copy(seg_arr)
-        for t in range(img_arr.shape[0]):
-            y_steps = np.linspace(0.,4.,num=img_arr.shape[2])
-            x_steps = np.linspace(0.,4.,num=img_arr.shape[3])
-            grid = np.random.normal(scale=1.,size=(2,4,4))
-            dx = RectBivariateSpline(np.arange(4),np.arange(4),grid[0]).ev(y_steps[:,np.newaxis],x_steps[np.newaxis,:])
-            dy = RectBivariateSpline(np.arange(4),np.arange(4),grid[1]).ev(y_steps[:,np.newaxis],x_steps[np.newaxis,:])
-            y,x = np.meshgrid(np.arange(img_arr.shape[2]), np.arange(img_arr.shape[3]), indexing='ij')
-            indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1))
-            elastic_img = map_coordinates(img_arr[t,0,:,:], indices, order=1).reshape(img_arr.shape[2:4])
+            labeled[n,pixel_arr[:,0],pixel_arr[:,1]] = cluster_assign+1
+    return labeled
 
-            def_img_arr[t,0,:,:] = elastic_img
-
-            elastic_cell = (map_coordinates(seg_arr[t,0,:,:]==1, indices, order=1).reshape(seg_arr.shape[2:4])>0.5)
-            elastic_cell = sk.morphology.binary_closing(elastic_cell)
-#             elastic_border = (map_coordinates(seg_arr[t,:,:]==2, indices, order=1).reshape(seg_arr.shape[1:3])>0.5)
-            def_seg_arr[t,0,elastic_cell] = 1
-#             def_seg_arr[t,elastic_border] = 2
-        return def_img_arr,def_seg_arr
-
-
-    def get_augmented_data(self,img_arr,seg_arr):
-        img_arr,seg_arr = self.random_crop(img_arr,seg_arr)
-        img_arr,seg_arr = self.random_x_flip(img_arr,seg_arr,p=self.p_flip)
-        img_arr,seg_arr = self.random_y_flip(img_arr,seg_arr,p=self.p_flip)
-        img_arr = self.change_brightness(img_arr)
-        pad_img_arr,pad_seg_arr = self.add_padding(img_arr,seg_arr,max_rot=self.max_rot+5)
-        img_arr,seg_arr = self.translate(pad_img_arr,pad_seg_arr,img_arr,seg_arr)
-        del pad_img_arr
-        del pad_seg_arr
-        img_arr,seg_arr = self.rotate(img_arr,seg_arr,max_rot=self.max_rot)
-        img_arr,seg_arr = self.deform_img_arr(img_arr,seg_arr)
-        img_arr,seg_arr = (img_arr.astype("int32"),seg_arr.astype("int8"))
-        return img_arr,seg_arr
+def get_class_labels(segmentation,mask_label_dim=1):
+    segmentation = np.argmax(segmentation,axis=1)
+    mask = (segmentation==mask_label_dim)
+    labeled = np.zeros((segmentation.shape),dtype="uint8")
+    for n in range(segmentation.shape[0]):
+        labeled[n] = sk.measure.label(mask[n])
+    return labeled
 
 class UNet_Training_DataLoader:
-    def __init__(self,nndatapath="",experimentname="",trainpath="",testpath="",valpath="",augment=False):
+    def __init__(
+        self,
+        nndatapath="",
+        experimentname="",
+        output_names=["train", "test", "val"],
+        output_modes=["class", "multiclass", "cellpose"],
+        input_paths=[],
+        W0_list=[5.],
+        Wsigma_list=[2.],
+    ):
         self.nndatapath = nndatapath
+        self.metapath = nndatapath + "/metadata.hdf5"
         self.experimentname = experimentname
-        self.trainpath = trainpath
-        self.testpath = testpath
-        self.valpath = valpath
+        self.output_names = output_names
+        self.output_modes = output_modes
+        self.input_paths = input_paths
+        self.W0_list = W0_list
+        self.Wsigma_list = Wsigma_list
 
-        self.trainname = self.trainpath.split("/")[-1]
-        self.testname = self.testpath.split("/")[-1]
-        self.valname = self.valpath.split("/")[-1]
-
-        self.metapath = self.nndatapath + "/metadata.hdf5"
-
-    def get_metadata(self,headpath):
+    def get_metadata(self, headpath):
         meta_handle = pandas_hdf5_handler(headpath + "/metadata.hdf5")
-        global_handle = meta_handle.read_df("global",read_metadata=True)
-        kymo_handle = meta_handle.read_df("kymograph",read_metadata=True)
-        fovdf = kymo_handle.reset_index(inplace=False)
-        fovdf = fovdf.set_index(["fov","row","trench"], drop=True, append=False, inplace=False)
-        fovdf = fovdf.sort_index()
+        global_handle = meta_handle.read_df("global", read_metadata=True)
+
+        kymodf = dd.read_parquet(headpath + "/kymograph/metadata").persist()
+        kymodf = kymodf.set_index("fov").persist()
 
         channel_list = global_handle.metadata["channels"]
-        fov_list = kymo_handle['fov'].unique().tolist()
-        t_len = len(kymo_handle.index.get_level_values("timepoints").unique())
-        trench_dict = {fov:len(fovdf.loc[fov]["trenchid"].unique()) for fov in fov_list}
-        shape_y = kymo_handle.metadata["kymograph_params"]["ttl_len_y"]
-        shape_x = kymo_handle.metadata["kymograph_params"]["trench_width_x"]
-        kymograph_img_shape = tuple((shape_y,shape_x))
-        return channel_list,fov_list,t_len,trench_dict,kymograph_img_shape
+        fov_list = kymodf.index.compute().get_level_values("fov").unique().tolist()
+        t_len = len(kymodf.loc[fov_list[0]]["timepoints"].unique().compute())
+        ttl_trenches = len(kymodf["trenchid"].unique().compute())
 
-    def get_selection(self,channel,trench_dict,fov_list,t_subsample_step,t_range,max_trenches,kymograph_img_shape,selectionname):
-        fov_list = list(fov_list)
-        ttl_trench_count = np.sum(np.array([trench_dict[fov] for fov in fov_list]))
-        ttl_trench_count = min(ttl_trench_count,max_trenches)
-        num_t = len(range(t_range[0],t_range[1]+1,t_subsample_step))
-        ttl_imgs = ttl_trench_count*num_t
-        print("Total Number of Trenches: " + str(ttl_trench_count))
-        print("Total Number of Timepoints: " + str(num_t))
-        print("Total Number of Images: " + str(ttl_imgs))
-        selection = tuple((channel,fov_list,t_subsample_step,t_range,max_trenches,ttl_imgs,kymograph_img_shape))
-        setattr(self, selectionname + "_selection", selection)
+        trench_dict = {
+            fov: len(kymodf.loc[fov]["trenchid"].unique().compute()) for fov in fov_list
+        }
+        with open(headpath + "/kymograph/metadata.pkl", 'rb') as handle:
+            ky_metadata = pkl.load(handle)
 
-    def inter_get_selection(self,headpath,selectionname):
-        channel_list,fov_list,t_len,trench_dict,kymograph_img_shape = self.get_metadata(headpath)
-        selection = ipyw.interactive(self.get_selection, {"manual":True}, channel=ipyw.Dropdown(options=channel_list,value=channel_list[0],description='Feature Channel:',disabled=False),\
-                trench_dict=ipyw.fixed(trench_dict),fov_list=ipyw.SelectMultiple(options=fov_list),\
-                t_subsample_step=ipyw.IntSlider(value=1, min=1, max=50, step=1),\
-                t_range=ipyw.IntRangeSlider(value=[0, t_len-1],min=0,max=t_len-1,step=1,disabled=False,continuous_update=False),\
-                max_trenches=ipyw.IntText(value=1,description='Maximum Trenches per FOV: ',disabled=False),\
-                kymograph_img_shape=ipyw.fixed(kymograph_img_shape),\
-                selectionname=ipyw.fixed(selectionname));
-        display(selection)
+        shape_y = ky_metadata["kymograph_params"]["ttl_len_y"]
+        shape_x = ky_metadata["kymograph_params"]["trench_width_x"]
+        kymograph_img_shape = tuple((shape_y, shape_x))
+        return (
+            channel_list,
+            fov_list,
+            t_len,
+            trench_dict,
+            ttl_trenches,
+            kymograph_img_shape,
+        )
 
-    def export_chunk(self,selectionname,file_idx,augment,file_trench_indices,weight_grid_list):
-        selection = getattr(self,selectionname + "_selection")
-        datapath = getattr(self,selectionname + "path")
-        dataname = getattr(self,selectionname + "name")
+    def inter_get_selection(self):
+        output_tabs = []
+        for i in range(len(self.output_names)):
+            dset_tabs = []
+            for j in range(len(self.input_paths)):
+                (
+                    channel_list,
+                    fov_list,
+                    t_len,
+                    trench_dict,
+                    ttl_trenches,
+                    kymograph_img_shape,
+                ) = self.get_metadata(self.input_paths[j])
 
-        img_path = datapath + "/kymograph/kymograph_" + str(file_idx) + ".hdf5"
-        seg_path = datapath + "/fluorsegmentation/segmentation_" + str(file_idx) + ".hdf5"
-        nndatapath = self.nndatapath + "/" + selectionname + "_" + str(file_idx) + ".hdf5"
+                feature_dropdown = ipyw.Dropdown(
+                    options=channel_list,
+                    value=channel_list[0],
+                    description="Feature Channel:",
+                    disabled=False,
+                )
+                max_samples = ipyw.IntText(
+                    value=0, description="Maximum Samples per Dataset:", disabled=False
+                )
+                t_range = ipyw.IntRangeSlider(
+                    value=[0, t_len - 1],
+                    description="Timepoint Range:",
+                    min=0,
+                    max=t_len - 1,
+                    step=1,
+                    disabled=False,
+                    continuous_update=False,
+                )
 
-        with h5py.File(img_path,"r") as imgfile:
-            img_arr = imgfile[selection[0]][file_trench_indices,selection[3][0]:selection[3][1]+1:selection[2]]
-            img_arr = img_arr.reshape(img_arr.shape[0]*img_arr.shape[1],img_arr.shape[2],img_arr.shape[3])
-            img_arr = img_arr[:,np.newaxis,:,:]
-            img_arr = img_arr.astype('int32')
+                working_tab = ipyw.VBox(
+                    children=[feature_dropdown, max_samples, t_range]
+                )
+                dset_tabs.append(working_tab)
 
-        with h5py.File(seg_path,"r") as segfile:
-            seg_arr = segfile["data"][file_trench_indices,selection[3][0]:selection[3][1]+1:selection[2]]
-            seg_arr = seg_arr.reshape(seg_arr.shape[0]*seg_arr.shape[1],seg_arr.shape[2],seg_arr.shape[3])
-            seg_arr = seg_arr[:,np.newaxis,:,:]
-            seg_arr = seg_arr.astype('int8')
+            dset_ipy_tabs = ipyw.Tab(children=dset_tabs)
+            for j in range(len(self.input_paths)):
+                dset_ipy_tabs.set_title(j, self.input_paths[j].split("/")[-1])
+            output_tabs.append(dset_ipy_tabs)
+        output_ipy_tabs = ipyw.Tab(children=output_tabs)
+        for i, output_name in enumerate(self.output_names):
+            output_ipy_tabs.set_title(i, output_name)
+        self.tab = output_ipy_tabs
 
-        if augment:
-            img_arr,seg_arr = self.data_augmentation.get_augmented_data(img_arr,seg_arr)
-
-        chunk_shape = (1,1,img_arr.shape[2],img_arr.shape[3])
-
-        with h5py.File(nndatapath,"w") as outfile:
-            img_handle = outfile.create_dataset("img",data=img_arr,chunks=chunk_shape,dtype='int32')
-            seg_handle = outfile.create_dataset("seg",data=seg_arr,chunks=chunk_shape,dtype='int8')
-
-        for item in weight_grid_list:
-            w0,wm_sigma = item
-            weightmap_gen = weightmap_generator(self.nndatapath,w0,wm_sigma)
-            weightmap_arr = weightmap_gen.make_weightmaps(seg_arr)
-            with h5py.File(nndatapath,"a") as outfile:
-                weightmap_handle = outfile.create_dataset("weight_" + str(item),data=weightmap_arr,chunks=chunk_shape,dtype='int32')
-
-        return file_idx
-
-    def gather_chunks(self,outputdf,output_metadata,selectionname,file_idx_list,weight_grid_list):
-        nnoutputpath = self.nndatapath + "/" + selectionname + ".hdf5"
-
-        tempdatapath = self.nndatapath + "/" + selectionname + "_" + str(file_idx_list[0]) + ".hdf5"
-        with h5py.File(tempdatapath,"r") as infile:
-            output_shape = (len(outputdf.index),1,infile["img"].shape[2],infile["img"].shape[3])
-            chunk_shape = (1,1,infile["img"].shape[2],infile["img"].shape[3])
-
-        with h5py.File(nnoutputpath,"w") as outfile:
-            img_handle = outfile.create_dataset("img",output_shape,chunks=chunk_shape,dtype='int32')
-            seg_handle = outfile.create_dataset("seg",output_shape,chunks=chunk_shape,dtype='int8')
-            for item in weight_grid_list:
-                weightmap_handle = outfile.create_dataset("weight_" + str(item),output_shape,chunks=chunk_shape,dtype='int32')
-
-        current_idx = 0
-        for file_idx in file_idx_list:
-            nndatapath = self.nndatapath + "/" + selectionname + "_" + str(file_idx) + ".hdf5"
-            with h5py.File(nndatapath,"r") as infile:
-                img_arr = infile["img"][:]
-                seg_arr = infile["seg"][:]
-                weight_arr_list = []
-                for item in weight_grid_list:
-                    weight_arr_list.append(infile["weight_" + str(item)][:])
-            num_indices = img_arr.shape[0]
-            with h5py.File(nnoutputpath,"a") as outfile:
-                outfile["img"][current_idx:current_idx+num_indices] = img_arr
-                outfile["seg"][current_idx:current_idx+num_indices] = seg_arr
-                for i,item in enumerate(weight_grid_list):
-                    outfile["weight_" + str(item)][current_idx:current_idx+num_indices] = weight_arr_list[i]
-            current_idx += num_indices
-            os.remove(nndatapath)
-
-    def export_data(self,selectionname,dask_controller,weight_grid_list,augment=False):
-
-        dask_controller.futures = {}
-
-        selection = getattr(self,selectionname + "_selection")
-        datapath = getattr(self,selectionname + "path")
-        dataname = getattr(self,selectionname + "name")
-
-        input_meta_handle = pandas_hdf5_handler(datapath + "/metadata.hdf5")
-        output_meta_handle = pandas_hdf5_handler(self.metapath)
-
-        trenchdf_list = []
-
-        kymodf = input_meta_handle.read_df("kymograph",read_metadata=True)
-        fovdf = kymodf.reset_index(inplace=False)
-        fovdf = fovdf.set_index(["fov","row","trench"], drop=True, append=False, inplace=False)
-        fovdf = fovdf.sort_index()
-
-        trenchdf = fovdf.loc[selection[1]]
-        trenchdf = trenchdf.reset_index(inplace=False)
-        trenchdf = trenchdf.set_index(["trenchid","timepoints"], drop=True, append=False, inplace=False)
-        trenchdf = trenchdf.sort_index()
-
-        trenches = trenchdf.index.get_level_values("trenchid").unique().tolist()
-        shuffle(trenches)
-        trenches = np.sort(trenches[:selection[4]])
-
-        filedf = trenchdf.loc[pd.IndexSlice[trenches, selection[3][0]:selection[3][1]+1:selection[2]], :]
-        filedf = filedf.reset_index(inplace=False)
-        filedf = filedf.set_index(["File Index","File Trench Index"], drop=True, append=False, inplace=False)
-        filedf = filedf.sort_index()
-
-        filelist = filedf.index.get_level_values("File Index").unique().tolist()
-        for file_idx in filelist:
-            file_trenchdf = filedf.loc[file_idx]
-            file_trench_indices = file_trenchdf.index.get_level_values("File Trench Index").unique().tolist()
-            future = dask_controller.daskclient.submit(self.export_chunk,selectionname,file_idx,augment,file_trench_indices,weight_grid_list,retries=1)
-            dask_controller.futures["File Number: " + str(file_idx)] = future
-
-        outputdf = filedf.reset_index(inplace=False)
-        outputdf = outputdf.set_index(["trenchid","timepoints"], drop=True, append=False, inplace=False)
-        outputdf = outputdf.sort_index()
-
-        del outputdf["File Index"]
-        del outputdf["File Trench Index"]
-
-        selection_keys = ["channel", "fov_list", "t_subsample_step", "t_range", "max_trenches", "ttl_imgs", "kymograph_img_shape"]
-        selection = {selection_keys[i]:item for i,item in enumerate(selection)}
-        selection["experiment_name"],selection["data_name"] = (self.experimentname, dataname)
-        selection["W0 List"], selection["Wm Sigma List"] = (self.grid_dict['W0 (Border Region Weight):'],self.grid_dict['Wm Sigma (Border Region Spread):'])
-
-        output_metadata = {"nndataset" : selection}
-
-        segparampath = datapath + "/fluorescent_segmentation.par"
-        with open(segparampath, 'rb') as infile:
-            seg_param_dict = pkl.load(infile)
-
-        output_metadata["segmentation"] = seg_param_dict
-
-        input_meta_handle = pandas_hdf5_handler(datapath + "/metadata.hdf5")
-        for item in ["global","kymograph"]:
-            indf = input_meta_handle.read_df(item,read_metadata=True)
-            output_metadata[item] = indf.metadata
-
-        output_meta_handle.write_df(selectionname,outputdf,metadata=output_metadata)
-
-        file_idx_list = dask_controller.daskclient.gather([dask_controller.futures["File Number: " + str(file_idx)] for file_idx in filelist])
-        self.gather_chunks(outputdf,output_metadata,selectionname,file_idx_list,weight_grid_list)
-
-
-    def display_grid(self):
-        tab_dict = {'W0 (Border Region Weight):':[1., 3., 5., 10.],'Wm Sigma (Border Region Spread):':[1., 2., 3., 4., 5.]}
-        children = [ipyw.SelectMultiple(options=val,value=(val[1],),description=key,disabled=False) for key,val in tab_dict.items()]
-        self.tab = ipyw.Tab()
-        self.tab.children = children
-        for i,key in enumerate(tab_dict.keys()):
-            self.tab.set_title(i, key[:-1])
         return self.tab
 
-    def get_grid_params(self):
-        if hasattr(self,'tab'):
-            self.grid_dict = {child.description:child.value for child in self.tab.children}
-            delattr(self, 'tab')
-        elif hasattr(self,'grid_dict'):
-            pass
-        else:
-            raise "No selection defined."
-        print("======== Grid Params ========")
-        for key,val in self.grid_dict.items():
-            print(key + " " + str(val))
+    def get_import_params(self):
+        self.import_param_dict = {}
+        for i, output_name in enumerate(self.output_names):
+            self.import_param_dict[output_name] = {}
+            for j, input_path in enumerate(self.input_paths):
+                working_vbox = self.tab.children[i].children[j]
+                self.import_param_dict[output_name][input_path] = {
+                    child.description: child.value for child in working_vbox.children
+                }
 
-    def export_all_data(self,n_workers=20,memory='4GB'):
-        writedir(self.nndatapath,overwrite=True)
+        print("======== Import Params ========")
+        for i, output_name in enumerate(self.output_names):
+            print(str(output_name))
+            for j, input_path in enumerate(self.input_paths):
+                (
+                    channel_list,
+                    fov_list,
+                    t_len,
+                    trench_dict,
+                    ttl_trenches,
+                    kymograph_img_shape,
+                ) = self.get_metadata(input_path)
+                ttl_possible_samples = t_len * ttl_trenches
+                param_dict = self.import_param_dict[output_name][input_path]
+                requested_samples = param_dict["Maximum Samples per Dataset:"]
+                if requested_samples > 0:
+                    print(str(input_path))
+                    for key, val in param_dict.items():
+                        print(key + " " + str(val))
+                    print(
+                        "Requested Samples / Total Samples: "
+                        + str(requested_samples)
+                        + "/"
+                        + str(ttl_possible_samples)
+                    )
 
-        grid_keys = self.grid_dict.keys()
-        grid_combinations = list(itertools.product(*list(self.grid_dict.values())))
+        del self.tab
 
-        self.data_augmentation = data_augmentation()
-
-        dask_cont = dask_controller(walltime='01:00:00',local=False,n_workers=n_workers,memory=memory)
-        dask_cont.startdask()
-#         dask_cont.daskcluster.start_workers()
-        dask_cont.displaydashboard()
+    def export_chunk(self, output_name, init_idx, chunk_size, chunk_idx):
+        output_meta_handle = pandas_hdf5_handler(self.metapath)
+        output_df = output_meta_handle.read_df(output_name)
+        working_df = output_df[init_idx : init_idx + chunk_size]
+        nndatapath = self.nndatapath + "/" + output_name + "_" + str(chunk_idx) + ".hdf5"
 
         try:
-            for selectionname in ["train","test","val"]:
-                if selectionname == "train":
-                    self.export_data(selectionname,dask_cont,grid_combinations,augment=True)
-                else:
-                    self.export_data(selectionname,dask_cont,grid_combinations,augment=False)
-            dask_cont.shutdown()
-        except:
-            dask_cont.shutdown()
-            raise
+            os.remove(nndatapath)
+        except OSError:
+            pass
 
-class GridSearch:
-    def __init__(self,nndatapath,numepochs=50):
-        self.nndatapath = nndatapath
-        self.numepochs = numepochs
+        dset_paths = working_df.index.get_level_values(0).unique().tolist()
+        for dset_path in dset_paths:
+            dset_path_key = dset_path.split("/")[-1]
+            dset_df = working_df.loc[dset_path]
 
-    def display_grid(self):
-        meta_handle = pandas_hdf5_handler(self.nndatapath + "/metadata.hdf5")
-        trainmeta = meta_handle.read_df("train",read_metadata=True).metadata["nndataset"]
-        w0_list,wm_sigma_list = trainmeta["W0 List"],trainmeta["Wm Sigma List"]
+            if isinstance(dset_df, pd.Series):
+                dset_df = dset_df.to_frame().T
 
-        self.tab_dict = {'Batch Size:':[5, 10, 25],'Layers:':[2, 3, 4],\
-           'Hidden Size:':[16, 32, 64],'Learning Rate:':[0.001, 0.005, 0.01, 0.05],\
-           'Momentum:':[0.9, 0.95, 0.99],'Weight Decay:':[0.0001,0.0005, 0.001],\
-           'Dropout:':[0., 0.3, 0.5, 0.7], 'w0:':w0_list, 'wm sigma':wm_sigma_list}
+            param_dict = self.import_param_dict[output_name][dset_path]
+            feature_channel = param_dict["Feature Channel:"]
 
-        children = [ipyw.SelectMultiple(options=val,value=(val[1],),description=key,disabled=False) for key,val in self.tab_dict.items()]
-        self.tab = ipyw.Tab()
-        self.tab.children = children
-        for i,key in enumerate(self.tab_dict.keys()):
-            self.tab.set_title(i, key[:-1])
-        return self.tab
+            img_arr_list = []
+            seg_arr_list = []
 
-    def get_grid_params(self):
-        self.grid_dict = {child.description:child.value for child in self.tab.children}
-        print("======== Grid Params ========")
-        for key,val in self.grid_dict.items():
-            print(key + " " + str(val))
+            dset_df = dset_df.set_index("File Index")
+            dset_df = dset_df.sort_index()
+            file_indices = dset_df.index.get_level_values(0).unique().tolist()
 
-    def generate_pyscript(self,run_idx,grid_params):
-        import_line = "import trenchripper as tr"
-        trainer_line = "nntrainer = tr.unet.UNet_Trainer(\"" + self.nndatapath + "\"," + str(run_idx) + \
-        ",gpuon=True,numepochs=" + str(self.numepochs) + ",batch_size=" + str(grid_params[0])+",layers=" + \
-        str(grid_params[1])+",hidden_size=" + str(grid_params[2]) + ",lr=" + str(grid_params[3]) + \
-        ",momentum=" + str(grid_params[4]) + ",weight_decay=" + str(grid_params[5])+",dropout="+str(grid_params[6]) + \
-        ",w0=" + str(grid_params[7]) + ",wm_sigma=" + str(grid_params[8]) + ")"
-        train_line = "nntrainer.train_model()"
-        pyscript = "\n".join([import_line,trainer_line,train_line])
-        with open(self.nndatapath + "/models/scripts/" + str(run_idx) + ".py", "w") as scriptfile:
-            scriptfile.write(pyscript)
+            for file_idx in file_indices:
+                file_df = dset_df.loc[file_idx:file_idx]
 
-    def generate_sbatchscript(self,run_idx,hours,cores,mem,gres):
-        shebang = "#!/bin/bash"
-        core_line = "#SBATCH -c " + str(cores)
-        hour_line = "#SBATCH -t " + str(hours) + ":00:00"
-        gpu_lines = "#SBATCH -p gpu\n#SBATCH --gres=" + gres
-        mem_line = "#SBATCH --mem=" + mem
-        report_lines = "#SBATCH -o " + self.nndatapath + "/models/scripts/" + str(run_idx) +\
-        ".out\n#SBATCH -e " + self.nndatapath + "/models/scripts/" + str(run_idx) + ".err\n"
+                img_path = dset_path + "/kymograph/kymograph_" + str(file_idx) + ".hdf5"
+                seg_path = dset_path + "/fluorsegmentation/segmentation_" + str(file_idx) + ".hdf5"
 
-        run_line = "python -u " + self.nndatapath + "/models/scripts/" + str(run_idx) + ".py"
+                with h5py.File(img_path, "r") as imgfile:
+                    working_arr = imgfile[feature_channel][:]
 
-        sbatchscript = "\n".join([shebang,core_line,hour_line,gpu_lines,mem_line,report_lines,run_line])
-        with open(self.nndatapath + "/models/scripts/" + str(run_idx) + ".sh", "w") as scriptfile:
-            scriptfile.write(sbatchscript)
+                trench_df = file_df.set_index("File Trench Index")
+                trench_df = trench_df.sort_index()
 
-    def run_sbatchscript(self,run_idx):
-        cmd = ["sbatch",self.nndatapath + "/models/scripts/" + str(run_idx) + ".sh"]
-        subprocess.run(cmd)
+                for trench_idx, row in trench_df.iterrows():
+                    img_arr = working_arr[trench_idx, row["timepoints"]][np.newaxis, np.newaxis, :, :]  # 1,1,y,x img
+                    img_arr = img_arr.astype("uint16")
+                    img_arr_list.append(img_arr)
 
-    def run_grid_search(self,hours=12,cores=2,mem="8G",gres="gpu:1"):
+                with h5py.File(seg_path, "r") as segfile:
+                    working_arr = segfile["data"][:]
 
-        grid_keys = self.grid_dict.keys()
-        grid_combinations = list(itertools.product(*list(self.grid_dict.values())))
-        writedir(self.nndatapath + "/models",overwrite=True)
-        writedir(self.nndatapath + "/models/scripts",overwrite=True)
+                for trench_idx, row in trench_df.iterrows():
+                    seg_arr = working_arr[trench_idx, row["timepoints"]][np.newaxis, np.newaxis, :, :]
+                    seg_arr = seg_arr.astype("int8")
+                    seg_arr_list.append(seg_arr)
 
-        self.run_indices = []
+            output_img_arr = np.concatenate(img_arr_list, axis=0)
+            output_seg_arr = np.concatenate(seg_arr_list, axis=0) #N,1,y,x
+            chunk_shape = (1, 1, output_img_arr.shape[2], output_img_arr.shape[3])
 
-        for run_idx,grid_params in enumerate(grid_combinations):
-            self.generate_pyscript(run_idx,grid_params)
-            self.generate_sbatchscript(run_idx,hours,cores,mem,gres)
-            self.run_sbatchscript(run_idx)
-            self.run_indices.append(run_idx)
+            with h5py.File(nndatapath, "a") as outfile:
+                img_handle = outfile.create_dataset(dset_path_key + "/img",data=output_img_arr,chunks=chunk_shape,dtype="uint16")
+                seg_handle = outfile.create_dataset(dset_path_key + "/seg",data=output_seg_arr,chunks=chunk_shape,dtype="int8")
 
-    def cancel_all_runs(self,username):
-        for run_idx in self.run_indices:
-            cmd = ["scancel","-p","gpu","--user=" + username]
-            subprocess.Popen(cmd,shell=True,stdin=None,stdout=None,stderr=None,close_fds=True)
+                for output_mode in self.output_modes:
 
+                    if output_mode == "class":
+                        output_seg_arr_class = []
+                        for i,W0 in enumerate(self.W0_list):
+                            for j,Wsigma in enumerate(self.Wsigma_list):
+                                output_weight_arr = []
+                                for l in range(output_seg_arr.shape[0]):
+                                    labeled = output_seg_arr[l,0]
+                                    segmentation, weightmap = get_one_class(labeled,W0=W0,Wsigma=Wsigma)
+                                    output_weight_arr.append(weightmap[np.newaxis,np.newaxis,:,:])
+                                    if i+j==0:
+                                        output_seg_arr_class.append(segmentation[np.newaxis,np.newaxis,:,:])
+                                output_weight_arr = np.concatenate(output_weight_arr,axis=0)
+                                weight_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/W0=" + str(W0) +\
+                                "_Wsigma=" + str(Wsigma) + "/weight", data=output_weight_arr, chunks=chunk_shape, dtype=np.float32)
+
+                        output_seg_arr_class = np.concatenate(output_seg_arr_class,axis=0)
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                            data=output_seg_arr_class, chunks=chunk_shape, dtype="int8")
+
+                    elif output_mode == "multiclass":
+                        output_seg_arr_multiclass = []
+                        output_weight_arr = []
+                        for l in range(output_seg_arr.shape[0]):
+                            labeled = output_seg_arr[l,0]
+                            segmentation, weightmap = get_two_class(labeled)
+                            output_seg_arr_multiclass.append(segmentation[np.newaxis,np.newaxis,:,:])
+                            output_weight_arr.append(weightmap[np.newaxis,np.newaxis,:,:])
+                        output_seg_arr_multiclass = np.concatenate(output_seg_arr_multiclass,axis=0)
+                        output_weight_arr = np.concatenate(output_weight_arr,axis=0)
+
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                        data=output_seg_arr_multiclass, chunks=chunk_shape, dtype="int8")
+
+                        weight_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/weight",
+                        data=output_weight_arr, chunks=chunk_shape, dtype=np.float32)
+
+                    elif output_mode == "cellpose":
+                        output_seg_arr_cellpose = []
+                        output_y_grad_arr = []
+                        output_x_grad_arr = []
+                        for l in range(output_seg_arr.shape[0]):
+                            labeled = output_seg_arr[l,0]
+                            segmentation,y_grad_arr,x_grad_arr = get_cellpose(labeled)
+                            output_seg_arr_cellpose.append(segmentation[np.newaxis,np.newaxis,:,:])
+                            output_y_grad_arr.append(y_grad_arr[np.newaxis,np.newaxis,:,:])
+                            output_x_grad_arr.append(x_grad_arr[np.newaxis,np.newaxis,:,:])
+                        output_seg_arr_cellpose = np.concatenate(output_seg_arr_cellpose,axis=0)
+                        output_y_grad_arr = np.concatenate(output_y_grad_arr,axis=0)
+                        output_x_grad_arr = np.concatenate(output_x_grad_arr,axis=0)
+
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                        data=output_seg_arr_cellpose, chunks=chunk_shape, dtype="int8")
+
+                        y_grad_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/y_grad",
+                        data=output_y_grad_arr, chunks=chunk_shape, dtype=np.float32)
+
+                        x_grad_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/x_grad",
+                        data=output_x_grad_arr, chunks=chunk_shape, dtype=np.float32)
+
+                    else:
+                        raise
+
+        return init_idx
+
+    def gather_chunks(self, output_name, init_idx_list, chunk_idx_list, chunk_size):
+
+        #                       outputdf,output_metadata,selectionname,file_idx_list,weight_grid_list):
+        nnoutputpath = self.nndatapath + "/" + output_name + ".hdf5"
+        output_meta_handle = pandas_hdf5_handler(self.metapath)
+        output_df = output_meta_handle.read_df(output_name)
+
+        dset_paths = output_df.index.get_level_values(0).unique().tolist()
+
+        with h5py.File(nnoutputpath, "w") as outfile:
+            for dset_path in dset_paths:
+                dset_path_key = dset_path.split("/")[-1]
+                dset_df = output_df.loc[dset_path]
+                dset_chunk_idx = output_df.index.get_loc(dset_path).start//chunk_size
+
+                tempdatapath = self.nndatapath + "/" + output_name + "_" + str(dset_chunk_idx) + ".hdf5"
+                with h5py.File(tempdatapath, "r") as infile:
+                    img_shape = infile[dset_path_key + "/img"].shape
+                output_shape = (len(dset_df.index), 1, img_shape[2], img_shape[3])
+                chunk_shape = (1, 1, img_shape[2], img_shape[3])
+
+                img_handle = outfile.create_dataset(dset_path_key + "/img", output_shape, chunks=chunk_shape, dtype="uint16")
+                seg_handle = outfile.create_dataset(dset_path_key + "/seg", output_shape, chunks=chunk_shape, dtype="int8")
+                for output_mode in self.output_modes:
+                    if output_mode == "class":
+                        for i,W0 in enumerate(self.W0_list):
+                            for j,Wsigma in enumerate(self.Wsigma_list):
+                                weight_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/W0=" + str(W0) +\
+                                    "_Wsigma=" + str(Wsigma) + "/weight", output_shape, chunks=chunk_shape, dtype=np.float32)
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                            output_shape, chunks=chunk_shape, dtype="int8")
+                    elif output_mode == "multiclass":
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                            output_shape, chunks=chunk_shape, dtype="int8")
+                        weight_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/weight",
+                            output_shape, chunks=chunk_shape, dtype=np.float32)
+                    elif output_mode == "cellpose":
+                        seg_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/seg",
+                            output_shape, chunks=chunk_shape, dtype="int8")
+                        y_grad_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/y_grad",
+                            output_shape, chunks=chunk_shape, dtype=np.float32)
+                        x_grad_handle = outfile.create_dataset(dset_path_key + "/" + output_mode + "/x_grad",
+                            output_shape, chunks=chunk_shape, dtype=np.float32)
+                    else:
+                        raise
+
+        current_dset_path = ""
+        for i, init_idx in enumerate(init_idx_list):
+            chunk_idx = chunk_idx_list[i]
+            nndatapath = (self.nndatapath + "/" + output_name + "_" + str(chunk_idx) + ".hdf5")
+            working_df = output_df[init_idx : init_idx + chunk_size]
+            dset_paths = working_df.index.get_level_values(0).unique().tolist()
+
+            with h5py.File(nndatapath, "r") as infile:
+
+                for dset_path in dset_paths:
+                    if dset_path != current_dset_path:
+                        current_idx = 0
+                        current_dset_path = dset_path
+
+                    dset_path_key = dset_path.split("/")[-1]
+                    dset_df = output_df.loc[dset_path]
+
+                    with h5py.File(nnoutputpath, "a") as outfile:
+                        img_arr = infile[dset_path_key + "/img"][:]
+                        num_indices = img_arr.shape[0]
+                        outfile[dset_path_key + "/img"][current_idx : current_idx + num_indices] = img_arr
+
+                        seg_arr = infile[dset_path_key + "/seg"][:]
+                        outfile[dset_path_key + "/seg"][current_idx : current_idx + num_indices] = seg_arr
+
+                        for output_mode in self.output_modes:
+                            if output_mode == "class":
+                                seg_arr = infile[dset_path_key + "/" + output_mode + "/seg"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/seg"][current_idx : current_idx + num_indices] = seg_arr
+                                for i,W0 in enumerate(self.W0_list):
+                                    for j,Wsigma in enumerate(self.Wsigma_list):
+                                        weight_arr = infile[dset_path_key + "/" + output_mode + "/W0=" + str(W0) +"_Wsigma=" + str(Wsigma) +\
+                                                            "/weight"][:]
+                                        outfile[dset_path_key + "/" + output_mode + "/W0=" + str(W0) +"_Wsigma=" + str(Wsigma) + "/weight"]\
+                                        [current_idx : current_idx + num_indices] = weight_arr
+
+                            elif output_mode == "multiclass":
+                                seg_arr = infile[dset_path_key + "/" + output_mode + "/seg"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/seg"][current_idx : current_idx + num_indices] = seg_arr
+                                weight_arr = infile[dset_path_key + "/" + output_mode + "/weight"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/weight"][current_idx : current_idx + num_indices] = weight_arr
+
+                            elif output_mode == "cellpose":
+                                seg_arr = infile[dset_path_key + "/" + output_mode + "/seg"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/seg"][current_idx : current_idx + num_indices] = seg_arr
+                                y_grad_arr = infile[dset_path_key + "/" + output_mode + "/y_grad"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/y_grad"][current_idx : current_idx + num_indices] = y_grad_arr
+                                x_grad_arr = infile[dset_path_key + "/" + output_mode + "/x_grad"][:]
+                                outfile[dset_path_key + "/" + output_mode + "/x_grad"][current_idx : current_idx + num_indices] = x_grad_arr
+
+                            else:
+                                raise
+
+                    current_idx += num_indices
+
+            os.remove(nndatapath)
+
+    def export_data(self, dask_controller, chunk_size=250):
+        dask_controller.futures = {}
+        output_meta_handle = pandas_hdf5_handler(self.metapath)
+        all_output_dfs = {}
+
+        for output_name, _ in self.import_param_dict.items():
+            output_df = []
+
+            for input_path, param_dict in self.import_param_dict[output_name].items():
+
+                kymodf = dd.read_parquet(input_path + "/kymograph/metadata").persist()
+
+                num_samples = param_dict["Maximum Samples per Dataset:"]
+                feature_channel = param_dict["Feature Channel:"]
+                t_range = param_dict["Timepoint Range:"]
+
+                kymodf["filepath"] = input_path
+                kymodf = kymodf.reset_index()
+                timedf = kymodf.set_index("timepoints").persist()
+                timedf = timedf.loc[t_range[0] : t_range[1]].persist()
+                frac = (1.1*num_samples)/len(timedf)
+
+                timedf_subset = timedf.sample(frac=frac).compute()
+                timedf_subset = timedf_subset.sample(n=num_samples)
+                timedf_subset = timedf_subset.reset_index()
+                filedf_subset = timedf_subset.set_index("filepath")
+                output_df.append(filedf_subset[:num_samples])
+            output_df = pd.concat(output_df)
+            output_df = output_df.sort_index()
+            output_meta_handle.write_df(output_name, output_df)
+            all_output_dfs[output_name] = output_df
+
+        for output_name in all_output_dfs.keys():
+
+            output_df = all_output_dfs[output_name]
+
+            ## split into equal computation chunks here
+
+            chunk_idx_list = []
+            for chunk_idx, init_idx in enumerate(range(0, len(output_df), chunk_size)):
+                future = dask_controller.daskclient.submit(self.export_chunk,output_name,init_idx,chunk_size,chunk_idx,retries=1)
+                dask_controller.futures[str(output_name) + " Chunk Number: " + str(chunk_idx)] = future
+                chunk_idx_list.append(chunk_idx)
+
+            init_idx_list = dask_controller.daskclient.gather([dask_controller.futures[str(output_name) + " Chunk Number: " + str(chunk_idx)]\
+                                                               for chunk_idx in chunk_idx_list])
+            self.gather_chunks(output_name, init_idx_list, chunk_idx_list, chunk_size)
+
+        output_meta_handle = pandas_hdf5_handler(self.metapath)
+
+        for output_name in self.import_param_dict.keys():
+            for input_path in self.import_param_dict[output_name].keys():
+                input_meta_handle = pandas_hdf5_handler(input_path + "/metadata.hdf5")
+                indf = input_meta_handle.read_df("global",read_metadata=True)
+                global_meta = indf.metadata
+                del indf
+                self.import_param_dict[output_name][input_path]["global"] = global_meta
+
+                kymo_meta_path = input_path + "/kymograph/metadata.pkl"
+                with open(kymo_meta_path, 'rb') as infile:
+                    kymo_meta = pkl.load(infile)
+                self.import_param_dict[output_name][input_path]["kymograph"] = kymo_meta
+
+                segparampath = input_path + "/fluorescent_segmentation.par"
+                with open(segparampath, 'rb') as infile:
+                    seg_param_dict = pkl.load(infile)
+                self.import_param_dict[output_name][input_path]["segmentation"] = seg_param_dict
+
+            output_metadata = {"nndataset":{"experimentname":self.experimentname,"output_names":self.output_names,"output_modes":self.output_modes,\
+                               "input_paths":self.input_paths,"W0_list":self.W0_list,"Wsigma_list":self.Wsigma_list}}
+            output_metadata = {**output_metadata,**self.import_param_dict[output_name]}
+
+            output_meta_handle.write_df(output_name,all_output_dfs[output_name],metadata=output_metadata)
 
 class SegmentationDataset(Dataset):
-    def __init__(self,filepath,weightchannel="",training=False):
+    def __init__(self,filepath,mode="run",chunksize=1000,W0=5.,Wsigma=2.):
         self.filepath = filepath
-        self.weightchannel = weightchannel
-        self.training = training
-        self.chunksize = 1000
+        self.mode = mode
+        self.chunksize = chunksize
+        self.W0 = W0
+        self.Wsigma = Wsigma
+        self.dset_shapes = {}
         with h5py.File(self.filepath,"r") as infile:
-            self.shape = infile["img"].shape
+            for dset_name in infile.keys():
+                shape = infile[dset_name + "/img"].shape
+                self.dset_shapes[dset_name] = shape
+
+        index_ranges = [0] + np.add.accumulate([value[0] for value in self.dset_shapes.values()]).tolist()
+        self.chunk_index_ranges = self.fill_index_gaps(index_ranges)
+
+        start_chunks = (np.add.accumulate((np.array([0] + [value[0] for value in self.dset_shapes.values()])//(chunksize+1))+1)-1).tolist()
+        self.chunk_ranges = [range(start_chunks[i],start_chunks[i+1]) for i in range(len(start_chunks)-1)]
+
+        self.chunk_dsets = {}
+        for i,item in enumerate(self.dset_shapes.keys()):
+            chunk_range = self.chunk_ranges[i]
+            for chunk in chunk_range:
+                self.chunk_dsets[chunk] = item
+
         self.current_chunk = 0
         self.load_chunk(self.current_chunk)
+
+        self.size = 0
+        with h5py.File(self.filepath,"r") as infile:
+            for dset_name in infile.keys():
+                self.size += (np.prod(infile[dset_name+"/img"].shape))
+
     def load_chunk(self,chunk_idx):
+        self.current_dset = self.chunk_dsets[chunk_idx]
+        chunk_offset = [item.start for item in self.chunk_ranges if chunk_idx in item][0]
+        working_chunk_idx = chunk_idx-chunk_offset
+
         with h5py.File(self.filepath,"r") as infile:
-            self.img_data = infile["img"][chunk_idx*self.chunksize:(chunk_idx+1)*self.chunksize]
-            if self.training:
-                self.seg_data = infile["seg"][chunk_idx*self.chunksize:(chunk_idx+1)*self.chunksize]
-                self.weight_data = infile[self.weightchannel][chunk_idx*self.chunksize:(chunk_idx+1)*self.chunksize]
+            self.img_data = infile[self.current_dset + "/img"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+            if self.mode == "run":
+                pass
+            elif self.mode == "class":
+                self.gt_data = infile[self.current_dset + "/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.seg_data = infile[self.current_dset + "/class/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.weight_data = infile[self.current_dset + "/class/W0=" + str(self.W0) + "_Wsigma=" + str(self.Wsigma) + "/weight"]\
+                [working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+            elif self.mode == "multiclass":
+                self.gt_data = infile[self.current_dset + "/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.seg_data = infile[self.current_dset + "/multiclass/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.weight_data = infile[self.current_dset + "/multiclass/weight"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+            elif self.mode == "cellpose":
+                self.gt_data = infile[self.current_dset + "/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.seg_data = infile[self.current_dset + "/cellpose/seg"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.y_grad_data = infile[self.current_dset + "/cellpose/y_grad"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+                self.x_grad_data = infile[self.current_dset + "/cellpose/x_grad"][working_chunk_idx*self.chunksize:(working_chunk_idx+1)*self.chunksize]
+            else:
+                raise
         self.current_chunk = chunk_idx
+
+    def fill_index_gaps(self,index_ranges):
+        chunk_index_ranges = [index_ranges[0]]
+        for i in range(len(index_ranges)-1):
+            last_index = index_ranges[i]
+            not_gap_filled = True
+            while not_gap_filled:
+                del_index = index_ranges[i+1] - last_index
+                if del_index > self.chunksize:
+                    chunk_index_ranges.append(last_index+self.chunksize)
+                    last_index = last_index+self.chunksize
+                else:
+                    chunk_index_ranges.append(index_ranges[i+1])
+                    not_gap_filled = False
+        chunk_index_ranges = [range(chunk_index_ranges[i],chunk_index_ranges[i+1]) for i in range(len(chunk_index_ranges)-1)]
+        return chunk_index_ranges
+
     def __len__(self):
+        out_len = 0
         with h5py.File(self.filepath,"r") as infile:
-            out_len = infile["img"].shape[0]
+            for dset_name in infile.keys():
+                out_len += infile[dset_name+"/img"].shape[0]
         return out_len
     def __getitem__(self,idx):
-        idx_chunk = idx//self.chunksize
+        idx_chunk = [i for i, interval in enumerate(self.chunk_index_ranges) if idx in interval][0]
         subidx = idx%self.chunksize
         if idx_chunk != self.current_chunk:
             self.load_chunk(idx_chunk)
-        if self.training:
-            sample = {'img': self.img_data[subidx], 'seg': self.seg_data[subidx], self.weightchannel: self.weight_data[subidx]}
+
+        sample = {'img': self.img_data[subidx]}
+        if self.mode == "run":
+            pass
+        elif self.mode == "class" or self.mode == "multiclass":
+            sample['gt'] = self.gt_data[subidx]
+            sample['seg'] = self.seg_data[subidx]
+            sample['weight'] = self.weight_data[subidx]
+        elif self.mode == "cellpose":
+            sample['gt'] = self.gt_data[subidx]
+            sample['seg'] = self.seg_data[subidx]
+            sample['y_grad'] = self.y_grad_data[subidx]
+            sample['x_grad'] = self.x_grad_data[subidx]
         else:
-            sample = {'img': self.img_data[subidx]}
+            raise
         return sample
 
 class double_conv(nn.Module):
@@ -729,10 +921,13 @@ class UNet(nn.Module):
 
 class UNet_Trainer:
 
-    def __init__(self,nndatapath,model_number,numepochs=10,batch_size=100,layers=3,hidden_size=64,lr=0.005,momentum=0.95,weight_decay=0.0005,dropout=0.,\
-                 w0=5.,wm_sigma=3.,gpuon=False):
+    def __init__(self,nndatapath,model_number,mode,numepochs=100,batch_size=100,layers=3,hidden_size=64,lr=0.005,momentum=0.95,weight_decay=0.0005,dropout=0.,\
+                 W0=5.,Wsigma=2.,warm_epochs=10,cool_epochs=30,gpuon=False,padding=10,**kwargs):
         self.nndatapath = nndatapath
         self.model_number = model_number
+        self.mode = mode
+        self.padding = padding
+        self.aug_seq = self.define_aug_seq(**kwargs)
 
         self.numepochs = numepochs
         self.batch_size = batch_size
@@ -744,15 +939,75 @@ class UNet_Trainer:
         self.lr = lr
         self.momentum = momentum
         self.weight_decay = weight_decay
-        self.w0 = w0
-        self.wm_sigma = wm_sigma
+        self.W0 = W0
+        self.Wsigma = Wsigma
 
-        self.model = UNet(1,2,layers=layers,hidden_size=hidden_size,dropout=dropout,withsoftmax=True)
+        self.warm_epochs = warm_epochs
+        self.cool_epochs = cool_epochs
+        self.warm_lambda = 1./self.warm_epochs
+
+        if self.mode == "class":
+            self.model = UNet(1,2,layers=layers,hidden_size=hidden_size,dropout=dropout,withsoftmax=True)
+        elif self.mode == "multiclass":
+            self.model = UNet(1,3,layers=layers,hidden_size=hidden_size,dropout=dropout,withsoftmax=True)
+        elif self.mode == "cellpose":
+            self.model = UNet(1,3,layers=layers,hidden_size=hidden_size,dropout=dropout,withsoftmax=False)
+
         self.model.uniforminit()
         if gpuon:
             self.model = self.model.cuda()
 
-        self.optimizer = optim.SGD(self.model.parameters(), lr = self.lr,momentum=self.momentum,weight_decay=self.weight_decay)
+        self.optimizer = optim.SGD(self.model.parameters(), lr = self.lr, momentum=self.momentum, weight_decay=self.weight_decay)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=self.annealfn)
+
+    def annealfn(self,epoch):
+        if epoch<self.warm_epochs:
+            return self.warm_lambda*epoch
+        elif epoch>(self.numepochs-self.cool_epochs):
+            current_cool_epoch = epoch-(self.numepochs-self.cool_epochs)
+            num_cool_steps = current_cool_epoch//10
+            return (1./2.)**(num_cool_steps)
+        else:
+            return 1.
+
+    def pad_fn(self,array):
+        padded = np.pad(array,((0,0),(0,0),(self.padding,self.padding),(self.padding,self.padding)))
+        return padded
+
+    def define_aug_seq(self,pad_perc_width=0.25,pad_perc_height=0.15,max_width=40,max_height=180,flip_perc=0.5,blur_freq=0.5,blur_sigma=0.5,contrast_range=(0.8,1.2),\
+                noise=0.05,mult_freq=0.2,mult_range=(0.8,1.2),scale_range=(0.7,1.3),translate_range=(-0.15,0.15),rotate_range=(-15,15),\
+               x_shear_range=(-10, 10),y_shear_range=(-5,5)):
+        seq = iaa.Sequential([
+            iaa.CropToFixedSize(width=max_width, height=max_height),
+            iaa.Pad(percent=(pad_perc_height,pad_perc_width,pad_perc_height,pad_perc_width),keep_size=False),
+            iaa.Fliplr(flip_perc), # vertically flip 50% of the images
+            iaa.Flipud(flip_perc), # horizontally flip 50% of the images
+            # Small gaussian blur with random sigma between 0 and 0.5.
+            # But we only blur about 50% of all images.
+#             iaa.Sometimes(
+#                 blur_freq,
+#                 iaa.GaussianBlur(sigma=(0, blur_sigma))
+#             ),
+            # Strengthen or weaken the contrast in each image.
+            iaa.LinearContrast(alpha=contrast_range),
+            # Add gaussian noise.
+            # For 50% of all images, we sample the noise once per pixel.
+            # For the other 50% of all images, we sample the noise per pixel AND
+            # channel. This can change the color (not only brightness) of the
+            # pixels.
+#             iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, noise*255)),
+#             # Make some images brighter and some darker.
+#             # In 20% of all cases, we sample the multiplier once per channel,
+#             # which can end up changing the color of the images.
+#             iaa.Multiply(mult_range, per_channel=mult_freq),
+#             iaa.Affine(
+#                 scale={"x": scale_range, "y": scale_range},
+#                 translate_percent={"x": translate_range, "y": translate_range},
+#                 rotate=rotate_range,
+#                 shear={'x':x_shear_range,'y':y_shear_range}
+#             ),
+        ])
+        return seq
 
     def removefile(self,path):
         if os.path.exists(path):
@@ -766,114 +1021,277 @@ class UNet_Trainer:
             device = torch.device('cpu')
             self.model.load_state_dict(torch.load(paramspath, map_location=device))
 
+    def class_aug(self,img_arr,seg_arr,weight_arr): #N,1,y,x
+        in_bounds_arr = np.ones(img_arr.shape[2:],dtype="uint8")
+
+        img_aug_arr = []
+        seg_aug_arr = []
+        weight_aug_arr = []
+        for n in range(img_arr.shape[0]):
+            segmap = SegmentationMapsOnImage(seg_arr[n,0], shape=img_arr[n,0].shape)
+            heatmap = HeatmapsOnImage(weight_arr[n,0], shape=img_arr[n,0].shape, min_value=min(0.,np.min(weight_arr[n,0])),max_value=max(1.,np.max(weight_arr[n,0])))
+            img_aug, seg_aug, weight_aug = self.aug_seq(image=img_arr[n,0], segmentation_maps=segmap, heatmaps=heatmap)
+
+            img_aug_arr.append(img_aug)
+            seg_aug_arr.append(seg_aug.get_arr())
+            weight_aug_arr.append(weight_aug.get_arr())
+
+        img_aug_arr,seg_aug_arr,weight_aug_arr = np.stack(img_aug_arr,axis=0),np.stack(seg_aug_arr,axis=0),np.stack(weight_aug_arr,axis=0)
+        img_aug_arr,seg_aug_arr,weight_aug_arr = img_aug_arr[:,np.newaxis],seg_aug_arr[:,np.newaxis],weight_aug_arr[:,np.newaxis]
+
+        return img_aug_arr,seg_aug_arr,weight_aug_arr
+
+    def cellpose_aug(self,img_arr,seg_arr,y_grad_arr,x_grad_arr):
+        in_bounds_arr = np.ones(img_arr.shape[2:],dtype=bool)
+        in_bounds_arr = sk.morphology.binary_erosion(in_bounds_arr).astype("uint8")
+
+        img_aug_arr = []
+        seg_aug_arr = []
+        y_grad_aug_arr = []
+        x_grad_aug_arr = []
+        for n in range(img_arr.shape[0]):
+            segmap = SegmentationMapsOnImage(np.stack([seg_arr[n,0],in_bounds_arr],axis=2), shape=(img_arr.shape[2],img_arr.shape[3],2))
+#             segmap = SegmentationMapsOnImage(seg_arr[n,0], shape=img_arr[n,0].shape)
+            grad_arr = np.stack([y_grad_arr[n,0],x_grad_arr[n,0]],axis=2)
+            grad_map = HeatmapsOnImage(grad_arr, shape=img_arr[n,0].shape, min_value=-1,max_value=1)
+            img_aug, seg_aug, grad_aug = self.aug_seq(image=img_arr[n,0], segmentation_maps=segmap, heatmaps=grad_map)
+
+            img_aug_arr.append(img_aug)
+
+            seg_aug = seg_aug.get_arr()
+            grad_aug = grad_aug.get_arr()
+            seg_out,in_bounds,y_grad_out,x_grad_out = seg_aug[:,:,0],seg_aug[:,:,1],grad_aug[:,:,0],grad_aug[:,:,1]
+
+            seg_out[in_bounds!=1] = 0
+            y_grad_out[in_bounds!=1] = 0.
+            x_grad_out[in_bounds!=1] = 0.
+
+            seg_aug_arr.append(seg_out)
+            y_grad_aug_arr.append(y_grad_out)
+            x_grad_aug_arr.append(x_grad_out)
+
+        img_aug_arr,seg_aug_arr,y_grad_aug_arr,x_grad_aug_arr = np.stack(img_aug_arr,axis=0),np.stack(seg_aug_arr,axis=0),np.stack(y_grad_aug_arr,axis=0),np.stack(x_grad_aug_arr,axis=0)
+        img_aug_arr,seg_aug_arr,y_grad_aug_arr,x_grad_aug_arr = img_aug_arr[:,np.newaxis],seg_aug_arr[:,np.newaxis],y_grad_aug_arr[:,np.newaxis],x_grad_aug_arr[:,np.newaxis]
+
+        return img_aug_arr,seg_aug_arr,y_grad_aug_arr,x_grad_aug_arr
+
     def train(self,x,y,weightmaps):
+
         self.optimizer.zero_grad()
         fx = self.model.forward(x)
         fx = torch.log(fx)
 
-        nll = F.nll_loss(fx,y,reduction='none')*weightmaps
-
-        mean_nll = torch.mean(nll)
-        mean_nll.backward()
+        loss = F.nll_loss(fx,y,reduction='none')*weightmaps
+        mean_loss = torch.mean(loss)
+        mean_loss.backward()
         self.optimizer.step()
 
-        nll = torch.sum(nll)
-        return nll
+        loss = torch.sum(loss)
+        return loss
 
     def test(self,x,y,weightmaps):
         fx = self.model.forward(x)
         fx = torch.log(fx)
+        loss = F.nll_loss(fx,y,reduction='none')*weightmaps
+        loss = torch.sum(loss)
+        return loss
 
-        nll = F.nll_loss(fx,y,reduction='none')*weightmaps
+    def cellpose_train(self,x,y):
+        self.optimizer.zero_grad()
+        fx = self.model.forward(x)
+        mask_pred = F.sigmoid(fx[:,2])
 
-        nll = torch.sum(nll)
-        return nll
+        mse = F.mse_loss(fx[:,:2],y[:,:2],reduction='none') ## N,* to N,*
+        cross_entropy = F.binary_cross_entropy(mask_pred,y[:,2],reduction='none')
 
-    def perepoch(self,e,train_iter,test_iter,val_iter,train_data_shape,test_data_shape,val_data_shape):
+        loss = cross_entropy + 5.*mse[:,0] + 5.*mse[:,1]
+
+#         loss[loss != loss] = 0 ##gets rid of NaNs and infs
+#         loss[loss == float("Inf")] = 0
+
+        mean_loss = torch.mean(loss)
+
+        mean_loss.backward()
+        self.optimizer.step()
+
+        loss = torch.sum(loss)
+
+        return loss
+
+    def cellpose_test(self,x,y):
+        fx = self.model.forward(x)
+        mse = F.mse_loss(fx[:,:2],y[:,:2],reduction='none') ## N,* to N,*
+        mask_pred = F.sigmoid(fx[:,2])
+        cross_entropy = F.binary_cross_entropy(mask_pred,y[:,2],reduction='none')
+        loss = cross_entropy + 5.*mse[:,0] + 5.*mse[:,1]
+
+#         loss[loss != loss] = 0 ##gets rid of NaNs and infs
+#         loss[loss == float("Inf")] = 0
+
+        loss = torch.sum(loss)
+        return loss
+
+    def perepoch(self,e,train_iter,test_iter,val_iter):
 
         now = datetime.datetime.now()
 
         print('=======epoch ' + str(e) + '=======')
         self.model.train()
-        total_train_nll = 0.
+        total_train_loss = 0.
+        train_data_size = 0
         num_train_batches = len(train_iter)
         for i,b in enumerate(train_iter):
-            img_arr,seg_arr,weightmaps = (b['img'].numpy(),b['seg'].numpy(),b['weight_' + str(tuple([self.w0,self.wm_sigma]))].numpy())
 
-            seg_arr,weightmaps = seg_arr[:,0],weightmaps[:,0]
-            x = torch.Tensor(img_arr)
-            y = torch.LongTensor(seg_arr)
-            weightmaps = torch.Tensor(weightmaps)
-            if self.gpuon:
-                x = x.cuda()
-                y = y.cuda()
-                weightmaps = weightmaps.cuda()
-#                 weights = weights.cuda()
-            nll = self.train(x,y,weightmaps)
-            total_train_nll += nll.detach().cpu().numpy()
-#             if (i%100 == 0) and self.saveparams:
-#                 torch.save(self.model.state_dict(), self.nnpath + "/model_layers=" + str(self.layers) + "_hidden_size=" + str(self.hidden_size) +\
-#                            "_dropout=" + str(self.dropout) + '_lr=' + str(self.lr) + '_momentum=' + str(self.momentum) + "_epoch_" + str(e) + "_step_" + str(i) +".pt")
+            if self.mode == "class" or self.mode == "multiclass":
+                img_arr,seg_arr,weight_arr = (b['img'],b['seg'],b['weight'])
+                img_arr,seg_arr,weight_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(weight_arr)
+                img_arr,seg_arr,weight_arr = self.class_aug(img_arr,seg_arr,weight_arr)
+                num_pixels = np.prod(img_arr.shape)
+                train_data_size += num_pixels
+
+                seg_arr,weight_arr = seg_arr[:,0],weight_arr[:,0]
+                x = torch.Tensor(img_arr.astype(float))
+                y = torch.LongTensor(seg_arr)
+                weight_arr = torch.Tensor(weight_arr)
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                    weight_arr = weight_arr.cuda()
+                loss = float(self.train(x,y,weight_arr))
+                del weight_arr
+
+            elif self.mode == "cellpose":
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = (b['img'],b['seg'],b['y_grad'],b['x_grad'])
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(y_grad_arr),self.pad_fn(x_grad_arr)
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = self.cellpose_aug(img_arr,seg_arr,y_grad_arr,x_grad_arr)
+                num_pixels = np.prod(img_arr.shape)
+                train_data_size += num_pixels
+
+                y_grad_arr,x_grad_arr,seg_arr = y_grad_arr[:,0],x_grad_arr[:,0],seg_arr[:,0]
+                x = torch.Tensor(img_arr.astype(float))
+                y = np.stack([y_grad_arr,x_grad_arr,seg_arr],axis=1)
+                y = torch.Tensor(y)
+
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                loss = float(self.cellpose_train(x,y))
+
+            else:
+                raise
+
+            total_train_loss += loss
             del x
             del y
-            del weightmaps
-            del nll
+            del loss
             torch.cuda.empty_cache()
-        avgtrainnll = total_train_nll/(np.prod(np.array(train_data_shape)))
+
+        self.scheduler.step()
+        avgtrainnll = total_train_loss/train_data_size
         print('Mean Train NLL: ' + str(avgtrainnll))
         self.model.eval()
-        total_val_nll = 0.
+
+        total_val_loss = 0.
+        val_data_size = 0
         for i,b in enumerate(val_iter):
-            img_arr,seg_arr,weightmaps = (b['img'].numpy(),b['seg'].numpy(),b['weight_' + str(tuple([self.w0,self.wm_sigma]))].numpy())
-            seg_arr,weightmaps = seg_arr[:,0],weightmaps[:,0]
-            x = torch.Tensor(img_arr)
-            y = torch.LongTensor(seg_arr)
-            weightmaps = torch.Tensor(weightmaps)
-            if self.gpuon:
-                x = x.cuda()
-                y = y.cuda()
-                weightmaps = weightmaps.cuda()
-#                 weights = weights.cuda()
-            nll = self.test(x,y,weightmaps)
-            total_val_nll += nll.detach().cpu().numpy()
+            if self.mode == "class" or self.mode == "multiclass":
+                img_arr,seg_arr,weight_arr = (b['img'],b['seg'],b['weight'])
+                img_arr,seg_arr,weight_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(weight_arr)
+                num_pixels = np.prod(img_arr.shape)
+                val_data_size += num_pixels
+
+                seg_arr,weight_arr = seg_arr[:,0],weight_arr[:,0]
+                x = torch.Tensor(img_arr.astype(float))
+                y = torch.LongTensor(seg_arr)
+                weight_arr = torch.Tensor(weight_arr)
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                    weight_arr = weight_arr.cuda()
+                loss = float(self.test(x,y,weight_arr))
+                del weight_arr
+
+            elif self.mode == "cellpose":
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = (b['img'],b['seg'],b['y_grad'],b['x_grad'])
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(y_grad_arr),self.pad_fn(x_grad_arr)
+                y_grad_arr,x_grad_arr,seg_arr = y_grad_arr[:,0],x_grad_arr[:,0],seg_arr[:,0]
+                num_pixels = np.prod(img_arr.shape)
+                val_data_size += num_pixels
+
+                x = torch.Tensor(img_arr.astype(float))
+                y = np.stack([y_grad_arr,x_grad_arr,seg_arr],axis=1)
+                y = torch.Tensor(y)
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                loss = float(self.cellpose_test(x,y))
+            else:
+                raise
+
+            total_val_loss += loss
+
             del x
             del y
-            del weightmaps
-            del nll
+            del loss
             torch.cuda.empty_cache()
-        avgvalnll = total_val_nll/(np.prod(np.array(val_data_shape)))
+
+        avgvalnll = total_val_loss/val_data_size
         print('Mean Val NLL: ' + str(avgvalnll))
 
-        total_test_nll = 0.
+        total_test_loss = 0.
+        test_data_size = 0
         for i,b in enumerate(test_iter):
-            img_arr,seg_arr,weightmaps = (b['img'].numpy(),b['seg'].numpy(),b['weight_' + str(tuple([self.w0,self.wm_sigma]))].numpy())
-            seg_arr,weightmaps = seg_arr[:,0],weightmaps[:,0]
-            x = torch.Tensor(img_arr)
-            y = torch.LongTensor(seg_arr)
-            weightmaps = torch.Tensor(weightmaps)
-            if self.gpuon:
-                x = x.cuda()
-                y = y.cuda()
-                weightmaps = weightmaps.cuda()
-#                 weights = weights.cuda()
-            nll = self.test(x,y,weightmaps)
-            total_test_nll += nll.detach().cpu().numpy()
+            if self.mode == "class" or self.mode == "multiclass":
+                img_arr,seg_arr,weight_arr = (b['img'],b['seg'],b['weight'])
+                img_arr,seg_arr,weight_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(weight_arr)
+                num_pixels = np.prod(img_arr.shape)
+                test_data_size += num_pixels
+
+                seg_arr,weight_arr = seg_arr[:,0],weight_arr[:,0]
+                x = torch.Tensor(img_arr.astype(float))
+                y = torch.LongTensor(seg_arr)
+                weight_arr = torch.Tensor(weight_arr)
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                    weight_arr = weight_arr.cuda()
+                loss = float(self.test(x,y,weight_arr))
+                del weight_arr
+
+            elif self.mode == "cellpose":
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = (b['img'],b['seg'],b['y_grad'],b['x_grad'])
+                img_arr,seg_arr,y_grad_arr,x_grad_arr = self.pad_fn(img_arr),self.pad_fn(seg_arr),self.pad_fn(y_grad_arr),self.pad_fn(x_grad_arr)
+                num_pixels = np.prod(img_arr.shape)
+                test_data_size += num_pixels
+
+                y_grad_arr,x_grad_arr,seg_arr = y_grad_arr[:,0],x_grad_arr[:,0],seg_arr[:,0]
+                x = torch.Tensor(img_arr.astype(float))
+                y = np.stack([y_grad_arr,x_grad_arr,seg_arr],axis=1)
+                y = torch.Tensor(y)
+                if self.gpuon:
+                    x = x.cuda()
+                    y = y.cuda()
+                loss = float(self.cellpose_test(x,y))
+            else:
+                raise
+
+            total_test_loss += loss
+
             del x
             del y
-            del weightmaps
-            del nll
+            del loss
             torch.cuda.empty_cache()
-        avgtestnll = total_test_nll/(np.prod(np.array(test_data_shape)))
+
+        avgtestnll = total_test_loss/test_data_size
         print('Mean Test NLL: ' + str(avgtestnll))
 
-        entry = [[self.model_number,self.batch_size,self.layers,self.hidden_size,self.lr,self.momentum,self.weight_decay,\
-                  self.dropout,self.w0,self.wm_sigma,e,avgtrainnll,avgvalnll,avgtestnll,str(now)]]
+        entry = [[self.model_number,self.mode,self.batch_size,self.layers,self.hidden_size,self.lr,self.momentum,self.weight_decay,\
+                  self.dropout,self.W0,self.Wsigma,self.warm_epochs,self.cool_epochs,e,avgtrainnll,avgvalnll,avgtestnll,str(now)]]
 
-        df_out = pd.DataFrame(data=entry,columns=['Model #','Batch Size','Layers','Hidden Size','Learning Rate','Momentum','Weight Decay',\
-                            'Dropout',"W0 Weight","Wm Sigma",'Epoch','Train Loss','Val Loss','Test Loss','Date/Time'])
+        df_out = pd.DataFrame(data=entry,columns=['Model #',"Mode",'Batch Size','Layers','Hidden Size','Learning Rate','Momentum','Weight Decay',\
+                            'Dropout',"W0","Wsigma","Warm Epochs","Cool Epochs",'Epoch','Train Loss','Val Loss','Test Loss','Date/Time'])
         df_out = df_out.set_index(['Model #','Epoch'], drop=True, append=False, inplace=False)
         df_out = df_out.sort_index()
-
         return df_out
 
     def write_metadata(self,filepath,iomode,df_out):
@@ -886,34 +1304,25 @@ class UNet_Trainer:
             df_out = pd.concat([df_in, df_out])
         meta_handle.write_df("data",df_out)
 
-    def get_fscore(self,iterator,data_shape):
+    def get_class_fscore(self,iterator,mask_label_dim=1):
         y_true = []
-        y_scores = []
+        y_pred = []
         for i,b in enumerate(iterator):
-            img_arr,y = (b['img'].numpy(),b['seg'].numpy())
-            x = torch.Tensor(img_arr)
+            img_arr,y = (b['img'],b['gt'])
+            x = torch.Tensor(img_arr.astype(float))
             if self.gpuon:
                 x = x.cuda()
             fx = self.model.forward(x).detach().cpu().numpy()
-#             y_true.append(y.flatten())
-#             y_scores.append(fx[:,1].flatten())
 
-            y_true.append(y[:,0])
-            y_scores.append(fx[:,1])
+            y_true.append(y[:,0]) # N,H,W
+            y_pred.append(get_class_labels(fx,mask_label_dim=mask_label_dim)) # N,H,W
 
             del x
             del y
             torch.cuda.empty_cache()
 
         y_true = np.concatenate(y_true,axis=0)
-        y_scores = np.concatenate(y_scores,axis=0)
-        precisions, recalls, thresholds = precision_recall_curve(y_true.flatten(), y_scores.flatten())
-        fscores = 2*((precisions*recalls)/(precisions+recalls))
-        best_idx = np.nanargmax(fscores)
-        precision, recall, fscore, threshold = (precisions[best_idx], recalls[best_idx], fscores[best_idx], thresholds[best_idx])
-
-        y_true = y_true.astype(bool)
-        y_pred = y_scores>threshold
+        y_pred = np.concatenate(y_pred,axis=0)
 
         all_f_scores = []
         for i in range(y_true.shape[0]):
@@ -922,7 +1331,36 @@ class UNet_Trainer:
         all_f_scores = np.array(all_f_scores)
         all_f_scores = all_f_scores[~np.isnan(all_f_scores)]
 
-        return precision, recall, fscore, threshold, all_f_scores
+        return all_f_scores
+
+    def get_cellpose_fscore(self,iterator,mask_label_dim=1):
+        y_true = []
+        y_pred = []
+        for i,b in enumerate(iterator):
+            img_arr,y = (b['img'],b['gt'])
+            x = torch.Tensor(img_arr.astype(float))
+            if self.gpuon:
+                x = x.cuda()
+            fx = self.model.forward(x).detach().cpu().numpy()
+
+            y_true.append(y[:,0]) # N,H,W
+            y_pred.append(get_cellpose_labels(fx,step_size=1.,n_iter=10))
+
+            del x
+            del y
+            torch.cuda.empty_cache()
+
+        y_true = np.concatenate(y_true,axis=0)
+        y_pred = np.concatenate(y_pred,axis=0)
+
+        all_f_scores = []
+        for i in range(y_true.shape[0]):
+            _,_,f_score = object_f_scores(y_true[i],y_pred[i])
+            all_f_scores += f_score.tolist()
+        all_f_scores = np.array(all_f_scores)
+        all_f_scores = all_f_scores[~np.isnan(all_f_scores)]
+
+        return all_f_scores
 
     def train_model(self):
         timestamp = datetime.datetime.now()
@@ -930,60 +1368,157 @@ class UNet_Trainer:
         writedir(self.nndatapath + "/models", overwrite=False)
         self.removefile(self.nndatapath + "/models/training_metadata_" + str(self.model_number) + ".hdf5")
 
-        train_data = SegmentationDataset(self.nndatapath + "/train.hdf5",weightchannel='weight_' + str(tuple([self.w0,self.wm_sigma])),training=True)
-        test_data = SegmentationDataset(self.nndatapath + "/test.hdf5",weightchannel='weight_' + str(tuple([self.w0,self.wm_sigma])),training=True)
-        val_data = SegmentationDataset(self.nndatapath + "/val.hdf5",weightchannel='weight_' + str(tuple([self.w0,self.wm_sigma])),training=True)
-
-        train_data_shape = train_data.shape
-        test_data_shape = test_data.shape
-        val_data_shape = val_data.shape
+        train_data = SegmentationDataset(self.nndatapath + "train.hdf5",mode=self.mode,W0=self.W0,Wsigma=self.Wsigma)
+        test_data = SegmentationDataset(self.nndatapath + "test.hdf5",mode=self.mode,W0=self.W0,Wsigma=self.Wsigma)
+        val_data = SegmentationDataset(self.nndatapath + "val.hdf5",mode=self.mode,W0=self.W0,Wsigma=self.Wsigma)
 
         for e in range(0,self.numepochs):
-            train_iter = DataLoader(train_data,batch_size=self.batch_size,shuffle=True)
-            test_iter = DataLoader(test_data,batch_size=self.batch_size,shuffle=True)
-            val_iter = DataLoader(val_data,batch_size=self.batch_size,shuffle=True)
-            df_out = self.perepoch(e,train_iter,test_iter,val_iter,train_data_shape,test_data_shape,val_data_shape)
+            train_iter = DataLoader(train_data,batch_size=self.batch_size,shuffle=False,collate_fn=numpy_collate)
+            test_iter = DataLoader(test_data,batch_size=self.batch_size,shuffle=False,collate_fn=numpy_collate)
+            val_iter = DataLoader(val_data,batch_size=self.batch_size,shuffle=False,collate_fn=numpy_collate)
+            df_out = self.perepoch(e,train_iter,test_iter,val_iter)
 
             self.write_metadata(self.nndatapath + "/models/training_metadata_" + str(self.model_number) + ".hdf5","w",df_out)
         end = time.time()
         time_elapsed = (end-start)/60.
         torch.save(self.model.state_dict(), self.nndatapath + "/models/" + str(self.model_number) + ".pt")
 
-        val_p, val_r, val_f, val_t, all_val_f = self.get_fscore(val_iter,val_data_shape)
-        test_p, test_r, test_f, test_t, all_test_f = self.get_fscore(test_iter,test_data_shape)
+        try:
+            if self.mode == "class" or self.mode == "multiclass":
+                val_f = self.get_class_fscore(val_iter)
+                test_f = self.get_class_fscore(test_iter)
+            elif self.mode == "cellpose":
+                val_f = self.get_cellpose_fscore(val_iter)
+                test_f = self.get_cellpose_fscore(test_iter)
+        except:
+            print("Failed to compute F-scores")
+            val_f = [np.NaN]
+            test_f = [np.NaN]
 
         meta_handle = pandas_hdf5_handler(self.nndatapath + "/metadata.hdf5")
-        trainmeta = meta_handle.read_df("train",read_metadata=True).metadata
-        valmeta = meta_handle.read_df("val",read_metadata=True).metadata
-        testmeta = meta_handle.read_df("test",read_metadata=True).metadata
-        experiment_name = trainmeta["nndataset"]["experiment_name"]
-        train_dataname,train_org,train_micro,train_ttl_img = (trainmeta["nndataset"]["data_name"],trainmeta["global"]["Organism"],\
-                                               trainmeta["global"]["Microscope"],trainmeta["nndataset"]["ttl_imgs"])
-        val_dataname,val_org,val_micro,val_ttl_img = (valmeta["nndataset"]["data_name"],valmeta["global"]["Organism"],\
-                                                      valmeta["global"]["Microscope"],valmeta["nndataset"]["ttl_imgs"])
-        test_dataname,test_org,test_micro,test_ttl_img = (testmeta["nndataset"]["data_name"],testmeta["global"]["Organism"],\
-                                                          testmeta["global"]["Microscope"],testmeta["nndataset"]["ttl_imgs"])
+        traindf = meta_handle.read_df("train",read_metadata=True)
+        valdf = meta_handle.read_df("val",read_metadata=True)
+        testdf = meta_handle.read_df("test",read_metadata=True)
+        trainmeta = traindf.metadata
+        valmeta = valdf.metadata
+        testmeta = testdf.metadata
+        experiment_name = trainmeta["nndataset"]["experimentname"]
+
+        train_data_list = traindf.index.get_level_values(0).unique().tolist()
+        val_data_list = valdf.index.get_level_values(0).unique().tolist()
+        test_data_list = testdf.index.get_level_values(0).unique().tolist()
+
+        train_orgs = [trainmeta[data_name]["global"]["Organism"] for data_name in train_data_list]
+        train_micros = [trainmeta[data_name]["global"]["Microscope"] for data_name in train_data_list]
+        val_orgs = [trainmeta[data_name]["global"]["Organism"] for data_name in val_data_list]
+        val_micros = [trainmeta[data_name]["global"]["Microscope"] for data_name in val_data_list]
+        test_orgs = [trainmeta[data_name]["global"]["Organism"] for data_name in test_data_list]
+        test_micros = [trainmeta[data_name]["global"]["Microscope"] for data_name in test_data_list]
+
+        train_ttl_img = len(traindf)
+        val_ttl_img = len(valdf)
+        test_ttl_img = len(testdf)
 
         train_loss,val_loss,test_loss = df_out['Train Loss'].tolist()[0],df_out['Val Loss'].tolist()[0],df_out['Test Loss'].tolist()[0]
 
-        entry = [[experiment_name,self.model_number,train_dataname,train_org,train_micro,train_ttl_img,val_dataname,val_org,val_micro,val_ttl_img,\
-                  test_dataname,test_org,test_micro,test_ttl_img,self.batch_size,self.layers,self.hidden_size,self.lr,self.momentum,\
-                  self.weight_decay,self.dropout,self.w0,self.wm_sigma,train_loss,val_loss,val_p,val_r,val_f,val_t,all_val_f,test_loss,test_p,test_r,\
-                  test_f,test_t,all_test_f,str(timestamp),self.numepochs,time_elapsed]]
+        entry = [[experiment_name,self.model_number,self.mode,train_data_list,train_orgs,train_micros,train_ttl_img,val_data_list,val_orgs,val_micros,val_ttl_img,\
+                  test_data_list,test_orgs,test_micros,test_ttl_img,self.batch_size,self.layers,self.hidden_size,self.lr,self.momentum,\
+                  self.weight_decay,self.dropout,self.W0,self.Wsigma,self.warm_epochs,self.cool_epochs,train_loss,val_loss,val_f,\
+                  test_loss,test_f,str(timestamp),self.numepochs,time_elapsed]]
 
-        df_out = pd.DataFrame(data=entry,columns=['Experiment Name','Model #','Train Dataset','Train Organism','Train Microscope','Train # Images',\
-                                                  'Val Dataset','Val Organism','Val Microscope','Val # Images',\
-                                                  'Test Dataset','Test Organism','Test Microscope','Test # Images',\
-                                                  'Batch Size','Layers','Hidden Size','Learning Rate','Momentum','Weight Decay',\
-                                                  'Dropout',"W0 Weight","Wm Sigma",'Train Loss','Val Loss','Val Precision','Val Recall','Val F1 Score',\
-                                                  'Val Threshold','Val F1 Cell Scores','Test Loss','Test Precision','Test Recall','Test F1 Score',\
-                                                  'Test Threshold','Test F1 Cell Scores','Date/Time','# Epochs','Training Time (mins)'])
+        df_out = pd.DataFrame(data=entry,columns=['Experiment Name','Model #','NN Mode','Train Datasets','Train Organisms','Train Microscopes','Train # Images',\
+                                                  'Val Datasets','Val Organisms','Val Microscopes','Val # Images','Test Datasets','Test Organisms',\
+                                                  'Test Microscopes','Test # Images','Batch Size','Layers','Hidden Size','Learning Rate','Momentum',\
+                                                  'Weight Decay','Dropout',"W0 Weight (if applicable)","W Sigma (if applicable)","Warm Epochs","Cool Epochs",\
+                                                  'Train Loss','Val Loss','Val F1 Cell Scores','Test Loss','Test F1 Cell Scores','Date/Time','# Epochs',\
+                                                  'Training Time (mins)'])
 
         df_out = df_out.set_index(['Experiment Name','Model #'], drop=True, append=False, inplace=False)
         df_out = df_out.sort_index()
 
         metalock = hdf5lock(self.nndatapath + "/model_metadata.hdf5",updateperiod=5.)
         metalock.lockedfn(self.write_metadata,"w",df_out)
+
+class GridSearch:
+    def __init__(self,nndatapath,numepochs=50):
+        self.nndatapath = nndatapath
+        self.numepochs = numepochs
+
+    def display_grid(self):
+        meta_handle = pandas_hdf5_handler(self.nndatapath + "/metadata.hdf5")
+        trainmeta = meta_handle.read_df("train",read_metadata=True).metadata["nndataset"]
+        W0_list,Wsigma_list = trainmeta["W0_list"],trainmeta["Wsigma_list"]
+
+        self.tab_dict = {'Mode':["class","multiclass","cellpose"],'Batch Size:':[5, 10, 25, 50],'Layers:':[2, 3, 4],\
+           'Hidden Size:':[16, 32, 64],'Learning Rate:':[0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.4],\
+           'Momentum:':[0.9, 0.95, 0.99],'Weight Decay:':[0.0001,0.0005, 0.001],\
+           'Dropout:':[0., 0.3, 0.5, 0.7], 'W0:':W0_list, 'Wsigma':Wsigma_list,\
+            'Warm Epochs':[1,5,10,20],'Cool Epochs':[10,20,50,100]}
+
+        children = [ipyw.SelectMultiple(options=val,value=(val[0],),description=key,disabled=False) for key,val in self.tab_dict.items()]
+        self.tab = ipyw.Tab()
+        self.tab.children = children
+        for i,key in enumerate(self.tab_dict.keys()):
+            self.tab.set_title(i, key[:-1])
+        return self.tab
+
+    def get_grid_params(self):
+        self.grid_dict = {child.description:child.value for child in self.tab.children}
+        print("======== Grid Params ========")
+        for key,val in self.grid_dict.items():
+            print(key + " " + str(val))
+
+    def generate_pyscript(self,run_idx,grid_params):
+        import_line = "import paulssonlab.deaton.trenchripper.trenchripper as tr"
+        trainer_line = "nntrainer = tr.unet.UNet_Trainer(\"" + self.nndatapath + "/\"," + str(run_idx) + \
+        ",\"" + str(grid_params[0]) + "\",gpuon=True,numepochs=" + str(self.numepochs) + ",batch_size=" + str(grid_params[1])+",layers=" + \
+        str(grid_params[2])+",hidden_size=" + str(grid_params[3]) + ",lr=" + str(grid_params[4]) + \
+        ",momentum=" + str(grid_params[5]) + ",weight_decay=" + str(grid_params[6])+",dropout="+str(grid_params[7]) + \
+        ",W0=" + str(grid_params[8]) + ",Wsigma=" + str(grid_params[9]) + ",warm_epochs=" + str(grid_params[10]) + ",cool_epochs=" + \
+        str(grid_params[11]) + ")"
+        train_line = "nntrainer.train_model()"
+        pyscript = "\n".join([import_line,trainer_line,train_line])
+        with open(self.nndatapath + "/models/scripts/" + str(run_idx) + ".py", "w") as scriptfile:
+            scriptfile.write(pyscript)
+
+    def generate_sbatchscript(self,run_idx,hours,cores,mem,gres):
+        shebang = "#!/bin/bash"
+        core_line = "#SBATCH -c " + str(cores)
+        hour_line = "#SBATCH -t " + str(hours) + ":00:00"
+        gpu_lines = "#SBATCH -p gpu\n#SBATCH --gres=" + gres
+        mem_line = "#SBATCH --mem=" + mem
+        report_lines = "#SBATCH -o " + self.nndatapath + "/models/scripts/" + str(run_idx) +\
+        ".out\n#SBATCH -e " + self.nndatapath + "/models/scripts/" + str(run_idx) + ".err\n"
+
+        run_line = "python -u " + self.nndatapath + "/models/scripts/" + str(run_idx) + ".py"
+
+        sbatchscript = "\n".join([shebang,core_line,hour_line,gpu_lines,mem_line,report_lines,run_line])
+        with open(self.nndatapath + "/models/scripts/" + str(run_idx) + ".sh", "w") as scriptfile:
+            scriptfile.write(sbatchscript)
+
+    def run_sbatchscript(self,run_idx):
+        cmd = ["sbatch",self.nndatapath + "/models/scripts/" + str(run_idx) + ".sh"]
+        subprocess.run(cmd)
+
+    def run_grid_search(self,hours=12,cores=2,mem="8G",gres="gpu:1"):
+
+        grid_keys = self.grid_dict.keys()
+        grid_combinations = list(itertools.product(*list(self.grid_dict.values())))
+        writedir(self.nndatapath + "/models",overwrite=True)
+        writedir(self.nndatapath + "/models/scripts",overwrite=True)
+
+        self.run_indices = []
+
+        for run_idx,grid_params in enumerate(grid_combinations):
+            self.generate_pyscript(run_idx,grid_params)
+            self.generate_sbatchscript(run_idx,hours,cores,mem,gres)
+            self.run_sbatchscript(run_idx)
+            self.run_indices.append(run_idx)
+
+    def cancel_all_runs(self,username):
+        for run_idx in self.run_indices:
+            cmd = ["scancel","-p","gpu","--user=" + username]
+            subprocess.Popen(cmd,shell=True,stdin=None,stdout=None,stderr=None,close_fds=True)
 
 class TrainingVisualizer:
     def __init__(self,trainpath,modeldbpath):

@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import skimage as sk
 import pandas as pd
+import holoviews as hv
+import dask.array as da
+import xarray as xr
 import h5py
 import pickle
 import copy
@@ -13,6 +16,7 @@ from ipywidgets import interact, interactive, fixed, interact_manual, FloatSlide
 from skimage import filters,transform
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
+from holoviews.operation.datashader import regrid
 from .kymograph import kymograph_multifov
 from .segment import fluo_segmentation
 from .utils import kymo_handle,pandas_hdf5_handler
@@ -386,13 +390,15 @@ class kymograph_interactive(kymograph_multifov):
 
 class fluo_segmentation_interactive(fluo_segmentation):
 
-    def __init__(self,headpath,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,niblack_scaling=1.,\
-                 hess_pad=6,global_threshold=25,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30,distance_threshold=2):
+    def __init__(self,headpath,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,\
+                 hess_pad=6,local_thr="otsu",background_thr="triangle",global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,\
+                 min_obj_size=30,distance_threshold=2,border_buffer=1):
 
         fluo_segmentation.__init__(self,bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,\
-                                   img_scaling=img_scaling,smooth_sigma=smooth_sigma,niblack_scaling=niblack_scaling,\
-                                  hess_pad=hess_pad,global_threshold=global_threshold,triangle_threshold_scaling=triangle_threshold_scaling,\
-                                   cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,min_obj_size=min_obj_size,distance_threshold=distance_threshold)
+                                   img_scaling=img_scaling,smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,\
+                                  hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,global_threshold=global_threshold,\
+                                   window_size=window_size,cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,\
+                                   background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer)
 
         self.headpath = headpath
         self.kymographpath = headpath + "/kymograph"
@@ -517,7 +523,12 @@ class fluo_segmentation_interactive(fluo_segmentation):
             output_array_unwrapped = kymo_handle()
             output_array_unwrapped.import_wrap(output_array[k])
             output_array_unwrapped = output_array_unwrapped.return_unwrap()
-            rescaled_unwrapped = transform.rescale(output_array_unwrapped,img_scaling,anti_aliasing=False, preserve_range=True).astype("uint8")
+
+            original_shape = output_array_unwrapped.shape
+            len_per_tpt = (original_shape[1]*img_scaling)//t_tot
+            adjusted_scale_factor = (len_per_tpt*t_tot)/(original_shape[1])
+
+            rescaled_unwrapped = transform.rescale(output_array_unwrapped,adjusted_scale_factor,anti_aliasing=False, preserve_range=True).astype("uint8")
             filtered_unwrapped = sk.filters.gaussian(rescaled_unwrapped,sigma=smooth_sigma,preserve_range=True,mode='reflect').astype("uint8")
 #             filtered_wrapped = kymo_handle()
 #             filtered_wrapped.import_unwrap(filtered_unwrapped,t_tot)
@@ -577,11 +588,14 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         display(proc_list_int)
 
-    def plot_cell_mask(self,global_threshold,triangle_threshold_scaling,cell_otsu_scaling,local_otsu_r,min_obj_size):
+    def plot_cell_mask(self,local_thr,background_thr,global_threshold,window_size,cell_otsu_scaling,niblack_k,background_scaling,min_obj_size):
+        self.final_params['Local Threshold Method:'] = local_thr
+        self.final_params['Background Threshold Method:'] = background_thr
         self.final_params['Global Threshold:'] = global_threshold
-        self.final_params['Triangle Threshold Scaling:'] = triangle_threshold_scaling
-        self.final_params['Cell Threshold Scaling:'] = cell_otsu_scaling
-        self.final_params['Local Otsu Radius:'] = local_otsu_r
+        self.final_params['Local Window Size:'] = window_size
+        self.final_params['Otsu Scaling:'] = cell_otsu_scaling
+        self.final_params['Niblack K:'] = niblack_k
+        self.final_params['Background Threshold Scaling:'] = background_scaling
         self.final_params['Minimum Object Size:'] = min_obj_size
 
         proc_arr = np.array(self.proc_list)
@@ -596,8 +610,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
         cell_mask_list = []
         for proc in self.proc_list:
-            cell_mask = self.get_cell_mask(proc,global_threshold=global_threshold,triangle_threshold_scaling=triangle_threshold_scaling,\
-                                           cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,min_obj_size=min_obj_size)
+            cell_mask = self.get_cell_mask(proc,self.t_tot,local_thr=local_thr,background_thr=background_thr,global_threshold=global_threshold,window_size=window_size,\
+                                           cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,background_scaling=background_scaling,min_obj_size=min_obj_size)
             cell_mask_list.append(cell_mask)
         self.plot_img_list(self.proc_list)
         self.plot_img_list(cell_mask_list)
@@ -607,6 +621,8 @@ class fluo_segmentation_interactive(fluo_segmentation):
         cell_mask_list_int = interactive(
             self.plot_cell_mask,
             {"manual": True},
+            local_thr=Dropdown(options=["otsu","niblack"],value="otsu"),
+            background_thr=Dropdown(options=["triangle","object-based"],value="triangle"),
             global_threshold=IntSlider(
                 value=50,
                 description="Global Threshold:",
@@ -615,47 +631,55 @@ class fluo_segmentation_interactive(fluo_segmentation):
                 step=1,
                 disabled=False,
             ),
-            triangle_threshold_scaling=FloatSlider(
-                value=1.,
-                description="Triangle Threshold Scaling:",
-                min=0.0,
-                max=2.0,
-                step=0.01,
+            window_size=IntSlider(
+                value=15,
+                description="Window Size:",
+                min=0,
+                max=70,
+                step=1,
                 disabled=False,
             ),
             cell_otsu_scaling=FloatSlider(
                 value=1.,
-                description="Cell Threshold Scaling:",
+                description="Otsu Scaling:",
                 min=0.0,
-                max=2.0,
+                max=3.0,
                 step=0.01,
                 disabled=False,
             ),
-            local_otsu_r=IntSlider(
-                value=15,
-                description="Local Otsu Radius:",
-                min=0,
-                max=30,
-                step=1,
+            niblack_k=FloatSlider(
+                value=0.2,
+                description="Niblack K:",
+                min=0.0,
+                max=1.0,
+                step=0.01,
+                disabled=False,
+            ),
+            background_scaling=FloatSlider(
+                value=1.,
+                description="Background Threshold Scaling:",
+                min=0.0,
+                max=10.0,
+                step=0.1,
                 disabled=False,
             ),
             min_obj_size=IntSlider(
                 value=30,
                 description="Minimum Object Size:",
                 min=0,
-                max=100,
+                max=400,
                 step=2,
                 disabled=False,
             ),
         )
         display(cell_mask_list_int)
 
-    def plot_eig_mask(self,niblack_scaling):
-        self.final_params['Niblack Scaling:'] = niblack_scaling
+    def plot_eig_mask(self,hess_thr_scale):
+        self.final_params['Hessian Scaling:'] = hess_thr_scale
 
         eig_mask_list = []
         for eig in self.eig_list:
-            eig_mask = self.get_eig_mask(eig,niblack_scaling=niblack_scaling)
+            eig_mask = self.get_eig_mask(eig,hess_thr_scale=hess_thr_scale)
             eig_mask_list.append(eig_mask)
         self.eig_mask_list = eig_mask_list
 
@@ -666,7 +690,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
         cell_eig_list_int = interactive(
             self.plot_eig_mask,
             {"manual": True},
-            niblack_scaling=FloatSlider(
+            hess_thr_scale=FloatSlider(
                 value=1.,
                 description="Edge Threshold Scaling:",
                 min=0.0,
@@ -707,15 +731,17 @@ class fluo_segmentation_interactive(fluo_segmentation):
         )
         display(dist_mask_int)
 
-    def plot_marker_mask(self,niblack_scaling,distance_threshold):
-        self.final_params['Niblack Scaling:'] = niblack_scaling
+    def plot_marker_mask(self,hess_thr_scale,distance_threshold,border_buffer):
+        self.final_params['Hessian Scaling:'] = hess_thr_scale
         self.final_params['Distance Threshold:'] = distance_threshold
+        self.final_params['Border Buffer:'] = distance_threshold
+        min_obj_size = self.final_params['Minimum Object Size:']
 
         original_shape = (self.output_array.shape[2],self.output_array.shape[1]*self.output_array.shape[3]) #k,t,y,x
         segmentation_list = []
         for i in range(len(self.eig_list)):
             eig = self.eig_list[i]
-            eig_mask = self.get_eig_mask(eig,niblack_scaling=niblack_scaling)
+            eig_mask = self.get_eig_mask(eig,hess_thr_scale=hess_thr_scale)
 
             cell_mask = self.cell_mask_list[i]
             dist_img = ndi.distance_transform_edt(cell_mask).astype("uint8")
@@ -725,8 +751,24 @@ class fluo_segmentation_interactive(fluo_segmentation):
             marker_mask = sk.measure.label(marker_mask)
             output_labels = watershed(-dist_img, markers=marker_mask, mask=cell_mask)
 
+            output_labels = sk.morphology.remove_small_objects(output_labels,min_size=min_obj_size)
             output_labels = sk.transform.resize(output_labels,original_shape,order=0,anti_aliasing=False, preserve_range=True).astype("uint32")
-            segmentation_list.append(output_labels)
+
+            output_kymo = kymo_handle()
+            output_kymo.import_unwrap(output_labels,self.t_tot)
+            del output_labels
+            output_kymo = output_kymo.return_wrap()
+            for i in range(output_kymo.shape[0]):
+                if border_buffer >= 0:
+                    output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], buffer_size=border_buffer) ##NEW
+                output_kymo[i] = self.reorder_ids(output_kymo[i])
+
+            unwrapped_output = kymo_handle()
+            unwrapped_output.import_wrap(output_kymo)
+            del output_kymo
+            unwrapped_output = unwrapped_output.return_unwrap()
+
+            segmentation_list.append(unwrapped_output)
 
         self.plot_kymographs(self.output_array)
 
@@ -738,13 +780,13 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.plot_img_list(seg_plt_list,cmap="jet",interpolation='nearest')
 
     def plot_marker_mask_inter(self):
-        if self.final_params['Niblack Scaling:'] is not None\
+        if self.final_params['Hessian Scaling:'] is not None\
         and self.final_params['Distance Threshold:'] is not None:
             marker_mask_int = interactive(
                 self.plot_marker_mask,
                 {"manual": True},
-                niblack_scaling=FloatSlider(
-                    value=self.final_params['Niblack Scaling:'],
+                hess_thr_scale=FloatSlider(
+                    value=self.final_params['Hessian Scaling:'],
                     description="Edge Threshold Scaling:",
                     min=0.0,
                     max=2.0,
@@ -759,12 +801,20 @@ class fluo_segmentation_interactive(fluo_segmentation):
                     step=1,
                     disabled=False,
                 ),
+                border_buffer=IntSlider(
+                    value=2,
+                    description="Border Buffer:",
+                    min=-1,
+                    max=20,
+                    step=1,
+                    disabled=False,
+                ),
             )
         else:
             marker_mask_int = interactive(
                 self.plot_marker_mask,
                 {"manual": True},
-                niblack_scaling=FloatSlider(
+                hess_thr_scale=FloatSlider(
                     value=1.,
                     description="Edge Threshold Scaling:",
                     min=0.0,
@@ -780,6 +830,14 @@ class fluo_segmentation_interactive(fluo_segmentation):
                     step=1,
                     disabled=False,
                 ),
+                border_buffer=IntSlider(
+                    value=2,
+                    description="Border Buffer:",
+                    min=-1,
+                    max=20,
+                    step=1,
+                    disabled=False,
+                ),
             )
         display(marker_mask_int)
 
@@ -791,3 +849,72 @@ class fluo_segmentation_interactive(fluo_segmentation):
     def write_param_file(self):
         with open(self.headpath + "/fluorescent_segmentation.par", "wb") as outfile:
             pickle.dump(self.final_params, outfile)
+
+class hdf5_viewer:
+    def __init__(self,headpath,compute_data=False,persist_data=False,select_fovs=[]):
+        meta_handle = pandas_hdf5_handler(headpath+"/metadata.hdf5")
+        hdf5_df = meta_handle.read_df("global",read_metadata=True)
+        metadata = hdf5_df.metadata
+        index_df = pd.DataFrame(range(len(hdf5_df)),columns=["lookup index"])
+        index_df.index = hdf5_df.index
+        hdf5_df = hdf5_df.join(index_df)
+        self.channels = metadata["channels"]
+        if len(select_fovs)>0:
+            fov_indices = select_fovs
+        else:
+            fov_indices = hdf5_df.index.get_level_values("fov").unique().tolist()
+        file_indices = hdf5_df["File Index"].unique().tolist()
+
+        dask_arrays = []
+
+        for fov_idx in fov_indices:
+            fov_arrays = []
+            fov_df = hdf5_df.loc[fov_idx:fov_idx]
+            file_indices = fov_df["File Index"].unique().tolist()
+            for channel in self.channels:
+                channel_arrays = []
+                for file_idx in file_indices:
+                    infile = h5py.File(headpath + '/hdf5/hdf5_'+str(file_idx)+'.hdf5','r')
+                    data = infile[channel]
+                    array = da.from_array(data, chunks=(1, data.shape[1], data.shape[2]))
+                    channel_arrays.append(array)
+                da_channel_arrays = da.concatenate(channel_arrays, axis=0)
+                fov_arrays.append(da_channel_arrays)
+            da_fov_arrays = da.stack(fov_arrays, axis=0)
+            dask_arrays.append(da_fov_arrays)
+        self.main_array = da.stack(dask_arrays, axis=0)
+        if compute_data:
+            self.main_array = self.main_array.compute()
+        elif persist_data:
+            self.main_array = self.main_array.persist()
+
+    def view(self ,width=1000, height=1000, cmap="Greys_r", hist_on=False, hist_color="grey"):
+        hv.extension('bokeh')
+        # Wrap in xarray DataArray and label coordinates
+        dims = ['FOV', 'Channel', 'time', 'y', 'x',]
+        coords = {d: np.arange(s) for d, s in zip(dims, self.main_array.shape)}
+        coords['Channel'] = np.array(self.channels)
+        xrstack = xr.DataArray(self.main_array, dims=dims, coords=coords, name="Data").astype("uint16")
+
+        # Wrap in HoloViews Dataset
+        ds = hv.Dataset(xrstack)
+
+        # # Convert to stack of images with x/y-coordinates along axes
+        image_stack = ds.to(hv.Image, ['x', 'y'], dynamic=True)
+
+        # # Apply regridding if each image is large
+        regridded = regrid(image_stack)
+
+        # # Set a global Intensity range
+        # regridded = regridded.redim.range(Intensity=(0, 1000))
+
+        # # Set plot options
+        display_obj = regridded.opts(plot={'Image': dict(colorbar=True, width=width, height=height, tools=['hover'])})
+        display_obj = display_obj.opts(cmap=cmap)
+
+        if hist_on:
+            hist = hv.operation.histogram(image_stack,num_bins=30)
+            hist = hist.opts(line_width=0,color=hist_color, width=200,height=height)
+            return display_obj << hist
+        else:
+            return display_obj

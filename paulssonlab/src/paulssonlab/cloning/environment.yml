@@ -12,7 +12,6 @@ dependencies:
   - clustalo
   - cytoolz
   - google-api-python-client
-  - google-cloud-sdk
   - jupyterlab
   - jupyterlab_code_formatter
   - mafft
