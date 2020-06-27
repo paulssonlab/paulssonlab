@@ -58,11 +58,14 @@ def get_next_collection_id(worksheet):
     mask += [False] * (len(df.columns) - len(mask))
     nonempty = ~df.iloc[:, 1:].iloc[:, ~np.array(mask)[1:]].isnull().all(axis=1)
     last_idx = nonempty[nonempty].last_valid_index()
-    # convert to Python int because
-    # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-    last_idx = int(last_idx)
     if last_idx is None:
-        last_idx = len(nonempty)
+        # sheet is empty, initialize at prefix 1
+        prefix = worksheet.spreadsheet.title.split("_")[0]
+        return (prefix, 1), 2
+    else:
+        # convert to Python int because
+        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+        last_idx = int(last_idx)
     last_idx -= 1
     last_id = df.iloc[last_idx, 0]
     prefix, index, _ = re.match(r"([A-Za-z]*)(\d+)(\.\d+\w+?)?", str(last_id)).groups()
