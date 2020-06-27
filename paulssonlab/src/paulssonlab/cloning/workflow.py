@@ -88,11 +88,11 @@ def _trim_unassigned_ids(worksheet, row):
 
 
 def construct_plasmids():
-    pass
+    pass  # TODO
 
 
 def import_parts():
-    pass
+    pass  # TODO
 
 
 def _insert_rows(sheet, row, entries, default_values):
@@ -111,12 +111,21 @@ def import_addgene(
     plasmid_sheet,
     plasmid_maps_folder,
     parts=False,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    callback=None,
     trim=True,
     service=None,
     overwrite=True,
     progress_bar=PROGRESS_BAR,
 ):
-    data = _import_addgene_data(urls, progress_bar=progress_bar)
+    data = _import_addgene_data(
+        urls,
+        progress_bar=progress_bar,
+        strain_overrides=strain_overrides,
+        plasmid_overrides=plasmid_overrides,
+        callback=callback,
+    )
     # assign LIB/pLIB numbers, add pLIB genotype to strain
     (strain_prefix, strain_number), strain_row = get_next_collection_id(strain_sheet)
     (plasmid_prefix, plasmid_number), plasmid_row = get_next_collection_id(
@@ -190,7 +199,11 @@ def import_addgene(
 
 
 def _import_addgene_data(
-    urls, strain_overrides=None, plasmid_overrides=None, progress_bar=PROGRESS_BAR
+    urls,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    callback=None,
+    progress_bar=PROGRESS_BAR,
 ):
     if isinstance(urls, str):
         urls = [urls]
@@ -206,18 +219,24 @@ def _import_addgene_data(
                 addgene,
                 strain_overrides=strain_overrides,
                 plasmid_overrides=plasmid_overrides,
+                callback=callback,
             )
         )
     return data
 
 
 def _format_addgene_for_spreadsheet(
-    data, strain_overrides=None, plasmid_overrides=None
+    data, strain_overrides=None, plasmid_overrides=None, callback=None
 ):
     if data["item"] == "Kit":
         entries = []
         for well in data["wells"]:
-            entry = _format_addgene_for_spreadsheet(well)[0]
+            entry = _format_addgene_for_spreadsheet(
+                well,
+                strain_overrides=strain_overrides,
+                plasmid_overrides=plasmid_overrides,
+                callback=callback,
+            )[0]
             kit_source = f" (from kit {data['url']})"
             if "strain" in entry:
                 entry["strain"]["Source*"] += kit_source
@@ -296,10 +315,17 @@ def _format_addgene_for_spreadsheet(
                 "Source*": source,
                 "Reference": reference,
             }
+            if data.get("purpose"):
+                plasmid["Description"] = data["purpose"]
             if plasmid_overrides:
                 plasmid = {**plasmid, **plasmid_overrides}
-            return [dict(strain=strain, plasmid=plasmid, plasmid_map=plasmid_map)]
+            entry = dict(strain=strain, plasmid=plasmid, plasmid_map=plasmid_map)
         else:
-            return [dict(strain=strain)]
+            if data.get("purpose"):
+                strain["Description"] = data["purpose"]
+            entry = dict(strain=strain)
+        if callback:
+            entry = callback(entry, data)
+        return [entry]
     else:
         raise ValueError(f"unknown Addgene item type: {data['item']}")
