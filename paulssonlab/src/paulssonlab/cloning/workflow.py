@@ -265,6 +265,8 @@ def _format_addgene_for_spreadsheet(
             "Reference": reference,
         }
         other_notes = []
+        if data.get("well"):
+            other_notes.append(f"Well: {data['well']}")
         if data.get("growth instructions"):
             other_notes.append(f"Growth instructions: {data['growth instructions']}")
         if data.get("growth temperature") and "37" not in data["growth temperature"]:
