@@ -66,4 +66,8 @@ kubectl scale --replicas=0 deployment/kube-dns-autoscaler --namespace=kube-syste
 kubectl scale --replicas=1 deployment/kube-dns --namespace=kube-system
 echo "🇪🇺  ${bold}Reducing resource requests for fluentd...${normal}"
 kubectl apply -f "${root}/cloud/minimal_fluentd.yaml"
+echo "🎼  ${bold}Setting autoscaling profile...${normal}"
+gcloud beta container clusters update jqs1-paulssonlab-cloud-e55d24 \
+    --async \
+    --autoscaling-profile=optimize-utilization
 resume-gcp
