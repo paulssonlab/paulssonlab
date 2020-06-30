@@ -6,7 +6,8 @@ from trench_detect_new import main_detection_function
 from segmentation import main_segmentation_function
 from write_kymographs import main_kymographs_function
 from trench_measurements import main_trench_measurements_function
-from napari_browse_nd2 import main_browser_function
+from napari_browse_nd2 import main_nd2_browser_function
+from napari_browse_hdf5 import main_hdf5_browser_function
 
 
 def range_expand(range_string):
@@ -63,15 +64,53 @@ def browse_nd2(in_dir, napari_settings_file):
     """
     Use Napari to browse a directory of ND2 files.
     """
-    main_browser_function(in_dir, napari_settings_file)
+    main_nd2_browser_function(in_dir, napari_settings_file)
 
 
 @cli.command(no_args_is_help=True)
-def browse_masks():
+@click.option(
+    "-i",
+    "--images-file",
+    "images_file",
+    required=True,
+    default="HDF5/data.h5",
+    type=str,
+    help="Input HDF5 file with images.",
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--masks-file",
+    "masks_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with masks.",
+)
+@click.option(
+    "-t",
+    "--trenches-file",
+    "trenches_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with trench regions.",
+)
+@click.option(
+    "-S",
+    "--napari-settings-file",
+    "napari_settings_file",
+    required=True,
+    default="napari_settings.yaml",
+    type=str,
+    help="Napari settings file (YAML).",
+    show_default=True,
+)
+def browse_hdf5(images_file, masks_file, trenches_file, napari_settings_file):
     """
     Use Napari to browse a dataset & to visualize trenches and cell masks.
     """
-    pass
+    main_hdf5_browser_function(
+        images_file, masks_file, trenches_file, napari_settings_file
+    )
 
 
 @cli.command(no_args_is_help=True)

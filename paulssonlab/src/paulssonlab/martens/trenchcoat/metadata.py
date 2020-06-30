@@ -6,6 +6,24 @@ import xmltodict
 import xml.etree.ElementTree as ElementTree
 
 
+def get_metadata(n):
+    """
+    Input a node in the HDF5 metadata section, return a dict. with the following metadata
+    """
+    metadata = {
+        "channels": n.channels.read(),
+        "fields_of_view": n.fields_of_view.read(),
+        "frames": n.frames.read(),
+        "width": n.width.read(),
+        "height": n.height.read(),
+        "pixel_microns": n.pixel_microns.read(),
+        "unix_timestamp": n.unix_timestamp.read(),
+        "z_levels": n.z_levels.read(),
+    }
+
+    return metadata
+
+
 def make_fov_metadata_table_info_type():
     """
     Define the data types for a PyTables table.

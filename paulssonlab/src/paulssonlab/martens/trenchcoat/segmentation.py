@@ -13,10 +13,10 @@ import arrayfire_algorithms
 from properties import (
     write_properties_to_table,
     merge_tables,
-    get_metadata,
     make_cell_type,
     subtract_background_from_coords,
 )
+from metadata import get_metadata
 from params import read_params_file
 
 """

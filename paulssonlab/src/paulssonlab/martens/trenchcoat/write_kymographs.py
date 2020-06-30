@@ -5,7 +5,7 @@ import tables
 import os
 import time
 from multiprocessing import Pool
-from properties import get_metadata
+from metadata import get_metadata
 from tqdm import tqdm
 
 """

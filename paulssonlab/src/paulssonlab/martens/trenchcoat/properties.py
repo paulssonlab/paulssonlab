@@ -4,26 +4,8 @@ import numpy
 import tables
 
 """
-Functions for handling ND2 metadata and cell properties (measurements), including HDF5 tables.
+Functions for handling ND2 cell properties (measurements), including HDF5 tables.
 """
-
-
-def get_metadata(n):
-    """
-    Input a node in the HDF5 metadata section, return a dict. with the following metadata
-    """
-    metadata = {
-        "channels": n.channels.read(),
-        "fields_of_view": n.fields_of_view.read(),
-        "frames": n.frames.read(),
-        "width": n.width.read(),
-        "height": n.height.read(),
-        "pixel_microns": n.pixel_microns.read(),
-        "unix_timestamp": n.unix_timestamp.read(),
-        "z_levels": n.z_levels.read(),
-    }
-
-    return metadata
 
 
 def write_properties_to_table(

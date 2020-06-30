@@ -14,7 +14,7 @@ Use Napari to browse a directory of ND2 files.
 """
 
 
-def main_browser_function(in_dir, napari_settings_file):
+def main_nd2_browser_function(in_dir, napari_settings_file):
     """
     Open a directory of ND2 files in Napari, using the parameters specified in the YAML file.
     """
@@ -36,7 +36,7 @@ def main_browser_function(in_dir, napari_settings_file):
         if smallest == largest:
             extents[a] = [smallest]
         else:
-            extents[a] = [i for i in range(smallest, largest)]
+            extents[a] = [i for i in range(smallest, largest + 1)]
 
     height = metadata_attributes_equal(nd2_dict, "height")
     width = metadata_attributes_equal(nd2_dict, "width")
