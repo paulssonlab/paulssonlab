@@ -236,7 +236,11 @@ def _format_addgene_for_spreadsheet(
                 strain_overrides=strain_overrides,
                 plasmid_overrides=plasmid_overrides,
                 callback=callback,
-            )[0]
+            )
+            if len(entry):  # skip entries for which callback returned False
+                entry = entry[0]
+            else:
+                continue
             kit_source = f" (from kit {data['url']})"
             if "strain" in entry:
                 entry["strain"]["Source*"] += kit_source
@@ -328,6 +332,9 @@ def _format_addgene_for_spreadsheet(
             entry = dict(strain=strain)
         if callback:
             entry = callback(entry, data)
-        return [entry]
+        if entry is False:  # if callback returns False, skip entry
+            return []
+        else:
+            return [entry]
     else:
         raise ValueError(f"unknown Addgene item type: {data['item']}")
