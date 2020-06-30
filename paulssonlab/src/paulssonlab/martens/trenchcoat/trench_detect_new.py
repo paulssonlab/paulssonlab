@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import time
 from tqdm import tqdm
 import numpy
 from scipy.signal import find_peaks
@@ -69,7 +68,6 @@ def run_trench_analysis(
     # Probably separately, because it might be the case that the trenches in different rows have different dimensions.
     for i, row in enumerate(rows):
         regions = detect_trenches(img, trench_width, trench_length, min_distance)
-        # print("Detected {} trenches in File {} FOV {} Frame {} Z {} Row {}".format(regions.shape[0], filename, fov, frame, z_level, i)) # DEBUG
         regions_file.create_array(
             path_string, "row_{}".format(i), obj=regions, createparents=True
         )

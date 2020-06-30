@@ -1,5 +1,0 @@
-Channel_name	BF_or_FLUOR	is_segmentation	niblack_k	niblack_window_size	threshold	run_blur
-BF	BF	False	-	-	65536	False
-mCherry	FLUOR	True	-0.35	21	300	False
-YFP	FLUOR	False	-	-	-	False
-CFP	FLUOR	True	-0.35	21	15	True

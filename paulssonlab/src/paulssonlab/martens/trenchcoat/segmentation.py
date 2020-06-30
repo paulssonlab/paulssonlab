@@ -3,7 +3,6 @@
 import skimage
 import numpy
 import os
-import time
 import pathlib
 import tables
 from multiprocessing import Pool
@@ -62,6 +61,13 @@ def run_segmentation_analysis_regions(
         z_node = h5file.get_node(
             "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(name, fov, frame, z_level)
         )
+        # TODO: compare performance of that versus the following:
+        # (needs passing in the original directory, rather than the top-level h5file)
+        # hypothesis: maybe the multi-processing is slower than it should be b/c of issues when opening the same H5 file??
+        # (not getting good CPU scaling)
+        # file_path = os.path.join(in_dir, "File_{}".format(name), "FOV_{}".format(fov), "Frame_{}".format(frame))
+        # h5file = tables.open_file(file_path, mode="r")
+        # z_node = h5file.get_node("/Z_{}".format(z_level))
         (stack, ch_to_index) = make_ch_to_img_stack_regions(
             h5file, z_node, channels, regions
         )
@@ -110,7 +116,7 @@ def run_segmentation_analysis_no_regions(
     (stack, ch_to_index) = make_ch_to_img_stack_no_regions(h5file, z_node, channels)
     h5file.close()
 
-    # No regions, no regions set number -> set to 0
+    # No regions, no regions_set_number -> set to 0
     run_segmentation_analysis(
         in_file,
         name,
@@ -557,23 +563,15 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
 
     h5file.close()
 
+    print("Done computing masks & measuring properties.")
+
     # Link all the individual masks & properties files into respective H5 file, to make it easier to iterate them
     print("Linking masks...")
-    start = time.time()
-
     link_files(out_dir_masks, "masks")
     link_files(out_dir_tables, "tables")
 
-    end = time.time()
-    print("Done linking masks ({} seconds).".format(end - start))
-
     # Merge the tables
     print("Merging tables...")
-    start = time.time()
-
     in_file = os.path.join(out_dir, "TABLES/tables.h5")
     out_file = os.path.join(out_dir, "TABLES/tables_merged.h5")
     merge_tables(in_file, out_file, channels, params.keys(), file_names)
-
-    end = time.time()
-    print("Done merging tables ({} seconds).".format(end - start))

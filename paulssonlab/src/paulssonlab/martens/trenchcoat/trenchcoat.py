@@ -6,6 +6,7 @@ from trench_detect_new import main_detection_function
 from segmentation import main_segmentation_function
 from write_kymographs import main_kymographs_function
 from trench_measurements import main_trench_measurements_function
+from napari_browse_nd2 import main_browser_function
 
 
 def range_expand(range_string):
@@ -37,15 +38,35 @@ def cli():
     pass
 
 
-@cli.command()
-def browse_nd2():
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--in-dir",
+    "in_dir",
+    required=True,
+    default="ND2",
+    type=str,
+    help="Input directory of ND2 files.",
+    show_default=True,
+)
+@click.option(
+    "-S",
+    "--napari-settings-file",
+    "napari_settings_file",
+    required=True,
+    default="napari_settings.yaml",
+    type=str,
+    help="Napari settings file (YAML).",
+    show_default=True,
+)
+def browse_nd2(in_dir, napari_settings_file):
     """
     Use Napari to browse a directory of ND2 files.
     """
-    pass
+    main_browser_function(in_dir, napari_settings_file)
 
 
-@cli.command()
+@cli.command(no_args_is_help=True)
 def browse_masks():
     """
     Use Napari to browse a dataset & to visualize trenches and cell masks.
@@ -53,7 +74,7 @@ def browse_masks():
     pass
 
 
-@cli.command()
+@cli.command(no_args_is_help=True)
 def browse_kymographs():
     """
     Use Napari to browse kymographs.
