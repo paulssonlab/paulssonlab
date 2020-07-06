@@ -575,3 +575,15 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     in_file = os.path.join(out_dir, "TABLES/tables.h5")
     out_file = os.path.join(out_dir, "TABLES/tables_merged.h5")
     merge_tables(in_file, out_file, channels, params.keys(), file_names)
+
+    # Write the segmentation params YAML to the masks h5file, so that the params can be referenced later on
+    print("Saving YAML parameters...")
+    params_file_handle = open(params_file)
+    params_text = params_file_handle.read()
+    params_file_handle.close()
+
+    h5file_masks = tables.open_file(os.path.join(out_dir_masks, "masks.h5", "r+"))
+    h5file_masks.create_array(
+        "/Parameters", "seg_params.yaml", obj=params_text, createparents=True
+    )
+    h5file_masks.close()
