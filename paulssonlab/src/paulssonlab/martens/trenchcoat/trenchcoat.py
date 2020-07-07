@@ -87,12 +87,12 @@ def browse_nd2(in_dir, napari_settings_file):
     help="Input HDF5 file with masks.",
 )
 @click.option(
-    "-t",
-    "--trenches-file",
-    "trenches_file",
+    "-r",
+    "--regions-file",
+    "regions_file",
     required=False,
     type=str,
-    help="Input HDF5 file with trench regions.",
+    help="Input HDF5 file with regions.",
 )
 @click.option(
     "-S",
@@ -104,12 +104,12 @@ def browse_nd2(in_dir, napari_settings_file):
     help="Napari settings file (YAML).",
     show_default=True,
 )
-def browse_hdf5(images_file, masks_file, trenches_file, napari_settings_file):
+def browse_hdf5(images_file, masks_file, regions_file, napari_settings_file):
     """
     Use Napari to browse a dataset & to visualize trenches and cell masks.
     """
     main_hdf5_browser_function(
-        images_file, masks_file, trenches_file, napari_settings_file
+        images_file, masks_file, regions_file, napari_settings_file
     )
 
 
