@@ -8,6 +8,7 @@ from write_kymographs import main_kymographs_function
 from trench_measurements import main_trench_measurements_function
 from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
+from napari_browse_kymographs import main_kymograph_browser_function
 
 
 def range_expand(range_string):
@@ -39,7 +40,8 @@ def cli():
     pass
 
 
-@cli.command(no_args_is_help=True)
+# NOTE click 7.0 doesn't have the no_args_is_help option yet, so temporarily disabling for now.
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-i",
     "--in-dir",
@@ -67,7 +69,7 @@ def browse_nd2(in_dir, napari_settings_file):
     main_nd2_browser_function(in_dir, napari_settings_file)
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-i",
     "--images-file",
@@ -113,16 +115,16 @@ def browse_hdf5(images_file, masks_file, regions_file, napari_settings_file):
     )
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 def browse_kymographs():
     """
     Use Napari to browse kymographs.
     """
-    # Should it also load the masks as well? Requires new code to gen. kymographs from image slices.
-    pass
+    # FIXME Should it also load the masks as well? Requires new code to gen. kymographs from image slices.
+    main_kymograph_browser_function()
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -188,7 +190,7 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     main_conversion_function(out_dir, in_dir, num_cpu, frames, fovs)
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -244,7 +246,7 @@ def trench_detect(out_dir):
     main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions)
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -302,7 +304,7 @@ def segment(out_dir, in_file, num_cpu, params_file, regions_file):
     main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_file)
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -350,7 +352,7 @@ def kymographs():
     main_kymographs_function(out_dir, in_file, num_cpu, regions_file)
 
 
-@cli.command(no_args_is_help=True)
+@cli.command()  # no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",

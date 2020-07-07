@@ -17,3 +17,11 @@ def write_params(params, file_path):
     """
     yaml = YAML(typ="safe", pure=True)
     yaml.dump(params, pathlib.Path(file_path))
+
+
+def read_params_string(string):
+    """
+    Input string with YAML data, return a dictionary of parameters
+    """
+    yaml = YAML(typ="safe", pure=True)
+    return yaml.load(string)
