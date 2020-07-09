@@ -164,6 +164,7 @@ def subtract_background_from_region(image, image_mask, background):
 def merge_tables(in_file, out_file, channels, seg_channels, file_names):
     """
     Merge the tables at the very end
+    FIXME something wrong with the final node3() de-referencing, having to do with File_{}/ component to the path?
     """
     Cell = make_cell_type(channels, seg_channels, file_names)
 

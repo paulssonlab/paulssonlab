@@ -224,7 +224,7 @@ def write_masks_tables(
             mask = masks[..., region_number]
             # Write to disk
             h5file_masks.create_carray(
-                "/{}/{}/{}".format(z_level, sc, region_set_number),
+                "/Z_{}/{}/{}".format(z_level, sc, region_set_number),
                 "region_{}".format(region_number),
                 obj=mask,
                 createparents=True,
@@ -368,7 +368,6 @@ def link_files(in_dir, file_name):
     """
     out_file = os.path.join(in_dir, "{}.h5".format(file_name))
     h5file_top = tables.open_file(out_file, mode="w")
-
     # ND2 file directories
     for nd2_entry in os.scandir(in_dir):
         if nd2_entry.is_dir():
@@ -582,8 +581,11 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     params_text = params_file_handle.read()
     params_file_handle.close()
 
-    h5file_masks = tables.open_file(os.path.join(out_dir_masks, "masks.h5", "r+"))
+    h5file_masks = tables.open_file(os.path.join(out_dir_masks, "masks.h5"), "r+")
     h5file_masks.create_array(
-        "/Parameters", "seg_params.yaml", obj=params_text, createparents=True
+        "/Parameters",
+        "seg_params.yaml",
+        obj=numpy.array(params_text),
+        createparents=True,
     )
     h5file_masks.close()

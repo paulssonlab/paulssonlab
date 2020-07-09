@@ -4,7 +4,7 @@ import napari
 from dask import delayed
 import dask.array
 
-from params import read_params_string
+from params import read_params_string, read_params_file
 
 
 """    
@@ -15,7 +15,7 @@ Might also need to rework the similar functions used for nd2 browsing?
 """
 
 
-def add_regions_layer(regions_file, extents, viewer):
+def add_regions_layer(regions_file, fields_of_view, frames, viewer):
     """
 
     TODO pass in information for the labels layer params? name etc.
@@ -23,16 +23,19 @@ def add_regions_layer(regions_file, extents, viewer):
     FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
     is not the same as the dims of the images or the masks? Will it "just work?"
     """
+    # Compile a canvas with all the regions
+    lazy_regions_arr_to_canvas = delayed(regions_arr_to_canvas)
+
     h5file_regions = tables.open_file(regions_file, "r")
 
     file_array = []
     for file in file_nodes:
         # FOV nodes
         fov_array = []
-        for fov in extents["fields_of_view"]:
+        for fov in fields_of_view:
             # Frame nodes
             frame_array = []
-            for frame in extents["frames"]:
+            for frame in frames:
                 # Regions are always shared across Z, so it's OK
                 # to read them in now.
                 path = "/{}/FOV_{}/Frame_{}"
@@ -53,7 +56,9 @@ def add_regions_layer(regions_file, extents, viewer):
     viewer.add_labels(megastack)
 
 
-def add_masks_layer(masks_file, regions_file, extents, viewer):
+def add_masks_layer(
+    masks_file, regions_file, fields_of_view, frames, z_levels, height, width, viewer
+):
     """
     Because each region gets its own masks, they need to be merged!
     This means that it is necessary to specify which regions were used to do so during the segmentation step.
@@ -68,10 +73,17 @@ def add_masks_layer(masks_file, regions_file, extents, viewer):
 
     # Load the segmentation channels from the masks h5file
     seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
-    seg_channels = read_params_string(seg_params_node.read())["channels"]
+    seg_params_str = seg_params_node.read().tostring().decode("utf-8")
+    seg_params_dict = read_params_string(seg_params_str)
+    seg_channels = [k for k in seg_params_dict.keys()]
+
+    file_nodes = [x._v_name for x in h5file_masks.list_nodes("/masks")]
 
     # If there were regions, then the masks need to be agglomerated into a larger image
     if regions_file:
+        # Compile a canvas with all the masks from all the segmented areas
+        lazy_masks_to_canvas = delayed(masks_to_canvas)
+
         h5file_regions = tables.open_file(regions_file, "r")
 
         # FIXME how to determine the number of region sets? should each region set get its own labels layer?
@@ -87,10 +99,10 @@ def add_masks_layer(masks_file, regions_file, extents, viewer):
             for file in file_nodes:
                 # FOV nodes
                 fov_array = []
-                for fov in extents["fields_of_view"]:
+                for fov in fields_of_view:
                     # Frame nodes
                     frame_array = []
-                    for frame in extents["frames"]:
+                    for frame in frames:
                         # Regions are always shared across Z, so it's OK
                         # to read them in now.
                         path = "/{}/FOV_{}/Frame_{}"
@@ -98,13 +110,13 @@ def add_masks_layer(masks_file, regions_file, extents, viewer):
 
                         # Z nodes
                         z_array = []
-                        for z in extents["z_levels"]:
+                        for z in z_levels:
 
                             # TODO now, need to loop all the available regions,
                             # and then copy over the corresponding data from the masks into
                             # a single, "zeroed out" canvas
 
-                            path = "/{}/FOV_{}/Frame_{}/Z_{}/{}/".format(
+                            path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/".format(
                                 file,
                                 fov,
                                 frame,
@@ -146,18 +158,20 @@ def add_masks_layer(masks_file, regions_file, extents, viewer):
             for file in file_nodes:
                 # FOV nodes
                 fov_array = []
-                for fov in extents["fields_of_view"]:
+                for fov in fields_of_view:
                     # Frame nodes
                     frame_array = []
-                    for frame in extents["frames"]:
+                    for frame in frames:
                         # Z nodes
                         z_array = []
-                        for z in extents["z_levels"]:
+                        for z in z_levels:
                             # If no regions, then default to the zeroth region set number and region
-                            path = "/{}/FOV_{}/Frame_{}/Z_{}/{}/0/region_0".format(
-                                file, fov, frame, z, sc
+                            path = (
+                                "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/0/region_0".format(
+                                    file, fov, frame, z, sc
+                                )
                             )
-                            node = h5file.get_node(path)
+                            node = h5file_masks.get_node(path)
                             arr = dask.array.from_delayed(
                                 delayed(node.read()),
                                 # If there are no regions, then it must fill the entire
@@ -182,19 +196,31 @@ def add_masks_layer(masks_file, regions_file, extents, viewer):
             viewer.add_labels(megastack)
 
 
-def add_image_layers(h5file, height, width, extents, viewer, channels, layer_params):
+def add_image_layers(
+    h5file,
+    height,
+    width,
+    fields_of_view,
+    frames,
+    z_levels,
+    viewer,
+    channels,
+    layer_params,
+):
     """
     Input an HDF5 file with images,
     image dimensions,
-    extents of the file, fov, frame, z dimensions,
+    fovs, frames, z dimensions,
     channel names,
     layer params.
 
     Adds all the image layers to the Napari viewer.
     """
+    # Define a function for lazily loading a single image from the h5 file
+    lazy_load_img = delayed(load_img)
+
     # Iterate the H5 file images & lazily load them into a dask array
-    parent_node = h5file.get_node("/Images")
-    file_nodes = [x._v_name for x in h5file.list_nodes(parent_node)]
+    file_nodes = [x._v_name for x in h5file.list_nodes("/Images")]
 
     for c in channels:
         c = c.decode("utf-8")
@@ -205,13 +231,13 @@ def add_image_layers(h5file, height, width, extents, viewer, channels, layer_par
         for file in file_nodes:
             # FOV nodes
             fov_array = []
-            for fov in extents["fields_of_view"]:
+            for fov in fields_of_view:
                 # Frame nodes
                 frame_array = []
-                for frame in extents["frames"]:
+                for frame in frames:
                     # Z nodes
                     z_array = []
-                    for z in extents["z_levels"]:
+                    for z in z_levels:
                         path = "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(
                             file, fov, frame, z
                         )
@@ -362,13 +388,6 @@ def main_hdf5_browser_function(
         # TODO params for masks layers? regions layers?
         layer_params = read_params_file(napari_settings_file)
 
-        # Define a function for lazily loading a single image from the h5 file
-        lazy_load_img = delayed(load_img)
-        # Compile a canvas with all the masks from all the segmented areas
-        lazy_masks_to_canvas = delayed(masks_to_canvas)
-        # Compile a canvas with all the regions
-        lazy_regions_arr_to_canvas = delayed(regions_arr_to_canvas)
-
         # File with images & metadata
         h5file = tables.open_file(images_file, "r")
 
@@ -391,15 +410,36 @@ def main_hdf5_browser_function(
         channels = metadata_array_equal(h5file, "channels")
 
         # Image layers
-        add_image_layers(h5file, height, width, extents, viewer, channels, layer_params)
+        add_image_layers(
+            h5file,
+            height,
+            width,
+            extents["fields_of_view"],
+            extents["frames"],
+            extents["z_levels"],
+            viewer,
+            channels,
+            layer_params,
+        )
 
         # Masks layers
         if masks_file:
-            add_masks_layer(masks_file, regions_file, extents, viewer)
+            add_masks_layer(
+                masks_file,
+                regions_file,
+                extents["fields_of_view"],
+                extents["frames"],
+                extents["z_levels"],
+                height,
+                width,
+                viewer,
+            )
 
         # Regions (trench) layer
         if regions_file:
-            add_regions_layer(regions_file, extents, viewer)
+            add_regions_layer(
+                regions_file, extents["fields_of_view"], extents["frames"], viewer
+            )
 
     # Done!
     h5file.close()

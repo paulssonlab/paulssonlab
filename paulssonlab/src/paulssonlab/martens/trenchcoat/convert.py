@@ -23,7 +23,6 @@ warnings.simplefilter(action="ignore", category=tables.NaturalNameWarning)
 # - Before copying data, check that the channels are all the same in all the files:
 #   otherwise, it's inappropriate to convert these files together!
 # - Could also enforce same dimensions, if this helps with browsing e.g. using Napari?
-#   But it mightn't make sense to enforce FOV count, because that could conceivably vary from one file to another.
 
 
 def make_nd2_list(nd2_dir):
@@ -225,7 +224,7 @@ def main_conversion_function(hdf_dir, nd2_dir, num_cpu, frames, fields_of_view):
 
             for fov in fields_of_view:
                 for frame in frames:
-                    args = [hdf_dir, in_file, fov, frame]
+                    args = [hdf_dir, in_file.path, fov, frame]
                     p.apply_async(conversion, args, callback=update_pbar_frames)
 
         p.close()
