@@ -2,6 +2,7 @@ import re
 import io
 from cytoolz import partial
 from apiclient.http import MediaIoBaseUpload
+from google.api_core.datetime_helpers import from_rfc3339
 
 
 def get_drive_id(url):
@@ -59,6 +60,17 @@ def filter_drive(files, keys):
     return filtered_files
 
 
+def _drive_list_to_dict(response):
+    files = {}
+    if not "files" in response:
+        return
+    for file in response["files"]:
+        if file["name"] in files:
+            raise ValueError(f"got duplicate file name in drive list: {file['name']}")
+        files[file["name"]] = file
+    return files
+
+
 def list_drive(service, root=None, query=None):
     qs = []
     if root:
@@ -70,15 +82,11 @@ def list_drive(service, root=None, query=None):
     return _drive_list_to_dict(response)
 
 
-def _drive_list_to_dict(response):
-    files = {}
-    if not "files" in response:
-        return
-    for file in response["files"]:
-        if file["name"] in files:
-            raise ValueError(f"got duplicate file name in drive list: {file['name']}")
-        files[file["name"]] = file
-    return files
+def get_drive_modified_time(service, file_id):
+    res = service.files().get(fileId=file_id, fields="modifiedTime").execute()
+    modified_time = res.get("modifiedTime")
+    if modified_time:
+        return from_rfc3339(modified_time)
 
 
 def upload_drive(

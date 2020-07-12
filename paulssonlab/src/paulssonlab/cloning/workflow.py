@@ -87,14 +87,6 @@ def _trim_unassigned_ids(worksheet, row):
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
 
 
-def construct_plasmids():
-    pass  # TODO
-
-
-def import_parts():
-    pass  # TODO
-
-
 def _insert_rows(sheet, row, entries, default_values):
     columns = sheet.get_row(1)
     values = [
