@@ -11,7 +11,7 @@ def _ensure_addgene_url(catalog_or_url):
             return catalog_or_url
     except:
         pass
-    return f"http://www.addgene.org/{catalog_or_url}/"
+    return f"https://www.addgene.org/{catalog_or_url}/"
 
 
 def get_addgene_plasmid(catalog_or_url, session=None):
@@ -37,7 +37,7 @@ def _get_addgene_plasmid(html):
     # catalog ("108512")
     catalog_number = int(table[0]["Catalog #"])
     material["catalog"] = catalog_number
-    material["url"] = f"http://www.addgene.org/{catalog_number}/"
+    material["url"] = f"https://www.addgene.org/{catalog_number}/"
     # price
     material["price"] = table[0]["Price (USD)"]
     # purpose, depositing lab (text -> href), publication (text -> href)
