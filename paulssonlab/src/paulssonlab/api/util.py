@@ -22,3 +22,7 @@ def parse_html_table(table, row_parser=_default_parse_html_table_row):
         row = row_parser(column_names, tr)
         rows.append(row)
     return rows
+
+
+def base_url(url):
+    return re.match("^(?:https?://)?(.*[^/]+)/?$", url).group(1).lower()
