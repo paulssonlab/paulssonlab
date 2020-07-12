@@ -250,7 +250,7 @@ def _format_addgene_for_spreadsheet(
         source = data["url"]
         reference = data["how_to_cite"].get("references")
         strain = {
-            "Aliases*": data["name"],
+            "Names": data["name"],
             "Species*": "E. coli",
             #'Genotype*': '',
             "Background*": background,
@@ -305,7 +305,7 @@ def _format_addgene_for_spreadsheet(
                 else:
                     origin = re.sub(r" (?:ori|origin)$", "", origin)
             plasmid = {
-                "Aliases*": data["name"],
+                "Names": data["name"],
                 "Size (bp)": size,
                 "Origin*": origin,
                 "Marker*": marker,
