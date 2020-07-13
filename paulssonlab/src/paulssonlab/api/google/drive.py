@@ -14,10 +14,10 @@ def get_drive_id(url):
 def get_drive_query(service, query):
     response = service.files().list(q=query).execute()
     if "files" not in response or not response["files"]:
-        raise ValueError(f"could not find file/folder '{p}'")
+        raise ValueError(f"could not find file/folder with query '{query}'")
     files = response["files"]
     if len(files) > 1:
-        raise ValueError(f"got multiple files/folders matching name '{p}'")
+        raise ValueError(f"got multiple files/folders matching query '{query}'")
     return files[0]
 
 
@@ -44,18 +44,35 @@ def get_drive_by_path(service, path, root=None, folder=None):
     return root
 
 
-def filter_drive(files, keys):
+def filter_drive(files, keys, ignore_missing=False):
     keys_to_id = {}
     for file in files:
         key = (file["name"], file["mimeType"] == "application/vnd.google-apps.folder")
         keys_to_id[key] = file["id"]
     filtered_files = {}
-    for ref, key in keys.items():
-        if key in keys_to_id:
+    for ref, desired_key in keys.items():
+        desired_file = f"'{desired_key[0]}'"
+        if hasattr(desired_key[0], "match"):
+            pattern = desired_key[0]
+            desired_file = f"regex: '{pattern}'"
+            found_match = False
+            for key, file_id in keys_to_id.items():
+                if key[1] == desired_key[1] and pattern.match(key[0]):
+                    filtered_files[ref] = file_id
+                    del keys_to_id[key]
+                    found_match = True
+                    break
+            if found_match:
+                continue
+        elif key in keys_to_id:
             filtered_files[ref] = keys_to_id[key]
+            del keys_to_id[key]
+            continue
+        if ignore_missing:
+            filtered_files[ref] = None
         else:
             raise ValueError(
-                f"could not find {'folder' if key[1] else 'file'} '{key[0]}'"
+                f"could not find {'folder' if key[1] else 'file'} {desired_file}"
             )
     return filtered_files
 
