@@ -44,59 +44,34 @@ def get_drive_by_path(service, path, root=None, folder=None):
     return root
 
 
-def filter_drive(files, keys, ignore_missing=False):
-    keys_to_id = {}
-    for file in files:
-        key = (file["name"], file["mimeType"] == "application/vnd.google-apps.folder")
-        keys_to_id[key] = file["id"]
-    filtered_files = {}
-    for ref, desired_key in keys.items():
-        desired_file = f"'{desired_key[0]}'"
-        if hasattr(desired_key[0], "match"):
-            pattern = desired_key[0]
-            desired_file = f"regex: '{pattern}'"
-            found_match = False
-            for key, file_id in keys_to_id.items():
-                if key[1] == desired_key[1] and pattern.match(key[0]):
-                    filtered_files[ref] = file_id
-                    del keys_to_id[key]
-                    found_match = True
-                    break
-            if found_match:
-                continue
-        elif key in keys_to_id:
-            filtered_files[ref] = keys_to_id[key]
-            del keys_to_id[key]
-            continue
-        if ignore_missing:
-            filtered_files[ref] = None
-        else:
-            raise ValueError(
-                f"could not find {'folder' if key[1] else 'file'} {desired_file}"
-            )
-    return filtered_files
-
-
-def _drive_list_to_dict(response):
-    files = {}
-    if not "files" in response:
-        return
-    for file in response["files"]:
-        if file["name"] in files:
-            raise ValueError(f"got duplicate file name in drive list: {file['name']}")
-        files[file["name"]] = file
-    return files
-
-
-def list_drive(service, root=None, query=None):
+def list_drive(service, root=None, query=None, page_size=1000):
     qs = []
     if root:
         qs.append(f"'{root}' in parents")
     if query:
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
-    response = service.files().list(q=q).execute()
-    return _drive_list_to_dict(response)
+    files_service = service.files()
+    req = files_service.list(q=q, pageSize=page_size)
+    files = []
+    while req is not None:
+        doc = req.execute()
+        files.extend(doc.get("files", []))
+        req = files_service.list_next(req, doc)
+    name_to_file = {}
+    for file in files:
+        if file["name"] in name_to_file:
+            raise ValueError(f"got duplicate file name in drive list: {file['name']}")
+        name_to_file[file["name"]] = file
+    return name_to_file
+
+
+def ensure_folder(file, is_folder=True):
+    if (file["mimeType"] == "application/vnd.google-apps.folder") != is_folder:
+        raise ValueError(
+            f"expecting {'folder' if is_folder else 'file'} for file '{file['name']}'"
+        )
+    return file["id"]
 
 
 def get_drive_modified_time(service, file_id):

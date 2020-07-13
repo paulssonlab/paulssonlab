@@ -3,8 +3,8 @@ import re
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_name,
-    filter_drive,
     list_drive,
+    ensure_folder,
     upload_drive,
     columns_with_validation,
 )
@@ -29,21 +29,15 @@ def get_strain_collection_sheets(service, collection_prefix):
     collection_folder = get_drive_by_name(
         service, f"{collection_prefix}_Collection", folder=True
     )
-    files = (
-        service.files()
-        .list(q=f"'{collection_folder}' in parents")
-        .execute()
-        .get("files", [])
-    )
-    keys = {
-        "strains": (f"{collection_prefix}_strains", False),
-        "oligos": (f"o{collection_prefix}_oligos", False),
-        "plasmids": (f"p{collection_prefix}_plasmids", False),
-        "parts": (f"{collection_prefix}_parts", False),
-        "plasmid_maps": (f"Plasmid_Maps", True),
+    files = list_drive(service, root=collection_folder)
+    return {
+        "root": collection_folder,
+        "strains": ensure_folder(files[f"{collection_prefix}_strains"], False),
+        "oligos": ensure_folder(files[f"o{collection_prefix}_oligos"], False),
+        "plasmids": ensure_folder(files[f"p{collection_prefix}_plasmids"], False),
+        "parts": ensure_folder(files[f"{collection_prefix}_parts"], False),
+        "plasmid_maps": ensure_folder(files[f"Plasmid_Maps"], True),
     }
-    collection = filter_drive(files, keys)
-    return {"root": collection_folder, **collection}
 
 
 def get_next_collection_id(worksheet):
