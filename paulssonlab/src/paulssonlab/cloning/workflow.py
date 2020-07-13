@@ -292,9 +292,6 @@ def _format_addgene_for_spreadsheet(
                 origin = data.get("copy number") or "Unknown"
             else:
                 plasmid_map = get_genbank(seq_url)
-                if len(plasmid_map) != 1:
-                    raise ValueError("expecting one genbank sequence")
-                plasmid_map = plasmid_map[0]
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"
