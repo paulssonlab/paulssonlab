@@ -2,6 +2,7 @@ import re
 import io
 from cytoolz import partial
 from apiclient.http import MediaIoBaseUpload
+from google.api_core.datetime_helpers import from_rfc3339
 
 
 def get_drive_id(url):
@@ -13,10 +14,10 @@ def get_drive_id(url):
 def get_drive_query(service, query):
     response = service.files().list(q=query).execute()
     if "files" not in response or not response["files"]:
-        raise ValueError(f"could not find file/folder '{p}'")
+        raise ValueError(f"could not find file/folder with query '{query}'")
     files = response["files"]
     if len(files) > 1:
-        raise ValueError(f"got multiple files/folders matching name '{p}'")
+        raise ValueError(f"got multiple files/folders matching query '{query}'")
     return files[0]
 
 
@@ -43,42 +44,41 @@ def get_drive_by_path(service, path, root=None, folder=None):
     return root
 
 
-def filter_drive(files, keys):
-    keys_to_id = {}
-    for file in files:
-        key = (file["name"], file["mimeType"] == "application/vnd.google-apps.folder")
-        keys_to_id[key] = file["id"]
-    filtered_files = {}
-    for ref, key in keys.items():
-        if key in keys_to_id:
-            filtered_files[ref] = keys_to_id[key]
-        else:
-            raise ValueError(
-                f"could not find {'folder' if key[1] else 'file'} '{key[0]}'"
-            )
-    return filtered_files
-
-
-def list_drive(service, root=None, query=None):
+def list_drive(service, root=None, query=None, page_size=1000):
     qs = []
     if root:
         qs.append(f"'{root}' in parents")
     if query:
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
-    response = service.files().list(q=q).execute()
-    return _drive_list_to_dict(response)
-
-
-def _drive_list_to_dict(response):
-    files = {}
-    if not "files" in response:
-        return
-    for file in response["files"]:
-        if file["name"] in files:
+    files_service = service.files()
+    req = files_service.list(q=q, pageSize=page_size)
+    files = []
+    while req is not None:
+        doc = req.execute()
+        files.extend(doc.get("files", []))
+        req = files_service.list_next(req, doc)
+    name_to_file = {}
+    for file in files:
+        if file["name"] in name_to_file:
             raise ValueError(f"got duplicate file name in drive list: {file['name']}")
-        files[file["name"]] = file
-    return files
+        name_to_file[file["name"]] = file
+    return name_to_file
+
+
+def ensure_folder(file, is_folder=True):
+    if (file["mimeType"] == "application/vnd.google-apps.folder") != is_folder:
+        raise ValueError(
+            f"expecting {'folder' if is_folder else 'file'} for file '{file['name']}'"
+        )
+    return file["id"]
+
+
+def get_drive_modified_time(service, file_id):
+    res = service.files().get(fileId=file_id, fields="modifiedTime").execute()
+    modified_time = res.get("modifiedTime")
+    if modified_time:
+        return from_rfc3339(modified_time)
 
 
 def upload_drive(

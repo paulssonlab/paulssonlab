@@ -3,8 +3,8 @@ import re
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_name,
-    filter_drive,
     list_drive,
+    ensure_folder,
     upload_drive,
     columns_with_validation,
 )
@@ -29,21 +29,15 @@ def get_strain_collection_sheets(service, collection_prefix):
     collection_folder = get_drive_by_name(
         service, f"{collection_prefix}_Collection", folder=True
     )
-    files = (
-        service.files()
-        .list(q=f"'{collection_folder}' in parents")
-        .execute()
-        .get("files", [])
-    )
-    keys = {
-        "strains": (f"{collection_prefix}_strains", False),
-        "oligos": (f"o{collection_prefix}_oligos", False),
-        "plasmids": (f"p{collection_prefix}_plasmids", False),
-        "parts": (f"{collection_prefix}_parts", False),
-        "plasmid_maps": (f"Plasmid_Maps", True),
+    files = list_drive(service, root=collection_folder)
+    return {
+        "root": collection_folder,
+        "strains": ensure_folder(files[f"{collection_prefix}_strains"], False),
+        "oligos": ensure_folder(files[f"o{collection_prefix}_oligos"], False),
+        "plasmids": ensure_folder(files[f"p{collection_prefix}_plasmids"], False),
+        "parts": ensure_folder(files[f"{collection_prefix}_parts"], False),
+        "plasmid_maps": ensure_folder(files[f"Plasmid_Maps"], True),
     }
-    collection = filter_drive(files, keys)
-    return {"root": collection_folder, **collection}
 
 
 def get_next_collection_id(worksheet):
@@ -85,14 +79,6 @@ def trim_unassigned_ids(worksheet):
 def _trim_unassigned_ids(worksheet, row):
     values = [[""] * (worksheet.rows - row)]
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
-
-
-def construct_plasmids():
-    pass  # TODO
-
-
-def import_parts():
-    pass  # TODO
 
 
 def _insert_rows(sheet, row, entries, default_values):
@@ -258,7 +244,7 @@ def _format_addgene_for_spreadsheet(
         source = data["url"]
         reference = data["how_to_cite"].get("references")
         strain = {
-            "Aliases*": data["name"],
+            "Names": data["name"],
             "Species*": "E. coli",
             #'Genotype*': '',
             "Background*": background,
@@ -300,9 +286,6 @@ def _format_addgene_for_spreadsheet(
                 origin = data.get("copy number") or "Unknown"
             else:
                 plasmid_map = get_genbank(seq_url)
-                if len(plasmid_map) != 1:
-                    raise ValueError("expecting one genbank sequence")
-                plasmid_map = plasmid_map[0]
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"
@@ -313,7 +296,7 @@ def _format_addgene_for_spreadsheet(
                 else:
                     origin = re.sub(r" (?:ori|origin)$", "", origin)
             plasmid = {
-                "Aliases*": data["name"],
+                "Names": data["name"],
                 "Size (bp)": size,
                 "Origin*": origin,
                 "Marker*": marker,
