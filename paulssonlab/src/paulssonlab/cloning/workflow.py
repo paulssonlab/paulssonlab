@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import requests
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_name,
@@ -8,7 +9,7 @@ from paulssonlab.api.google import (
     upload_drive,
     columns_with_validation,
 )
-from paulssonlab.api import get_genbank
+from paulssonlab.api import read_sequence
 from paulssonlab.api.util import PROGRESS_BAR
 
 
@@ -285,7 +286,8 @@ def _format_addgene_for_spreadsheet(
                 size = None
                 origin = data.get("copy number") or "Unknown"
             else:
-                plasmid_map = get_genbank(seq_url)
+                res = requests.get(seq_url)
+                plasmid_map = read_sequence(res.content.decode("utf8"))
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"
