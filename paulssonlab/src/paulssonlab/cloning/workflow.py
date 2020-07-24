@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import requests
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_name,
@@ -8,7 +9,7 @@ from paulssonlab.api.google import (
     upload_drive,
     columns_with_validation,
 )
-from paulssonlab.api import get_genbank
+from paulssonlab.api import read_sequence
 from paulssonlab.api.util import PROGRESS_BAR
 
 
@@ -21,8 +22,6 @@ MARKER_ABBREVIATIONS = {
     "spectinomycin": "Spectinomycin (50 µg/mL)",
     "gentamicin": "Gentamicin (20 µg/ml)",
 }
-
-DEFAULT_VALUES = {"Marker*": "Unknown"}
 
 
 def get_strain_collection_sheets(service, collection_prefix):
@@ -81,12 +80,9 @@ def _trim_unassigned_ids(worksheet, row):
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
 
 
-def _insert_rows(sheet, row, entries, default_values):
+def _insert_rows(sheet, row, entries):
     columns = sheet.get_row(1)
-    values = [
-        [entry.get(col, default_values.get(col, "")) for col in columns]
-        for entry in entries
-    ]
+    values = [[entry.get(col) for col in columns] for entry in entries]
     # we insert at row - 1 because this inserts below the given row number
     sheet.insert_rows(row - 1, number=len(values), values=values)
 
@@ -99,6 +95,8 @@ def import_addgene(
     parts=False,
     strain_overrides=None,
     plasmid_overrides=None,
+    strain_defaults={"Marker*": "Unknown"},
+    plasmid_defaults=None,
     callback=None,
     trim=True,
     service=None,
@@ -110,6 +108,8 @@ def import_addgene(
         progress_bar=progress_bar,
         strain_overrides=strain_overrides,
         plasmid_overrides=plasmid_overrides,
+        strain_defaults=strain_defaults,
+        plasmid_defaults=plasmid_defaults,
         callback=callback,
     )
     # assign LIB/pLIB numbers, add pLIB genotype to strain
@@ -149,10 +149,10 @@ def import_addgene(
                 filename = f"{plasmid_id}.gbk"
                 content = plasmid_map.format("genbank")
                 plasmid_maps[filename] = {"content": content}
-    # add entries to spreadsheets
-    _insert_rows(strain_sheet, strain_row, strains, DEFAULT_VALUES)
+    # add strains to spreadsheet
+    _insert_rows(strain_sheet, strain_row, strains)
     # add plasmids to spreadsheet
-    _insert_rows(plasmid_sheet, plasmid_row, plasmids, DEFAULT_VALUES)
+    _insert_rows(plasmid_sheet, plasmid_row, plasmids)
     # copy sequences to plasmid maps folder
     if service is None:
         service = strain_sheet.client.drive.service
@@ -188,6 +188,8 @@ def _import_addgene_data(
     urls,
     strain_overrides=None,
     plasmid_overrides=None,
+    strain_defaults=None,
+    plasmid_defaults=None,
     callback=None,
     progress_bar=PROGRESS_BAR,
 ):
@@ -205,6 +207,8 @@ def _import_addgene_data(
                 addgene,
                 strain_overrides=strain_overrides,
                 plasmid_overrides=plasmid_overrides,
+                strain_defaults=strain_defaults,
+                plasmid_defaults=plasmid_defaults,
                 callback=callback,
             )
         )
@@ -212,7 +216,12 @@ def _import_addgene_data(
 
 
 def _format_addgene_for_spreadsheet(
-    data, strain_overrides=None, plasmid_overrides=None, callback=None
+    data,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    strain_defaults=None,
+    plasmid_defaults=None,
+    callback=None,
 ):
     if data["item"] == "Kit":
         entries = []
@@ -221,6 +230,8 @@ def _format_addgene_for_spreadsheet(
                 well,
                 strain_overrides=strain_overrides,
                 plasmid_overrides=plasmid_overrides,
+                strain_defaults=strain_defaults,
+                plasmid_defaults=plasmid_defaults,
                 callback=callback,
             )
             if len(entry):  # skip entries for which callback returned False
@@ -265,6 +276,8 @@ def _format_addgene_for_spreadsheet(
             other_notes.append(f"Depositor comments: {data['depositor comments']}")
         other_notes = "\n".join(other_notes) or None
         strain["Other Notes"] = other_notes
+        if strain_defaults:
+            strain = {**strain_defaults, **strain}
         if strain_overrides:
             strain = {**strain, **strain_overrides}
         if data["item"] == "Plasmid":
@@ -285,7 +298,8 @@ def _format_addgene_for_spreadsheet(
                 size = None
                 origin = data.get("copy number") or "Unknown"
             else:
-                plasmid_map = get_genbank(seq_url)
+                res = requests.get(seq_url)
+                plasmid_map = read_sequence(res.content.decode("utf8"))
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"
@@ -306,6 +320,8 @@ def _format_addgene_for_spreadsheet(
             }
             if data.get("purpose"):
                 plasmid["Description"] = data["purpose"]
+            if plasmid_defaults:
+                plasmid = {**plasmid, **plasmid_defaults}
             if plasmid_overrides:
                 plasmid = {**plasmid, **plasmid_overrides}
             entry = dict(strain=strain, plasmid=plasmid, plasmid_map=plasmid_map)

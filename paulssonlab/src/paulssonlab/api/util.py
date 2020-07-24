@@ -26,3 +26,24 @@ def parse_html_table(table, row_parser=_default_parse_html_table_row):
 
 def base_url(url):
     return re.match("^(?:https?://)?(.*[^/]+)/?$", url).group(1).lower()
+
+
+def regex_key(x, pattern, check_duplicates=False):
+    pattern = re.compile(pattern)  # ensure it is compiled
+    no_match = object()
+    match = no_match
+    for k, v in x.items():
+        if pattern.match(k):
+            if check_duplicates:
+                if match == no_match:
+                    match = v
+                else:
+                    raise ValueError(
+                        f"duplicate match found for pattern '{pattern.pattern}'"
+                    )
+            else:
+                return v
+    if match == no_match:
+        raise ValueError(f"no match found for pattern '{pattern.pattern}'")
+    else:
+        return match

@@ -67,6 +67,7 @@ def list_drive(service, root=None, query=None, page_size=1000):
 
 
 def ensure_folder(file, is_folder=True):
+    # could also use file["kind"] == "drive#folder"
     if (file["mimeType"] == "application/vnd.google-apps.folder") != is_folder:
         raise ValueError(
             f"expecting {'folder' if is_folder else 'file'} for file '{file['name']}'"
