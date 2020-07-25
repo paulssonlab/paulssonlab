@@ -39,7 +39,18 @@ def get_strain_collection_sheets(service, collection_prefix):
     }
 
 
-def get_next_collection_id(worksheet):
+def get_next_empty_row(worksheet, skip_columns=0):
+    last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
+    if last_idx is None:
+        return 2
+    else:
+        # increment twice for:
+        # - add one to convert from zero-indexing to one-indexing
+        # - row 1 is header
+        return last_idx + 2
+
+
+def _get_next_empty_row(worksheet, skip_columns=0):
     df = worksheet.get_as_df(has_header=False, empty_value=None)
     df = df[1:]
     has_datavalidation = columns_with_validation(
@@ -49,8 +60,18 @@ def get_next_collection_id(worksheet):
     )
     mask = has_datavalidation[worksheet.title]
     mask += [False] * (len(df.columns) - len(mask))
-    nonempty = ~df.iloc[:, 1:].iloc[:, ~np.array(mask)[1:]].isnull().all(axis=1)
+    nonempty = (
+        ~df.iloc[:, skip_columns:]
+        .iloc[:, ~np.array(mask)[skip_columns:]]
+        .isnull()
+        .all(axis=1)
+    )
     last_idx = nonempty[nonempty].last_valid_index()
+    return last_idx, df
+
+
+def get_next_collection_id(worksheet):
+    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
     if last_idx is None:
         # sheet is empty, initialize at prefix 1
         prefix = worksheet.spreadsheet.title.split("_")[0]
@@ -59,14 +80,13 @@ def get_next_collection_id(worksheet):
         # convert to Python int because
         # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
         last_idx = int(last_idx)
-    last_idx -= 1
-    last_id = df.iloc[last_idx, 0]
+    # ID for last non-empty row
+    last_id = df.iloc[last_idx - 1, 0]
     prefix, index, _ = re.match(r"([A-Za-z]*)(\d+)(\.\d+\w+?)?", str(last_id)).groups()
-    # increment three times for:
-    # - one after last strain number
-    # - one row taken up by header
+    # increment twice for:
     # - add one to convert from zero-indexing to one-indexing
-    row = last_idx + 3
+    # - row 1 is header
+    row = last_idx + 2
     return (prefix, int(index) + 1), row
 
 
