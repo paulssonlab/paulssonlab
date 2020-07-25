@@ -1,4 +1,6 @@
 import re
+from datetime import datetime, date, timezone
+from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import FeatureLocation, ExactPosition
 from paulssonlab.util import sign
@@ -144,15 +146,26 @@ def digest_for_assembly(seq, enzyme, linear=False):
     return _digest_for_assembly(seq, cuts)
 
 
+def _get_seq(seq):
+    if hasattr(seq, "seq"):
+        return seq.seq
+    else:
+        return seq
+
+
 def join_seqs(seqs):
-    # sequences = []
-    # SeqRecord()
-    # every element of seqs could be a Seq or SeqRecord
-    # join all annotations
-    # join all letter_annotations (intersection of all)
-    # assembly = Seq.SeqRecord("", alphabet)
-    # assembly = deepcopy(seqs[0][0])
-    return seqs
+    alphabet = None
+    to_concat = []
+    features = []
+    offset = 0
+    for seq in seqs:
+        to_concat.append(_get_seq(seq))
+        if hasattr(seq, "features"):
+            for feature in seq.features:
+                features.append(feature._shift(offset))
+        offset += len(seq)
+    concatenated_seq = sum(to_concat, Seq("", _get_seq(seqs[0]).alphabet))
+    return SeqRecord(concatenated_seq, features=features)
 
 
 def anneal_oligos():
@@ -182,7 +195,7 @@ def _5prime_overhang(overhang):
         return overhang[0]
 
 
-def assemble_sequences(seqs, linear=True):
+def assemble_golden_gate(seqs, linear=True):
     alphabet = seqs[0][0].seq.alphabet
     if len(seqs) < 2:
         raise ValueError("need at least two sequences to assemble")
@@ -229,5 +242,16 @@ def assemble_sequences(seqs, linear=True):
                     )
     # copy SeqRecords, add annotations for each part?? (including overhangs)
     joined_seq = join_seqs(seqs_to_join)
+    joined_seq.annotations = {
+        "molecule_type": "ds-DNA",
+        "data_file_division": "SYN",
+        "date": datetime.now(timezone.utc).isoformat(),
+        "source": "synthetic DNA construct",
+        "organism": "synthetic DNA construct",
+    }
+    if linear is False:
+        joined_seq.annotations["topology"] = "circular"
+    elif linear:
+        joined_seq.annotations["topology"] = "linear"
     # add circular annotation?
     return joined_seq
