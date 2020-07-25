@@ -5,6 +5,7 @@ import skimage as sk
 import pandas as pd
 import holoviews as hv
 import dask.array as da
+import dask.dataframe as dd
 import xarray as xr
 import h5py
 import pickle
@@ -61,7 +62,9 @@ class kymograph_interactive(kymograph_multifov):
 
     def import_hdf5_interactive(self):
         import_hdf5 = interactive(self.import_hdf5_files, {"manual":True}, all_channels=fixed(self.channels),\
-                                  seg_channel=Dropdown(options=self.channels, value=self.channels[0]),invert=Dropdown(options=[True,False],\
+                                  seg_channel=Dropdown(options=self.channels, value=self.channels[0]),\
+                                  filter_channels=SelectMultiple(options=self.channels),\
+                                  invert=Dropdown(options=[True,False],\
                                   value=False), fov_list=SelectMultiple(options=self.fov_list),t_subsample_step=IntSlider(value=10,\
                                   min=0, max=200, step=1));
         display(import_hdf5)
@@ -234,6 +237,18 @@ class kymograph_interactive(kymograph_multifov):
         fig.tight_layout()
         fig.show()
 
+    def preview_midpoints(self,smoothed_x_percentiles_list):
+        otsu_scaling = self.final_params['Otsu Threshold Scaling']
+        min_threshold = self.final_params['Minimum X Threshold']
+
+        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling,min_threshold)
+        self.plot_midpoints(all_midpoints_list,self.fov_list)
+        x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
+
+        self.all_midpoints_list,self.x_drift_list = (all_midpoints_list,x_drift_list)
+
+        return all_midpoints_list,x_drift_list
+
     def preview_x_percentiles(self,cropped_in_y_list, t, x_percentile, background_kernel_x,smoothing_kernel_x,\
                               otsu_scaling,min_threshold):
 
@@ -256,19 +271,6 @@ class kymograph_interactive(kymograph_multifov):
         all_midpoints_list,x_drift_list = self.preview_midpoints(self.smoothed_x_percentiles_list)
 
         return smoothed_x_percentiles_list,all_midpoints_list,x_drift_list
-
-    def preview_midpoints(self,smoothed_x_percentiles_list):
-        otsu_scaling = self.final_params['Otsu Threshold Scaling']
-        min_threshold = self.final_params['Minimum X Threshold']
-
-        all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling,min_threshold)
-        self.plot_midpoints(all_midpoints_list,self.fov_list)
-        x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
-
-        self.all_midpoints_list,self.x_drift_list = (all_midpoints_list,x_drift_list)
-
-        return all_midpoints_list,x_drift_list
-
 
     def preview_x_percentiles_interactive(self):
         trench_detection = interactive(self.preview_x_percentiles, {"manual":True}, cropped_in_y_list=fixed(self.cropped_in_y_list),t=IntSlider(value=0, min=0, max=self.cropped_in_y_list[0].shape[4]-1, step=1),\
@@ -336,7 +338,6 @@ class kymograph_interactive(kymograph_multifov):
 
         corrected_midpoints_list = self.map_to_fovs(self.get_corrected_midpoints,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr)
 
-
         self.plot_kymographs(cropped_in_x_list,self.fov_list)
         self.plot_midpoints(corrected_midpoints_list,self.fov_list)
 
@@ -379,6 +380,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def process_results(self):
         self.final_params["All Channels"] = self.all_channels
+        self.final_params["Filter Channels"] = self.filter_channels
         self.final_params["Invert"] = self.invert
 
         for key,value in self.final_params.items():
@@ -386,6 +388,111 @@ class kymograph_interactive(kymograph_multifov):
 
     def write_param_file(self):
         with open(self.headpath + "/kymograph.par", "wb") as outfile:
+            pickle.dump(self.final_params, outfile)
+
+class focus_filter:
+    def __init__(self,headpath):
+        self.headpath = headpath
+        self.kymographpath = headpath + "/kymograph"
+        self.df = dd.read_parquet(self.kymographpath + "/metadata")
+
+        self.final_params = {}
+
+    def choose_filter_channel(self,channel):
+        self.final_params["Filter Channel"] = channel
+        self.channel = channel
+
+        if channel == None:
+            self.final_params["Focus Threshold"] = 0.
+            self.final_params["Intensity Threshold"] = 0.
+            self.final_params["Percent Of Kymograph"] = 1.
+
+    def choose_filter_channel_inter(self):
+        channel_options = [column[:-12] for column in self.df.columns.tolist() if column[-11:]=="Focus Score"] + [None]
+
+        choose_channel = interactive(self.choose_filter_channel,{"manual": True},\
+        channel=Dropdown(options=channel_options,value=channel_options[0]))
+        display(choose_channel)
+
+    def subsample_df(self,df,n_samples):
+        ttl_rows = len(df)
+        n_samples = min(n_samples,ttl_rows)
+        frac = min((n_samples/ttl_rows)*1.1,1.)
+        subsampled_df = df.sample(frac=frac, replace=False).compute()[:n_samples]
+        return subsampled_df
+
+    def plot_histograms(self,n_samples=10000):
+        subsampled_df = self.subsample_df(self.df,n_samples)
+        focus_vals = subsampled_df[self.channel + " Focus Score"]
+        self.focus_max = np.max(focus_vals)
+
+        fig, ax = plt.subplots(1, 1)
+        ax.hist(focus_vals,bins=50)
+        ax.set_title("Focus Score Distribution",fontsize=20)
+        ax.set_xlabel("Focus Score",fontsize=15)
+        fig.set_size_inches(9, 6)
+        fig.show()
+
+        intensity_vals = subsampled_df[self.channel + " Mean Intensity"]
+        self.intensity_max = np.max(intensity_vals)
+
+        fig, ax = plt.subplots(1, 1)
+        ax.hist(intensity_vals,bins=50)
+        ax.set_title("Mean Intensity Distribution",fontsize=20)
+        ax.set_xlabel("Mean Intensity",fontsize=15)
+        fig.set_size_inches(9, 6)
+        fig.show()
+
+    def plot_trench_sample(self,df,cmap="Greys_r",title=""):
+        array_list = []
+        for index, row in df.iterrows():
+            file_idx = row["File Index"]
+            row_idx = str(row["row"])
+            trench_idx = row["trench"]
+            img_idx = row["Image Index"]
+
+            with h5py.File(self.kymographpath + "/kymograph_processed_" + str(file_idx) + ".hdf5", "r") as hdf5_handle:
+                array = hdf5_handle[row_idx + "/" + self.channel][trench_idx,img_idx]
+            array_list.append(array)
+        output_array = np.concatenate(np.expand_dims(array_list,axis=0),axis=0)
+        kymo = kymo_handle()
+        kymo.import_wrap(output_array)
+        kymo = kymo.return_unwrap()
+
+        fig, ax = plt.subplots(1, 1)
+        ax.set_title(title,fontsize=20)
+        ax.imshow(kymo,cmap=cmap)
+        fig.set_size_inches(18, 12)
+        fig.show()
+
+    def plot_focus_threshold(self,focus_thr=60, intensity_thr=0, perc_above_thr=1. ,n_images=50):
+        self.final_params["Focus Threshold"] = focus_thr
+        self.final_params["Intensity Threshold"] = intensity_thr
+        self.final_params["Percent Of Kymograph"] = perc_above_thr
+
+        thr_bool = (self.df[self.channel + " Focus Score"]>focus_thr)&(self.df[self.channel + " Mean Intensity"]>intensity_thr)
+
+        above_thr_df = self.df[thr_bool]
+        below_thr_df = self.df[~thr_bool]
+
+        above_thr_df = self.subsample_df(above_thr_df,n_images).sort_index()
+        below_thr_df = self.subsample_df(below_thr_df,n_images).sort_index()
+
+        self.plot_trench_sample(above_thr_df,title="Above Threshold")
+        self.plot_trench_sample(below_thr_df,title="Below Threshold")
+
+    def plot_focus_threshold_inter(self):
+        if self.channel == None:
+            print("No Channel Selected")
+        else:
+            focus_threshold = interactive(self.plot_focus_threshold, {"manual":True}, focus_thr=IntSlider(value=0, min=0, max=self.focus_max, step=1),\
+                                          intensity_thr=IntSlider(value=0, min=0, max=self.intensity_max, step=1),\
+                                          perc_above_thr=FloatSlider(value=1., min=0., max=1., step=0.05),\
+                                         n_images=IntText(value=50,description="Number of images:", disabled=False));
+            display(focus_threshold)
+
+    def write_param_file(self):
+        with open(self.headpath + "/focus_filter.par", "wb") as outfile:
             pickle.dump(self.final_params, outfile)
 
 class fluo_segmentation_interactive(fluo_segmentation):
@@ -694,7 +801,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
                 value=1.,
                 description="Edge Threshold Scaling:",
                 min=0.0,
-                max=2.0,
+                max=10.0,
                 step=0.01,
                 disabled=False,
             ),
@@ -734,7 +841,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
     def plot_marker_mask(self,hess_thr_scale,distance_threshold,border_buffer):
         self.final_params['Hessian Scaling:'] = hess_thr_scale
         self.final_params['Distance Threshold:'] = distance_threshold
-        self.final_params['Border Buffer:'] = distance_threshold
+        self.final_params['Border Buffer:'] = border_buffer
         min_obj_size = self.final_params['Minimum Object Size:']
 
         original_shape = (self.output_array.shape[2],self.output_array.shape[1]*self.output_array.shape[3]) #k,t,y,x
@@ -789,7 +896,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
                     value=self.final_params['Hessian Scaling:'],
                     description="Edge Threshold Scaling:",
                     min=0.0,
-                    max=2.0,
+                    max=10.0,
                     step=0.01,
                     disabled=False,
                 ),
