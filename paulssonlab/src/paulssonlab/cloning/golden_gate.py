@@ -168,6 +168,7 @@ def ligate(seqs, linear=True):
     elif linear:
         joined_seq.annotations["topology"] = "linear"
     # add circular annotation?
+    return joined_seq
 
 
 def assemble(seqs, linear=True):

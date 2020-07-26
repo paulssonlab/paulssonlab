@@ -86,6 +86,3 @@ def anneal_oligos():
     # align, find overhangs
     # add feature to seqrecord with name of part (?)
     pass
-    # return (overhang1, SeqRecord, overhang2)
-
-    return joined_seq
