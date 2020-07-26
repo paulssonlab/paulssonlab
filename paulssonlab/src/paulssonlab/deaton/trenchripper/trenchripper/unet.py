@@ -660,10 +660,14 @@ class UNet_Training_DataLoader:
                 kymodf = kymodf.reset_index()
                 timedf = kymodf.set_index("timepoints").persist()
                 timedf = timedf.loc[t_range[0] : t_range[1]].persist()
+
                 frac = (1.1*num_samples)/len(timedf)
+                frac = min(frac,1.)
 
                 timedf_subset = timedf.sample(frac=frac).compute()
-                timedf_subset = timedf_subset.sample(n=num_samples)
+                adjusted_num_samples = min(len(timedf_subset),num_samples)
+
+                timedf_subset = timedf_subset.sample(n=adjusted_num_samples)
                 timedf_subset = timedf_subset.reset_index()
                 filedf_subset = timedf_subset.set_index("filepath")
                 output_df.append(filedf_subset[:num_samples])
@@ -995,17 +999,17 @@ class UNet_Trainer:
             # For the other 50% of all images, we sample the noise per pixel AND
             # channel. This can change the color (not only brightness) of the
             # pixels.
-#             iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, noise*255)),
+            iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, noise*255)),
 #             # Make some images brighter and some darker.
 #             # In 20% of all cases, we sample the multiplier once per channel,
 #             # which can end up changing the color of the images.
-#             iaa.Multiply(mult_range, per_channel=mult_freq),
-#             iaa.Affine(
-#                 scale={"x": scale_range, "y": scale_range},
-#                 translate_percent={"x": translate_range, "y": translate_range},
-#                 rotate=rotate_range,
-#                 shear={'x':x_shear_range,'y':y_shear_range}
-#             ),
+            iaa.Multiply(mult_range, per_channel=mult_freq),
+            iaa.Affine(
+                scale={"x": scale_range, "y": scale_range},
+                translate_percent={"x": translate_range, "y": translate_range},
+                rotate=rotate_range,
+                shear={'x':x_shear_range,'y':y_shear_range}
+            ),
         ])
         return seq
 

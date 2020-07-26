@@ -6,7 +6,6 @@ import h5py
 import os
 import copy
 import pickle
-import shutil
 import pandas as pd
 import dask.dataframe as dd
 from scipy import ndimage as ndi
@@ -249,8 +248,6 @@ class fluo_segmentation:
                     cell_mask = cell_mask*(img_arr>global_threshold)
                     del img_arr
 
-
-
             except:
                 raise
 #                 cell_mask = np.zeros(img_arr.shape,dtype=bool)
@@ -337,8 +334,13 @@ class fluo_segmentation:
 
 class fluo_segmentation_cluster(fluo_segmentation):
     def __init__(self,headpath,paramfile=True,seg_channel="",bit_max=0,scale_timepoints=False,scaling_percentile=0.9,\
-                 img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,hess_pad=6,global_threshold=25,cell_otsu_scaling=1.,\
-                 local_otsu_r=15,min_obj_size=30,distance_threshold=2):
+                 img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,hess_pad=6,local_thr="otsu",background_thr="triangle",\
+                 global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,min_obj_size=30,\
+                 distance_threshold=2,border_buffer=1):
+
+
+#             local_thr="otsu",background_thr="triangle",window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,border_buffer=1)
+
 
         if paramfile:
             parampath = headpath + "/fluorescent_segmentation.par"
@@ -351,18 +353,22 @@ class fluo_segmentation_cluster(fluo_segmentation):
         scaling_percentile = param_dict["Scaling Percentile:"]
         img_scaling = param_dict["Image Scaling Factor:"]
         smooth_sigma = param_dict['Gaussian Kernel Sigma:']
+        local_thr = param_dict['Local Threshold Method:']
+        background_thr = param_dict['Background Threshold Method:']
         global_threshold = param_dict['Global Threshold:']
-        triangle_threshold_scaling = param_dict['Triangle Threshold Scaling:']
-        cell_otsu_scaling = param_dict['Cell Threshold Scaling:']
-        local_otsu_r = param_dict['Local Otsu Radius:']
+        window_size = param_dict['Local Window Size:']
+        cell_otsu_scaling = param_dict['Otsu Scaling:']
+        niblack_k = param_dict['Niblack K:']
+        background_scaling = param_dict['Background Threshold Scaling:']
         min_obj_size = param_dict['Minimum Object Size:']
         hess_thr_scale = param_dict['Hessian Scaling:']
         distance_threshold = param_dict['Distance Threshold:']
+        border_buffer = param_dict['Border Buffer:']
 
-        super(fluo_segmentation_cluster, self).__init__(bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,\
-                                                        img_scaling=img_scaling,smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,\
-                                                        hess_pad=hess_pad,global_threshold=global_threshold,triangle_threshold_scaling=triangle_threshold_scaling,\
-                                                        cell_otsu_scaling=cell_otsu_scaling,local_otsu_r=local_otsu_r,min_obj_size=min_obj_size,distance_threshold=distance_threshold)
+        super(fluo_segmentation_cluster, self).__init__(bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,img_scaling=img_scaling,\
+                                                        smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,\
+                                                        global_threshold=global_threshold,window_size=window_size,cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,\
+                                                        background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer)
 
         self.headpath = headpath
         self.seg_channel = seg_channel
