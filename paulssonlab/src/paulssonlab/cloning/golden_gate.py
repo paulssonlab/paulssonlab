@@ -26,11 +26,11 @@ def _re_search(enzyme, seq, linear=True):
 
 def _re_search_cuts(binding_locs, enzyme):
     cuts = []
-    for loc, is_upstream in binding_locs:
+    for loc, cut_upstream in binding_locs:
         for cut5, cut3 in ((enzyme.fst5, enzyme.fst3), (enzyme.scd5, enzyme.scd3)):
             if cut5 is None and cut3 is None:
                 continue
-            if is_upstream:
+            if cut_upstream:
                 if cut5 is not None:
                     cut5_loc = loc + cut5
                 else:
@@ -55,7 +55,7 @@ def _re_search_cuts(binding_locs, enzyme):
             else:
                 # is_5prime_overhang = None
                 sense = 0
-            cuts.append((cut5_loc, cut3_loc, sense, is_upstream))
+            cuts.append((cut5_loc, cut3_loc, sense, cut_upstream))
     return cuts
 
 
@@ -66,13 +66,12 @@ def re_search(seq, enzyme, linear=True):
     return sorted([(c[0] % length, c[1] % length, *c[2:]) for c in cuts])
 
 
-def _get_overhang(seq, cut5, cut3, sense):
-    if not sense:
-        loc = cut5
-    else:
+def _get_overhang(seq, cut5, cut3, sense, cut_upstream):
+    if (sense == -1 and not cut_upstream) or (sense == 1 and cut_upstream):
         loc = cut3
-    if hasattr(seq, "seq"):
-        seq = seq.seq  # get Seq if we have a SeqRecord
+    else:
+        loc = cut5
+    seq = get_seq(seq)  # get Seq from SeqRecord, if necessary
     return ((slice_seq(seq, cut5, cut3), sense), loc)
 
 
@@ -82,8 +81,8 @@ def _re_digest(seq, cuts):
     for cut1, cut2 in zip(cuts[:-1], cuts[1:]):
         # check for sequences with inward-facing RE binding sites
         if cut1[3] == True and cut2[3] == False:
-            overhang1, loc1 = _get_overhang(seq, *cut1[:3])
-            overhang2, loc2 = _get_overhang(seq, *cut2[:3])
+            overhang1, loc1 = _get_overhang(seq, *cut1)
+            overhang2, loc2 = _get_overhang(seq, *cut2)
             seq = slice_seq(seq, loc1, loc2)
             seqs.append((seq, overhang1, overhang2))
     seqs = sorted(seqs, key=lambda x: len(x[0]))
