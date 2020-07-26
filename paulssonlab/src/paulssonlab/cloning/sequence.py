@@ -60,7 +60,7 @@ def slice_seq(seq, start, end, annotation_start=None, annotation_end=None):
     return new_seq
 
 
-def _get_seq(seq):
+def get_seq(seq):
     if hasattr(seq, "seq"):
         return seq.seq
     else:
@@ -73,12 +73,12 @@ def join_seqs(seqs):
     features = []
     offset = 0
     for seq in seqs:
-        to_concat.append(_get_seq(seq))
+        to_concat.append(get_seq(seq))
         if hasattr(seq, "features"):
             for feature in seq.features:
                 features.append(feature._shift(offset))
         offset += len(seq)
-    concatenated_seq = sum(to_concat, Seq("", _get_seq(seqs[0]).alphabet))
+    concatenated_seq = sum(to_concat, Seq("", get_seq(seqs[0]).alphabet))
     return SeqRecord(concatenated_seq, features=features)
 
 

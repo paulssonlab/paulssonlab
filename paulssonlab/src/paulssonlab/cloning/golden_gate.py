@@ -2,7 +2,12 @@ import re
 from datetime import datetime, date, timezone
 from copy import deepcopy
 from Bio.SeqFeature import SeqFeature, FeatureLocation
-from paulssonlab.cloning.sequence import slice_seq, reverse_complement, join_seqs
+from paulssonlab.cloning.sequence import (
+    slice_seq,
+    reverse_complement,
+    join_seqs,
+    get_seq,
+)
 from paulssonlab.util import sign
 
 
@@ -13,7 +18,8 @@ def _re_search(enzyme, seq, linear=True):
     if not linear:
         seq = seq + seq[1 : enzyme.size]
     re_sites = [
-        (i.start(), i.group(1) is not None) for i in re.finditer(compsite, str(seq.seq))
+        (i.start(), i.group(1) is not None)
+        for i in re.finditer(compsite, str(get_seq(seq)))
     ]
     return re_sites
 
@@ -92,7 +98,10 @@ def re_digest(seq, enzyme, linear=False):
 def _check_seq_compatibility(seq1, seq2):
     _, overhang1_1, overhang1_2 = seq1
     _, overhang2_1, overhang2_2 = seq2
-    return (overhang1_2[0], overhang1_2[1]) == overhang2_1
+    return (overhang1_2[0].upper(), overhang1_2[1]) == (
+        overhang2_1[0].upper(),
+        overhang2_1[1],
+    )
 
 
 def _reverse_complement_overhangs(seq_with_overhangs):
@@ -176,14 +185,17 @@ def assemble(seqs, linear=True):
     for seq, enzyme, part_name, part_type in seqs:
         subseqs = re_digest(seq, enzyme, linear=linear)
         part, overhang1, overhang2 = subseqs[0]
-        part = deepcopy(part)
-        label = SeqFeature(
-            FeatureLocation(-len(overhang1[0]), len(part) + len(overhang2[0])),
-            type=part_type,
-        )
-        label.qualifiers["label"] = [part_name]
-        features = [feature for feature in part.features if feature.type != "source"]
-        part.features = [label, *features]
+        if hasattr(part, "features"):
+            part = deepcopy(part)
+            label = SeqFeature(
+                FeatureLocation(-len(overhang1[0]), len(part) + len(overhang2[0])),
+                type=part_type,
+            )
+            label.qualifiers["label"] = [part_name]
+            features = [
+                feature for feature in part.features if feature.type != "source"
+            ]
+            part.features = [label, *features]
         seqs_to_assemble.append((part, overhang1, overhang2))
     assembly = ligate(seqs_to_assemble, linear=linear)
     return assembly
