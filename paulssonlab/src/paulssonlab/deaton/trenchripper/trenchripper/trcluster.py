@@ -115,4 +115,5 @@ def transferjob(sourcedir,targetdir,single_file=False):
         rsynccmd = "rsync -r '" + sourcedir + "/' '" + targetdir + "'"
     wrapcmd = mkdircmd + " && " + rsynccmd
     cmd = "sbatch -p transfer -t 0-12:00 --wrap=\"" + wrapcmd + "\""
+    print(cmd)
     os.system(cmd)
