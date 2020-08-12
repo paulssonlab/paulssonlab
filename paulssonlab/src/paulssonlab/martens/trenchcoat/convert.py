@@ -23,6 +23,10 @@ warnings.simplefilter(action="ignore", category=tables.NaturalNameWarning)
 # - Before copying data, check that the channels are all the same in all the files:
 #   otherwise, it's inappropriate to convert these files together!
 # - Could also enforce same dimensions, if this helps with browsing e.g. using Napari?
+#
+# FIXME:
+# - Bug when running under WSL. Get repeats of the same dir entry when using scandir iterator (when linking H5 files), BUT this doesn't happen if I comment out the apply_async function. Major WTF moment here. The apply_async should never affect the linking subroutine!! This bug doesn't happen when running natively under Linux or Windows.
+# - Is the metadata file not linking properly?
 
 
 def make_nd2_list(nd2_dir):
@@ -232,7 +236,7 @@ def main_conversion_function(hdf_dir, nd2_dir, num_cpu, frames, fields_of_view):
 
     pbar_frames.close()
 
-    ## Link the files
+    # Link the files
     print("Linking files...")
     link_files(hdf_dir, frames, fields_of_view)
 

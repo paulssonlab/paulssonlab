@@ -9,6 +9,8 @@ from ipywidgets import fixed, interactive
 
 # TODO: finish the basic dual or multi-channel thresholding algo
 
+### Single threshold
+
 
 def run_single_threshold(stack, ch_to_index, params):
     """
@@ -29,6 +31,9 @@ def run_single_threshold_interactive(stack, ch_to_index, params):
 
 def single_threshold(data, cutoff):
     return data < cutoff
+
+
+### Niblack on fluorescence, & thresholding on phase
 
 
 def run_niblack_phase_segmentation(stack, ch_to_index, params):
@@ -184,6 +189,9 @@ def niblack_phase_segmentation(
     return result
 
 
+### Old version
+
+
 def niblack_phase_segmentation_old(
     stack_fl,
     stack_ph,
@@ -289,7 +297,7 @@ def niblack_phase_segmentation_old(
     return result
 
 
-###
+### Niblack on fluorescence
 
 
 def run_niblack_segmentation(stack, ch_to_index, params):
