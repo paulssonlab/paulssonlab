@@ -9,6 +9,7 @@ from trench_measurements import main_trench_measurements_function
 from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
 from napari_browse_kymographs import main_kymograph_browser_function
+from corrections import main_corrections_function
 
 
 def range_expand(range_string):
@@ -106,12 +107,41 @@ def browse_nd2(in_dir, napari_settings_file):
     help="Napari settings file (YAML).",
     show_default=True,
 )
-def browse_hdf5(images_file, masks_file, regions_file, napari_settings_file):
+@click.option(
+    "-b",
+    "--camera-biases-file",
+    "camera_biases_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with camera biases for each channel.",
+)
+@click.option(
+    "-F",
+    "--flatfield-corrections-file",
+    "flatfield_corrections_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with flatfield corrections for each channel.",
+)
+def browse_hdf5(
+    images_file,
+    masks_file,
+    regions_file,
+    napari_settings_file,
+    camera_biases_file,
+    flatfield_corrections_file,
+):
     """
     Use Napari to browse a dataset & to visualize trenches and cell masks.
+    camera_biases_file, flatfield_corrections_file are paths to HDF5 files containing channel-specific correction values.
     """
     main_hdf5_browser_function(
-        images_file, masks_file, regions_file, napari_settings_file
+        images_file,
+        masks_file,
+        regions_file,
+        napari_settings_file,
+        camera_biases_file,
+        flatfield_corrections_file,
     )
 
 
@@ -393,11 +423,61 @@ def kymographs():
     help="HDF5 file containing image regions. [default: analyze entire image, no regions]",
     show_default=True,
 )  # FIXME what should the default be???
-def trench_measurements(no_args_is_help=True):
+def trench_measurements():
     """
     Analyze whole trenches, without cell segmentation.
     """
     main_trench_measurements_function(out_dir, in_file, num_cpu, regions_file)
+
+
+@cli.command()  # no_args_is_help=True)
+@click.option(
+    "-o",
+    "--out-file",
+    "out_file",
+    required=True,
+    default="corrections.h5",
+    type=str,
+    help="Output HDF5 file with corrections matrices.",
+    show_default=True,
+)
+@click.option(
+    "-i",
+    "--in-file",
+    "in_file",
+    required=True,
+    default="BLANKS/data.h5",
+    type=str,
+    help="Input HDF5 file with images.",
+    show_default=True,
+)
+# TODO process channels in parallel?
+# @click.option('-n', '--num-cpu', 'num_cpu', required=False, default=None, type=click.IntRange(1, None, clamp=True), help='Number of CPUs to use. [default: all CPUs]', show_default=False)
+@click.option(
+    "-D",
+    "--dark-channel",
+    "dark_channel",
+    required=False,
+    default=None,
+    type=str,
+    help="Name of dark channel (cannot be used with -B).",
+    show_default=False,
+)
+@click.option(
+    "-B",
+    "--background-values-file",
+    "bg_file",
+    required=False,
+    default=None,
+    type=str,
+    help="YAML file with background values (cannot be used with -D).",
+    show_default=False,
+)
+def corrections(in_file, out_file, dark_channel, bg_file):
+    """
+    Generate camera bias and flat field corrections matrices from images.
+    """
+    main_corrections_function(in_file, out_file, dark_channel, bg_file)
 
 
 ###

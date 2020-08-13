@@ -290,6 +290,21 @@ def make_ch_to_img_stack_regions(h5file, z_node, channels, regions):
 
         image_node = h5file.get_node(z_node, ch)
 
+        # TODO: here, add optional camera bias & flat-field corrections to the image, before
+        # loading the regions.
+        # Biases: 1 per channel
+        # Flat-field corrections: 1 per channel (could re-use the same ones, if necessary)
+        # Allow entries to be none? (and skippable?)
+        # OR do this *after* loading, to take advantage of chunking.
+        #
+        # # min_row, min_col, max_row, max_col
+        # for j, r in enumerate(regions):
+        #     stack[..., j, i] = image_node[regions[0] : regions[2], regions[1] : regions[3]].astype(numpy.float32, casting="safe", copy=False)
+        #     # Add warning if values become negative? How to tell without checking all pixels? (could be expensive)
+        #     # could check if min val is > 0 after running operation.
+        #     stack[..., j, i] -= camera_bias[channel]
+        #     stack[..., j, i] /= f_field[channe][regions[0] : regions[2], regions[1] : regions[3]]
+
         # min_row, min_col, max_row, max_col
         for j, r in enumerate(regions):
             # NOTE Does copy flag actually make a difference?

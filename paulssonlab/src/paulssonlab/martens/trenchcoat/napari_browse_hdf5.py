@@ -196,6 +196,48 @@ def add_masks_layer(
             viewer.add_labels(megastack)
 
 
+def load_values(in_file):
+    """
+    Load values from an HDF5 file into a dict. Useful for flatfield corrections & camera biases.
+    TODO find a better name for this subroutine
+    """
+    if in_file:
+        dict = {}
+
+        h5 = tables.open_file(camera_biases, "r")
+        for node in h5.iter_nodes("/"):
+            key = node._v_name.decode("utf-8")
+            dict[key] = node.read()
+        h5.close()
+
+    else:
+        dict = None
+
+    return dict
+
+    # if camera_biases:
+    # biases = {}
+
+    # cam_bias_h5 = tables.open_file(camera_biases, "r")
+    # for node in cam_bias_h5.iter_nodes("/"):
+    # key = node._v_name.decode("utf-8")
+    # biases[key] = node.read()
+    # cam_bias_h5.close()
+    # else:
+    # biases = None
+
+    # if flatfield_corrections:
+    # flatfields = {}
+
+    # flat_fields_h5 = tables.open_file(flatfield_corrections, "r")
+    # for node in cam_bias.iter_nodes("/"):
+    # key = node._v_name.decode("utf-8")
+    # flatfields[key] = node.read()
+    # flat_fields_h5.close()
+    # else:
+    # flatfields = None
+
+
 def add_image_layers(
     h5file,
     height,
@@ -206,6 +248,8 @@ def add_image_layers(
     viewer,
     channels,
     layer_params,
+    camera_biases_file,
+    flatfield_corrections_file,
 ):
     """
     Input an HDF5 file with images,
@@ -214,16 +258,37 @@ def add_image_layers(
     channel names,
     layer params.
 
+    camera_biases_file: use to create a dict (input channel, output scalar or array to be subtracted from image) [if no bias, set to zero]
+    flatfield_corrections_file: use to create a dict (input channel, output array for image to be divided by) [if no correction, set to 1.0]
+    TODO: determine whether it's faster or simpler to set zero & one values for default, or to skip computation. For now, do it with zero and one.
+
     Adds all the image layers to the Napari viewer.
     """
     # Define a function for lazily loading a single image from the h5 file
     lazy_load_img = delayed(load_img)
+
+    # Load the camera biases & flatfield corrections. Can return None, in which case no correction will be applied.
+    biases = load_values(camera_biases_file)
+    flatfields = load_values(flatfield_corrections_file)
 
     # Iterate the H5 file images & lazily load them into a dask array
     file_nodes = [x._v_name for x in h5file.list_nodes("/Images")]
 
     for c in channels:
         c = c.decode("utf-8")
+
+        # If they weren't defined, then define them here
+        # No camera bias correction, so subtract zero.
+        if biases:
+            bias = biases[c]
+        else:
+            bias = 0.0
+
+        # No flat-field inhomogeneity correction, so divide by 1.0.
+        if flatfields:
+            ffc = flatfields[c]
+        else:
+            ffc = 1.0
 
         # File nodes
         # FIXME what order to iterate? do they need to be sorted?
@@ -242,8 +307,11 @@ def add_image_layers(
                             file, fov, frame, z
                         )
                         node = h5file.get_node(path)
+                        # FIXME problem here: what if camera_biases is None? Then we can't index it!
                         arr = dask.array.from_delayed(
-                            lazy_load_img(node, c, height, width, numpy.float32),
+                            lazy_load_img(
+                                node, c, height, width, numpy.float32, bias, ffc
+                            ),
                             shape=(height, width),  # FIXME or width,height?
                             dtype=numpy.float32,
                         )
@@ -357,12 +425,13 @@ def metadata_array_equal(h5file, attribute):
     return zeroth_attribute
 
 
-def load_img(node, channel, height, width, dtype):
+def load_img(node, channel, height, width, dtype, camera_bias, flatfield_correction):
     """
     Attempt to load an image, and if it cannot be found, return a zero'ed array instead.
+    Apply camera bias and flat field corrections.
     """
     try:
-        return node._f_get_child(channel).read()
+        return (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
 
     except:
         # FIXME width,height?
