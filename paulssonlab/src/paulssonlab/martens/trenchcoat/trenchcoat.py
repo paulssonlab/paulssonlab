@@ -108,40 +108,22 @@ def browse_nd2(in_dir, napari_settings_file):
     show_default=True,
 )
 @click.option(
-    "-b",
-    "--camera-biases-file",
-    "camera_biases_file",
+    "-C",
+    "--corrections-file",
+    "corrections_file",
     required=False,
     type=str,
-    help="Input HDF5 file with camera biases for each channel.",
-)
-@click.option(
-    "-F",
-    "--flatfield-corrections-file",
-    "flatfield_corrections_file",
-    required=False,
-    type=str,
-    help="Input HDF5 file with flatfield corrections for each channel.",
+    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 def browse_hdf5(
-    images_file,
-    masks_file,
-    regions_file,
-    napari_settings_file,
-    camera_biases_file,
-    flatfield_corrections_file,
+    images_file, masks_file, regions_file, corrections_file, napari_settings_file
 ):
     """
     Use Napari to browse a dataset & to visualize trenches and cell masks.
     camera_biases_file, flatfield_corrections_file are paths to HDF5 files containing channel-specific correction values.
     """
     main_hdf5_browser_function(
-        images_file,
-        masks_file,
-        regions_file,
-        napari_settings_file,
-        camera_biases_file,
-        flatfield_corrections_file,
+        images_file, masks_file, regions_file, corrections_file, napari_settings_file
     )
 
 

@@ -204,9 +204,9 @@ def load_values(in_file):
     if in_file:
         dict = {}
 
-        h5 = tables.open_file(camera_biases, "r")
+        h5 = tables.open_file(in_file, "r")
         for node in h5.iter_nodes("/"):
-            key = node._v_name.decode("utf-8")
+            key = node._v_name
             dict[key] = node.read()
         h5.close()
 
@@ -214,28 +214,6 @@ def load_values(in_file):
         dict = None
 
     return dict
-
-    # if camera_biases:
-    # biases = {}
-
-    # cam_bias_h5 = tables.open_file(camera_biases, "r")
-    # for node in cam_bias_h5.iter_nodes("/"):
-    # key = node._v_name.decode("utf-8")
-    # biases[key] = node.read()
-    # cam_bias_h5.close()
-    # else:
-    # biases = None
-
-    # if flatfield_corrections:
-    # flatfields = {}
-
-    # flat_fields_h5 = tables.open_file(flatfield_corrections, "r")
-    # for node in cam_bias.iter_nodes("/"):
-    # key = node._v_name.decode("utf-8")
-    # flatfields[key] = node.read()
-    # flat_fields_h5.close()
-    # else:
-    # flatfields = None
 
 
 def add_image_layers(
@@ -248,8 +226,7 @@ def add_image_layers(
     viewer,
     channels,
     layer_params,
-    camera_biases_file,
-    flatfield_corrections_file,
+    corrections_file,
 ):
     """
     Input an HDF5 file with images,
@@ -258,18 +235,18 @@ def add_image_layers(
     channel names,
     layer params.
 
-    camera_biases_file: use to create a dict (input channel, output scalar or array to be subtracted from image) [if no bias, set to zero]
-    flatfield_corrections_file: use to create a dict (input channel, output array for image to be divided by) [if no correction, set to 1.0]
+    corrections_file: use to create a dict (input channel, output array for image to be divided by) [if no correction, set to 1.0]
     TODO: determine whether it's faster or simpler to set zero & one values for default, or to skip computation. For now, do it with zero and one.
 
     Adds all the image layers to the Napari viewer.
     """
+    # Open & parse the corrections file
+    corrections = None
+    if corrections_file:
+        corrections = load_values(corrections_file)
+
     # Define a function for lazily loading a single image from the h5 file
     lazy_load_img = delayed(load_img)
-
-    # Load the camera biases & flatfield corrections. Can return None, in which case no correction will be applied.
-    biases = load_values(camera_biases_file)
-    flatfields = load_values(flatfield_corrections_file)
 
     # Iterate the H5 file images & lazily load them into a dask array
     file_nodes = [x._v_name for x in h5file.list_nodes("/Images")]
@@ -278,16 +255,17 @@ def add_image_layers(
         c = c.decode("utf-8")
 
         # If they weren't defined, then define them here
+        # TODO allow specifying the name of the channel?
+        try:
+            bias = corrections["DARK"]
         # No camera bias correction, so subtract zero.
-        if biases:
-            bias = biases[c]
-        else:
+        except:
             bias = 0.0
 
+        try:
+            ffc = corrections[c]
         # No flat-field inhomogeneity correction, so divide by 1.0.
-        if flatfields:
-            ffc = flatfields[c]
-        else:
+        except:
             ffc = 1.0
 
         # File nodes
@@ -439,7 +417,7 @@ def load_img(node, channel, height, width, dtype, camera_bias, flatfield_correct
 
 
 def main_hdf5_browser_function(
-    images_file, masks_file, regions_file, napari_settings_file
+    images_file, masks_file, regions_file, corrections_file, napari_settings_file
 ):
     """
     Use Napari to browse an HDF5 file with microscope images arranged in a hierarchy:
@@ -489,6 +467,7 @@ def main_hdf5_browser_function(
             viewer,
             channels,
             layer_params,
+            corrections_file,
         )
 
         # Masks layers
