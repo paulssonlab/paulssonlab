@@ -72,8 +72,10 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
 
     for c in channels:
         c = c.decode("utf-8")
-        # FIXME Or is it height, width?
-        stack = numpy.empty(shape=(total, width, height), dtype=numpy.float32)
+        # FIXME Or is it width, height?
+        stack = numpy.empty(
+            shape=(height, width, total), dtype=numpy.float32, order="F"
+        )
 
         i = 0
         for n in h5file.iter_nodes(h5file.root.Images):
@@ -90,14 +92,14 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
                             )
                         )
                         img = img_node.read()
-                        stack[i] = img
+                        stack[..., i] = img
                         i += 1
 
         # Compute the mean
         # TODO / FIXME: would it be more memory efficient to sum then manually, and then divide by the number?
         # Would this come at the expense of precision? (not sure how numpy handles the mean calculation)
         # Don't have to worry about overflow, because we are only working with float32.
-        means[c] = stack.mean(axis=0)
+        means[c] = stack.mean(axis=2)
 
     h5file.close()
 
