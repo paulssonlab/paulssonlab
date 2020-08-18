@@ -7,6 +7,8 @@ Open a shell, `cd` to the directory where you want to clone the repo, and run th
 /bin/bash -c "$(curl -fsSL https://gist.githubusercontent.com/shenker/11cccba44d843c5c135a152f55ef9d51/raw/paulssonlab-install.sh)"
 ```
 
+If you are running this on O2, you *must* do this in an interactive job. You can start one with `irun1`. If you have not configured your O2 account with the Paulsson lab [dotfiles](https://github.com/paulssonlab/dotfiles), do that first.
+
 Note that you need a `bash`-compatible shell installed (this is a given on Linux/macOS systems, but on Windows you will need to use WSL or scoop to set up `bash`).
 
 ## How to make a new project
