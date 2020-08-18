@@ -2,7 +2,7 @@
 bold="$(tput bold)"
 normal="$(tput sgr0)"
 # if [[ -n "$HOSTNAME" && $HOSTNAME =~ login\d\d\.o2\.rc\.hms\.harvard\.edu ]]; then
-if [[ -n "$HOSTNAME" && $HOSTNAME =~ login[0-9][0-9]\.o2\.rc\.hms\.harvard\.edu ]]; then
+if [[ $HOSTNAME =~ login[0-9][0-9]\.o2\.rc\.hms\.harvard\.edu && ! $SLURMD_NODENAME =~ compute-.* ]]; then
     echo "⏱  ${bold}You are trying to run a long-running command on an O2 login node.${normal}"
     echo "You should probably abort and run"
     echo "    irun1"
