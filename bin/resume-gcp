@@ -1,0 +1,23 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${bin_dir}/../cloud/common.sh"
+#echo "❌  ${bold}Getting credentials for GCP cluster ${CLUSTER_NAME}...${normal}"
+##########
+#gcloud container clusters get-credentials "$CLUSTER_NAME"
+helm install paulssonlab-gcp "${root}/cloud/helm-charts/dask" \
+    -f "${root}/cloud/values.yaml" \
+    --set scheduler.resources.limits.cpu="${DASK_SCHEDULER_CPU}" \
+    --set scheduler.resources.limits.memory="${DASK_SCHEDULER_MEM}" \
+    --set scheduler.resources.requests.cpu="${DASK_SCHEDULER_CPU}" \
+    --set scheduler.resources.requests.memory="${DASK_SCHEDULER_MEM}" \
+    --set worker.resources.limits.cpu="${DASK_WORKER_CPU}" \
+    --set worker.resources.limits.memory="${DASK_WORKER_MEM}" \
+    --set worker.resources.requests.cpu="${DASK_WORKER_CPU}" \
+    --set worker.resources.requests.memory="${DASK_WORKER_MEM}" \
+    --set worker.threads_per_worker="${DASK_WORKER_THREADS}" \
+    --set jupyter.resources.limits.cpu="${JUPYTER_CPU}" \
+    --set jupyter.resources.limits.memory="${JUPYTER_MEM}" \
+    --set jupyter.resources.requests.cpu="${JUPYTER_CPU}" \
+    --set jupyter.resources.requests.memory="${JUPYTER_MEM}"

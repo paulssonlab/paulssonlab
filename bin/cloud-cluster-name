@@ -1,0 +1,19 @@
+#!/bin/sh
+CLUSTER_NAME="${CLUSTER_NAME:-$1}"
+if [ ! -z "$CLUSTER_NAME" ]; then
+    echo "$CLUSTER_NAME"
+    exit
+fi
+if [ -z "$ECOMMONS_ID" ]; then
+    echo "❌  \$ECOMMONS_ID must be defined." 1>&2
+    exit 1
+fi
+parent_dir="$(basename "$(pwd)")"
+# FROM: https://unix.stackexchange.com/questions/473514/replace-all-non-alphanumerics-with-underscore
+parent_dir="${parent_dir//[^[:alnum:]]/_}"
+parent_parent_dir="$(basename "$(dirname "$(pwd)")")"
+parent_parent_dir="${parent_parent_dir//[^[:alnum:]]/_}"
+sha1="$(pwd | shasum | cut -c 1-6)"
+CLUSTER_NAME="${ECOMMONS_ID}-${parent_parent_dir}-${parent_dir}-${sha1}" # jqs1-cloning-webhooks-au7o5u
+# TODO: this failure condition will never be true
+echo "$CLUSTER_NAME"

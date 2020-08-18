@@ -1,14 +1,15 @@
 import numpy as np
 import re
+import requests
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_name,
-    filter_drive,
     list_drive,
+    ensure_folder,
     upload_drive,
     columns_with_validation,
 )
-from paulssonlab.api import get_genbank
+from paulssonlab.api import read_sequence
 from paulssonlab.api.util import PROGRESS_BAR
 
 
@@ -22,31 +23,34 @@ MARKER_ABBREVIATIONS = {
     "gentamicin": "Gentamicin (20 µg/ml)",
 }
 
-DEFAULT_VALUES = {"Marker*": "Unknown"}
-
 
 def get_strain_collection_sheets(service, collection_prefix):
     collection_folder = get_drive_by_name(
         service, f"{collection_prefix}_Collection", folder=True
     )
-    files = (
-        service.files()
-        .list(q=f"'{collection_folder}' in parents")
-        .execute()
-        .get("files", [])
-    )
-    keys = {
-        "strains": (f"{collection_prefix}_strains", False),
-        "oligos": (f"o{collection_prefix}_oligos", False),
-        "plasmids": (f"p{collection_prefix}_plasmids", False),
-        "parts": (f"{collection_prefix}_parts", False),
-        "plasmid_maps": (f"Plasmid_Maps", True),
+    files = list_drive(service, root=collection_folder)
+    return {
+        "root": collection_folder,
+        "strains": ensure_folder(files[f"{collection_prefix}_strains"], False),
+        "oligos": ensure_folder(files[f"o{collection_prefix}_oligos"], False),
+        "plasmids": ensure_folder(files[f"p{collection_prefix}_plasmids"], False),
+        "parts": ensure_folder(files[f"{collection_prefix}_parts"], False),
+        "plasmid_maps": ensure_folder(files[f"Plasmid_Maps"], True),
     }
-    collection = filter_drive(files, keys)
-    return {"root": collection_folder, **collection}
 
 
-def get_next_collection_id(worksheet):
+def get_next_empty_row(worksheet, skip_columns=0):
+    last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
+    if last_idx is None:
+        return 2
+    else:
+        # increment twice for:
+        # - add one to convert from zero-indexing to one-indexing
+        # - row 1 is header
+        return last_idx + 2
+
+
+def _get_next_empty_row(worksheet, skip_columns=0):
     df = worksheet.get_as_df(has_header=False, empty_value=None)
     df = df[1:]
     has_datavalidation = columns_with_validation(
@@ -56,21 +60,33 @@ def get_next_collection_id(worksheet):
     )
     mask = has_datavalidation[worksheet.title]
     mask += [False] * (len(df.columns) - len(mask))
-    nonempty = ~df.iloc[:, 1:].iloc[:, ~np.array(mask)[1:]].isnull().all(axis=1)
+    nonempty = (
+        ~df.iloc[:, skip_columns:]
+        .iloc[:, ~np.array(mask)[skip_columns:]]
+        .isnull()
+        .all(axis=1)
+    )
     last_idx = nonempty[nonempty].last_valid_index()
-    # convert to Python int because
-    # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-    last_idx = int(last_idx)
+    return last_idx, df
+
+
+def get_next_collection_id(worksheet):
+    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
     if last_idx is None:
-        last_idx = len(nonempty)
-    last_idx -= 1
-    last_id = df.iloc[last_idx, 0]
+        # sheet is empty, initialize at prefix 1
+        prefix = worksheet.spreadsheet.title.split("_")[0]
+        return (prefix, 1), 2
+    else:
+        # convert to Python int because
+        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+        last_idx = int(last_idx)
+    # ID for last non-empty row
+    last_id = df.iloc[last_idx - 1, 0]
     prefix, index, _ = re.match(r"([A-Za-z]*)(\d+)(\.\d+\w+?)?", str(last_id)).groups()
-    # increment three times for:
-    # - one after last strain number
-    # - one row taken up by header
+    # increment twice for:
     # - add one to convert from zero-indexing to one-indexing
-    row = last_idx + 3
+    # - row 1 is header
+    row = last_idx + 2
     return (prefix, int(index) + 1), row
 
 
@@ -84,20 +100,9 @@ def _trim_unassigned_ids(worksheet, row):
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
 
 
-def construct_plasmids():
-    pass
-
-
-def import_parts():
-    pass
-
-
-def _insert_rows(sheet, row, entries, default_values):
+def _insert_rows(sheet, row, entries):
     columns = sheet.get_row(1)
-    values = [
-        [entry.get(col, default_values.get(col, "")) for col in columns]
-        for entry in entries
-    ]
+    values = [[entry.get(col) for col in columns] for entry in entries]
     # we insert at row - 1 because this inserts below the given row number
     sheet.insert_rows(row - 1, number=len(values), values=values)
 
@@ -108,12 +113,25 @@ def import_addgene(
     plasmid_sheet,
     plasmid_maps_folder,
     parts=False,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    strain_defaults={"Marker*": "Unknown"},
+    plasmid_defaults=None,
+    callback=None,
     trim=True,
     service=None,
     overwrite=True,
     progress_bar=PROGRESS_BAR,
 ):
-    data = _import_addgene_data(urls, progress_bar=progress_bar)
+    data = _import_addgene_data(
+        urls,
+        progress_bar=progress_bar,
+        strain_overrides=strain_overrides,
+        plasmid_overrides=plasmid_overrides,
+        strain_defaults=strain_defaults,
+        plasmid_defaults=plasmid_defaults,
+        callback=callback,
+    )
     # assign LIB/pLIB numbers, add pLIB genotype to strain
     (strain_prefix, strain_number), strain_row = get_next_collection_id(strain_sheet)
     (plasmid_prefix, plasmid_number), plasmid_row = get_next_collection_id(
@@ -151,10 +169,10 @@ def import_addgene(
                 filename = f"{plasmid_id}.gbk"
                 content = plasmid_map.format("genbank")
                 plasmid_maps[filename] = {"content": content}
-    # add entries to spreadsheets
-    _insert_rows(strain_sheet, strain_row, strains, DEFAULT_VALUES)
+    # add strains to spreadsheet
+    _insert_rows(strain_sheet, strain_row, strains)
     # add plasmids to spreadsheet
-    _insert_rows(plasmid_sheet, plasmid_row, plasmids, DEFAULT_VALUES)
+    _insert_rows(plasmid_sheet, plasmid_row, plasmids)
     # copy sequences to plasmid maps folder
     if service is None:
         service = strain_sheet.client.drive.service
@@ -187,7 +205,13 @@ def import_addgene(
 
 
 def _import_addgene_data(
-    urls, strain_overrides=None, plasmid_overrides=None, progress_bar=PROGRESS_BAR
+    urls,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    strain_defaults=None,
+    plasmid_defaults=None,
+    callback=None,
+    progress_bar=PROGRESS_BAR,
 ):
     if isinstance(urls, str):
         urls = [urls]
@@ -203,18 +227,37 @@ def _import_addgene_data(
                 addgene,
                 strain_overrides=strain_overrides,
                 plasmid_overrides=plasmid_overrides,
+                strain_defaults=strain_defaults,
+                plasmid_defaults=plasmid_defaults,
+                callback=callback,
             )
         )
     return data
 
 
 def _format_addgene_for_spreadsheet(
-    data, strain_overrides=None, plasmid_overrides=None
+    data,
+    strain_overrides=None,
+    plasmid_overrides=None,
+    strain_defaults=None,
+    plasmid_defaults=None,
+    callback=None,
 ):
     if data["item"] == "Kit":
         entries = []
         for well in data["wells"]:
-            entry = _format_addgene_for_spreadsheet(well)[0]
+            entry = _format_addgene_for_spreadsheet(
+                well,
+                strain_overrides=strain_overrides,
+                plasmid_overrides=plasmid_overrides,
+                strain_defaults=strain_defaults,
+                plasmid_defaults=plasmid_defaults,
+                callback=callback,
+            )
+            if len(entry):  # skip entries for which callback returned False
+                entry = entry[0]
+            else:
+                continue
             kit_source = f" (from kit {data['url']})"
             if "strain" in entry:
                 entry["strain"]["Source*"] += kit_source
@@ -232,7 +275,7 @@ def _format_addgene_for_spreadsheet(
         source = data["url"]
         reference = data["how_to_cite"].get("references")
         strain = {
-            "Aliases*": data["name"],
+            "Names": data["name"],
             "Species*": "E. coli",
             #'Genotype*': '',
             "Background*": background,
@@ -243,6 +286,8 @@ def _format_addgene_for_spreadsheet(
             "Reference": reference,
         }
         other_notes = []
+        if data.get("well"):
+            other_notes.append(f"Well: {data['well']}")
         if data.get("growth instructions"):
             other_notes.append(f"Growth instructions: {data['growth instructions']}")
         if data.get("growth temperature") and "37" not in data["growth temperature"]:
@@ -251,6 +296,8 @@ def _format_addgene_for_spreadsheet(
             other_notes.append(f"Depositor comments: {data['depositor comments']}")
         other_notes = "\n".join(other_notes) or None
         strain["Other Notes"] = other_notes
+        if strain_defaults:
+            strain = {**strain_defaults, **strain}
         if strain_overrides:
             strain = {**strain, **strain_overrides}
         if data["item"] == "Plasmid":
@@ -271,10 +318,8 @@ def _format_addgene_for_spreadsheet(
                 size = None
                 origin = data.get("copy number") or "Unknown"
             else:
-                plasmid_map = get_genbank(seq_url)
-                if len(plasmid_map) != 1:
-                    raise ValueError("expecting one genbank sequence")
-                plasmid_map = plasmid_map[0]
+                res = requests.get(seq_url)
+                plasmid_map = read_sequence(res.content.decode("utf8"))
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"
@@ -285,7 +330,7 @@ def _format_addgene_for_spreadsheet(
                 else:
                     origin = re.sub(r" (?:ori|origin)$", "", origin)
             plasmid = {
-                "Aliases*": data["name"],
+                "Names": data["name"],
                 "Size (bp)": size,
                 "Origin*": origin,
                 "Marker*": marker,
@@ -293,10 +338,22 @@ def _format_addgene_for_spreadsheet(
                 "Source*": source,
                 "Reference": reference,
             }
+            if data.get("purpose"):
+                plasmid["Description"] = data["purpose"]
+            if plasmid_defaults:
+                plasmid = {**plasmid, **plasmid_defaults}
             if plasmid_overrides:
                 plasmid = {**plasmid, **plasmid_overrides}
-            return [dict(strain=strain, plasmid=plasmid, plasmid_map=plasmid_map)]
+            entry = dict(strain=strain, plasmid=plasmid, plasmid_map=plasmid_map)
         else:
-            return [dict(strain=strain)]
+            if data.get("purpose"):
+                strain["Description"] = data["purpose"]
+            entry = dict(strain=strain)
+        if callback:
+            entry = callback(entry, data)
+        if entry is False:  # if callback returns False, skip entry
+            return []
+        else:
+            return [entry]
     else:
         raise ValueError(f"unknown Addgene item type: {data['item']}")

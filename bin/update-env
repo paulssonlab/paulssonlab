@@ -6,5 +6,6 @@ if [ ! -f "$envyml" ]; then
     echo "❌  ${bold}Environment file ${envyml} not found, aborting.${normal}"
     exit 1
 fi
+check-long-running-process || exit $?
 conda env update --prune -f "$envyml"
 prepare-env "$envyml"

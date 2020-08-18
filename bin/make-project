@@ -1,6 +1,7 @@
 #!/bin/sh
 bold="$(tput bold)"
 normal="$(tput sgr0)"
+check-long-running-process || exit $?
 envname="$1"
 if [ -z "$envname" ]; then
     read -p "💬  ${bold}Name of conda environment to create: ${normal}" envname
@@ -30,8 +31,8 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - numpy
   - nodejs
+  - numpy
   - pandas
   - pip
   - pre-commit

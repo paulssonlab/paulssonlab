@@ -1,0 +1,17 @@
+apiVersion: scalingpolicy.kope.io/v1alpha1
+kind: ScalingPolicy
+metadata:
+  name: fluentd-gcp-scaling-policy
+  namespace: kube-system
+spec:
+  containers:
+  - name: fluentd-gcp
+    resources:
+      requests:
+      - resource: cpu
+        base: 2e-2
+      - resource: memory
+        base: 180M
+      limits:
+      - resource: memory
+        base: 400M

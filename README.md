@@ -7,6 +7,8 @@ Open a shell, `cd` to the directory where you want to clone the repo, and run th
 /bin/bash -c "$(curl -fsSL https://gist.githubusercontent.com/shenker/11cccba44d843c5c135a152f55ef9d51/raw/paulssonlab-install.sh)"
 ```
 
+If you are running this on O2, you *must* do this in an interactive job. You can start one with `irun1`. If you have not configured your O2 account with the Paulsson lab [dotfiles](https://github.com/paulssonlab/dotfiles), do that first.
+
 Note that you need a `bash`-compatible shell installed (this is a given on Linux/macOS systems, but on Windows you will need to use WSL or scoop to set up `bash`).
 
 ## How to make a new project
@@ -50,12 +52,13 @@ If you push changes to your personal fork, you may want to pull them from anothe
 To import an existing git repo into the main `paulssonlab` monorepo (preserving commit history), first we rewrite the commit history to clean up Python and Jupyter files. Then we use `git-filter-repo` to rewrite history to move all files to a subdirectory. Then we merge this repo's commit history with this repo.
 1. `cd path/to/paulssonlab/.nbcleanse`
 2. The `nbcleanse` environment has been created automatically for you; activate it with `conda activate nbcleanse`. If you need to create it, run `conda env create -n nbcleanse -f environment.yml` before activating it.
-3. `cd ../..`
-4. `git clone git@github.com:shenker/old-repo.git`
-5. `cd old-repo`
-6. Filter old-repo with `python ../paulssonlab/.nbcleanse/nbcleanse.py filter-repo` (this will take a few minutes).
-7. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
-8. Then merge this repo:
+3. Ensure that the `nbcleanse` environment is activated and run `pip install git-filter-repo`
+4. `cd ../..`
+5. `git clone git@github.com:shenker/old-repo.git`
+6. `cd old-repo`
+7. Filter old-repo with `python ../paulssonlab/.nbcleanse/nbcleanse.py filter-repo` (this will take a few minutes).
+8. Run `git filter-repo --strip-blobs-bigger-than 2M --to-subdirectory-filter shenker/old-repo`
+9. Then merge this repo:
 ```
 cd path/to/paulssonlab # this repo
 git remote add -f old-repo path/to/old-repo

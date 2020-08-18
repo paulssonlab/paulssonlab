@@ -1,0 +1,73 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${bin_dir}/../cloud/common.sh"
+cat << EOF
+🛠  ${bold}Will create a cluster with the following specifications:${normal}
+
+Cluster name:               ${CLUSTER_NAME}
+Zone:                       ${CLUSTER_ZONE}
+
+Core machine type:          ${CORE_MACHINE_TYPE}
+Jupyter machine type:       ${JUPYTER_MACHINE_TYPE}
+Dask worker machine type:   ${DASK_MACHINE_TYPE}
+
+Jupyter                     cpu: ${JUPYTER_CPU} mem: ${JUPYTER_MEM}
+Dask scheduler              cpu: ${DASK_SCHEDULER_CPU} mem: ${DASK_SCHEDULER_MEM}
+Dask worker                 cpu: ${DASK_WORKER_CPU} mem: ${DASK_WORKER_MEM}
+
+EOF
+read -n 1 -p "📊  ${bold}Creating this cluster may take 10-15 minutes. Do you want to proceed?${normal} [y/N] " answer
+echo
+case ${answer:0:1} in
+    y|Y )
+        :
+    ;;
+    * )
+        exit 1
+    ;;
+esac
+echo "🛠  ${bold}Creating cluster ${CLUSTER_NAME} and core node pool...${normal}"
+gcloud container clusters create "$CLUSTER_NAME" \
+    --zone "$CLUSTER_ZONE" \
+    --enable-ip-alias \
+    --machine-type="$CORE_MACHINE_TYPE" \
+    --num-nodes 1
+# jupyter-pool
+echo "📓  ${bold}Creating node pool jupyter-pool...${normal}"
+JUPYTER_TAINTS="${JUPYTER_TAINTS:-node-purpose=jupyter:NoSchedule}"
+JUPYTER_LABELS="${JUPYTER_LABELS:-node-purpose=jupyter}"
+gcloud container node-pools create jupyter-pool \
+    --cluster="$CLUSTER_NAME" \
+    --zone="$CLUSTER_ZONE" \
+    --machine-type="$JUPYTER_MACHINE_TYPE" \
+    --disk-type=pd-ssd \
+    --num-nodes=0 \
+    --enable-autoscaling --min-nodes=0 --max-nodes=1 \
+    --node-taints="$JUPYTER_TAINTS" \
+    --node-labels="$JUPYTER_LABELS"
+# dask-pool
+echo "🏊‍♂  ${bold}Creating node pool dask-worker-pool...${normal}"
+DASK_TAINTS="${DASK_TAINTS:-node-purpose=worker:NoSchedule}"
+DASK_LABELS="${DASK_LABELS:-node-purpose=worker}"
+gcloud container node-pools create dask-worker-pool \
+    --cluster="$CLUSTER_NAME" \
+    --zone="$CLUSTER_ZONE" \
+    --preemptible \
+    --machine-type="$DASK_MACHINE_TYPE" \
+    --disk-type=pd-ssd \
+    --num-nodes=0 \
+    --enable-autoscaling --min-nodes=0 --max-nodes=3 \
+    --node-taints="$DASK_TAINTS" \
+    --node-labels="$DASK_LABELS"
+echo "🌐  ${bold}Disabling kube-dns autoscaling...${normal}"
+kubectl scale --replicas=0 deployment/kube-dns-autoscaler --namespace=kube-system
+kubectl scale --replicas=1 deployment/kube-dns --namespace=kube-system
+echo "🇪🇺  ${bold}Reducing resource requests for fluentd...${normal}"
+kubectl apply -f "${root}/cloud/minimal_fluentd.yaml"
+echo "🎼  ${bold}Setting autoscaling profile...${normal}"
+gcloud beta container clusters update jqs1-paulssonlab-cloud-e55d24 \
+    --async \
+    --autoscaling-profile=optimize-utilization
+resume-gcp

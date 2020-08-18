@@ -12,7 +12,7 @@ dependencies:
   - clustalo
   - cytoolz
   - google-api-python-client
-  - google-cloud-sdk
+  - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
   - mafft
@@ -28,6 +28,7 @@ dependencies:
       - primer3plus
       - requests-html
       - pygsheets
+      - pyppeteer
       - docformatter
   - pre-commit
   - pytoml

@@ -6,6 +6,7 @@ if [ ! -f "$envyml" ]; then
     echo "❌  Environment file ${envyml} not found, aborting."
     exit 1
 fi
+check-long-running-process || exit $?
 pth_contents="${root}/paulssonlab/src"
 pth_file="$(python -c 'import site; print(site.getsitepackages()[0])')/paulssonlab.pth"
 echo "📦  ${bold}Adding paulssonlab package to PYTHONPATH: ${normal}writing \"${pth_contents}\" to $pth_file"

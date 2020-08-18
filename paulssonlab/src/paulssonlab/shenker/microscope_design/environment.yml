@@ -1,0 +1,26 @@
+name: microscope_design
+channels:
+  - pyviz
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - bokeh
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - nd2reader
+  - nodejs
+  - numba
+  - numpy
+  - pandas
+  - pint
+  - pip
+  - pre-commit
+  - scikit-image
+  - scipy
+  - xarray
+  - xlrd
