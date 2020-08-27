@@ -1,22 +1,18 @@
 name: marlin_libraries
 channels:
-  - pyviz
   - conda-forge
   - bioconda
   - defaults
 dependencies:
   - black
-  - bokeh
-  - holoviews
-  - hvplot
-  - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
   - minimap2
   - nodejs
   - numpy
+  - openssl=1.0
   - pandas
   - pip
   - pre-commit
-  - python=3.8
+  - samtools

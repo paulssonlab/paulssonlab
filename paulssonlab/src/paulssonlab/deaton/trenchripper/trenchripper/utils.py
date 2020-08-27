@@ -4,7 +4,6 @@ import h5py
 import shutil
 import os
 import ast
-import h5py_cache
 
 import pandas as pd
 from copy import deepcopy

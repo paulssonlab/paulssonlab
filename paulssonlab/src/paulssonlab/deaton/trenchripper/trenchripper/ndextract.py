@@ -36,12 +36,12 @@ class hdf5_fov_extractor:
         else:
             exp_metadata,fov_metadata = ndmeta_handle.get_metadata()
 
-        if t_range is not None:
+        if t_range != None:
             exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]
             exp_metadata["num_frames"] = len(exp_metadata["frames"])
             fov_metadata = fov_metadata.loc[pd.IndexSlice[:,slice(t_range[0],t_range[1])],:]  #4 -> 70
 
-        if fov_list is not None:
+        if fov_list != None:
             fov_metadata = fov_metadata.loc[list(fov_list)]
             exp_metadata["fields_of_view"] = list(fov_list)
 
@@ -168,7 +168,7 @@ class hdf5_fov_extractor:
         pause_for_extract = dask_controller.daskclient.gather(extracted_futures,errors='skip')
 
         futures_name_list = ["extract file: " + str(file_idx) for file_idx in file_list]
-        failed_files = [futures_name_list[k] for k,item in enumerate(extracted_futures) if item.status is not "finished"]
+        failed_files = [futures_name_list[k] for k,item in enumerate(extracted_futures) if item.status != "finished"]
         failed_file_idx = [int(item.split(":")[1]) for item in failed_files]
         outdf = self.meta_handle.read_df("global",read_metadata=False)
 
@@ -178,7 +178,7 @@ class hdf5_fov_extractor:
 
         outdf  = outdf.drop(failed_fovs)
 
-        if self.t_range is not None:
+        if self.t_range != None:
             outdf = outdf.reset_index(inplace=False)
             outdf["timepoints"] = outdf["timepoints"] - self.t_range[0]
             outdf = outdf.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
@@ -225,7 +225,7 @@ class nd_metadata_handler:
         num_frames = exp_metadata['num_frames']
         num_images_expected = num_fovs*num_frames
 
-        if img_metadata.x_data is not None:
+        if img_metadata.x_data != None:
             x = np.reshape(img_metadata.x_data,(-1,num_fovs)).T
             y = np.reshape(img_metadata.y_data,(-1,num_fovs)).T
             z = np.reshape(img_metadata.z_data,(-1,num_fovs)).T
@@ -327,7 +327,7 @@ class tiff_extractor:
         for f in tiff_files:
             match = parser.search(f)
             # ignore any files that don't match the regex
-            if match is not None:
+            if match != None:
                 # Add to dictionary
                 fov_frame_dict = match.named
                 for key, value in fov_frame_dict.items():
@@ -384,12 +384,12 @@ class tiff_extractor:
 
         exp_metadata,fov_metadata = self.get_metadata(self.tiffpath,self.channels,parsestr=self.parsestr,zero_base_keys=self.zero_base_keys)
 
-        if t_range is not None:
+        if t_range != None:
             exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]
             exp_metadata["num_frames"] = len(exp_metadata["frames"])
             fov_metadata = fov_metadata.loc[pd.IndexSlice[:,slice(t_range[0],t_range[1])],:]  #4 -> 70
 
-        if fov_list is not None:
+        if fov_list != None:
             fov_metadata = fov_metadata.loc[list(fov_list)]
             exp_metadata["fields_of_view"] = list(fov_list)
 
@@ -482,7 +482,7 @@ class tiff_extractor:
         pause_for_extract = dask_controller.daskclient.gather(extracted_futures,errors='skip')
 
         futures_name_list = ["extract file: " + str(file_idx) for file_idx in file_list]
-        failed_files = [futures_name_list[k] for k,item in enumerate(extracted_futures) if item.status is not "finished"]
+        failed_files = [futures_name_list[k] for k,item in enumerate(extracted_futures) if item.status != "finished"]
         failed_file_idx = [int(item.split(":")[1]) for item in failed_files]
         outdf = self.meta_handle.read_df("global",read_metadata=False)
 
@@ -492,7 +492,7 @@ class tiff_extractor:
 
         outdf  = outdf.drop(failed_fovs)
 
-        if self.t_range is not None:
+        if self.t_range != None:
             outdf = outdf.reset_index(inplace=False)
             outdf["timepoints"] = outdf["timepoints"] - self.t_range[0]
             outdf = outdf.set_index(["fov","timepoints"], drop=True, append=False, inplace=False)
