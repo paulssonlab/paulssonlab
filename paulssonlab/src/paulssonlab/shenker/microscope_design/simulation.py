@@ -153,6 +153,46 @@ def draw_excitation_line(
         return xr.DataArray(img, coords=dict(x=xs, y=ys), dims=["ex", "y", "x"])
 
 
+def laser_spectrum(
+    center_wavelength,
+    bins,
+    shape="gaussian",
+    tbwp=None,
+    duration=None,
+    fwhm=None,
+    sigma=None,
+):
+    spectral_width = (lmbda**2 / (u.speed_of_light * temporal_fwhm)).to("nm")
+    # laser_cwl = 730
+    # temporal_fwhm = 110 * u.femtoseconds
+    # spectral_width = (lmbda**2/(u.speed_of_light * temporal_fwhm)).to("nm")
+    # tbwp = 0.6
+    # laser_sigma = tbwp * spectral_width / (2 * np.sqrt(2 * np.log(2)))
+    laser_bandwidth = (
+        200 * 1 / u.cm
+    )  # (tbwp/(u.speed_of_light * temporal_fwhm)).to("cm^-1")
+    laser_fwhm = (laser_bandwidth * (laser_cwl * u.nm) ** 2).to("nm")
+    laser_sigma = laser_fwhm / (2 * np.sqrt(2 * np.log(2)))
+    if shape == "gaussian":
+        if tbwp is None:
+            tbwp = 0.44
+        return scipy.stats.norm.pdf(bins, center_wavelength, spectral_sigma)
+    elif shape == "sech":
+        if tbwp is None:
+            tbwp = 0.315
+        sech_alpha = sech_spectral_fwhm / np.arccosh(np.sqrt(2))
+        return (
+            1
+            / (
+                np.sqrt(sech_alpha)
+                * np.cosh(2 * (bins - center_wavelength) / sech_alpha)
+            )
+            ** 2
+        )
+    else:
+        raise ValueError("expected one of: gaussian, sech")
+
+
 def clean_multiindex_csv(df):
     columns = pd.DataFrame(df.columns.tolist())
     columns.loc[columns[0].str.startswith("Unnamed:"), 0] = np.nan
@@ -167,15 +207,13 @@ def clean_multiindex_csv(df):
 def read_filter_spectra(filename):
     filters_all = clean_multiindex_csv(pd.read_csv(filename, header=[2, 3]).iloc[:, 1:])
     filters = {}
-    filter_peaks = {}
     for pos in filters_all.columns.levels[0]:
         name = float(re.sub(r"(?:Filter|Sample 2E) @ ([\d.]+) mm", r"\1", pos))
         filters[name] = filters_all[pos].set_index(filters_all[pos].columns[0])
         filters[name].columns = ["transmission"]
         filters[name].index.name = "wavelength"
         filters[name] /= 100  # convert to fraction
-        filter_peaks[name] = filters[name].iloc[:, 0].idxmax()
-    return filters, filter_peaks
+    return filters
 
 
 def read_thorlabs(filename):
