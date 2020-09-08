@@ -68,8 +68,8 @@ def spectral_sampling_ratio(
     return ssr
 
 
-def beam_compression(angles, thetas, n1, n2):
-    center_wavelength_idx = thetas.shape[1] // 2
+def beam_compression_doublet(thetas):
+    nwaves = thetas.shape[1]
     numer = (
         np.abs(np.cos(thetas[1]))
         * np.abs(np.cos(thetas[3]))
@@ -79,6 +79,52 @@ def beam_compression(angles, thetas, n1, n2):
         np.abs(np.cos(thetas[0]))
         * np.abs(np.cos(thetas[2]))
         * np.abs(np.cos(thetas[4]))
+    )
+    K = numer[nwaves // 2] / denom[nwaves // 2]
+    return K
+
+
+def beam_compression_damici(thetas):  # TODO
+    nwaves = thetas.shape[1]
+    numer = (
+        np.abs(np.cos(thetas[1]))
+        * np.abs(np.cos(thetas[3]))
+        * np.abs(np.cos(thetas[5]))
+        * np.abs(np.cos(thetas[7]))
+    )
+    denom = (
+        np.abs(np.cos(thetas[0]))
+        * np.abs(np.cos(thetas[2]))
+        * np.abs(np.cos(thetas[4]))
+        * np.abs(np.cos(thetas[6]))
+    )
+    K = numer[nwaves // 2] / denom[nwaves // 2]
+    return K
+
+
+def beam_compression(thetas):
+    print(thetas.shape)
+    center_wavelength_idx = thetas.shape[1] // 2
+    abscostheta = np.abs(np.cos(thetas))
+    K = np.product(abscostheta[1::2], axis=0) / np.product(abscostheta[:-1:2], axis=0)
+    K2 = beam_compression_damici(thetas)
+    print("K", K[center_wavelength_idx], K2)
+    return K[center_wavelength_idx]
+
+
+def beam_compression_triplet(thetas):
+    center_wavelength_idx = thetas.shape[1] // 2
+    numer = (
+        np.abs(np.cos(thetas[1]))
+        * np.abs(np.cos(thetas[3]))
+        * np.abs(np.cos(thetas[5]))
+        * np.abs(np.cos(thetas[7]))
+    )
+    denom = (
+        np.abs(np.cos(thetas[0]))
+        * np.abs(np.cos(thetas[2]))
+        * np.abs(np.cos(thetas[4]))
+        * np.abs(np.cos(thetas[6]))
     )
     K = numer[center_wavelength_idx] / denom[center_wavelength_idx]
     return K
@@ -122,7 +168,7 @@ def err_singlet(angles, n1, deltaT_target, angle_limit):
     return merit_err
 
 
-def calc_delta_doublet(angles, n1, n2):
+def calc_delta_doublet(angles, n1, n2, system="doublet"):
     theta0 = 0.0
     alpha1 = angles[0]
     alpha2 = angles[1]
@@ -132,33 +178,55 @@ def calc_delta_doublet(angles, n1, n2):
     theta2 = theta1p - alpha1
     theta2p = np.arcsin((n1 / n2) * np.sin(theta2))
     theta3 = theta2p - alpha2
-    theta3p = np.arcsin(n2 * np.sin(theta3))
-    theta4 = theta3p + 0.5 * alpha2
-
-    delta_spectrum = theta0 - theta4
-    thetas = np.array(
-        [
-            theta1 * np.ones(np.size(n1)),
-            theta1p,
-            theta2,
-            theta2p,
-            theta3,
-            theta3p,
-            theta4,
-        ]
-    )
-
+    if system == "doublet":
+        theta3p = np.arcsin(n2 * np.sin(theta3))
+        theta4 = theta3p + 0.5 * alpha2
+        delta_spectrum = theta0 - theta4
+        thetas = np.array(
+            [
+                theta1 * np.ones(np.size(n1)),
+                theta1p,
+                theta2,
+                theta2p,
+                theta3,
+                theta3p,
+                theta4,
+            ]
+        )
+    elif system == "double-amici":
+        theta3p = np.arcsin((n2 / n1) * np.sin(theta3))
+        theta4 = theta3p - alpha1
+        theta4p = np.arcsin(n1 * np.sin(theta4))
+        theta5 = theta4p + beta1
+        delta_spectrum = theta0 - theta5
+        thetas = np.array(
+            [
+                theta1 * np.ones(np.size(n1)),
+                theta1p,
+                theta2,
+                theta2p,
+                theta3,
+                theta3p,
+                theta4,
+                theta4p,
+                theta5,
+            ]
+        )
+    else:
+        raise NotImplementedError
     return (delta_spectrum, thetas)
 
 
-def err_doublet(angles, n1, n2, deltaC_target, deltaT_target, merit, angle_limit):
-    (delta_spectrum, thetas) = calc_delta_doublet(angles, n1, n2)
+def err_doublet(
+    angles, n1, n2, deltaC_target, deltaT_target, merit, angle_limit, system="doublet"
+):
+    (delta_spectrum, thetas) = calc_delta_doublet(angles, n1, n2, system=system)
 
     ## If TIR occurs in the design (producing NaNs in the spectrum), then give a
     ## hard error: return a large error which has nothing to do with the (invalid)
     ## performance data.
-    if any(isnan(delta_spectrum)):
-        return 0.1 * sum(isnan(delta_spectrum))
+    if np.any(np.isnan(delta_spectrum)):
+        return 0.1 * np.sum(np.isnan(delta_spectrum))
 
     if merit == "chromaticity":
         deltaC_err = (delta_spectrum[np.size(delta_spectrum) // 2] - deltaC_target) ** 2
@@ -171,7 +239,7 @@ def err_doublet(angles, n1, n2, deltaC_target, deltaT_target, merit, angle_limit
     elif merit == "dev_linearityK":
         NL_err = 100.0 * nonlinearity_error(delta_spectrum)
         deltaT_err = ((delta_spectrum[0] - delta_spectrum[-1]) - deltaT_target) ** 2
-        K = beam_compression(angles, thetas, n1, n2)
+        K = beam_compression(thetas)
         K_err = 0.01 * (K - 1.0) ** 2
         merit_err = deltaT_err + NL_err + K_err
     else:
@@ -189,7 +257,7 @@ def err_doublet(angles, n1, n2, deltaC_target, deltaT_target, merit, angle_limit
     return merit_err
 
 
-def calc_delta_damici(angles, n1, n2, n3):
+def calc_delta_triplet(angles, n1, n2, n3):
     theta0 = 0.0
     lim = pi / 2.1
     alpha1 = angles[0]
@@ -226,7 +294,7 @@ def calc_delta_damici(angles, n1, n2, n3):
 
 
 def err_damici(angles, n1, n2, n3, deltaC_target, deltaT_target, merit, angle_limit):
-    (delta_spectrum, thetas) = calc_delta_damici(angles, n1, n2, n3)
+    (delta_spectrum, thetas) = calc_delta_triplet(angles, n1, n2, n3)
 
     merit_err = 0.0
 
@@ -258,7 +326,7 @@ def err_damici(angles, n1, n2, n3, deltaC_target, deltaT_target, merit, angle_li
         deltaT_err = (
             (delta_spectrum.max() - delta_spectrum.min()) - deltaT_target
         ) ** 2
-        K = beam_compression_damici(angles, thetas, n1, n2, n3)
+        K = beam_compression_triplet(thetas)
         K_err = 0.0025 * (K - 1.0) ** 2
         merit_err += deltaC_err + deltaT_err + NL_err + K_err
     elif merit == "dev_linearity":
@@ -272,7 +340,7 @@ def err_damici(angles, n1, n2, n3, deltaC_target, deltaT_target, merit, angle_li
         deltaT_err = (
             (delta_spectrum.max() - delta_spectrum.min()) - deltaT_target
         ) ** 2
-        K = beam_compression_damici(angles, thetas, n1, n2, n3)
+        K = beam_compression_triplet(thetas)
         K_err = 0.0025 * (K - 1.0) ** 2
         merit_err += deltaT_err + NL_err + K_err
     elif merit == "old_linearity":
@@ -364,7 +432,7 @@ def err_triplet(angles, n1, n2, deltaC_target, deltaT_target, merit, angle_limit
     elif merit == "dev_linearityK":
         NL_err = 100.0 * nonlinearity_error(delta_spectrum)
         deltaT_err = ((delta_spectrum[0] - delta_spectrum[-1]) - deltaT_target) ** 2
-        K = beam_compression(angles, thetas, n1, n2)
+        K = beam_compression(thetas)
         K_err = 0.01 * (K - 1.0) ** 2
         merit_err = deltaT_err + NL_err + K_err
     else:
@@ -407,8 +475,16 @@ def optimize_singlet(w, n1, dispersion_target, sampling_domain="wavelength"):
 
 
 def optimize_doublet(
-    w, n1, n2, dispersion_target, merit="dev_linearityK", sampling_domain="wavelength"
+    w,
+    n1,
+    n2,
+    dispersion_target,
+    system="doublet",
+    merit="dev_linearityK",
+    sampling_domain="wavelength",
 ):
+    if system not in ("doublet", "double-amici"):
+        raise ValueError(f"unknown system: {system}")
     if merit == "dev_linearity" or merit == "dev_linearityK":
         deviation_target = np.nan
     angle_limit = np.deg2rad(85)
@@ -422,13 +498,13 @@ def optimize_doublet(
         # initial_angles = array([deltaT_target, -deltaT_target])
         initial_angles = np.array([1, -1]) * deltaT_target
     results = fmin(
-        err2,
+        err_doublet,
         initial_angles,
-        args=(n1, n2, deltaC_target, deltaT_target, merit, angle_limit),
+        args=(n1, n2, deltaC_target, deltaT_target, merit, angle_limit, system),
         disp=0,
     )
     angles = np.asarray([results[0], results[1]])
-    (delta_spectrum, thetas) = calc_delta2(angles, n1, n2)
+    (delta_spectrum, thetas) = calc_delta_doublet(angles, n1, n2, system=system)
     if np.any(np.isnan(thetas)):
         raise ValueError
 
@@ -445,7 +521,7 @@ def optimize_doublet(
     alpha2 = angles[1]
     NL = 10000.0 * nonlinearity(delta_spectrum)
     SSR = spectral_sampling_ratio(w, delta_spectrum, sampling_domain=sampling_domain)
-    K = beam_compression(angles, thetas, n1, n2)
+    K = beam_compression(thetas)
     ## Now use the two-coeff version of the polynomial fit; the nonlin "remainder"
     ## should not subtract out the second-order coeff, as the three-coeff version does.
     (temp1, temp2, remainder) = get_poly_coeffs(delta_spectrum)
