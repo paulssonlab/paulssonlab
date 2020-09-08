@@ -176,12 +176,12 @@ def get_n(material, interpolation="linear"):
         if data is not None:
             n_func = partial(formula_func, data["coefficients"])
             return n_func
-    data = material["DATA"].get("tabular n", None)
+    data = material["DATA"].get("tabulated n", None)
     if data is None:
-        data = material["DATA"].get("tabular nk", None)
+        data = material["DATA"].get("tabulated nk", None)
     if data is None:
         raise ValueError(
-            f"material {material['name']} missing refractive index coefficients and tabular data"
+            f"material {material['name']} missing refractive index coefficients and tabulated data"
         )
     table = data["data"]
     return interp1d(
@@ -190,12 +190,12 @@ def get_n(material, interpolation="linear"):
 
 
 def get_k(material, interpolation="linear"):
-    data = material["DATA"].get("tabular k", None)
+    data = material["DATA"].get("tabulated k", None)
     if data is None:
-        data = material["DATA"].get("tabular nk", None)
+        data = material["DATA"].get("tabulated nk", None)
     if data is None:
         raise ValueError(
-            f"material {material['name']} missing extinction coefficient tabular data"
+            f"material {material['name']} missing extinction coefficient tabulated data"
         )
     table = data["data"]
     return interp1d(
