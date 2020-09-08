@@ -23,5 +23,6 @@ dependencies:
   - pyyaml
   - scikit-image
   - scipy
+  - tqdm
   - xarray
   - xlrd

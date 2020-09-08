@@ -68,66 +68,11 @@ def spectral_sampling_ratio(
     return ssr
 
 
-def beam_compression_doublet(thetas):
-    nwaves = thetas.shape[1]
-    numer = (
-        np.abs(np.cos(thetas[1]))
-        * np.abs(np.cos(thetas[3]))
-        * np.abs(np.cos(thetas[5]))
-    )
-    denom = (
-        np.abs(np.cos(thetas[0]))
-        * np.abs(np.cos(thetas[2]))
-        * np.abs(np.cos(thetas[4]))
-    )
-    K = numer[nwaves // 2] / denom[nwaves // 2]
-    return K
-
-
-def beam_compression_damici(thetas):  # TODO
-    nwaves = thetas.shape[1]
-    numer = (
-        np.abs(np.cos(thetas[1]))
-        * np.abs(np.cos(thetas[3]))
-        * np.abs(np.cos(thetas[5]))
-        * np.abs(np.cos(thetas[7]))
-    )
-    denom = (
-        np.abs(np.cos(thetas[0]))
-        * np.abs(np.cos(thetas[2]))
-        * np.abs(np.cos(thetas[4]))
-        * np.abs(np.cos(thetas[6]))
-    )
-    K = numer[nwaves // 2] / denom[nwaves // 2]
-    return K
-
-
 def beam_compression(thetas):
-    print(thetas.shape)
     center_wavelength_idx = thetas.shape[1] // 2
     abscostheta = np.abs(np.cos(thetas))
     K = np.product(abscostheta[1::2], axis=0) / np.product(abscostheta[:-1:2], axis=0)
-    K2 = beam_compression_damici(thetas)
-    print("K", K[center_wavelength_idx], K2)
     return K[center_wavelength_idx]
-
-
-def beam_compression_triplet(thetas):
-    center_wavelength_idx = thetas.shape[1] // 2
-    numer = (
-        np.abs(np.cos(thetas[1]))
-        * np.abs(np.cos(thetas[3]))
-        * np.abs(np.cos(thetas[5]))
-        * np.abs(np.cos(thetas[7]))
-    )
-    denom = (
-        np.abs(np.cos(thetas[0]))
-        * np.abs(np.cos(thetas[2]))
-        * np.abs(np.cos(thetas[4]))
-        * np.abs(np.cos(thetas[6]))
-    )
-    K = numer[center_wavelength_idx] / denom[center_wavelength_idx]
-    return K
 
 
 def calc_delta_singlet(angles, n1):
