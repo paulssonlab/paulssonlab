@@ -125,7 +125,7 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
     return split
 
 
-@memoize
+# @memoize
 def manifold_snake(
     dims=DEFAULT_DIMS,
     split=None,
@@ -140,9 +140,7 @@ def manifold_snake(
     manifold_round_radius=True,
     manifold_input_style="bend-out",
     border_margin=600,
-    top_margin=1.5e3,
-    bottom_margin=1e3,
-    port_margin=0.5e3,
+    port_margin=600,
     trench_width=1.5,
     trench_length=35,
     trench_fc_overlap=None,
@@ -151,6 +149,12 @@ def manifold_snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    port=False,
+    port_wayfinder=True,
+    port_wayfinder_margin=400,
+    port_wayfinder_length=200,
+    port_wayfinder_width=100,
+    port_wayfinder_orientations=None,
     registration_marks=False,
     barcode_num_bits=11,
     barcode_rows=4,
@@ -169,12 +173,15 @@ def manifold_snake(
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
-    label=None,
+    name=None,
+    label_text_size=600,
+    label_margin=100,
+    label=True,
 ):
     if manifold_input_style not in ("u-turn", "bend-out", "bend-in"):
         raise NotImplementedError
-    if label is None:
-        label = get_uuid()
+    if name is None:
+        name = get_uuid()
     if trench_fc_overlap is None:
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
     if tick_text_size is None:
@@ -186,6 +193,13 @@ def manifold_snake(
     inner_snake_bend_radius = effective_trench_length
     outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
     if manifold_input_style == "u-turn":
+        # ensure port has enough margin on the inner side
+        manifold_bend_radius = max(
+            manifold_bend_radius, (port_radius + port_margin) / 2
+        )
+        top_margin = (
+            border_margin + manifold_width + manifold_bend_radius + manifold_bend_margin
+        )
         horizontal_margin = (
             port_margin
             + port_radius
@@ -194,29 +208,34 @@ def manifold_snake(
             + manifold_width
             + manifold_margin
         )
-    elif manifold_input_style == "bend-out":
-        horizontal_margin = (
-            port_margin
-            + 2 * port_radius
-            + manifold_input_margin
-            + manifold_bend_radius
-            + manifold_width
-            + manifold_margin
-        )
-    elif manifold_input_style == "bend-in":
-        horizontal_margin = border_margin + manifold_width + manifold_margin
-        # TODO: rename manifold_margin to something more clear
-        # TODO: combine border/port margin?
-        # TODO: this should be +=, so that top/bottom_margin is extra
-        # TODO: top_margin should incorporate label size
+    elif manifold_input_style in ("bend-out", "bend-in"):
+        if manifold_input_style == "bend-out":
+            horizontal_margin = (
+                port_margin
+                + 2 * port_radius
+                + manifold_input_margin
+                + manifold_bend_radius
+                + manifold_width
+                + manifold_margin
+            )
+        elif manifold_input_style == "bend-in":
+            # ensure port has enough margin on inner side
+            manifold_bend_margin = max(
+                manifold_bend_margin,
+                port_radius + port_margin - manifold_bend_radius - manifold_width / 2,
+            )
+            horizontal_margin = border_margin + manifold_width + manifold_margin
         top_margin = (
-            port_margin
-            + port_radius
+            max(port_margin + port_radius, border_margin + manifold_width / 2)
             + manifold_width / 2
             + manifold_bend_radius
             + manifold_bend_margin
         )
-        bottom_margin = top_margin
+    bottom_margin = top_margin
+    if label:
+        # only make room for label text if necessary
+        total_label_margin = 2 * label_margin + label_text_size
+        top_margin = max(top_margin, total_label_margin)
     lane_fc_dims = np.array(
         [
             dims[0] - 2 * horizontal_margin - 2 * outer_snake_bend_radius,
@@ -258,20 +277,38 @@ def manifold_snake(
     )
     trenches_per_set = len(trench_xs)
     num_trenches = trenches_per_set * 2 * num_lanes
+    # root cell
+    snake_cell = Cell(f"Snake-{name}")
+    # label text
+    text_position = (0, dims[1] / 2 - label_margin - label_text_size)
+    if label:
+        snake_cell.add(
+            Text(
+                name,
+                label_text_size,
+                position=text_position,
+                alignment="centered",
+                layer=feeding_channel_layer,
+            )
+        )
     # feeding channel
-    snake_cell = Cell(f"Snake-{label}")
     snake_fc_cell, lane_ys = _snake_feeding_channel(
-        lane_fc_dims,
-        effective_trench_length,
-        outer_snake_bend_radius,
-        0,
-        split,
-        label,
+        lane_fc_dims=lane_fc_dims,
+        effective_trench_length=effective_trench_length,
+        port_offset=outer_snake_bend_radius,
+        port_radius=port_radius,
+        port=False,
+        port_wayfinder=False,
+        port_wayfinder_margin=None,
+        port_wayfinder_length=None,
+        port_wayfinder_width=None,
+        split=split,
+        name=name,
         layer=feeding_channel_layer,
     )
     # manifolds
     if manifold_round_radius:
-        rounded_corner = Cell(f"Snake-round-{label}")
+        rounded_corner = Cell(f"Snake-round-{name}")
         rounded_curve = g.Curve(0, 0)
         rounded_curve.v(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
@@ -281,7 +318,7 @@ def manifold_snake(
     for idx in range(len(manifold_split_cum) - 1):
         for flip in (1, -1):
             snake_manifold_cell = Cell(
-                f"Snake-{'left' if flip == 1 else 'right'}-{idx}-{label}"
+                f"Snake-{'left' if flip == 1 else 'right'}-{idx}-{name}"
             )
             port_lanes = right_port_lanes if flip == -1 else left_port_lanes
             manifold_lane_ys = lane_ys[
@@ -329,11 +366,26 @@ def manifold_snake(
             manifold_taper_y = manifold_lane_ys[-1] + flip * (
                 feeding_channel_width / 2 - manifold_width
             )
-            snake_manifold_cell.add(
-                Round(
-                    (-flip * port_x, port_y), port_radius, layer=feeding_channel_layer
+            if port:
+                snake_manifold_cell.add(
+                    Round(
+                        (-flip * port_x, port_y),
+                        port_radius,
+                        layer=feeding_channel_layer,
+                    )
                 )
-            )
+            if port_wayfinder:
+                wf = wayfinder(
+                    radius=port_radius + port_wayfinder_margin,
+                    length=port_wayfinder_length,
+                    width=port_wayfinder_width,
+                    orientations=port_wayfinder_orientations,
+                )
+                snake_manifold_cell.add(
+                    CellReference(
+                        wf, (-flip * port_x, port_y), rotation=90 * (1 + flip)
+                    )
+                )
             snake_manifold_cell.add(
                 Round(
                     (-flip * manifold_input_bend_x, manifold_input_bend_y),
@@ -456,7 +508,7 @@ def manifold_snake(
             tick_text_size=tick_text_size,
             trench_xs=trench_xs,
             lane_ys=lane_ys,
-            label=label,
+            name=name,
             layer=TRENCH_LAYER,
         )
         snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
@@ -487,14 +539,13 @@ def manifold_snake(
     return snake_cell, metadata
 
 
-@memoize
+# @memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
-    horizontal_margin=2.5e3,
-    top_margin=1.5e3,
-    bottom_margin=1e3,
-    port_margin=None,
+    border_margin=600,
+    port_margin=600,
+    port_input_margin=600,
     trench_width=1.5,
     trench_length=35,
     trench_fc_overlap=None,
@@ -504,6 +555,11 @@ def snake(
     trench_spacing=2,
     feeding_channel_width=90,
     port_radius=200,
+    port=False,
+    port_wayfinder=True,
+    port_wayfinder_margin=400,
+    port_wayfinder_length=200,
+    port_wayfinder_width=100,
     registration_marks=False,
     barcode_num_bits=11,
     barcode_rows=4,
@@ -522,7 +578,10 @@ def snake(
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
-    label=None,
+    label_text_size=600,
+    label_margin=100,
+    label=True,
+    name=None,
 ):
     """Summary.
 
@@ -534,9 +593,6 @@ def snake(
     split : Union[int, Iterable[int]], optional
         If an integer, specifies the number of snakes of approximately-equal size. If a
         tuple, specifies the number of lanes for each snake.
-    horizontal_margin : float, optional
-        Empty space (in microns) between the outside bends of the snake and the chip
-        border.
     top_margin : float, optional
         Empty space (in microns) between the top dead end of the topmost set of trenches
         and the bottom edge of the chip.
@@ -599,7 +655,7 @@ def snake(
         Feeding channel layer number.
     trench_layer : int, optional
         Trench layer number.
-    label : str, optional
+    name : str, optional
         Unique identifier used for cell names. If None is given, an alphanumeric UUID
         will be generated.
 
@@ -610,10 +666,8 @@ def snake(
     metadata : dict
         Dict containing the design parameters.
     """
-    if label is None:
-        label = get_uuid()
-    if port_margin is None:
-        port_margin = horizontal_margin / 2
+    if name is None:
+        name = get_uuid()
     if trench_fc_overlap is None:
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
     if tick_text_size is None:
@@ -621,6 +675,15 @@ def snake(
     effective_trench_length = trench_length + trench_gap / 2
     inner_snake_bend_radius = effective_trench_length
     outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
+    top_margin = max(
+        border_margin, port_margin + port_radius - feeding_channel_width / 2
+    )
+    bottom_margin = top_margin
+    if label:
+        # only make room for label text if necessary
+        total_label_margin = 2 * label_margin + label_text_size
+        top_margin = max(top_margin, total_label_margin)
+    horizontal_margin = port_margin + 2 * port_radius + port_input_margin
     lane_fc_dims = np.array(
         [
             dims[0] - 2 * horizontal_margin - outer_snake_bend_radius,
@@ -657,15 +720,32 @@ def snake(
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
     snake_length = split * lane_length
     metadata["snake_length"] = snake_length
-    snake_cell = Cell(f"Snake-{label}")
+    snake_cell = Cell(f"Snake-{name}")
+    # label text
+    text_position = (0, dims[1] / 2 - label_margin - label_text_size)
+    if label:
+        snake_cell.add(
+            Text(
+                name,
+                label_text_size,
+                position=text_position,
+                alignment="centered",
+                layer=feeding_channel_layer,
+            )
+        )
     port_offset = dims[0] / 2 - lane_fc_dims[0] / 2 - port_radius - port_margin
     snake_fc_cell, lane_ys = _snake_feeding_channel(
-        lane_fc_dims,
-        effective_trench_length,
-        port_offset,
-        port_radius,
-        split,
-        label,
+        lane_fc_dims=lane_fc_dims,
+        effective_trench_length=effective_trench_length,
+        port_offset=port_offset,
+        port_radius=port_radius,
+        port=port,
+        port_wayfinder=port_wayfinder,
+        port_wayfinder_margin=port_wayfinder_margin,
+        port_wayfinder_length=port_wayfinder_length,
+        port_wayfinder_width=port_wayfinder_width,
+        split=split,
+        name=name,
         gap_lanes=gap_lanes,
         layer=feeding_channel_layer,
         flatten_feeding_channel=flatten_feeding_channel,
@@ -702,21 +782,26 @@ def snake(
             tick_text_size=tick_text_size,
             trench_xs=trench_xs,
             lane_ys=lane_ys,
-            label=label,
+            name=name,
             layer=TRENCH_LAYER,
         )
         snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
     return snake_cell, metadata
 
 
-@memoize
+# @memoize
 def _snake_feeding_channel(
     lane_fc_dims,
     effective_trench_length,
     port_offset,
     port_radius,
+    port,
+    port_wayfinder,
+    port_wayfinder_margin,
+    port_wayfinder_length,
+    port_wayfinder_width,
     split,
-    label,
+    name,
     gap_lanes=0,
     layer=FEEDING_CHANNEL_LAYER,
     flatten_feeding_channel=False,
@@ -726,10 +811,10 @@ def _snake_feeding_channel(
     lane_height = feeding_channel_width + 2 * effective_trench_length
     inner_snake_bend_radius = effective_trench_length
     outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
-    lane_cell = Cell(f"Lane-{label}")
+    lane_cell = Cell(f"Lane-{name}")
     lane_fc = Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
     lane_cell.add(lane_fc)
-    bend_cell = Cell(f"Feeding Channel Bend-{label}")
+    bend_cell = Cell(f"Feeding Channel Bend-{name}")
     bend = Round(
         (0, 0),
         outer_snake_bend_radius,
@@ -739,8 +824,8 @@ def _snake_feeding_channel(
         layer=layer,
     )
     bend_cell.add(bend)
-    port_cell = Cell(f"Feeding Channel Port-{label}")
-    if port_radius:
+    port_cell = Cell(f"Feeding Channel Port-{name}")
+    if port and port_radius:
         port = Round((port_offset, 0), port_radius, layer=layer)
         port_cell.add(port)
     port_fc = Rectangle(
@@ -749,6 +834,14 @@ def _snake_feeding_channel(
         layer=layer,
     )
     port_cell.add(port_fc)
+    if port_wayfinder:
+        wf = wayfinder(
+            radius=port_radius + port_wayfinder_margin,
+            length=port_wayfinder_length,
+            width=port_wayfinder_width,
+            orientations=("right", "top", "bottom"),
+        )
+        port_cell.add(CellReference(wf, (port_offset, 0)))
     max_lanes = sum(split) + gap_lanes * (len(split) - 1)
     last_lane_y = ((max_lanes - 1) * lane_height) / 2
     lane_ys = np.linspace(last_lane_y, -last_lane_y, max_lanes)
@@ -768,7 +861,7 @@ def _snake_feeding_channel(
         ]
     )
     left_bend_lanes = right_bend_lanes + 1
-    snake_fc_cell = Cell(f"Snake Feeding Channel-{label}")
+    snake_fc_cell = Cell(f"Snake Feeding Channel-{name}")
     for y in lane_ys:
         snake_fc_cell.add(CellReference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
@@ -850,7 +943,7 @@ def _barcode(
     return cell
 
 
-@memoize
+# @memoize
 def _snake_trenches(
     trench_width,
     trench_spacing,
@@ -873,7 +966,7 @@ def _snake_trenches(
     tick_text_size,
     trench_xs,
     lane_ys,
-    label,
+    name,
     layer=TRENCH_LAYER,
 ):
     if ticks and registration_marks:
@@ -886,8 +979,8 @@ def _snake_trenches(
     row_barcode_margin = column_barcode_margin + barcode_columns * mark_pitch
     chip_barcode_margin = row_barcode_margin + barcode_columns * mark_pitch
     trenches_per_set = len(trench_xs)
-    snake_trenches_cell = Cell(f"Snake Trenches-{label}")
-    trench_cell = Cell(f"Trench-{label}")
+    snake_trenches_cell = Cell(f"Snake Trenches-{name}")
+    trench_cell = Cell(f"Trench-{name}")
     trench_cell.add(
         Rectangle(
             (-trench_width / 2, -trench_fc_overlap),
@@ -895,7 +988,7 @@ def _snake_trenches(
             layer=layer,
         )
     )
-    tick_cell = Cell(f"Tick-{label}")
+    tick_cell = Cell(f"Tick-{name}")
     if ticks:
         tick_cell.add(
             Rectangle(
@@ -1052,6 +1145,47 @@ def _snake_trenches(
                     )
                 )
     return snake_trenches_cell
+
+
+@memoize
+def wayfinder(
+    radius=400,
+    port=False,
+    length=150,
+    width=100,
+    orientations=None,
+    layer=FEEDING_CHANNEL_LAYER,
+):
+    horizontal_flips = []
+    vertical_flips = []
+    if orientations is None:
+        orientations = ("left", "right", "top", "bottom")
+    if "left" in orientations:
+        horizontal_flips.append(-1)
+    if "right" in orientations:
+        horizontal_flips.append(1)
+    if "bottom" in orientations:
+        vertical_flips.append(-1)
+    if "top" in orientations:
+        vertical_flips.append(1)
+    wayfinder_cell = Cell("Wayfinder")
+    for vertical_flip in vertical_flips:
+        wayfinder_cell.add(
+            Rectangle(
+                (-width / 2, vertical_flip * radius),
+                (width / 2, vertical_flip * (radius + length)),
+                layer=layer,
+            )
+        )
+    for horizontal_flip in horizontal_flips:
+        wayfinder_cell.add(
+            Rectangle(
+                (horizontal_flip * radius, -width / 2),
+                (horizontal_flip * (radius + length), width / 2),
+                layer=layer,
+            )
+        )
+    return wayfinder_cell
 
 
 @memoize
@@ -1395,8 +1529,6 @@ def wafer(
 def chip(
     name,
     design_func=snake,
-    label_text_size=600,
-    text=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
     metadata=None,
@@ -1434,27 +1566,16 @@ def chip(
     kwargs["feeding_channel_layer"] = feeding_channel_layer
     kwargs["trench_layer"] = trench_layer
     dims = kwargs["dims"]
-    design_cell, md = design_func(**{"label": name, **kwargs})
+    design_cell, md = design_func(**{"name": name, **kwargs})
     if metadata is not None:
         metadata[name] = md  # TODO: this won't work with memoization!!!
     chip_cell = Cell(f"Chip-{name}")
     chip_cell.add(outline(dims, layer=feeding_channel_layer))
     chip_cell.add(CellReference(design_cell, (0, 0)))
-    text_position = (0, dims[1] / 2 - 1.1 * label_text_size)
-    if text:
-        chip_cell.add(
-            Text(
-                name,
-                label_text_size,
-                position=text_position,
-                alignment="centered",
-                layer=feeding_channel_layer,
-            )
-        )
     return chip_cell
 
 
-@memoize
+# @memoize
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     """Generates a rectangular outline marking the edges of a chip.
 
