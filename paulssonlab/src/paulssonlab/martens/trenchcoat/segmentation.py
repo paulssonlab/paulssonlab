@@ -43,9 +43,11 @@ def run_segmentation_analysis_regions(
     file_names,
     regions_file,
 ):
+
     """Read region co-ordinates from an HDF5 file (with support for multiple
     sets of regions per image) Then call the code to do the actual segmentation
     work."""
+
     # H5file with arrays denoting region co-ordinates
     # There can be multiple such arrays, e.g. if there are 2 rows of trenches,
     # then each row gets its own array, and each array specifies individual trenches 1 at a time.
@@ -104,7 +106,9 @@ def run_segmentation_analysis_no_regions(
     algo_dict,
     file_names,
 ):
+
     """Open h5file with images, load without regions Call segmentation."""
+
     # Node in the input file, which may contain multiple channel images
     h5file = tables.open_file(in_file, mode="r")
     z_node = h5file.get_node(
@@ -148,10 +152,12 @@ def run_segmentation_analysis(
     stack,
     ch_to_index,
 ):
+
     """Create new HDF5 files for writing masks, measurements table Load all
     channel images within a given File / FOV / Frame / Z-level, and extract
     regions using region co-ordinate Call function to do segmentation,
     measurements, and writing results to disk."""
+
     # Create directory structure to store the masks
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_masks, name, fov)).mkdir(
         parents=True, exist_ok=False
@@ -206,11 +212,13 @@ def write_masks_tables(
     algo_dict,
     region_set_number,
 ):
+
     """Compute masks using specified segmentation algorithm.
 
     Write masks & measurements to HDF5 files. Analyze regions within
     images. (e.g. trenches, cropped images...)
     """
+
     for sc in seg_params.keys():
         # Calculate the mask(s)
         masks = algo_dict[sc](stack, ch_to_img, seg_params[sc])
@@ -267,6 +275,7 @@ def make_ch_to_img_stack_regions(h5file, z_node, channels, regions):
     This requires resampling data to that range, and then converting it back to the original range.
     Need to check for which algorithms this matters (Niblack? Otsu?).
     """
+
     # Assume all regions have the same dimensions.
     # Use the zeroth element to calculate the dimensions.
     x_dimension = regions[0, 2] - regions[0, 0]
@@ -328,6 +337,7 @@ def make_ch_to_img_stack_no_regions(h5file, z_node, channels):
     This requires resampling data to that range, and then converting it back to the original range.
     Need to check for which algorithms this matters (Niblack? Otsu?).
     """
+
     ch_to_index = {}
 
     # Have to process the zeroth image to get its dimensions, before looping over the remaining ones
@@ -375,6 +385,7 @@ def make_ch_to_img_stack_no_regions(h5file, z_node, channels):
 
 def link_files(in_dir, file_name):
     """Link the masks or tables files into a single HDF5 file."""
+
     out_file = os.path.join(in_dir, "{}.h5".format(file_name))
     h5file_top = tables.open_file(out_file, mode="w")
     # ND2 file directories
@@ -436,6 +447,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
 
     Run cell segmentation & write masks and measurements to HDF5.
     """
+
     # Dir containing new HDF5 files, write results to
     out_dir_masks = os.path.join(out_dir, "MASKS")
     out_dir_tables = os.path.join(out_dir, "TABLES")

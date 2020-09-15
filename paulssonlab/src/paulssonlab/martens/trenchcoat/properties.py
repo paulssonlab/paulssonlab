@@ -26,6 +26,7 @@ def write_properties_to_table(
     Once a given trench has a segmentation mask, then write the properties of the masked region to the table.
     NOTE future versions of skimage will allow spitting out a properties object all at once, rather than lazily calculating them one at a time.
     """
+
     # NOTE skimage is changing their coordinates -- do we still want to transpose??? I think so...
     coords = properties.coords.T
 
@@ -76,6 +77,7 @@ def make_cell_type(channels, seg_channels, file_names):
     NOTE: calling it a "Cell" because it stores information about biological cells,
     not because we're working with cells in a table.
     """
+
     # Define the PyTables column types using a dictionary
     column_types = {
         "info_fov": tables.UInt16Col(),
@@ -123,6 +125,7 @@ def get_max_length(items):
     """
     Input a list, return the length of the longest element
     """
+
     longest = 0
 
     for n in items:
@@ -140,6 +143,7 @@ def subtract_background_from_coords(coords, image, background):
     Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
     NOTE is it faster to use the coords[] array, or to "multiply" by the mask?
     """
+
     summed_intensity = image[coords[0], coords[1]].sum()
     total_background = len(coords) * background
 
@@ -151,6 +155,7 @@ def subtract_background_from_region(image, image_mask, background):
     Input an image, a binary mask, and a background value per pixel
     Return the sum of the pixel intensities minus the product of the background value and the number of pixels.
     """
+
     # Use mask to zero out unwanted pixels, and sum the intensities of the remaining ones
     summed_intensity = (image * image_mask).sum()
 
@@ -166,6 +171,7 @@ def merge_tables(in_file, out_file, channels, seg_channels, file_names):
     Merge the tables at the very end
     FIXME something wrong with the final node3() de-referencing, having to do with File_{}/ component to the path?
     """
+
     Cell = make_cell_type(channels, seg_channels, file_names)
 
     h5file_in = tables.open_file(in_file, mode="r")

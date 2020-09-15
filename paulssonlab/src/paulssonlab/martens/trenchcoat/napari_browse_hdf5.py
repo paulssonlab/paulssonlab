@@ -7,7 +7,7 @@ import dask.array
 from params import read_params_string, read_params_file
 
 
-"""    
+"""
 NOTE for now, assumes image dtype is float32
 
 TODO clean up the metadata functions, and their names, then stick them in the separate metadata Python file
@@ -23,6 +23,7 @@ def add_regions_layer(regions_file, fields_of_view, frames, viewer):
     FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
     is not the same as the dims of the images or the masks? Will it "just work?"
     """
+
     # Compile a canvas with all the regions
     lazy_regions_arr_to_canvas = delayed(regions_arr_to_canvas)
 
