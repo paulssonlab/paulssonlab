@@ -4,6 +4,7 @@ import tables
 import numpy
 import xmltodict
 import xml.etree.ElementTree as ElementTree
+import re
 
 
 def get_metadata(n):
@@ -50,8 +51,22 @@ def dict_to_h5_metadata(dictionary, parent_node, h5file):
     """
     for k in dictionary.keys():
         name = k.decode("utf-8")
+        # TODO: modify the name if it begins with: b (bool), ba (?), d (double), e (?), p (?), s (string), ui (unsigned integer), other? ->
+        # basically, it seems the real name always begins with an uppercase letter, and is prefixed by
+        # lowercase letters which have something to do with the data type?
+        # This is similar, but not the same, as the types_xml, with the difference here that we can use numpy
+        # to automatically do the type conversion for us (but not name conversion).
+
+        # FIXME one of the variables is uiCon20(L --> is that an erroneous name? Seems weird!
+
         if name == "":
             name = "no_name"
+        else:
+            # Remove all letters until the first uppercase letter
+            # FIXME: performance boost if we compile the pattern just once & then pass it in?
+            pattern = re.compile("^[a-z]*(.*)")
+            match = pattern.match(name)
+            name = match.group(1)
 
         elem = dictionary[k]
 
@@ -110,9 +125,6 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
                     dtype=types_xml[child.attrib["runtype"]],
                 ),
             )
-
-
-#
 
 
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):

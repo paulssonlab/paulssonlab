@@ -9,7 +9,8 @@ from multiprocessing import Pool
 from tqdm import tqdm
 
 import algorithms
-import arrayfire_algorithms
+
+# import arrayfire_algorithms
 from properties import (
     write_properties_to_table,
     merge_tables,
@@ -20,7 +21,7 @@ from metadata import get_metadata
 from params import read_params_file
 
 """
-Perform cell segmentation & measure fluorescence intensities in microscope images, with support for sub-regions (e.g. "trenches"). 
+Perform cell segmentation & measure fluorescence intensities in microscope images, with support for sub-regions (e.g. "trenches").
 
 TODO:
 1. Pass in min. region size. Use pixel_microns to help convert from true area in microns^2 to region size in pixels.

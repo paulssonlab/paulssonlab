@@ -1,19 +1,29 @@
 name: trenchcoat
 channels:
-  - pyviz
   - conda-forge
-  - defaults
 dependencies:
-  - black
-  - bokeh
-  - holoviews
-  - hvplot
-  - ipywidgets
-  - jupyterlab
-  - jupyterlab_code_formatter
-  - matplotlib
-  - nodejs
+  - ruamel.yaml
   - numpy
-  - pandas
-  - pip
-  - pre-commit
+  - pytables
+  - tqdm
+  - click
+  - scipy
+  - scikit-image
+  - pathlib
+  - dask
+  - xmltodict
+  - ipywidgets
+  - napari
+
+  # Not clear whether these need to be added, or if so, how:
+  #- os
+  #- multiprocessing
+  #- warnings
+  #- xml
+  #- argparse
+
+  # Packages not available in conda channels must be added through pip:
+  #- pip
+  #- pip:
+  # FIXME: segfaults!
+    #- arrayfire

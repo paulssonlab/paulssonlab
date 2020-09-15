@@ -67,6 +67,7 @@ def run_trench_analysis(
     # TODO does it make sense to store the rows all together, or separately?
     # Probably separately, because it might be the case that the trenches in different rows have different dimensions.
     for i, row in enumerate(rows):
+        # FIXME row is never referenced?
         regions = detect_trenches(img, trench_width, trench_length, min_distance)
         regions_file.create_array(
             path_string, "row_{}".format(i), obj=regions, createparents=True
@@ -75,12 +76,15 @@ def run_trench_analysis(
     regions_file.close()
 
 
-def detect_trench_rows(img, crop_params):
+def detect_trench_rows(img, crop_params, peak_params):
     """
     Find rows of trenches.
+
     Input a single image, and parameters [TBD].
+
     Return a numpy array, each row containing 4 co-ordinates:
     min_row, min_col, max_row, max_col, defining the rectangular region corresponding to that row of trenches.
+
     TODO sanity checking on the result, to make sure that it's within the boundaries of the image?
     FIXME what are the necessary parameters?
     """
@@ -89,6 +93,8 @@ def detect_trench_rows(img, crop_params):
 
     # Flatten in the x-dimension
     peaks_data = img.mean(axis=1)
+
+    peaks, _ = find_peaks(peaks_data)
 
     # more steps TBD
 
@@ -303,7 +309,7 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
     def update_pbar(*a):
         pbar.update()
 
-    # Run in parallel. Each File & FOV or Frame, can be processed independently.
+    # Run in parallel. Each File, FOV or Frame, can be processed independently.
     with Pool(processes=num_cpu) as p:
         for f in file_names:
             for fov in metadata[f]["fields_of_view"]:
