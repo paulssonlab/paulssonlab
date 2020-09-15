@@ -2,28 +2,15 @@ name: trenchcoat
 channels:
   - conda-forge
 dependencies:
-  - ruamel.yaml
-  - numpy
-  - pytables
-  - tqdm
   - click
-  - scipy
-  - scikit-image
-  - pathlib
   - dask
-  - xmltodict
   - ipywidgets
   - napari
-
-  # Not clear whether these need to be added, or if so, how:
-  #- os
-  #- multiprocessing
-  #- warnings
-  #- xml
-  #- argparse
-
-  # Packages not available in conda channels must be added through pip:
-  #- pip
-  #- pip:
-  # FIXME: segfaults!
-    #- arrayfire
+  - numpy
+  - pathlib
+  - pytables
+  - ruamel.yaml
+  - scikit-image
+  - scipy
+  - tqdm
+  - xmltodict

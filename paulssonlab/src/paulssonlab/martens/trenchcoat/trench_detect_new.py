@@ -29,9 +29,9 @@ def run_trench_analysis(
     trench_length,
     min_distance,
 ):
-    """
-    Run basic trench analysis on an HDF5 file: detect trenches for each time frame,
-    or just using the first time frame. Then, measure trench properties in all time frames.
+    """Run basic trench analysis on an HDF5 file: detect trenches for each time
+    frame, or just using the first time frame. Then, measure trench properties
+    in all time frames.
 
     Store detected trenches in a PyTables array.
 
@@ -77,8 +77,7 @@ def run_trench_analysis(
 
 
 def detect_trench_rows(img, crop_params, peak_params):
-    """
-    Find rows of trenches.
+    """Find rows of trenches.
 
     Input a single image, and parameters [TBD].
 
@@ -103,8 +102,8 @@ def detect_trench_rows(img, crop_params, peak_params):
 
 
 def detect_trenches(img, trench_width, trench_length, min_distance):
-    """
-    Input an image, and some parameters.
+    """Input an image, and some parameters.
+
     Output an numpy array of rectangular trench co-ordinates.
     """
     # TODO make sure that this is right
@@ -160,9 +159,7 @@ def detect_trenches(img, trench_width, trench_length, min_distance):
 
 
 def remove_non_trenches(peaks_data, peaks, cutoff):
-    """
-    Remove non-trenches.
-    """
+    """Remove non-trenches."""
     # Filter out: only keep inter-trench peak indices
     threshold = (peaks_data[peaks] > cutoff) * peaks
 
@@ -173,8 +170,9 @@ def remove_non_trenches(peaks_data, peaks, cutoff):
 
 
 def merge_peaks(peaks, min_peak_distance):
-    """
-    Merge the nearby peaks in peaks, a numpy array resulting from find_peaks().
+    """Merge the nearby peaks in peaks, a numpy array resulting from
+    find_peaks().
+
     TODO: also add a sanity check: only merge them if both are above or below the threshold line
     """
     merged_peaks = []
@@ -207,10 +205,9 @@ def merge_peaks(peaks, min_peak_distance):
 
 
 def define_trenches(trench_peaks, trench_half_width):
-    """
-    Detect Trenches
-    Using just the trench midpoints & the pre-specified widths, define left -> right boundaries for each trench.
-    Assume each trench spans from top to bottom.
+    """Detect Trenches Using just the trench midpoints & the pre-specified
+    widths, define left -> right boundaries for each trench. Assume each trench
+    spans from top to bottom.
 
     TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
     Before making ranges, check whether would overlap?
@@ -229,17 +226,14 @@ def define_trenches(trench_peaks, trench_half_width):
 
 
 def shared_region_linking(out_dir):
-    """
-    If regions are shared between time frames, then make symlinks within the HDF5 file
-    so that each time frame still appears to have its own region data.
-    """
+    """If regions are shared between time frames, then make symlinks within the
+    HDF5 file so that each time frame still appears to have its own region
+    data."""
     pass
 
 
 def main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions):
-    """
-    Main detection function.
-    """
+    """Main detection function."""
     h5file = tables.open_file(in_file, mode="r")
 
     # Iterate all the files & get their metadata

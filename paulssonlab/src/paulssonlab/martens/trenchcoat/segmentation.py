@@ -43,10 +43,9 @@ def run_segmentation_analysis_regions(
     file_names,
     regions_file,
 ):
-    """
-    Read region co-ordinates from an HDF5 file (with support for multiple sets of regions per image)
-    Then call the code to do the actual segmentation work
-    """
+    """Read region co-ordinates from an HDF5 file (with support for multiple
+    sets of regions per image) Then call the code to do the actual segmentation
+    work."""
     # H5file with arrays denoting region co-ordinates
     # There can be multiple such arrays, e.g. if there are 2 rows of trenches,
     # then each row gets its own array, and each array specifies individual trenches 1 at a time.
@@ -105,10 +104,7 @@ def run_segmentation_analysis_no_regions(
     algo_dict,
     file_names,
 ):
-    """
-    Open h5file with images, load without regions
-    Call segmentation
-    """
+    """Open h5file with images, load without regions Call segmentation."""
     # Node in the input file, which may contain multiple channel images
     h5file = tables.open_file(in_file, mode="r")
     z_node = h5file.get_node(
@@ -152,11 +148,10 @@ def run_segmentation_analysis(
     stack,
     ch_to_index,
 ):
-    """
-    Create new HDF5 files for writing masks, measurements table
-    Load all channel images within a given File / FOV / Frame / Z-level, and extract regions using region co-ordinate
-    Call function to do segmentation, measurements, and writing results to disk.
-    """
+    """Create new HDF5 files for writing masks, measurements table Load all
+    channel images within a given File / FOV / Frame / Z-level, and extract
+    regions using region co-ordinate Call function to do segmentation,
+    measurements, and writing results to disk."""
     # Create directory structure to store the masks
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_masks, name, fov)).mkdir(
         parents=True, exist_ok=False
@@ -211,10 +206,10 @@ def write_masks_tables(
     algo_dict,
     region_set_number,
 ):
-    """
-    Compute masks using specified segmentation algorithm.
-    Write masks & measurements to HDF5 files.
-    Analyze regions within images. (e.g. trenches, cropped images...)
+    """Compute masks using specified segmentation algorithm.
+
+    Write masks & measurements to HDF5 files. Analyze regions within
+    images. (e.g. trenches, cropped images...)
     """
     for sc in seg_params.keys():
         # Calculate the mask(s)
@@ -379,9 +374,7 @@ def make_ch_to_img_stack_no_regions(h5file, z_node, channels):
 
 
 def link_files(in_dir, file_name):
-    """
-    Link the masks or tables files into a single HDF5 file
-    """
+    """Link the masks or tables files into a single HDF5 file."""
     out_file = os.path.join(in_dir, "{}.h5".format(file_name))
     h5file_top = tables.open_file(out_file, mode="w")
     # ND2 file directories
@@ -438,9 +431,9 @@ def link_files(in_dir, file_name):
 
 
 def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_file):
-    """
-    Input the HDF5 file, an out directory, how many CPUs, a YAML file with parameters,
-    and an HDF5 file with region (e.g. trench) co-ordinates.
+    """Input the HDF5 file, an out directory, how many CPUs, a YAML file with
+    parameters, and an HDF5 file with region (e.g. trench) co-ordinates.
+
     Run cell segmentation & write masks and measurements to HDF5.
     """
     # Dir containing new HDF5 files, write results to
