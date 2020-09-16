@@ -1,5 +1,14 @@
 # nd2reader
 
+Added the following:
+
+In main.py:
+def get_image_stack(self, frame_number, field_of_view, z_level)
+
+In driver/v3.py:
+def get_image_stack(self, frame_number, field_of_view, z_level, height, width):
+
+
 ### This library is no longer being developed here
 
 There is an [actively-developed fork](https://github.com/rbnvrw/nd2reader) which may be preferable to this version, and version 3+ installed with pip is based on that codebase. If your code depends on this version of nd2reader, you can specify the final version with `pip install "nd2reader==2.1.3"`. I am no longer supporting this library, as my lab has discovered [Micro-Manager](https://micro-manager.org/) and found it to be a far superior application for acquiring microscope data. I would highly recommend switching if it works for what you're doing. I will not be accepting pull requests any longer. 
