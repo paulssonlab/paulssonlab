@@ -172,7 +172,7 @@ def copy_basic_metadata(h5file, reader, frames, fields_of_view):
     if not frames:
         frames = reader.frames
 
-    h5file.create_array("/", "frames", obj=numpy.array(reader.frames))
+    h5file.create_array("/", "frames", obj=numpy.array(frames))
 
     # Height
     h5file.create_array("/", "height", obj=numpy.array(reader.height))
