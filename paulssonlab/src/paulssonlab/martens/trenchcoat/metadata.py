@@ -60,14 +60,23 @@ def dict_to_h5_metadata(dictionary, parent_node, h5file):
 
         # FIXME one of the variables is uiCon20(L --> is that an erroneous name? Seems weird!
 
+        # Some of the variables are unnamed, so give it an explicit non-name
         if name == "":
             name = "no_name"
-        else:
-            # Remove all letters until the first uppercase letter
-            # FIXME: performance boost if we compile the pattern just once & then pass it in?
-            pattern = re.compile("^[a-z]*(.*)")
-            match = pattern.match(name)
-            name = match.group(1)
+
+        # FIXME: doesn't work, perhaps because some names have different prefixes but then are the same.
+        # else:
+        ## Remove all letters until the first uppercase letter
+        ## FIXME: performance boost if we compile the pattern just once & then pass it in?
+        # pattern = re.compile("^[a-z]*(.*)")
+        # try:
+        # match = pattern.match(name)
+        # name = match.group(1)
+        ## If the pattern didn't match (e.g. was all lowercase)
+        # if name == "":
+        # name = match.group(0)
+        # except:
+        # print("Failed with name {}".format(name))
 
         elem = dictionary[k]
 
