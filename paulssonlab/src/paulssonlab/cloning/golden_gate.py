@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, date, timezone
 from copy import deepcopy
+from Bio.Seq import Seq
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from paulssonlab.cloning.sequence import (
     slice_seq,
@@ -75,28 +76,46 @@ def _get_overhang(seq, cut5, cut3, sense, cut_upstream):
     return ((slice_seq(seq, cut5, cut3), sense), loc)
 
 
-def _re_digest(seq, cuts):
-    cuts.append(cuts[0])
-    seqs = []
-    for cut1, cut2 in zip(cuts[:-1], cuts[1:]):
-        # check for sequences with inward-facing RE binding sites
-        if cut1[3] == True and cut2[3] == False:
-            overhang1, loc1 = _get_overhang(seq, *cut1)
-            overhang2, loc2 = _get_overhang(seq, *cut2)
-            seq = slice_seq(seq, loc1, loc2)
-            seqs.append((seq, overhang1, overhang2))
-    seqs = sorted(seqs, key=lambda x: len(x[0]))
-    return seqs
+def _re_digest(seq, cuts, linear=False, allow_single=True):
+    if len(cuts) == 0:
+        return []
+    elif len(cuts) == 1:
+        if allow_single:
+            cut = cuts[0]
+            overhang, loc = _get_overhang(seq, *cut)
+            if cut[3] is True:
+                seq = slice_seq(seq, loc, None)
+                return [(seq, overhang, (Seq(""), 0))]
+            else:
+                seq = slice_seq(seq, 0, loc)
+                return [(seq, (Seq(""), 0), overhang)]
+        else:
+            return []
+    else:
+        if linear is False:
+            cuts.append(cuts[0])
+        seqs = []
+        for cut1, cut2 in zip(cuts[:-1], cuts[1:]):
+            # check for sequences with inward-facing RE binding sites
+            if cut1[3] is True and cut2[3] is False:
+                overhang1, loc1 = _get_overhang(seq, *cut1)
+                overhang2, loc2 = _get_overhang(seq, *cut2)
+                seq = slice_seq(seq, loc1, loc2)
+                seqs.append((seq, overhang1, overhang2))
+        seqs = sorted(seqs, key=lambda x: len(x[0]))
+        return seqs
 
 
-def re_digest(seq, enzyme, linear=False):
+def re_digest(seq, enzyme, linear=False, allow_single=True):
     cuts = re_search(seq, enzyme, linear=linear)
-    return _re_digest(seq, cuts)
+    return _re_digest(seq, cuts, linear=linear, allow_single=allow_single)
 
 
-def _check_seq_compatibility(seq1, seq2):
+def _check_seq_compatibility(seq1, seq2, allow_blunt_ends=False):
     _, overhang1_1, overhang1_2 = seq1
     _, overhang2_1, overhang2_2 = seq2
+    if (len(overhang1_1[0]) == 0 or len(overhang2_2[0]) == 0) and not allow_blunt_ends:
+        return False
     return (overhang1_2[0].upper(), overhang1_2[1]) == (
         overhang2_1[0].upper(),
         overhang2_1[1],
