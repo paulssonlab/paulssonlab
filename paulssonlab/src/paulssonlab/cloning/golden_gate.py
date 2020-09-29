@@ -118,7 +118,6 @@ def _5prime_overhang(overhang):
 
 
 def ligate(seqs, linear=True):
-    alphabet = seqs[0][0].seq.alphabet
     if len(seqs) < 2:
         raise ValueError("need at least two sequences to assemble")
     seq1 = seqs[0]
