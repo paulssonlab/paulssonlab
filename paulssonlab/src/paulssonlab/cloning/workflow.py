@@ -2,6 +2,7 @@ import numpy as np
 import re
 import requests
 from copy import deepcopy
+import string
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
 from paulssonlab.api.addgene import get_addgene
