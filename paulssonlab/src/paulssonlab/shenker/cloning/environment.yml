@@ -38,5 +38,6 @@ dependencies:
   - pytoml
   - requests
   - seaborn
+  - tatsu
   - tqdm
   - xlrd
