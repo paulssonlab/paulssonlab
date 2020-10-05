@@ -3,11 +3,11 @@ import numpy
 import napari
 from dask import delayed
 import dask.array
-
+import pandas
 from params import read_params_string, read_params_file
 
 
-"""    
+"""
 NOTE for now, assumes image dtype is float32
 
 TODO clean up the metadata functions, and their names, then stick them in the separate metadata Python file
@@ -15,18 +15,25 @@ Might also need to rework the similar functions used for nd2 browsing?
 """
 
 
-def add_regions_layer(regions_file, fields_of_view, frames, viewer):
+def make_regions_lazy_dask_stack(regions_table):
     """
-
-    TODO pass in information for the labels layer params? name etc.
-
-    FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
-    is not the same as the dims of the images or the masks? Will it "just work?"
+    Input the location of the region (trench row or trenches) coordinates within the HDF5 file,
+    output a dask array stacked for all the dimensions,
+    whose final dimension is the canvas with the labeled regions,
+    representing either trench rows, or trenches within a row.
     """
-    # Compile a canvas with all the regions
+    # Compile a canvas with all the trench regions
     lazy_regions_arr_to_canvas = delayed(regions_arr_to_canvas)
 
-    h5file_regions = tables.open_file(regions_file, "r")
+    whole_table = regions_table.read()
+    whole_df = pandas.DataFrame(whole_table)
+    file_nodes = whole_df["info_file"].unique()
+    fields_of_view = whole_df["info_fov"].unique()
+    frames = whole_df["info_frame"].unique()
+
+    print("nodes {}".format(file_nodes))
+    print("fovs {}".format(fields_of_view))
+    print("frames {}".format(frames))
 
     file_array = []
     for file in file_nodes:
@@ -36,13 +43,16 @@ def add_regions_layer(regions_file, fields_of_view, frames, viewer):
             # Frame nodes
             frame_array = []
             for frame in frames:
-                # Regions are always shared across Z, so it's OK
-                # to read them in now.
-                path = "/{}/FOV_{}/Frame_{}"
-                regions_coords = h5file_regions.get_node(path).read()
-
-                arr = dask.array.from_delayed(lazy_regions_arr_to_canvas)
-
+                # Regions are always shared across Z, so it's OK to read them in at this level.
+                # path = "/{}/FOV_{}/Frame_{}/{}".format(file, fov, frame, node_path)
+                # FIXME pass in image width & height
+                arr = dask.array.from_delayed(
+                    lazy_regions_arr_to_canvas(
+                        regions_table, file, fov, frame, 2048, 2048
+                    ),
+                    shape=(2048, 2048),
+                    dtype=numpy.uint16,
+                )
                 frame_array.append(arr)
 
             frame_array_to_stack = dask.array.stack(frame_array)
@@ -51,9 +61,77 @@ def add_regions_layer(regions_file, fields_of_view, frames, viewer):
         fov_array_to_stack = dask.array.stack(fov_array)
         file_array.append(fov_array_to_stack)
 
-    # TODO what params to pass in? use a yaml file?
     megastack = dask.array.stack(file_array)
-    viewer.add_labels(megastack)
+
+    return megastack
+
+
+def regions_arr_to_canvas(table, file, fov, frame, width, height):
+    """
+    ## Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+
+    Pass in info from which to read corresponding trench coords from the global trench coords table.
+
+    Return a numpy array with numbered pixel positions for each region, and zeros for background.
+    NOTE: what happens if the regions overlap?
+    """
+    # regions_coords = h5file_regions.get_node(path).read()
+    # TODO: trench row number?
+    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame)"
+    search = table.read_where(condition)
+    df = pandas.DataFrame(search)
+
+    regions = []
+    for r in df.itertuples():
+        regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+
+    regions = numpy.array(regions)
+
+    # FIXME or height, width?
+    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
+
+    for i, r in enumerate(regions):
+        canvas[r[0] : r[2], r[1] : r[3]] = i + 1
+
+    return numpy.rot90(canvas, k=-1)
+
+
+def add_regions_layer(regions_table, viewer):
+    """
+    There are 2 kinds of regions:
+    1. Trench rows
+    2. Trenches
+
+    A dataset could have either one, the other, or both.
+    In each case, the individual elements (rows, trenches) must be pasted into a canvas which spans the original image.
+
+    Create one label layer for trench rows, and another label layer for trenches.
+    TODO The trenches from different rows will be placed within the same, or different, labels layers???
+    Doesn't it make the most sense for each to have its own layer? why not?
+
+    TODO pass in information for the labels layer params? name etc.
+
+    FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
+    is not the same as the dims of the images or the masks? Will it "just work?"
+    """
+
+    # TEMP: just do 1 row of trenches, and not the row itself.
+    trenches_stack = make_regions_lazy_dask_stack(regions_table)
+    viewer.add_labels(trenches_stack)  # , **layer_params) # TODO layer params?
+
+    ## 1. Trench rows
+    # trench_rows_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords")
+    # viewer.add_labels(trench_rows_stack) #, **layer_params) # TODO layer params?
+
+    # row_coords_arr = h5file.get_node().read()
+    # num_trench_rows = row_coords_arr.shape[0]
+
+    ## FIXME what if some FOVs have 1 trench row, and others have 2 trench rows? How to handle different numbers
+    ## in the Dask array? Need to determine the largest possible number of rows, and then fill in
+    ## 2. Trenches within each row
+    # for n in num_trench_rows:
+    # trenches_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords/row_{}_trench_coords".format(n))
+    # viewer.add_labels(trenches_stack) #, **layer_params) # TODO layer params?
 
 
 def add_masks_layer(
@@ -111,25 +189,19 @@ def add_masks_layer(
                         # Z nodes
                         z_array = []
                         for z in z_levels:
-
                             # TODO now, need to loop all the available regions,
                             # and then copy over the corresponding data from the masks into
                             # a single, "zeroed out" canvas
 
                             path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/".format(
-                                file,
-                                fov,
-                                frame,
-                                z,
+                                file, fov, frame, z, sc
                             )
                             masks_iter = h5file_masks.iter_nodes(path)
-
                             arr = dask.array.from_delayed(
                                 lazy_masks_to_canvas(
                                     regions_arr, masks_iter, width, height
                                 )
                             )
-
                             z_array.append(arr)
 
                         z_array_to_stack = dask.array.stack(z_array)
@@ -172,8 +244,9 @@ def add_masks_layer(
                                 )
                             )
                             node = h5file_masks.get_node(path)
+                            # Rotate by -90 deg to account for F -> C ordering of arrays when visualizing in Napari
                             arr = dask.array.from_delayed(
-                                delayed(node.read()),
+                                delayed(numpy.rot90(node.read(), k=-1)),
                                 # If there are no regions, then it must fill the entire
                                 # dimensions of the image.
                                 shape=(height, width),  # FIXME or width,height?
@@ -308,21 +381,6 @@ def add_image_layers(
         viewer.add_image(megastack, **layer_params[c])
 
 
-def regions_arr_to_canvas(regions_arr, width, height):
-    """
-    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
-    Return a numpy array with numbered pixel positions for each region, and zeros for background.
-    NOTE: what happens if the regions overlap?
-    """
-    # FIXME or height, width?
-    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
-
-    for i, r in enumerate(regions_arr):
-        canvas[r[0] : r[2], r[1] : r[3]] = i + 1
-
-    return canvas
-
-
 def masks_to_canvas(regions_arr, masks_iter, width, height):
     """
     Input a numpy array with many rows, each containing the rectangular coordinates of regions.
@@ -336,7 +394,7 @@ def masks_to_canvas(regions_arr, masks_iter, width, height):
     for r, n in zip(regions_arr, masks_iter):
         canvas[r[0] : r[2], r[1] : r[3]] = n.read()
 
-    return canvas
+    return numpy.rot90(canvas, k=-1)
 
 
 def get_largest_extents_hdf5(h5file, metadata_key):
@@ -407,9 +465,14 @@ def load_img(node, channel, height, width, dtype, camera_bias, flatfield_correct
     """
     Attempt to load an image, and if it cannot be found, return a zero'ed array instead.
     Apply camera bias and flat field corrections.
+    We use Fortran indexing, Napari usese C indexing, so rotate the image by -90 degrees.
     """
     try:
-        return (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
+        # return (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
+        return numpy.rot90(
+            (node._f_get_child(channel).read() - camera_bias) / flatfield_correction,
+            k=-1,
+        )
 
     except:
         # FIXME width,height?
@@ -485,9 +548,18 @@ def main_hdf5_browser_function(
 
         # Regions (trench) layer
         if regions_file:
+            h5file_regions = tables.open_file(regions_file, "r")
+            regions_table = h5file_regions.root.trench_coords
+
             add_regions_layer(
-                regions_file, extents["fields_of_view"], extents["frames"], viewer
+                regions_table,
+                # extents["fields_of_view"],
+                # extents["frames"],
+                viewer,
             )
 
     # Done!
     h5file.close()
+
+    if regions_file:
+        h5file_regions.close()

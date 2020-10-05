@@ -68,7 +68,6 @@ def get_seq(seq):
 
 
 def join_seqs(seqs):
-    alphabet = None
     to_concat = []
     features = []
     offset = 0
@@ -78,7 +77,7 @@ def join_seqs(seqs):
             for feature in seq.features:
                 features.append(feature._shift(offset))
         offset += len(seq)
-    concatenated_seq = sum(to_concat, Seq("", get_seq(seqs[0]).alphabet))
+    concatenated_seq = sum(to_concat, Seq(""))
     return SeqRecord(concatenated_seq, features=features)
 
 

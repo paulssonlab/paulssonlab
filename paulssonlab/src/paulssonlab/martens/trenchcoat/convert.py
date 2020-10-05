@@ -206,6 +206,8 @@ def main_conversion_function(hdf_dir, nd2_dir, num_cpu, frames, fields_of_view):
         if not frames:
             frames = nd2_file.frames
 
+        nd2_file.close()
+
         total_frames += len(fields_of_view) * len(frames)
 
     pbar_frames = tqdm(total=total_frames, desc="Frame image data")

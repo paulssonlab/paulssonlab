@@ -2,7 +2,7 @@
 
 import click
 from convert import main_conversion_function
-from trench_detect_new import main_detection_function
+from trench_detect import main_detection_function
 from segmentation import main_segmentation_function
 from write_kymographs import main_kymographs_function
 from trench_measurements import main_trench_measurements_function
@@ -13,9 +13,9 @@ from corrections import main_corrections_function
 
 
 def range_expand(range_string):
-    """
-    Input a range, such as: 1,4-7
-    Return a list with all elements within the range.
+    """Input a range, such as: 1,4-7 Return a list with all elements within the
+    range.
+
     Modified from https://rosettacode.org/wiki/Range_expansion#Python
     """
     result = []
@@ -35,14 +35,11 @@ def range_expand(range_string):
 
 @click.group()
 def cli():
-    """
-    Invoke a Command to perform the desired operation:
-    """
+    """Invoke a Command to perform the desired operation:"""
     pass
 
 
-# NOTE click 7.0 doesn't have the no_args_is_help option yet, so temporarily disabling for now.
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-i",
     "--in-dir",
@@ -64,13 +61,11 @@ def cli():
     show_default=True,
 )
 def browse_nd2(in_dir, napari_settings_file):
-    """
-    Use Napari to browse a directory of ND2 files.
-    """
+    """Use Napari to browse a directory of ND2 files."""
     main_nd2_browser_function(in_dir, napari_settings_file)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-i",
     "--images-file",
@@ -118,20 +113,19 @@ def browse_nd2(in_dir, napari_settings_file):
 def browse_hdf5(
     images_file, masks_file, regions_file, corrections_file, napari_settings_file
 ):
-    """
-    Use Napari to browse a dataset & to visualize trenches and cell masks.
-    camera_biases_file, flatfield_corrections_file are paths to HDF5 files containing channel-specific correction values.
+    """Use Napari to browse a dataset & to visualize trenches and cell masks.
+
+    camera_biases_file, flatfield_corrections_file are paths to HDF5
+    files containing channel-specific correction values.
     """
     main_hdf5_browser_function(
         images_file, masks_file, regions_file, corrections_file, napari_settings_file
     )
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 def browse_kymographs():
-    """
-    Use Napari to browse kymographs.
-    """
+    """Use Napari to browse kymographs."""
     # FIXME Should it also load the masks as well? Requires new code to gen. kymographs from image slices.
     main_kymograph_browser_function()
 
@@ -188,9 +182,7 @@ def browse_kymographs():
     show_default=False,
 )
 def convert(out_dir, in_dir, num_cpu, frames, fovs):
-    """
-    Convert a directory of ND2 files to an HDF5 file.
-    """
+    """Convert a directory of ND2 files to an HDF5 file."""
     # a. Range of time frames to be analyzed, if the user doesn't want to copy all the frames
     if frames:
         frames = range_expand(frames)
@@ -202,7 +194,7 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     main_conversion_function(out_dir, in_dir, num_cpu, frames, fovs)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -246,19 +238,18 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
 @click.option(
     "-s",
     "--share-regions",
+    "share_regions",
     required=True,
     default=False,
     type=bool,
     help="Share region detection across frames (detect only within the first frame)",
 )
-def trench_detect(out_dir):
-    """
-    Detect trenches and write their rectangular regions to an HDF5  file.
-    """
+def trench_detect(out_dir, in_file, num_cpu, params_file, share_regions):
+    """Detect trenches and write their rectangular regions to an HDF5  file."""
     main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -310,13 +301,11 @@ def trench_detect(out_dir):
     show_default=True,
 )  # FIXME what should the default be???
 def segment(out_dir, in_file, num_cpu, params_file, regions_file):
-    """
-    Detect cells and write their properties and masks to an HDF5 file.
-    """
+    """Detect cells and write their properties and masks to an HDF5 file."""
     main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_file)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -358,13 +347,11 @@ def segment(out_dir, in_file, num_cpu, params_file, regions_file):
     show_default=True,
 )  # FIXME what should the default be???
 def kymographs():
-    """
-    Generate kymographs.
-    """
+    """Generate kymographs."""
     main_kymographs_function(out_dir, in_file, num_cpu, regions_file)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -406,13 +393,11 @@ def kymographs():
     show_default=True,
 )  # FIXME what should the default be???
 def trench_measurements():
-    """
-    Analyze whole trenches, without cell segmentation.
-    """
+    """Analyze whole trenches, without cell segmentation."""
     main_trench_measurements_function(out_dir, in_file, num_cpu, regions_file)
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-file",
@@ -456,9 +441,7 @@ def trench_measurements():
     show_default=False,
 )
 def corrections(in_file, out_file, dark_channel, bg_file):
-    """
-    Generate camera bias and flat field corrections matrices from images.
-    """
+    """Generate camera bias and flat field corrections matrices from images."""
     main_corrections_function(in_file, out_file, dark_channel, bg_file)
 
 

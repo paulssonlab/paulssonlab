@@ -40,6 +40,12 @@ if [ -n "$labextensions" ]; then
         echo "    export-env"
         echo "    prepare-env"
         echo
+        if [[ $HOSTNAME =~ .*\.o2\.rc\.hms\.harvard\.edu ]]; then
+            echo "${bold}Since you are running on O2, an alternative possibility is that are running out of memory.${normal}"
+            echo "In that case, end your interactive job and start one with at least 4GB of RAM by running"
+            echo "    irun4"
+            echo
+        fi
         exit $status
     fi
 fi

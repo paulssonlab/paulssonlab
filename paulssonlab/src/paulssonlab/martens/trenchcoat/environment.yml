@@ -1,19 +1,16 @@
 name: trenchcoat
 channels:
-  - pyviz
   - conda-forge
-  - defaults
 dependencies:
-  - black
-  - bokeh
-  - holoviews
-  - hvplot
+  - click
+  - dask
   - ipywidgets
-  - jupyterlab
-  - jupyterlab_code_formatter
-  - matplotlib
-  - nodejs
+  - napari
   - numpy
-  - pandas
-  - pip
-  - pre-commit
+  - pathlib
+  - pytables
+  - ruamel.yaml
+  - scikit-image
+  - scipy
+  - tqdm
+  - xmltodict

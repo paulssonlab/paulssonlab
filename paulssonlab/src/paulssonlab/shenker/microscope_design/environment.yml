@@ -20,7 +20,9 @@ dependencies:
   - pint
   - pip
   - pre-commit
+  - pyyaml
   - scikit-image
   - scipy
+  - tqdm
   - xarray
   - xlrd

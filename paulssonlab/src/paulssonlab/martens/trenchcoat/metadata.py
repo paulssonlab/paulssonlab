@@ -4,11 +4,13 @@ import tables
 import numpy
 import xmltodict
 import xml.etree.ElementTree as ElementTree
+import re
 
 
 def get_metadata(n):
-    """
-    Input a node in the HDF5 metadata section, return a dict. with the following metadata
+    """Input a node in the HDF5 metadata section, return a dict.
+
+    with the following metadata
     """
     metadata = {
         "channels": n.channels.read(),
@@ -25,9 +27,10 @@ def get_metadata(n):
 
 
 def make_fov_metadata_table_info_type():
-    """
-    Define the data types for a PyTables table.
-    Table for looking up FOV, Frame, and returning the timestamp in seconds and X, Y, Z positions.
+    """Define the data types for a PyTables table.
+
+    Table for looking up FOV, Frame, and returning the timestamp in
+    seconds and X, Y, Z positions.
     """
     # Define the PyTables column types using a dictionary
     column_types = {
@@ -45,13 +48,35 @@ def make_fov_metadata_table_info_type():
 
 
 def dict_to_h5_metadata(dictionary, parent_node, h5file):
-    """
-    Recursively walk through a dictionary of metadata & copy over the metadata to an HDF5 file.
-    """
+    """Recursively walk through a dictionary of metadata & copy over the
+    metadata to an HDF5 file."""
     for k in dictionary.keys():
         name = k.decode("utf-8")
+        # TODO: modify the name if it begins with: b (bool), ba (?), d (double), e (?), p (?), s (string), ui (unsigned integer), other? ->
+        # basically, it seems the real name always begins with an uppercase letter, and is prefixed by
+        # lowercase letters which have something to do with the data type?
+        # This is similar, but not the same, as the types_xml, with the difference here that we can use numpy
+        # to automatically do the type conversion for us (but not name conversion).
+
+        # FIXME one of the variables is uiCon20(L --> is that an erroneous name? Seems weird!
+
+        # Some of the variables are unnamed, so give it an explicit non-name
         if name == "":
             name = "no_name"
+
+        # FIXME: doesn't work, perhaps because some names have different prefixes but then are the same.
+        # else:
+        ## Remove all letters until the first uppercase letter
+        ## FIXME: performance boost if we compile the pattern just once & then pass it in?
+        # pattern = re.compile("^[a-z]*(.*)")
+        # try:
+        # match = pattern.match(name)
+        # name = match.group(1)
+        ## If the pattern didn't match (e.g. was all lowercase)
+        # if name == "":
+        # name = match.group(0)
+        # except:
+        # print("Failed with name {}".format(name))
 
         elem = dictionary[k]
 
@@ -69,9 +94,8 @@ def dict_to_h5_metadata(dictionary, parent_node, h5file):
 
 
 def list_to_h5_metadata(elem, parent_node, h5file, name):
-    """
-    Recursively walk through a list of metadata & copy over the metadata to an HDF5 file.
-    """
+    """Recursively walk through a list of metadata & copy over the metadata to
+    an HDF5 file."""
     if type(elem) == dict:
         new_group = h5file.create_group(parent_node, name)
         dict_to_h5_metadata(elem, new_group, h5file)
@@ -86,9 +110,9 @@ def list_to_h5_metadata(elem, parent_node, h5file, name):
 
 
 def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
-    """
-    After re-converting the nested OrderedDicts (JSON-like) back into XML,
+    """After re-converting the nested OrderedDicts (JSON-like) back into XML,
     iterate all the xml elements & copy over the metadata to an HDF5 file.
+
     NOTE: Unicode -> ASCII conversion to handle degree symbol and micron symbol
     (problems storing unicode symbols in pytables arrays?)
     """
@@ -112,13 +136,8 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
             )
 
 
-#
-
-
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
-    """
-    Copy ND2 metadata into an HDF5 hierarchy
-    """
+    """Copy ND2 metadata into an HDF5 hierarchy."""
     reader = nd2reader.Nd2(in_file)
     (name, extension) = os.path.splitext(os.path.basename(in_file))
 
@@ -138,9 +157,8 @@ def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
 
 
 def copy_basic_metadata(h5file, reader, frames, fields_of_view):
-    """
-    Copy the "basic" metadata, which the ND2 library allows easy access for.
-    """
+    """Copy the "basic" metadata, which the ND2 library allows easy access
+    for."""
     # Fields of view
     if not fields_of_view:
         fields_of_view = reader.fields_of_view
@@ -154,7 +172,7 @@ def copy_basic_metadata(h5file, reader, frames, fields_of_view):
     if not frames:
         frames = reader.frames
 
-    h5file.create_array("/", "frames", obj=numpy.array(reader.frames))
+    h5file.create_array("/", "frames", obj=numpy.array(frames))
 
     # Height
     h5file.create_array("/", "height", obj=numpy.array(reader.height))
@@ -173,9 +191,7 @@ def copy_basic_metadata(h5file, reader, frames, fields_of_view):
 
 
 def copy_raw_metadata(h5file, reader):
-    """
-    Copy the "raw" metadata, which are accessible but with more effort.
-    """
+    """Copy the "raw" metadata, which are accessible but with more effort."""
     types_xml = {
         "CLxStringW": numpy.unicode,
         "lx_int32": numpy.int32,
@@ -240,9 +256,7 @@ def copy_raw_metadata(h5file, reader):
 
 
 def copy_fov_metadata(h5file, frames, fields_of_view, reader):
-    """
-    Make a table of X, Y, Z, Timestamp, PFS information for each FOV
-    """
+    """Make a table of X, Y, Z, Timestamp, PFS information for each FOV."""
     # Check whether the user specified lists of frames & fields of view to process
     # (thereby excluding those not in the list)
     if not frames:
@@ -294,11 +308,12 @@ def copy_fov_metadata(h5file, frames, fields_of_view, reader):
 
 
 def get_largest_extents(nd2_dict, metadata_key):
-    """
-    Input a dict of nd2 readers, and a numeric metadata key (fields_of_view, frames, z_levels...)
-    Returns the smallest and largest values, across all of the files, as a tuple.
-    Assume that values are non-negative integers.
-    Assume values are always sorted from least to greatest.
+    """Input a dict of nd2 readers, and a numeric metadata key (fields_of_view,
+    frames, z_levels...) Returns the smallest and largest values, across all of
+    the files, as a tuple.
+
+    Assume that values are non-negative integers. Assume values are
+    always sorted from least to greatest.
     """
     from sys import maxsize
 
@@ -317,11 +332,9 @@ def get_largest_extents(nd2_dict, metadata_key):
 
 
 def compare_channel_names(nd2_list):
-    """
-    Input a list of nd2 file paths
-    Returns false if not all files have identical channel name arrays in their metadata
-    FIXME replace with the generic attributes function below?
-    """
+    """Input a list of nd2 file paths Returns false if not all files have
+    identical channel name arrays in their metadata FIXME replace with the
+    generic attributes function below?"""
     iter_files = iter(nd2_list)
     zeroth_file_channels = nd2reader.Nd2(next(iter_files)).channels
 
@@ -334,11 +347,9 @@ def compare_channel_names(nd2_list):
 
 
 def metadata_attributes_equal(nd2_dict, attribute):
-    """
-    Input a dict of nd2 readers, and an attribute of interest
-    Returns None if not all files have identical attributes of this type in their metadata
-    Returns the attribute if they are identical
-    """
+    """Input a dict of nd2 readers, and an attribute of interest Returns None
+    if not all files have identical attributes of this type in their metadata
+    Returns the attribute if they are identical."""
     iter_readers = iter(nd2_dict.items())
     zeroth_attribute = getattr(next(iter_readers)[1], attribute)
 
@@ -350,10 +361,8 @@ def metadata_attributes_equal(nd2_dict, attribute):
 
 
 def metadata_channels_equal(metadata_nodes):
-    """
-    Input list of nodes from the metadata node
-    Returns false if not all nodes have identical channel name arrays in their metadata
-    """
+    """Input list of nodes from the metadata node Returns false if not all
+    nodes have identical channel name arrays in their metadata."""
     first_node = metadata_nodes.pop(0)
     first_channels = first_node.get_node("channels").read()
 

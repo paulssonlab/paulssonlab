@@ -1,0 +1,43 @@
+name: shenker-cloning
+channels:
+  - pyviz
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - biopython
+  - black
+  - bokeh
+  - cachetools
+  - click
+  - clustalo
+  - cytoolz
+  - google-api-python-client
+  - google-cloud-sdk
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - mafft
+  - matplotlib
+  - nbformat
+  - nodejs
+  - numpy
+  - pandas
+  - pip
+  - pip:
+      - benchlingapi
+      - escapejson
+      - primer3-py
+      - primer3plus
+      - requests-html
+      - pygsheets
+      - pyppeteer
+  - pre-commit
+  - pytoml
+  - requests
+  - seaborn
+  - tatsu
+  - tqdm
+  - xlrd
