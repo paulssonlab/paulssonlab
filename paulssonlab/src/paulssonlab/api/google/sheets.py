@@ -34,3 +34,10 @@ def columns_with_validation(service, spreadsheet_id, worksheets=None):
         else:
             has_datavalidation[sheet_name] = []
     return has_datavalidation
+
+
+def insert_sheet_rows(sheet, row, entries):
+    columns = sheet.get_row(1)
+    values = [[entry.get(col) for col in columns] for entry in entries]
+    # we insert at row - 1 because this inserts below the given row number
+    sheet.insert_rows(row - 1, number=len(values), values=values)

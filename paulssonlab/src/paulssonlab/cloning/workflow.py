@@ -1,13 +1,18 @@
 import numpy as np
 import re
 import requests
+from copy import deepcopy
+import string
+from Bio.Seq import Seq
+import Bio.Restriction as Restriction
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
-    get_drive_by_name,
+    get_drive_by_path,
     list_drive,
     ensure_folder,
     upload_drive,
     columns_with_validation,
+    insert_sheet_rows,
 )
 from paulssonlab.api import read_sequence
 from paulssonlab.api.util import PROGRESS_BAR
@@ -25,7 +30,7 @@ MARKER_ABBREVIATIONS = {
 
 
 def get_strain_collection_sheets(service, collection_prefix):
-    collection_folder = get_drive_by_name(
+    collection_folder = get_drive_by_path(
         service, f"{collection_prefix}_Collection", folder=True
     )
     files = list_drive(service, root=collection_folder)
@@ -100,13 +105,6 @@ def _trim_unassigned_ids(worksheet, row):
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
 
 
-def _insert_rows(sheet, row, entries):
-    columns = sheet.get_row(1)
-    values = [[entry.get(col) for col in columns] for entry in entries]
-    # we insert at row - 1 because this inserts below the given row number
-    sheet.insert_rows(row - 1, number=len(values), values=values)
-
-
 def import_addgene(
     urls,
     strain_sheet,
@@ -170,9 +168,9 @@ def import_addgene(
                 content = plasmid_map.format("genbank")
                 plasmid_maps[filename] = {"content": content}
     # add strains to spreadsheet
-    _insert_rows(strain_sheet, strain_row, strains)
+    insert_sheet_rows(strain_sheet, strain_row, strains)
     # add plasmids to spreadsheet
-    _insert_rows(plasmid_sheet, plasmid_row, plasmids)
+    insert_sheet_rows(plasmid_sheet, plasmid_row, plasmids)
     # copy sequences to plasmid maps folder
     if service is None:
         service = strain_sheet.client.drive.service
@@ -357,3 +355,30 @@ def _format_addgene_for_spreadsheet(
             return [entry]
     else:
         raise ValueError(f"unknown Addgene item type: {data['item']}")
+
+
+def insert_parts(part_sheet, parts, first_row):
+    parts = deepcopy(parts)
+    parts = _prepare_parts(part_sheet, parts, first_row)
+    # part_sheet.spreadsheet.default_parse must be True for formula to be parsed, but this is True by default
+    return insert_sheet_rows(part_sheet, first_row, parts)
+
+
+def _prepare_parts(part_sheet, parts, first_row):
+    cols = part_sheet.get_row(1)
+    overhang1_col = string.ascii_uppercase[cols.index("Upstream overhang*")]
+    overhang2_col = string.ascii_uppercase[cols.index("Downstream overhang*")]
+    seq_col = string.ascii_uppercase[cols.index("Sequence*")]
+    for enzyme_name in ("BsaI", "BsmBI", "AarI", "BbsI"):
+        enzyme = getattr(Restriction, enzyme_name)
+        site1 = enzyme.site
+        site2 = str(Seq(site1).reverse_complement())
+        for row, part in enumerate(parts, first_row):
+            has_enzyme = f'=IF(AND(ISERROR(SEARCH("{site1}",${seq_col}{row})), ISERROR(SEARCH("{site2}",${seq_col}{row}))),"","yes")'
+            part[enzyme_name] = has_enzyme
+    for row, part in enumerate(parts, first_row):
+        part_type = f"=ArrayFormula(INDEX('Part types'!A:A, MATCH(${overhang1_col}{row}&\" \"&${overhang2_col}{row},{{'Part types'!B:B&\" \"&'Part types'!C:C}},0)))"
+        part["Type*"] = part_type
+        correct_overhangs = f'=IF(AND(LEFT(${seq_col}{row},LEN(${overhang1_col}{row}))=${overhang1_col}{row},RIGHT(${seq_col}{row},LEN(${overhang2_col}{row}))=${overhang2_col}{row}),"","no")'
+        part["Correct overhangs?"] = correct_overhangs
+    return parts

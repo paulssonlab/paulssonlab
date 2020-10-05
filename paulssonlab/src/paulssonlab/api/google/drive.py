@@ -21,21 +21,17 @@ def get_drive_query(service, query):
     return files[0]
 
 
-def get_drive_by_name(service, name, folder=None):
-    query = f"name = '{name}'"
-    if folder is True:
-        query += " and (mimeType = 'application/vnd.google-apps.folder')"
-    elif folder is False:
-        query += " and (mimeType != 'application/vnd.google-apps.folder')"
-    return get_drive_query(service, query)["id"]
-
-
 def get_drive_by_path(service, path, root=None, folder=None):
-    path_components = path.split("/")
-    for p in path_components[:-1]:
-        query = f"(name = '{p}') and ('{root}' in parents) and (mimeType = 'application/vnd.google-apps.folder')"
+    if isinstance(path, str):
+        path = [path]
+    for p in path[:-1]:
+        query = f"(name = '{p}') and (mimeType = 'application/vnd.google-apps.folder')"
+        if root is not None:
+            query += f" and ('{root}' in parents)"
         root = get_drive_query(service, query)["id"]
-    query = f"(name = '{path_components[-1]}') and ('{root}' in parents)"
+    query = f"(name = '{path[-1]}')"
+    if root is not None:
+        query += f" and ('{root}' in parents)"
     if folder is True:
         query += " and (mimeType = 'application/vnd.google-apps.folder')"
     elif folder is False:
