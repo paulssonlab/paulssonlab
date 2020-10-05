@@ -2,7 +2,7 @@
 
 import click
 from convert import main_conversion_function
-from trench_detect_new import main_detection_function
+from trench_detect import main_detection_function
 from segmentation import main_segmentation_function
 from write_kymographs import main_kymographs_function
 from trench_measurements import main_trench_measurements_function
@@ -238,12 +238,13 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
 @click.option(
     "-s",
     "--share-regions",
+    "share_regions",
     required=True,
     default=False,
     type=bool,
     help="Share region detection across frames (detect only within the first frame)",
 )
-def trench_detect(out_dir):
+def trench_detect(out_dir, in_file, num_cpu, params_file, share_regions):
     """Detect trenches and write their rectangular regions to an HDF5  file."""
     main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions)
 

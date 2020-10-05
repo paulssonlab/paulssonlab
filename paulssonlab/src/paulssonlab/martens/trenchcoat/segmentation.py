@@ -7,6 +7,7 @@ import pathlib
 import tables
 from multiprocessing import Pool
 from tqdm import tqdm
+import pandas
 
 import algorithms
 
@@ -43,38 +44,58 @@ def run_segmentation_analysis_regions(
     file_names,
     regions_file,
 ):
-
-    """Read region co-ordinates from an HDF5 file (with support for multiple
-    sets of regions per image) Then call the code to do the actual segmentation
-    work."""
+    """
+    Read region co-ordinates from an HDF5 file (with support for multiple
+    sets of regions per image).
+    Then call the code to do the actual segmentation work.
+    """
+    # H5file with image data
+    h5file = tables.open_file(in_file, mode="r")
+    z_node = h5file.get_node(
+        "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(name, fov, frame, z_level)
+    )
 
     # H5file with arrays denoting region co-ordinates
     # There can be multiple such arrays, e.g. if there are 2 rows of trenches,
     # then each row gets its own array, and each array specifies individual trenches 1 at a time.
     h5file_reg = tables.open_file(regions_file, mode="r")
-    for n in h5file_reg.iter_nodes(
-        "/{}/FOV_{}/Frame_{}/{}".format(name, fov, frame, z_level)
-    ):
-        region_set_number = int(n._v_name)
-        # Array of image regions (such as trenches). Each region must have identical dimensions.
-        regions = n.read()
 
-        h5file = tables.open_file(in_file, mode="r")
-        z_node = h5file.get_node(
-            "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(name, fov, frame, z_level)
-        )
-        # TODO: compare performance of that versus the following:
-        # (needs passing in the original directory, rather than the top-level h5file)
-        # hypothesis: maybe the multi-processing is slower than it should be b/c of issues when opening the same H5 file??
-        # (not getting good CPU scaling)
-        # file_path = os.path.join(in_dir, "File_{}".format(name), "FOV_{}".format(fov), "Frame_{}".format(frame))
-        # h5file = tables.open_file(file_path, mode="r")
-        # z_node = h5file.get_node("/Z_{}".format(z_level))
-        (stack, ch_to_index) = make_ch_to_img_stack_regions(
-            h5file, z_node, channels, regions
-        )
-        h5file.close()
+    # Read in the array of regions from a table
+    # 1. Query the table for the relevant rows
+    trench_table = h5file_reg.get_node("/trench_coords")
+    this_node = trench_table.read_where(
+        """(info_file == name) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"""
+    )
 
+    # 2. Trench rows: unique entries in the "info_row_number" column
+    df = pandas.DataFrame(this_node)
+    region_sets = df["info_trench_row"].unique()
+
+    # 3. Compile the rows into a numpy array & run segmentation
+    for region_set_number in region_sets:
+        # a. Grab all the relevant trenches
+        trenches = df[df["info_trench_row"] == region_set_number]
+        # FIXME is it imperative to sort the rows in ascending order?
+        # (they must be ascending; but maybe they will always be sorted, since that's the order they were written?)
+
+        # b. Convert this set of trenches into a single regions array
+        # NOTE This was a first attempt using a dim=4 column, but that doesn't work with pandas.
+        # Instead, have to merge 4 separate columns: min_row, min_col, max_row, max_col
+        # regions = [i for i in trenches["bounding_box"]]
+        # regions = numpy.array(regions)
+
+        # Have a subset of dataframe rows which belong to trenches in this fov etc. & row of trenches
+        # Take the 4 bbox coords for each trench & convert into a 2d array:
+        # 1st dim is trench number, second dim is 4 bbox coords.
+        regions = []
+        for r in trenches.itertuples():
+            regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+        regions = numpy.array(regions)
+
+        # c. Use the array of bounding boxes to extract regions from the image & create an image stack
+        make_ch_to_img_stack_regions(h5file, z_node, channels, regions)
+
+        # d. Run the analysis on the given image stack
         run_segmentation_analysis(
             in_file,
             name,
@@ -88,9 +109,12 @@ def run_segmentation_analysis_regions(
             algo_dict,
             file_names,
             region_set_number,
+            stack,
+            ch_to_index,
         )
 
     h5file_reg.close()
+    h5file.close()
 
 
 def run_segmentation_analysis_no_regions(
@@ -106,8 +130,9 @@ def run_segmentation_analysis_no_regions(
     algo_dict,
     file_names,
 ):
-
-    """Open h5file with images, load without regions Call segmentation."""
+    """
+    Open h5file with images, load without regions. Call segmentation.
+    """
 
     # Node in the input file, which may contain multiple channel images
     h5file = tables.open_file(in_file, mode="r")
@@ -152,11 +177,12 @@ def run_segmentation_analysis(
     stack,
     ch_to_index,
 ):
-
-    """Create new HDF5 files for writing masks, measurements table Load all
+    """
+    Create new HDF5 files for writing masks, measurements table Load all
     channel images within a given File / FOV / Frame / Z-level, and extract
     regions using region co-ordinate Call function to do segmentation,
-    measurements, and writing results to disk."""
+    measurements, and writing results to disk.
+    """
 
     # Create directory structure to store the masks
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_masks, name, fov)).mkdir(
@@ -212,8 +238,8 @@ def write_masks_tables(
     algo_dict,
     region_set_number,
 ):
-
-    """Compute masks using specified segmentation algorithm.
+    """
+    Compute masks using specified segmentation algorithm.
 
     Write masks & measurements to HDF5 files. Analyze regions within
     images. (e.g. trenches, cropped images...)
@@ -442,7 +468,8 @@ def link_files(in_dir, file_name):
 
 
 def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_file):
-    """Input the HDF5 file, an out directory, how many CPUs, a YAML file with
+    """
+    Input the HDF5 file, an out directory, how many CPUs, a YAML file with
     parameters, and an HDF5 file with region (e.g. trench) co-ordinates.
 
     Run cell segmentation & write masks and measurements to HDF5.
