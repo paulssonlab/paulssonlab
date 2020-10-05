@@ -1,4 +1,4 @@
-name: marlin_libraries
+name: nanopore
 channels:
   - conda-forge
   - bioconda
@@ -6,15 +6,16 @@ channels:
 dependencies:
   - biopython
   - black
+  - graphaligner
   - jupyterlab
-  - jupyterlab_code_formatter
   - matplotlib
+  - medaka
   - minimap2
   - nodejs
   - numpy
-  - openssl=1.0
   - pandas
   - pip
   - pre-commit
   - samtools
   - seaborn
+  - vg
