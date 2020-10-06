@@ -177,20 +177,33 @@ def add_masks_layer(
             # Needs to be the same order as the images were loaded.
             file_array = []
             for file in file_nodes:
+                # Go through series of de-references b/c pytables doesn't allow iterating
+                # over nodes if some of the nodes are symlinks.
+                path = "/masks/{}".format(file)
+                node_1 = h5file_masks.get_node(path)()
+
                 # FOV nodes
                 fov_array = []
                 for fov in fields_of_view:
+                    node_2 = h5file_masks.get_node(node_1, "/FOV_{}".format(fov))()
+
+                    # NOTE: for now, trenches are shared across frames
+                    # TODO: what if they aren't?
+                    condition = "(info_file == file) & (info_fov == fov)"
+                    search = table.read_where(condition)
+                    df = pandas.DataFrame(search)
+
                     # Frame nodes
                     frame_array = []
                     for frame in frames:
+                        node_3 = h5file_masks.get_node(
+                            node_2, "/Frame_{}".format(frame)
+                        )()
+
                         # Regions are always shared across Z, so it's OK to read them in now.
                         # FIXME read them in from the table.
                         # path = "/{}/FOV_{}/Frame_{}"
                         # regions_coords = h5file_regions.get_node(path).read()
-
-                        condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame)"
-                        search = table.read_where(condition)
-                        df = pandas.DataFrame(search)
 
                         regions = {}
                         for r in df.itertuples():
@@ -198,9 +211,6 @@ def add_masks_layer(
                                 r.info_row_number, r.info_trench_number
                             )
                             regions[key] = [r.min_row, r.min_col, r.max_row, r.max_col]
-                            # regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
-
-                        # regions = numpy.array(regions)
 
                         # Z nodes
                         z_array = []
@@ -211,26 +221,16 @@ def add_masks_layer(
                             # FIXME issue iterating nodes when accessing via symlink!
                             # this is bad, because that would require opening separate files
                             # depending on the data, but how do we lazy load from separate files?
-                            path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/".format(
-                                file, fov, frame, z, sc
+                            node_4 = h5file_masks.get_node(
+                                node_3, "/Z_{}/{}".format(z, sc)
                             )
-
-                            # Go through series of de-references b/c pytables doesn't allow iterating
-                            # over nodes if some of the nodes are symlinks.
-                            path = "/masks/{}".format(file)
-                            node = h5file_masks.get_node(path)()
-                            node = h5file_masks.get_node(node, "/FOV_{}".format(fov))()
-                            node = h5file_masks.get_node(
-                                node, "/Frame_{}".format(frame)
-                            )()
-                            node = h5file_masks.get_node(node, "/Z_{}".format(z))
 
                             # FIXME how do we know that the nodes iteration is the same order as the numbering of the trenches?
                             # could be non-numeric sorting)
                             # FIXME shape
                             arr = dask.array.from_delayed(
                                 lazy_masks_to_canvas(
-                                    regions, h5file_masks, node, width, height
+                                    regions, h5file_masks, node_4, width, height
                                 ),
                                 shape=(2048, 2048),
                                 dtype=numpy.uint16,

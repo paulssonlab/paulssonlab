@@ -173,24 +173,24 @@ def niblack_phase_segmentation(
 
     markers = numpy.empty(stack_fl.shape, dtype=numpy.float32, order="F")
     for z in range(stack_fl.shape[2]):
-        ## Closing fills small holes
-        # mask[..., z] = skimage.morphology.binary_closing(mask[..., z])
-
-        # Fill in internal holes again
+        # Fill in internal holes
         mask[..., z] = ndimage.binary_fill_holes(mask[..., z]).astype(int)
-        # mask = ndimage.binary_propagation(mask).astype(int)
 
-        # Remove small objects
+        # Remove small objects. Connectivity of 1 seems to help a lot in preventing adjacent cells from being merged.
         skimage.morphology.remove_small_objects(
-            mask[..., z], min_size=min_size, connectivity=2, in_place=True
+            mask[..., z], min_size=min_size, connectivity=1, in_place=True
         )
 
         # Label the regions
-        markers[..., z] = skimage.measure.label(mask[..., z])
+        # NOTE is there a way to change the labeling so that it coincides with the "top down" view that we associate with trenches?
+        # (it seems to go more left-to-right, which doesn't make sense!)
+        # Yes, by making an intermediate, rotated labels array, and then rotating it back & storing it again.
+        # Could maybe improve performance by tweaking their algo. to operate in the correct dimensional order?
+        lab = skimage.measure.label(numpy.rot90(mask[..., z], k=-1), connectivity=1)
+        markers[..., z] = numpy.rot90(lab, k=1)
 
     # Make a basin (invert max, min pixels)
-    # NOTE it would be nice if the watershed algo. allowed for a max priority queue.
-    # Would save us a step here.
+    # NOTE it would be nice if the watershed algo. allowed for a max priority queue. Would save us a step here.
     # NOTE it shouldn't matter if we use the max across all regions, or a same region, it only matters that it's
     # truly larger than all other values.
     image = stack_fl.max() - stack_fl

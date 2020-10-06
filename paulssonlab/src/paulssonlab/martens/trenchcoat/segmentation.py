@@ -573,12 +573,12 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 regions_file,
                             ]
 
-                            # pool.apply_async(
-                            # run_segmentation_analysis_regions,
-                            # func_args,
-                            # callback=update_pbar,
-                            # )
-                            run_segmentation_analysis_regions(*func_args)  # DEBUG
+                            pool.apply_async(
+                                run_segmentation_analysis_regions,
+                                func_args,
+                                callback=update_pbar,
+                            )
+                            # run_segmentation_analysis_regions(*func_args) # DEBUG
 
         else:
             # Loop again, & perform the analysis
