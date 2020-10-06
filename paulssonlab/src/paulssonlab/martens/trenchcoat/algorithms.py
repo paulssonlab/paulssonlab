@@ -7,6 +7,8 @@ import skimage.filters
 
 from ipywidgets import fixed, interactive
 
+from scipy import ndimage
+
 # TODO: finish the basic dual or multi-channel thresholding algo
 
 ### Single threshold
@@ -69,6 +71,7 @@ def niblack_phase_segmentation(
     stack_ph,
     otsu_multiplier,
     garbage_otsu_value,
+    fluor_sigma,
     phase_sigma,
     phase_threshold_min,
     phase_threshold_max,
@@ -94,13 +97,23 @@ def niblack_phase_segmentation(
     stack_fl -= fluor_background
     stack_ph -= phase_background
 
+    # Pre-apply a slight Gaussian blur, to help when occasional pixels dip below the threshold
+    blurred = numpy.empty(stack_fl.shape, dtype=numpy.float32, order="F")
+    for z in range(stack_fl.shape[2]):
+        blurred[..., z] = skimage.filters.gaussian(
+            stack_fl[..., z],
+            sigma=fluor_sigma,
+            mode="reflect",
+            multichannel=False,
+            preserve_range=True,
+        )
+
     # Threshold is calculated using Otsu method, which samples the distribution of pixel intensities, and then
     # scaled by the otsu multiplier, which might differ depending on empirical experience with a given channel or dataset.
     threshold = numpy.empty(stack_fl.shape[2], dtype=numpy.float32, order="F")
     for z in range(stack_fl.shape[2]):
-        threshold[z] = (
-            skimage.filters.threshold_otsu(stack_fl[..., z]) * otsu_multiplier
-        )
+        # threshold[z] = skimage.filters.threshold_otsu(stack_fl[..., z]) * otsu_multiplier
+        threshold[z] = skimage.filters.threshold_otsu(blurred[..., z]) * otsu_multiplier
 
     # Set pixels < threshold to zero, but preserve values > threshold.
     # Helps with the mean + stdev*k calculations in Niblack.
@@ -122,7 +135,7 @@ def niblack_phase_segmentation(
 
     # A mask from the phase channel
     phase_blur = numpy.empty(stack_fl.shape, dtype=numpy.float32, order="F")
-    for z in range(stack_fl.shape[2]):
+    for z in range(stack_ph.shape[2]):
         phase_blur[..., z] = skimage.filters.gaussian(
             stack_ph[..., z],
             sigma=phase_sigma,
@@ -160,8 +173,12 @@ def niblack_phase_segmentation(
 
     markers = numpy.empty(stack_fl.shape, dtype=numpy.float32, order="F")
     for z in range(stack_fl.shape[2]):
-        # Closing fills small holes
-        mask[..., z] = skimage.morphology.binary_closing(mask[..., z])
+        ## Closing fills small holes
+        # mask[..., z] = skimage.morphology.binary_closing(mask[..., z])
+
+        # Fill in internal holes again
+        mask[..., z] = ndimage.binary_fill_holes(mask[..., z]).astype(int)
+        # mask = ndimage.binary_propagation(mask).astype(int)
 
         # Remove small objects
         skimage.morphology.remove_small_objects(
@@ -289,7 +306,7 @@ def niblack_phase_segmentation_old(
             # Would save us a step here.
             # BROADCASTABLE ?
             image = stack_elem_fl.max() - stack_elem_fl
-            # FIXME for F order
+
             result[..., z] = skimage.segmentation.watershed(
                 image=image, markers=markers, mask=mask
             )

@@ -14,6 +14,46 @@ TODO clean up the metadata functions, and their names, then stick them in the se
 Might also need to rework the similar functions used for nd2 browsing?
 """
 
+### Regions (e.g. Trenches) Layer
+
+
+def add_regions_layer(regions_table, viewer):
+    """
+    There are 2 kinds of regions:
+    1. Trench rows
+    2. Trenches
+
+    A dataset could have either one, the other, or both.
+    In each case, the individual elements (rows, trenches) must be pasted into a canvas which spans the original image.
+
+    Create one label layer for trench rows, and another label layer for trenches.
+    TODO The trenches from different rows will be placed within the same, or different, labels layers???
+    Doesn't it make the most sense for each to have its own layer? why not?
+
+    TODO pass in information for the labels layer params? name etc.
+
+    FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
+    is not the same as the dims of the images or the masks? Will it "just work?"
+    """
+
+    # TEMP: just do 1 row of trenches, and not the row itself.
+    trenches_stack = make_regions_lazy_dask_stack(regions_table)
+    viewer.add_labels(trenches_stack)  # , **layer_params) # TODO layer params?
+
+    ## 1. Trench rows
+    # trench_rows_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords")
+    # viewer.add_labels(trench_rows_stack) #, **layer_params) # TODO layer params?
+
+    # row_coords_arr = h5file.get_node().read()
+    # num_trench_rows = row_coords_arr.shape[0]
+
+    ## FIXME what if some FOVs have 1 trench row, and others have 2 trench rows? How to handle different numbers
+    ## in the Dask array? Need to determine the largest possible number of rows, and then fill in
+    ## 2. Trenches within each row
+    # for n in num_trench_rows:
+    # trenches_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords/row_{}_trench_coords".format(n))
+    # viewer.add_labels(trenches_stack) #, **layer_params) # TODO layer params?
+
 
 def make_regions_lazy_dask_stack(regions_table):
     """
@@ -30,10 +70,6 @@ def make_regions_lazy_dask_stack(regions_table):
     file_nodes = whole_df["info_file"].unique()
     fields_of_view = whole_df["info_fov"].unique()
     frames = whole_df["info_frame"].unique()
-
-    print("nodes {}".format(file_nodes))
-    print("fovs {}".format(fields_of_view))
-    print("frames {}".format(frames))
 
     file_array = []
     for file in file_nodes:
@@ -96,42 +132,7 @@ def regions_arr_to_canvas(table, file, fov, frame, width, height):
     return numpy.rot90(canvas, k=-1)
 
 
-def add_regions_layer(regions_table, viewer):
-    """
-    There are 2 kinds of regions:
-    1. Trench rows
-    2. Trenches
-
-    A dataset could have either one, the other, or both.
-    In each case, the individual elements (rows, trenches) must be pasted into a canvas which spans the original image.
-
-    Create one label layer for trench rows, and another label layer for trenches.
-    TODO The trenches from different rows will be placed within the same, or different, labels layers???
-    Doesn't it make the most sense for each to have its own layer? why not?
-
-    TODO pass in information for the labels layer params? name etc.
-
-    FIXME what if the regions are shared across Z, and therefore the dimensionality of this labels layer
-    is not the same as the dims of the images or the masks? Will it "just work?"
-    """
-
-    # TEMP: just do 1 row of trenches, and not the row itself.
-    trenches_stack = make_regions_lazy_dask_stack(regions_table)
-    viewer.add_labels(trenches_stack)  # , **layer_params) # TODO layer params?
-
-    ## 1. Trench rows
-    # trench_rows_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords")
-    # viewer.add_labels(trench_rows_stack) #, **layer_params) # TODO layer params?
-
-    # row_coords_arr = h5file.get_node().read()
-    # num_trench_rows = row_coords_arr.shape[0]
-
-    ## FIXME what if some FOVs have 1 trench row, and others have 2 trench rows? How to handle different numbers
-    ## in the Dask array? Need to determine the largest possible number of rows, and then fill in
-    ## 2. Trenches within each row
-    # for n in num_trench_rows:
-    # trenches_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords/row_{}_trench_coords".format(n))
-    # viewer.add_labels(trenches_stack) #, **layer_params) # TODO layer params?
+### Masks (e.g. cells) Layer
 
 
 def add_masks_layer(
@@ -163,6 +164,7 @@ def add_masks_layer(
         lazy_masks_to_canvas = delayed(masks_to_canvas)
 
         h5file_regions = tables.open_file(regions_file, "r")
+        table = h5file_regions.root.trench_coords
 
         # FIXME how to determine the number of region sets? should each region set get its own labels layer?
         # that would mean sc x region_sets total number of layers.
@@ -181,10 +183,24 @@ def add_masks_layer(
                     # Frame nodes
                     frame_array = []
                     for frame in frames:
-                        # Regions are always shared across Z, so it's OK
-                        # to read them in now.
-                        path = "/{}/FOV_{}/Frame_{}"
-                        regions_coords = h5file_regions.get_node(path).read()
+                        # Regions are always shared across Z, so it's OK to read them in now.
+                        # FIXME read them in from the table.
+                        # path = "/{}/FOV_{}/Frame_{}"
+                        # regions_coords = h5file_regions.get_node(path).read()
+
+                        condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame)"
+                        search = table.read_where(condition)
+                        df = pandas.DataFrame(search)
+
+                        regions = {}
+                        for r in df.itertuples():
+                            key = "{}/region_{}".format(
+                                r.info_row_number, r.info_trench_number
+                            )
+                            regions[key] = [r.min_row, r.min_col, r.max_row, r.max_col]
+                            # regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+
+                        # regions = numpy.array(regions)
 
                         # Z nodes
                         z_array = []
@@ -192,15 +208,32 @@ def add_masks_layer(
                             # TODO now, need to loop all the available regions,
                             # and then copy over the corresponding data from the masks into
                             # a single, "zeroed out" canvas
-
+                            # FIXME issue iterating nodes when accessing via symlink!
+                            # this is bad, because that would require opening separate files
+                            # depending on the data, but how do we lazy load from separate files?
                             path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/".format(
                                 file, fov, frame, z, sc
                             )
-                            masks_iter = h5file_masks.iter_nodes(path)
+
+                            # Go through series of de-references b/c pytables doesn't allow iterating
+                            # over nodes if some of the nodes are symlinks.
+                            path = "/masks/{}".format(file)
+                            node = h5file_masks.get_node(path)()
+                            node = h5file_masks.get_node(node, "/FOV_{}".format(fov))()
+                            node = h5file_masks.get_node(
+                                node, "/Frame_{}".format(frame)
+                            )()
+                            node = h5file_masks.get_node(node, "/Z_{}".format(z))
+
+                            # FIXME how do we know that the nodes iteration is the same order as the numbering of the trenches?
+                            # could be non-numeric sorting)
+                            # FIXME shape
                             arr = dask.array.from_delayed(
                                 lazy_masks_to_canvas(
-                                    regions_arr, masks_iter, width, height
-                                )
+                                    regions, h5file_masks, node, width, height
+                                ),
+                                shape=(2048, 2048),
+                                dtype=numpy.uint16,
                             )
                             z_array.append(arr)
 
@@ -269,6 +302,9 @@ def add_masks_layer(
             viewer.add_labels(megastack)
 
 
+### Misc functions
+
+
 def load_values(in_file):
     """
     Load values from an HDF5 file into a dict. Useful for flatfield corrections & camera biases.
@@ -287,6 +323,32 @@ def load_values(in_file):
         dict = None
 
     return dict
+
+
+def masks_to_canvas(regions, h5file_masks, node, width, height):
+    """
+    ###Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+    Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
+
+    Input an iterator over an H5 file node, below which hang individual segmentation masks.
+    Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
+    NOTE: what happens if the regions overlap?
+    """
+    # FIXME or height, width?
+    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
+
+    for n in h5file_masks.walk_nodes(node, classname="CArray"):
+        # Parse n's parent & its name to get keys
+        row = n._v_parent._v_name
+        trench = n.name.split("_")[1]
+        key = "{}/region_{}".format(row, trench)
+        r = regions[key]
+        canvas[r[0] : r[2], r[1] : r[3]] = n.read()
+
+    return numpy.rot90(canvas, k=-1)
+
+
+### Image Layers
 
 
 def add_image_layers(
@@ -381,22 +443,6 @@ def add_image_layers(
         viewer.add_image(megastack, **layer_params[c])
 
 
-def masks_to_canvas(regions_arr, masks_iter, width, height):
-    """
-    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
-    Input an iterator over an H5 file node, below which hang individual segmentation masks.
-    Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
-    NOTE: what happens if the regions overlap?
-    """
-    # FIXME or height, width?
-    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
-
-    for r, n in zip(regions_arr, masks_iter):
-        canvas[r[0] : r[2], r[1] : r[3]] = n.read()
-
-    return numpy.rot90(canvas, k=-1)
-
-
 def get_largest_extents_hdf5(h5file, metadata_key):
     """
     TODO: for now, assume that the metadata types are integers,
@@ -479,6 +525,9 @@ def load_img(node, channel, height, width, dtype, camera_bias, flatfield_correct
         return dask.array.from_delayed(numpy.zeros(shape=(height, width), dtype=dtype))
 
 
+### Main function
+
+
 def main_hdf5_browser_function(
     images_file, masks_file, regions_file, corrections_file, napari_settings_file
 ):
@@ -534,6 +583,7 @@ def main_hdf5_browser_function(
         )
 
         # Masks layers
+        # FIXME issue with opening/closing regions h5 file & lazy loading of the data...
         if masks_file:
             add_masks_layer(
                 masks_file,

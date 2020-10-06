@@ -29,7 +29,12 @@ TODO:
    Makes this parameter magnification-independent.
 """
 
-
+# FIXME Same image will segment without regions, but will not segment with regions.
+# Is this a segmentation problem, or a regions problem?
+# Possible segmentation problem: background, otsu values, constraints imposed by narrow images
+# Possible regions problems:
+# - improper rotation or alignment of regions & image
+# - display problem of segmented results
 def run_segmentation_analysis_regions(
     in_file,
     name,
@@ -63,18 +68,18 @@ def run_segmentation_analysis_regions(
     # Read in the array of regions from a table
     # 1. Query the table for the relevant rows
     trench_table = h5file_reg.get_node("/trench_coords")
-    this_node = trench_table.read_where(
-        """(info_file == name) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"""
-    )
+    this_node = trench_table.read_where("""(info_file == name) & (info_fov == fov)""")
+    # FIXME Don't query frame & z_level, since for now we are just using the first ones across all! ??
+    # (info_frame == frame) & (info_z_level == z_level)
 
     # 2. Trench rows: unique entries in the "info_row_number" column
     df = pandas.DataFrame(this_node)
-    region_sets = df["info_trench_row"].unique()
+    region_sets = df["info_row_number"].unique()
 
     # 3. Compile the rows into a numpy array & run segmentation
     for region_set_number in region_sets:
         # a. Grab all the relevant trenches
-        trenches = df[df["info_trench_row"] == region_set_number]
+        trenches = df[df["info_row_number"] == region_set_number]
         # FIXME is it imperative to sort the rows in ascending order?
         # (they must be ascending; but maybe they will always be sorted, since that's the order they were written?)
 
@@ -90,10 +95,13 @@ def run_segmentation_analysis_regions(
         regions = []
         for r in trenches.itertuples():
             regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+
         regions = numpy.array(regions)
 
         # c. Use the array of bounding boxes to extract regions from the image & create an image stack
-        make_ch_to_img_stack_regions(h5file, z_node, channels, regions)
+        (stack, ch_to_index) = make_ch_to_img_stack_regions(
+            h5file, z_node, channels, regions
+        )
 
         # d. Run the analysis on the given image stack
         run_segmentation_analysis(
@@ -185,8 +193,11 @@ def run_segmentation_analysis(
     """
 
     # Create directory structure to store the masks
+    # FIXME have to set exist_ok=True to allow multiple frames,
+    # but now we have the possibility that someone running the same analysis multiple times
+    # will just keep on appending data over & over!
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_masks, name, fov)).mkdir(
-        parents=True, exist_ok=False
+        parents=True, exist_ok=True
     )
     h5file_masks = tables.open_file(
         "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_masks, name, fov, frame), mode="a"
@@ -194,7 +205,7 @@ def run_segmentation_analysis(
 
     # Create directory structure to store the tables
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_tables, name, fov)).mkdir(
-        parents=True, exist_ok=False
+        parents=True, exist_ok=True
     )
     h5file_tables = tables.open_file(
         "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_tables, name, fov, frame), mode="a"
@@ -330,18 +341,18 @@ def make_ch_to_img_stack_regions(h5file, z_node, channels, regions):
         #
         # # min_row, min_col, max_row, max_col
         # for j, r in enumerate(regions):
-        #     stack[..., j, i] = image_node[regions[0] : regions[2], regions[1] : regions[3]].astype(numpy.float32, casting="safe", copy=False)
+        #     stack[..., j, i] = image_node[r[0] : r[2], r[1] : r[3]].astype(numpy.float32, casting="safe", copy=False)
         #     # Add warning if values become negative? How to tell without checking all pixels? (could be expensive)
         #     # could check if min val is > 0 after running operation.
         #     stack[..., j, i] -= camera_bias[channel]
-        #     stack[..., j, i] /= f_field[channe][regions[0] : regions[2], regions[1] : regions[3]]
+        #     stack[..., j, i] /= f_field[channe][r[0] : r[2], r[1] : r[3]]
 
         # min_row, min_col, max_row, max_col
         for j, r in enumerate(regions):
             # NOTE Does copy flag actually make a difference?
-            stack[..., j, i] = image_node[
-                regions[0] : regions[2], regions[1] : regions[3]
-            ].astype(numpy.float32, casting="safe", copy=False)
+            stack[..., j, i] = image_node[r[0] : r[2], r[1] : r[3]].astype(
+                numpy.float32, casting="safe", copy=False
+            )
 
     return (stack, ch_to_index)
 
@@ -562,12 +573,12 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 regions_file,
                             ]
 
-                            pool.apply_async(
-                                run_segmentation_analysis_regions,
-                                func_args,
-                                callback=update_pbar,
-                            )
-                            # run_segmentation_analysis_regions(*func_args) # DEBUG
+                            # pool.apply_async(
+                            # run_segmentation_analysis_regions,
+                            # func_args,
+                            # callback=update_pbar,
+                            # )
+                            run_segmentation_analysis_regions(*func_args)  # DEBUG
 
         else:
             # Loop again, & perform the analysis
