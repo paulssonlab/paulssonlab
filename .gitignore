@@ -2,13 +2,29 @@
 /.nbcleanse
 .envname
 
-# snakenbake fonts
-/paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
-
 # config files
 /paulssonlab/src/paulssonlab/cloning/config.toml
 /paulssonlab/src/paulssonlab/shenker/cloning/config.toml
 /paulssonlab/src/paulssonlab/shenker/cloning/credentials.json
+
+# downloaded data
+/paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
+/paulssonlab/src/paulssonlab/shenker/cloning/data
+
+# data files
+*.fasta
+*.fastq
+*.csv
+*.h5
+*.nd2
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+*.tar
+*.gz
+*.bz2
 
 # GDS files
 *.gds
