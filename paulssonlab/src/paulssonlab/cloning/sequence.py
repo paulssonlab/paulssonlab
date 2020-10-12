@@ -83,7 +83,16 @@ def join_seqs(seqs):
     return SeqRecord(concatenated_seq, features=features)
 
 
-def anneal_oligos():
-    # align, find overhangs
-    # add feature to seqrecord with name of part (?)
-    pass
+def smoosh_sequences(a, b):
+    """Returns the shortest sequence beginning with `a` and ending with `b`.
+
+    For example, this will eliminate a common substring on the junction
+    between the two sequences.
+    """
+    min_length = min(len(a), len(b))
+    for i in range(min_length):
+        a_tail = a[-min_length + i :]
+        b_head = b[: min_length - i]
+        if a_tail == b_head:
+            return a + b[min_length - i :]
+    return a + b

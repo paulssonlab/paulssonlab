@@ -28,6 +28,7 @@ dependencies:
   - pip
   - pip:
       - benchlingapi
+      - dnachisel
       - escapejson
       - primer3-py
       - primer3plus

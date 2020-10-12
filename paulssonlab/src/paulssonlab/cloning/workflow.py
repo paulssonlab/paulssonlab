@@ -5,6 +5,7 @@ from copy import deepcopy
 import string
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
+from paulssonlab.cloning.sequence import smoosh_sequences
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     get_drive_by_path,
@@ -14,7 +15,7 @@ from paulssonlab.api.google import (
     columns_with_validation,
     insert_sheet_rows,
 )
-from paulssonlab.api import read_sequence
+from paulssonlab.api import read_sequence, regex_key
 from paulssonlab.api.util import PROGRESS_BAR
 
 
@@ -175,7 +176,10 @@ def import_addgene(
             if plasmid_map:
                 filename = f"{plasmid_id}.gbk"
                 content = plasmid_map.format("genbank")
-                plasmid_maps[filename] = {"content": content}
+                plasmid_maps[filename] = {
+                    "content": content,
+                    "mimetype": "chemical/seq-na-genbank",
+                }
     # add strains to spreadsheet
     insert_sheet_rows(strain_sheet, strain_row, strains)
     # add plasmids to spreadsheet
@@ -193,13 +197,12 @@ def import_addgene(
             file_id = files[filename]["id"]
         else:
             file_id = None
-        mimetype = "chemical/seq-na-genbank"
         file_id = upload_drive(
             service,
             content=plasmid_map["content"],
             name=filename,
             file_id=file_id,
-            mimetype=mimetype,
+            mimetype=plasmid_map["mimetype"],
             parent=plasmid_maps_folder,
         )
         plasmid_map["id"] = file_id
@@ -391,3 +394,33 @@ def _prepare_parts(part_sheet, parts, first_row):
         correct_overhangs = f'=IF(AND(LEFT(${seq_col}{row},LEN(${overhang1_col}{row}))=${overhang1_col}{row},RIGHT(${seq_col}{row},LEN(${overhang2_col}{row}))=${overhang2_col}{row}),"","no")'
         part["Correct overhangs?"] = correct_overhangs
     return parts
+
+
+def get_drive_seq(drive_service, root, name):
+    return next(get_drive_seqs(drive_service, root, [name]))
+
+
+def get_drive_seqs(drive_service, root, names):
+    seq_files = list_drive(drive_service, root=root)
+    for name in names:
+        seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
+        seq = read_sequence(
+            drive_service.files().get_media(fileId=seq_file).execute().decode("utf8")
+        )
+        yield seq
+
+
+def get_part_seq(part_name):
+    pass  # TODO
+
+
+def add_overhangs(seq, overhangs):
+    seq = smoosh_sequences(overhangs[0], seq)
+    seq = smoosh_sequences(seq, overhangs[1])
+    return seq
+
+
+def add_flanks(seq, flanks):
+    for flank_5prime, flank_3prime in flanks:
+        seq = flank_5prime + seq + flank_3prime
+    return seq
