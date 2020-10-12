@@ -8,8 +8,10 @@ def reverse_complement(seq):
         return seq.reverse_complement(
             id=True, name=True, description=True, annotations=True, dbxrefs=True
         )
-    else:
+    elif hasattr(seq, "reverse_complement"):
         return seq.reverse_complement()
+    else:
+        return Seq(seq).reverse_complement()
 
 
 def slice_seq(seq, start, end, annotation_start=None, annotation_end=None):
