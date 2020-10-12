@@ -87,12 +87,21 @@ def get_next_collection_id(worksheet):
         last_idx = int(last_idx)
     # ID for last non-empty row
     last_id = df.iloc[last_idx - 1, 0]
-    prefix, index, _ = re.match(r"([A-Za-z]*)(\d+)(\.\d+\w+?)?", str(last_id)).groups()
+    prefix, number = re.match(
+        r"([A-Za-z]*)\s*(\d+(?:\.\d+)?)[a-zA-Z]*", str(last_id)
+    ).groups()
+    number_parts = number.split(".")
+    if len(number_parts) == 2 and number_parts[0] == "0":
+        # increment decimal if whole-part of the number is 0
+        prefix += "0."
+        index = int(number_parts[1])
+    else:
+        index = int(number_parts[0])
     # increment twice for:
     # - add one to convert from zero-indexing to one-indexing
     # - row 1 is header
     row = last_idx + 2
-    return (prefix, int(index) + 1), row
+    return (prefix, index + 1), row
 
 
 def trim_unassigned_ids(worksheet):
