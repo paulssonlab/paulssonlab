@@ -73,6 +73,9 @@ def _get_next_empty_row(worksheet, skip_columns=0):
         .all(axis=1)
     )
     last_idx = nonempty[nonempty].last_valid_index()
+    # convert to Python int because
+    # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+    last_idx = int(last_idx)
     return last_idx, df
 
 
@@ -82,10 +85,6 @@ def get_next_collection_id(worksheet):
         # sheet is empty, initialize at prefix 1
         prefix = worksheet.spreadsheet.title.split("_")[0]
         return (prefix, 1), 2
-    else:
-        # convert to Python int because
-        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-        last_idx = int(last_idx)
     # ID for last non-empty row
     last_id = df.iloc[last_idx - 1, 0]
     prefix, number = re.match(
