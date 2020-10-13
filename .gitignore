@@ -15,6 +15,11 @@
 *.fasta
 *.fastq
 *.csv
+*.tsv
+*.dat
+*.json
+*.xls
+*.xlsx
 *.h5
 *.nd2
 *.tif
