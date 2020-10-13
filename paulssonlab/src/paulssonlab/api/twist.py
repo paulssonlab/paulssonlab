@@ -56,7 +56,6 @@ def auth_headers(config):
     }
 
 
-# TODO: async version
 def score(config, seqs, gene_type="NON_CLONED_GENE"):
     data = [
         {
@@ -67,10 +66,14 @@ def score(config, seqs, gene_type="NON_CLONED_GENE"):
         }
         for name, seq in seqs.items()
     ]
-    constructs = _score(config, data)
+    scoring_jobs = _score(config, data)
     # return constructs
-    ids = [c["id"] for c in constructs]
-    scores = _poll_score(config, ids)
+    ids = [j["id"] for j in scoring_jobs]
+    scored_constructs = _poll_score(config, ids)
+    scored_constructs = {s["external_id"]: s for s in scored_constructs}
+    # keep same order as input
+    scored_constructs = {name: scored_constructs[name] for name in seqs.keys()}
+    return scored_constructs
 
 
 def _score(config, data):
@@ -83,6 +86,7 @@ def _score(config, data):
     return r.json()
 
 
+# TODO: async version
 def _poll_score(config, ids, delay=5, max_retries=20):
     # TODO: this probably maxes out at 500 returned constructs (inferred from swagger docs example)
     # TODO: this is also severely limited by GET URL param length limits, need to ask Twist to add a POST method
@@ -114,16 +118,16 @@ def optimize_codons(config, seqs, avoid_enzymes=None, organism="Escherichia coli
             if avoid_enzymes
             else [],
             "organism": organism,
-            "insertion_point_mes_uid": "na",
-            "vector_mes_uid": "na",
-            "adapters_on": True,
         }
         for name, seq in seqs.items()
     ]
     optimization_jobs = _optimize_codons(config, data)
     ids = [j["id"] for j in optimization_jobs]
-    optimization_results = _poll_optimization(config, ids)
-    return optimization_results
+    optimized_constructs = _poll_optimization(config, ids)
+    optimized_constructs = {o["external_id"]: o for o in optimized_constructs}
+    # keep same order as input
+    optimized_constructs = {name: optimized_constructs[name] for name in seqs.keys()}
+    return optimized_constructs
 
 
 def _optimize_codons(config, data):
@@ -132,11 +136,11 @@ def _optimize_codons(config, data):
         json=data,
         headers=auth_headers(config),
     )
-    print(r.status_code, r.content)
     r.raise_for_status()
     return r.json()
 
 
+# TODO: async version
 def _poll_optimization(config, ids, delay=5, max_retries=20):
     # TODO: this probably maxes out at 500 returned constructs (inferred from swagger docs example)
     # TODO: this is also severely limited by GET URL param length limits, need to ask Twist to add a POST method
@@ -146,17 +150,27 @@ def _poll_optimization(config, ids, delay=5, max_retries=20):
             params={"id__in": ",".join(ids), "completed": True},
             headers=auth_headers(config),
         )
-        print(">", r.status_code)
         if r.status_code == 200:
             optimization_jobs = r.json()
-            print(">>", optimization_jobs)
-            if set(j["id"] for j in optimization_jobs if j["completed"] is True) == set(
-                ids
-            ):
+            completed_ids = set(
+                j["id"] for j in optimization_jobs if j["completed"] is True
+            )
+            if completed_ids == set(ids):
                 return optimization_jobs
         time.sleep(delay)
     raise Exception("Twist codon optimization timed out")
 
 
-def score_and_optimize(config, seqs, avoid_enzymes=None):
-    pass
+def score_and_optimize(config, seqs, avoid_enzymes=None, organism="Escherichia coli"):
+    scored_constructs = score(config, {name: seq[0] for name, seq in seqs.items()})
+    need_to_optimize = {
+        name: seq
+        for name, seq in seqs.items()
+        if scored_constructs[name]["score"]
+        != "STANDARD"  # TODO: need production API to test this
+    }
+    optimized_constructs = optimize_codons(
+        config, need_to_optimize, avoid_enzymes=avoid_enzymes, organism=organism
+    )
+    # TODO: simplify output?
+    return optimized_constructs
