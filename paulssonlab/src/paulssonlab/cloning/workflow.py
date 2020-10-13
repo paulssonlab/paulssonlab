@@ -187,6 +187,16 @@ def import_addgene(
     # copy sequences to plasmid maps folder
     if service is None:
         service = strain_sheet.client.drive.service
+    upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=overwrite)
+    # TODO: add file metadata/row numbers to returned data?
+    # trim extra rows
+    if trim:
+        trim_unassigned_ids(strain_sheet)
+        trim_unassigned_ids(plasmid_sheet)
+    return dict(strains=strains, plasmids=plasmids, plasmid_maps=plasmid_maps)
+
+
+def upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=True):
     files = list_drive(service, root=plasmid_maps_folder)
     for filename, plasmid_map in plasmid_maps.items():
         if filename in files:
@@ -206,12 +216,7 @@ def import_addgene(
             parent=plasmid_maps_folder,
         )
         plasmid_map["id"] = file_id
-    # TODO: add file metadata/row numbers to returned data?
-    # trim extra rows
-    if trim:
-        trim_unassigned_ids(strain_sheet)
-        trim_unassigned_ids(plasmid_sheet)
-    return dict(strains=strains, plasmids=plasmids, plasmid_maps=plasmid_maps)
+    return plasmid_maps
 
 
 def _import_addgene_data(

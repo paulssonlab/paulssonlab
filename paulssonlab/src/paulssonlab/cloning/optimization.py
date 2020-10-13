@@ -1,5 +1,6 @@
 import dnachisel as dc
 from Bio.Seq import Seq
+from .util import enzymes_to_names
 
 
 def dnachisel_constraints_for_twist(
@@ -27,7 +28,9 @@ def dnachisel_constraints_for_twist(
     # TWIST: We won’t introduce any repeat longer than 20 base pairs
     constraints.append(dc.UniquifyAllKmers(20))
     # TWIST: We avoid homopolymer runs of 10 or more bases
-    constraints.append(dc.AvoidPattern(dc.SequencePattern(r"(.)\1{9,}")))
+    constraints.append(
+        dc.AvoidPattern(dc.SequencePattern(r"(.)\1{9,}", is_palyndromic=True))
+    )
     # TWIST: We avoid fitted sequences that create global GC% of less than 25% or more than 65% and local GC windows (50 bp) of less than 35% or more than 65%
     constraints.append(dc.EnforceGCContent(0.25, 0.65))
     constraints.append(dc.EnforceGCContent(0.35, 0.65, window=50))
@@ -45,10 +48,8 @@ def dnachisel_constraints_for_twist(
     # constraints.append(dc.AvoidHairpins(stem_size=20, hairpin_window=200))
     # TWIST: We check both strands to ensure they don’t contain the enzyme cut sites you asked us to avoid creating
     if avoid_enzymes:
-        for enzyme in avoid_enzymes:
-            constraints.append(
-                dc.AvoidPattern(f"{enzyme.__name__}_site", location=cds_location)
-            )
+        for enzyme in enzymes_to_names(avoid_enzymes):
+            constraints.append(dc.AvoidPattern(f"{enzyme}_site", location=cds_location))
     # TWIST: We avoid introduction of promoter sequences internal to expression sequences by avoiding the creation of strong sigma70 binding sites
     # TODO: this shouldn't be too hard, but we skip for now
     # constraints.append(dc.MotifPssmPattern())
@@ -56,6 +57,12 @@ def dnachisel_constraints_for_twist(
     constraints.append(dc.AvoidPattern(dc.SequencePattern(r"GGAGG|TAAGGAG")))
     # TWIST: We avoid sequences that create terminator sequences (TTTTT or AAAAA)
     constraints.append(dc.AvoidPattern(dc.SequencePattern(r"(A|T)\1{4,}", size=5)))
+    # TWIST (error message): >45% of your sequence is composed of small repeats (9bp or longer). This increases complexity. Please break up repeats, perhaps by varying your codon usage.
+    # TODO: didn't fix error, so skip for now
+    # constraints.append(
+    #     dc.AvoidPattern(dc.RepeatedKmerPattern(2, 7))
+    # )  # 9-mer repeated twice
+    # TODO: don't change codons if not necessary
     if cds_location is not None:
         objectives.append(
             dc.CodonOptimize(

@@ -4,7 +4,7 @@ import re
 from operator import itemgetter
 from paulssonlab.util import grouper, first
 
-KAZUSA_URI = "http://www.kazusa.or.jp/codon/cgi-bin/showcodon.cgi?"
+KAZUSA_URL = "http://www.kazusa.or.jp/codon/cgi-bin/showcodon.cgi?"
 
 
 def get_codon_usage_table(species_id=37762, replace_uracil=True):
@@ -17,7 +17,7 @@ def get_codon_usage_table(species_id=37762, replace_uracil=True):
 
 
 def _get_codon_usage_table(species_id):
-    r = requests.get(KAZUSA_URI, params={"species": species_id, "aa": 1, "style": "N"})
+    r = requests.get(KAZUSA_URL, params={"species": species_id, "aa": 1, "style": "N"})
     r.raise_for_status()
     match = re.search(r"<PRE>(.*)</PRE>", r.content.decode(), re.DOTALL)
     if not match:
