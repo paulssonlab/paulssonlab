@@ -9,20 +9,18 @@ from playhouse.apsw_ext import (
     BooleanField,
     BlobField,
 )
-from .misc.json_util import JSONField
-import pickle
-import base64
-import zarr
+from paulssonlab.inventory.json_util import JSONField
 import xxhash
 from datetime import datetime
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 import os
 import re
-import gc
-from IPython import embed
 from tqdm.autonotebook import tqdm
-from .metadata import parse_nd2_file_metadata, parse_nikon_tiff_file_metadata
+from paulssonlab.io.metadata import (
+    parse_nd2_file_metadata,
+    parse_nikon_tiff_file_metadata,
+)
 
 AGGREGATE_EXCLUDE = re.compile(
     r"^(Thumbs.*\.db|Pos7_TimelapseAnalysis\.mat|.*\.txt|\..*)$"
@@ -143,7 +141,10 @@ def _scan_file(path):
 
 
 def _abbreviate_filename(filename, length, sep="..."):
-    return filename[: length // 2 - len(sep)] + sep + filename[-length // 2 :]
+    if length >= len(filename):
+        return filename
+    else:
+        return filename[: length // 2 - len(sep)] + sep + filename[-length // 2 :]
 
 
 def _scan_file_list(file_list, valid_extensions, extension_aliases=EXTENSION_ALIASES):
@@ -221,33 +222,19 @@ def _scan_directory(directory, valid_extensions, aggregate_extensions=None):
                 for path in paths:
                     yield path, extension, False
                     num_files_to_process += 1
-    print("skipped: {}".format(skipped))  # TODO: not used
+    # click.echo("skipped: {}".format(skipped))  # TODO: not used
 
 
-@click.command()
-@click.argument("in_path", type=click.Path(exists=True))
-@click.argument(
-    "out_path", type=click.Path(writable=True, dir_okay=False), required=True
-)
-@click.option("--rescan", is_flag=True, default=False)
-@click.option(
-    "--file-list", type=click.File("r")
-)  # TODO: make this a flag, have file list as in_path instead?
-@click.option("--skip", multiple=True, default=False)
-@click.option("--aggregate", multiple=True, default=["tiff"])
-@click.option("--metadata/--no-metadata", default=True)
-@click.option("--checksums/--no-checksums", default=True)
-@click.option("--duplicates/--no-duplicates", default=False)
-def inventory(
+def make_inventory(
     in_path,
     out_path,
-    rescan,
-    file_list,
-    skip,
-    aggregate,
-    metadata,
-    checksums,
-    duplicates,
+    rescan=False,
+    file_list=None,
+    skip=False,
+    aggregate=["tiff"],
+    metadata=True,
+    checksums=True,
+    duplicates=False,
 ):
     # use one unified files table
     # add stat information on initial scan
@@ -264,6 +251,7 @@ def inventory(
             valid_extensions.remove(extension)
         with _processing_step("scan", reprocess=rescan) as process:
             if process:
+                click.secho("Scanning files...", bold=True)
                 if file_list:
                     files_to_scan = _scan_file_list(file_list, valid_extensions)
                 else:
@@ -294,6 +282,7 @@ def inventory(
                     File.create(**doc)
         ### METADATA
         if metadata:
+            click.secho("Reading metadata...", bold=True)
             skipped = []
             files_to_process = (
                 File.select().where(File.metadata == "").order_by(File.size.desc())
@@ -310,15 +299,16 @@ def inventory(
                 try:
                     file_row.metadata = METADATA_READERS[extension](file_row.path)
                 except KeyboardInterrupt:
-                    print("skipped: {}".format(skipped))
+                    click.echo("skipped: {}".format(skipped), err=True)
                     raise
                 except:
                     skipped.append(file_row.path)
                 else:
                     file_row.save()
-            print("skipped: {}".format(skipped))
+            click.echo("skipped: {}".format(skipped), err=True)
         ### CHECKSUMS
         if checksums:
+            click.secho("Computing checksums...", bold=True)
             skipped = []
             files_to_process = (
                 File.select()
@@ -340,24 +330,7 @@ def inventory(
         db.close()  # flush
 
 
-@click.command()
-@click.argument("file", type=click.Path(exists=True, dir_okay=False))
-@click.option("--force/--no-force", default=False)
-def inspect_metadata(file, force):
-    # convenience imports
-    from metadata import _nikon_tiff_label, _nikon_tiff_field, parse_nikon_tiff_metadata
-    import PIL.Image
-    import nd2reader
-
+def get_metadata(file):
     extension = _get_extension(os.path.split(file)[-1])
-    if force:
-        try:
-            md = METADATA_READERS[extension](file)
-        except:
-            print("could not load metadata")
-    else:
-        md = METADATA_READERS[extension](file)
-    embed()
-
-
-commands = [inventory, inspect_metadata]
+    md = METADATA_READERS[extension](file)
+    return md

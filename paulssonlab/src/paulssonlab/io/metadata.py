@@ -1,12 +1,12 @@
 import nd2reader
-from skimage.external.tifffile import TiffFile
+from tifffile import TiffFile
 import PIL
 import array
 import zarr
 from numcodecs import Blosc
 import xmltodict
 import xml
-from .util import recursive_map
+from paulssonlab.util import recursive_map
 
 DEFAULT_METADATA_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0
