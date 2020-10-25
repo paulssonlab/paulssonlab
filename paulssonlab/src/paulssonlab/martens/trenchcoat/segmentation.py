@@ -29,12 +29,7 @@ TODO:
    Makes this parameter magnification-independent.
 """
 
-# FIXME Same image will segment without regions, but will not segment with regions.
-# Is this a segmentation problem, or a regions problem?
-# Possible segmentation problem: background, otsu values, constraints imposed by narrow images
-# Possible regions problems:
-# - improper rotation or alignment of regions & image
-# - display problem of segmented results
+
 def run_segmentation_analysis_regions(
     in_file,
     name,
