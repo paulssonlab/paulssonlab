@@ -89,7 +89,7 @@ Options:
   --help                       Show this message and exit.
 ```
 
-Conversion supports only copying a subset of the ND2 datasets. This can be useful for testing purposes (reducing the time for analysis), or if it's known that only some of the data are needed. For example, suppose one wanted to only include frames 1 and 5-7, and FOVS 10-90:
+By default the entire ND2 datasets will be copied. However, conversion also supports only copying a subset of the ND2 datasets. This can be useful for testing purposes (reducing the time for analysis), or if it's known that only some of the data are needed. For example, suppose one wanted to only include frames 1 and 5-7, and FOVS 10-90:
 
 ```
 trenchcoat convert -i ND2 -o HDF5 -f 1,5-7 -F 10-90
@@ -340,6 +340,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
         phase_sigma: 0.5
         
         min_size: 40
+	
 	MCHERRY:
 	    algorithm: "niblack_phase"
 	    
@@ -374,6 +375,37 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	trenchcoat browse-hdf5 -i HDF5/data.h5 -S napari_settings.yaml -m SEGMENTATION/MASKS/masks.h5 -r REGIONS/regions_tables.h5
 	```
 
+### Scripting 
+
+It is trivial to run a series of commands in a BASH script:
+
+``run.sh``:
+
+```
+#!/bin/bash
+
+trenchcoat convert -i ND2 -o HDF5
+
+trenchcoat trench-detect -i HDF5/data.h5 -o REGIONS -P trench_params.yaml --share-regions
+
+trenchcoat segment -i HDF5/data.h5 -o SEGMENTATION -P seg_params.yaml -R REGIONS/regions_tables.h5
+```
+
+In BASH:
+
+```
+# Make the file executable
+chmod +x run.sh
+
+# Run the analysis
+./run.sh
+
+# View the results
+trenchcoat browse-hdf5 -i HDF5/data.h5 -S napari_settings.yaml -m SEGMENTATION/MASKS/masks.h5 -r REGIONS/regions_tables.h5
+```
+
+BASH scripts also document commands for future reference.
+
 ## How does TrenchCoat work?
 
 ### ND2 to HDF5 conversion
@@ -382,11 +414,13 @@ A directory of ND2 files can be converted to the [HDF5 format](https://www.hdfgr
 
 #### Images
 
+The intent is to convert once, and to *never* modify the HDF5 file. All subsequent operations (trench detection, cell segmentation, etc.) write to new files. It is good practice to set the HDF5 directory and its contents to read-only after converting.
+
 - Image data are written as "chunked" arrays with lossless compression, resulting in roughly 50% reduction in file size.
 
 - Images are *not* modified:
-	- No cropping is performed.
-	- No corrections are applied.
+	+ No cropping is performed.
+	+ No corrections are applied.
 
 - Images are stored in a hierarchy:
 	- ND2 file
@@ -395,9 +429,9 @@ A directory of ND2 files can be converted to the [HDF5 format](https://www.hdfgr
 				- Z (each Z-stack is stored as its own HDF5 file on disk)
 					- Channel
 
-- All the HDF5 files are linked together into a "parent" HDF5 file. This strategy allows for independently writing to the Z-stack files (*via* standard filesystem paths), while still being able to afterwards browse the collection of files from a single HDF5 file (HDF5 does not support parallel writes). This method also allows for opening or transferring a single Z-stack HDF5 file independently, which could be useful for *e.g.* viewing in ImageJ.
+- The decision to store images in HDF5 files by Z-stack was a compromise between having many small files on disk (bad) and allowing for parallel writes (good) across images which are not associated.
 
-The intent is to perform the conversion once, and to *never* modify the HDF5 file. All subsequent operations (trench detection, cell segmentation, etc.) write to new files. It is good practice to set the HDF5 directory and its contents to read-only.
+- All the HDF5 files are linked together into a "parent" HDF5 file. This strategy allows for independently writing to the Z-stack files (*via* standard filesystem paths), while still being able to afterwards browse the collection of files from a single HDF5 file (HDF5 does not support parallel writes). This strategy also allows for opening or transferring a single Z-stack HDF5 file independently, which could be useful for *e.g.* viewing in ImageJ.
 
 ##### A note about C arrays and Fortran arrays
 
@@ -427,7 +461,7 @@ My preference is to enforce a single indexing method so as to avoid the performa
 
 All metadata are copied and stored, with separate metadata for each ND2 file.
 
-- Basic metadata, such as channel names and FOVS
+- Basic metadata, such as channel names and FOVs
 
 - "Raw" metadata, containing information about acquisition settings of the microscope
 
@@ -467,9 +501,18 @@ The results of each segmentation are stored on-disk in a new HDF5 file.
 
 #### Details
 
+##### User-defined settings
+
+The user must specify, in a YAML file:
+
+- how many segmentations to perform (each with a unique name)
+- the segmentation algorithm (matching an algorithm defined above)
+- which channels to use for segmentation (can be more than one)
+- all parameters for that algorithm
+
 ##### Iteration
 
-We iterate through every File, FOV, Frame, and Z-stack, independently (but possibly in parallel).
+We iterate through every File, FOV, Frame, and Z-stack independently (but possibly in parallel).
 
 NOTE: alternatively, a similar approach could be used to segment Frame stacks (kymographs), though this would require changing how iterations are performed and how image data are stored in memory.
 
@@ -493,19 +536,40 @@ All images are loaded as 32-bit floating point (f32) images. This datatype was c
 
 ##### Algorithms
 
-When TrenchCoat first executes, all possible algorithms are defined in advance and stored in a hashmap (dictionary). In this way, any algorithm can be defined and referenced by a unique name. This name can be specified by the user in the YAML file (see below).
+When TrenchCoat first executes, all possible algorithms are defined in advance and stored in a hashmap (dictionary). In this way, any algorithm can be defined and referenced by a unique name. This name can be specified by the user in the YAML file (see above).
 
-##### User-defined settings
+#### Example code for a segmentation algorithm
 
-The user must specify:
+```
+def run_single_threshold(stack, ch_to_index, params):
+    """
+    Very simple max thresholding example.
+    """
+    data = stack[ch_to_index[params["channel"]]]
+    return single_threshold(data, **params["parameters"])
 
-- how many segmentations to perform (each with a unique name)
-- the segmentation algorithm (matching an algorithm defined above)
-- which channels to use for segmentation (can be more than one)
-- all parameters for that algorithm
+def single_threshold(data, cutoff):
+    return data < cutoff
+```
 
-This information is specified in a YAML text file.
+``seg_params.yaml:``
 
+```
+mSCFP3:
+	algorithm: "single_threshold"
+	channel: "CFP"
+	cutoff: 500
+```
+
+Note that the name of the segmentation ("mSCFP3") needn't match the name of the channel ("CFP").
+
+- The first function (run\_single_threshold) is a wrapper function. It takes as input the image stack, the dictionary mapping channel names to indices within the image stack, and a dictionary of parameters. All functions *must* share this function signature.
+
+- This function then specifies which channel is the one to be used for segmentation by interrogating the "channel" parameter, and uses the ch\_to_index dictionary to determine which image to pass onwards.
+
+- The second function (single_threshold) is then invoked using the image and parameters, and its result is returned back to the first function, which in turn returns it unchanged. In this case, a binary mask will be returned after determining which pixels are less than 500.
+
+- Note that this example does not use loops to process individual regions, because comparison operators are automatically applied across arrays of arbitrary dimensionality. More complex examples are to be found in ``algorithms.py``.
 
 ### The modified nd2reader library
 
