@@ -150,7 +150,7 @@ Options:
 ```
 Usage: trenchcoat trench-detect [OPTIONS]
 
-  Detect trenches and write their rectangular regions to an HDF5  file.
+  Detect trenches and write their rectangular regions to an HDF5 file.
 
 Options:
   -o, --out-dir TEXT           Output directory.  [default: REGIONS; required]
@@ -284,31 +284,28 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 6. Create a trench detection parameters file:
 
 	```
-	IMAGE_CORRECTION:
-	    # Subtract this value from every pixel
-	    background: 110
-	
-	TRENCHES:
-	    # Typical 40x experiments have 2 rows, 100x experiments have 1 row
-	    num_rows: 1
-	    
-	    # Trench length, in microns; use pixel_microns to convert to pixels
-	    trench_length: 25.0 # 500 pixels @ 100x; Poor medium chip
-	    
-	    # Trench width, in microns; use pixel_microns to convert to pixels, and round to integer number.
-	    trench_width: 1.5 # 30 pixels @ 100x; Poor medium chip
-	    
-	    # Minimum distance between peaks, in microns; use pixel_microns to convert to pixels
-	    min_distance: 1.0 # 25 pixels @ 100x
-	    
-	    # Normalized trench cutoff (0 - 1) for peak values, after unsharp mask
-	    cutoff: 0.35 # Normalized units
-	    
-	    # Use this channel to detect trenches
-	    channel: "Phase"
-	    
-	    # Which method to use? Currently, the only option is intensity_peaks (e.g. phase images)
-	    method: "intensity_peaks"
+	crop:
+	    top: 20
+	    bottom: 2028
+	    left: 1000
+	    right: 1350
+	channel: "BF"
+	trench_rows:
+	    axis: 0     # 1 for C order
+	    axis_two: 1 # 0 for C order
+	    unsharp_mask_radius: 2
+	    unsharp_mask_amount: 40
+	    min_distance: 100
+	    feature_dimension: 400 # Length of a trench row
+	trenches:
+	    axis: 1     # 0 for C order
+	    axis_two: 0 # 1 for C order
+	    unsharp_mask_radius: 2
+	    unsharp_mask_amount: 40
+	    min_cutoff: 0.3
+	    min_distance: 1.3
+	    feature_dimension: 1.625 # Width of a trench
+	    #length: 100
 	```
 
 7. Detect trenches and write the trench coordinates to disk:
@@ -327,19 +324,20 @@ Instead of segmenting cells within trenches, just measure the properties of enti
     phase_channel: "Phase"
     
     parameters:
-        niblack_k: -0.45
-        niblack_w: 7
-        otsu_multiplier: 0.9
+        niblack_k: -0.35
+        niblack_w: [29, 3]
+        otsu_multiplier: 1.25
         fluor_background: 0
-        garbage_otsu_value: 130
+        garbage_otsu_value: 200
         scaling_factor: 1
+        fluor_sigma: 1.0
         
         phase_background: 0
         phase_threshold_min: 0
-        phase_threshold_max: 400
-        phase_sigma: 0.5
+        phase_threshold_max: 20000
+        phase_sigma: 1.9
         
-        min_size: 40
+        min_size: 60
 	
 	MCHERRY:
 	    algorithm: "niblack_phase"
@@ -348,19 +346,19 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	    phase_channel: "Phase"
 	    
 	    parameters:
-	        niblack_k: -0.45
-	        niblack_w: 7
-	        otsu_multiplier: 0.9
+	        niblack_k: -0.35
+	        niblack_w: [29, 3]
+	        otsu_multiplier: 1.07
 	        fluor_background: 0
 	        garbage_otsu_value: 130
 	        scaling_factor: 1
 	        
 	        phase_background: 0
 	        phase_threshold_min: 0
-	        phase_threshold_max: 400
-	        phase_sigma: 0.5
+	        phase_threshold_max: 110
+	        phase_sigma: 10.0
 	        
-	        min_size: 40
+	        min_size: 60
 	```
 
 9. Segment cells and write their masks & measurements to disk:
@@ -379,7 +377,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 
 It is trivial to run a series of commands in a BASH script:
 
-``run.sh``:
+run.sh:
 
 ```
 #!/bin/bash
@@ -540,6 +538,8 @@ When TrenchCoat first executes, all possible algorithms are defined in advance a
 
 #### Example code for a segmentation algorithm
 
+algorithms.py:
+
 ```
 def run_single_threshold(stack, ch_to_index, params):
     """
@@ -552,7 +552,7 @@ def single_threshold(data, cutoff):
     return data < cutoff
 ```
 
-``seg_params.yaml:``
+seg_params.yaml:
 
 ```
 mSCFP3:
@@ -587,7 +587,7 @@ To resolve this problem, I made added a function which allows requesting the ent
 
 The following two additions:
 
-``main.py``:
+main.py:
 
 ```
 def get_image_stack(self, frame_number, field_of_view, z_level):
@@ -598,7 +598,7 @@ def get_image_stack(self, frame_number, field_of_view, z_level):
                                                    self.width)
 ```
 
-``driver/v3.py``:
+driver/v3.py:
 
 ```
 def get_image_stack(self, frame_number, field_of_view, z_level, height, width):

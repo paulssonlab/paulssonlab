@@ -245,7 +245,7 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     help="Share region detection across frames (detect only within the first frame)",
 )
 def trench_detect(out_dir, in_file, num_cpu, params_file, share_regions):
-    """Detect trenches and write their rectangular regions to an HDF5  file."""
+    """Detect trenches and write their rectangular regions to an HDF5 file."""
     main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions)
 
 
