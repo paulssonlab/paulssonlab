@@ -7,6 +7,7 @@ API_URL = "https://twist-api.twistbioscience-staging.com"
 
 OPTIMIZATION_CONCURRENCY = 30
 
+# TODO: return human-readable message in API calls below?
 SCORING_ERRORS = """4000 - General error
 4001 - Problematic sequence
 4002 - Repeats or extreme high/low GC in the highlighted region may have caused this problem
