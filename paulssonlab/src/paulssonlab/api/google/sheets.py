@@ -1,3 +1,6 @@
+import pygsheets
+
+
 def get_sheets_for_spreadsheet(sheets_service, spreadsheet_id):
     res = (
         sheets_service.spreadsheets()
@@ -41,3 +44,29 @@ def insert_sheet_rows(sheet, row, entries):
     values = [[entry.get(col) for col in columns] for entry in entries]
     # we insert at row - 1 because this inserts below the given row number
     sheet.insert_rows(row - 1, number=len(values), values=values)
+
+
+def clear_sheet(sheet, skiprows=1):
+    first_row = sheet.get_row(
+        skiprows + 1, value_render=pygsheets.ValueRenderOption.FORMULA
+    )
+    bounds = []
+    for col, value in enumerate(first_row):
+        if not isinstance(value, str) or not value.startswith("="):
+            bounds.append(((skiprows, col), (None, col + 1)))
+    _clear_sheet_request(sheet, bounds)
+
+
+def _clear_sheet_request(sheet, bounds, fields="userEnteredValue"):
+    requests = []
+    for (start, end) in bounds:
+        range_ = {
+            "sheetId": sheet.id,
+            "startRowIndex": start[0],
+            "startColumnIndex": start[1],
+            "endRowIndex": end[0],
+            "endColumnIndex": end[1],
+        }
+        request = {"updateCells": {"range": range_, "fields": fields}}
+        requests.append(request)
+    sheet.client.sheet.batch_update(sheet.spreadsheet.id, requests)
