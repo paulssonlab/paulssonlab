@@ -40,10 +40,14 @@ def get_drive_by_path(service, path, root=None, folder=None):
     return root
 
 
-def list_drive(service, root=None, query=None, page_size=1000):
+def list_drive(service, root=None, query=None, folder=None, page_size=1000):
     qs = []
     if root:
         qs.append(f"'{root}' in parents")
+    if folder is True:
+        qs.append("mimeType = 'application/vnd.google-apps.folder'")
+    elif folder is False:
+        qs.append("mimeType != 'application/vnd.google-apps.folder'")
     if query:
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
@@ -62,13 +66,29 @@ def list_drive(service, root=None, query=None, page_size=1000):
     return name_to_file
 
 
-def ensure_folder(file, is_folder=True):
+def ensure_drive_folder(file, is_folder=True):
     # could also use file["kind"] == "drive#folder"
     if (file["mimeType"] == "application/vnd.google-apps.folder") != is_folder:
         raise ValueError(
             f"expecting {'folder' if is_folder else 'file'} for file '{file['name']}'"
         )
     return file["id"]
+
+
+def make_drive_folder(service, name, parent):
+    new_folder_metadata = {
+        "name": name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent],
+    }
+    new_folder = service.files().create(body=new_folder_metadata, fields="id").execute()
+    return new_folder["id"]
+
+
+def copy_drive_file(service, source, name, parent):
+    new_body = {"name": name, "parents": [parent]}
+    new_file = service.files().copy(fileId=source, body=new_body).execute()
+    return new_file["id"]
 
 
 def get_drive_modified_time(service, file_id):
