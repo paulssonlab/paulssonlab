@@ -4,6 +4,8 @@ from cytoolz import partial
 from apiclient.http import MediaIoBaseUpload
 from google.api_core.datetime_helpers import from_rfc3339
 
+FOLDER_MIMETYPE = "application/vnd.google-apps.folder"
+
 
 def get_drive_id(url):
     return re.search(
@@ -25,7 +27,7 @@ def get_drive_by_path(service, path, root=None, folder=None):
     if isinstance(path, str):
         path = [path]
     for p in path[:-1]:
-        query = f"(name = '{p}') and (mimeType = 'application/vnd.google-apps.folder')"
+        query = f"(name = '{p}') and (mimeType = '{FOLDER_MIMETYPE}')"
         if root is not None:
             query += f" and ('{root}' in parents)"
         root = get_drive_query(service, query)["id"]
@@ -33,9 +35,9 @@ def get_drive_by_path(service, path, root=None, folder=None):
     if root is not None:
         query += f" and ('{root}' in parents)"
     if folder is True:
-        query += " and (mimeType = 'application/vnd.google-apps.folder')"
+        query += f" and (mimeType = '{FOLDER_MIMETYPE}')"
     elif folder is False:
-        query += " and (mimeType != 'application/vnd.google-apps.folder')"
+        query += f" and (mimeType != '{FOLDER_MIMETYPE}')"
     root = get_drive_query(service, query)["id"]
     return root
 
@@ -45,9 +47,9 @@ def list_drive(service, root=None, query=None, folder=None, page_size=1000):
     if root:
         qs.append(f"'{root}' in parents")
     if folder is True:
-        qs.append("mimeType = 'application/vnd.google-apps.folder'")
+        qs.append(f"mimeType = '{FOLDER_MIMETYPE}'")
     elif folder is False:
-        qs.append("mimeType != 'application/vnd.google-apps.folder'")
+        qs.append(f"mimeType != '{FOLDER_MIMETYPE}'")
     if query:
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
@@ -68,7 +70,7 @@ def list_drive(service, root=None, query=None, folder=None, page_size=1000):
 
 def ensure_drive_folder(file, is_folder=True):
     # could also use file["kind"] == "drive#folder"
-    if (file["mimeType"] == "application/vnd.google-apps.folder") != is_folder:
+    if (file["mimeType"] == FOLDER_MIMETYPE) != is_folder:
         raise ValueError(
             f"expecting {'folder' if is_folder else 'file'} for file '{file['name']}'"
         )
@@ -78,7 +80,7 @@ def ensure_drive_folder(file, is_folder=True):
 def make_drive_folder(service, name, parent):
     new_folder_metadata = {
         "name": name,
-        "mimeType": "application/vnd.google-apps.folder",
+        "mimeType": FOLDER_MIMETYPE,
         "parents": [parent],
     }
     new_folder = service.files().create(body=new_folder_metadata, fields="id").execute()
@@ -122,3 +124,9 @@ def upload_drive(
         method = service.files().create
     response = method(body=body, media_body=media, fields="id").execute()
     return response.get("id")
+
+
+def recursive_copy(
+    service, source_folder, dest_folder, folders_only=False, transform_names=None
+):
+    pass

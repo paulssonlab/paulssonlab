@@ -3,14 +3,13 @@ import re
 import requests
 from copy import deepcopy
 import string
+import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
 from paulssonlab.cloning.sequence import smoosh_sequences
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
-    get_drive_by_path,
     list_drive,
-    ensure_folder,
     upload_drive,
     columns_with_validation,
     insert_sheet_rows,
@@ -28,21 +27,6 @@ MARKER_ABBREVIATIONS = {
     "spectinomycin": "Spectinomycin (50 µg/mL)",
     "gentamicin": "Gentamicin (20 µg/ml)",
 }
-
-
-def get_strain_collection_sheets(service, collection_prefix):
-    collection_folder = get_drive_by_path(
-        service, f"{collection_prefix}_Collection", folder=True
-    )
-    files = list_drive(service, root=collection_folder)
-    return {
-        "root": collection_folder,
-        "strains": ensure_folder(files[f"{collection_prefix}_strains"], False),
-        "oligos": ensure_folder(files[f"o{collection_prefix}_oligos"], False),
-        "plasmids": ensure_folder(files[f"p{collection_prefix}_plasmids"], False),
-        "parts": ensure_folder(files[f"{collection_prefix}_parts"], False),
-        "plasmid_maps": ensure_folder(files[f"Plasmid_Maps"], True),
-    }
 
 
 def get_next_empty_row(worksheet, skip_columns=0):
@@ -112,6 +96,32 @@ def trim_unassigned_ids(worksheet):
 def _trim_unassigned_ids(worksheet, row):
     values = [[""] * (worksheet.rows - row)]
     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
+
+
+def rename_ids(sheet, old_prefix, new_prefix, skiprows=1, column=1):
+    values = sheet.get_values(
+        (skiprows + 1, column),
+        (sheet.rows, column),
+        value_render=pygsheets.ValueRenderOption.FORMULA,
+    )
+    new_values = [
+        [rename_id(value, old_prefix, new_prefix) for value in row] for row in values
+    ]
+    sheet.update_values((skiprows + 1, column), new_values, parse=True)
+
+
+def rename_id(s, old_prefix, new_prefix):
+    match = re.match(f"^{re.escape(old_prefix)}(.*)", s)
+    if match:
+        return f"{new_prefix}{match.group(1)}"
+    else:
+        try:
+            float(s)
+            return f"{new_prefix}{s}"
+        except:
+            # if s isn't a number nor begins with old_prefix,
+            # this is unexpected, so give up and don't change the ID
+            return s
 
 
 def import_addgene(
@@ -412,10 +422,6 @@ def get_drive_seqs(drive_service, root, names):
             drive_service.files().get_media(fileId=seq_file).execute().decode("utf8")
         )
         yield seq
-
-
-def get_part_seq(part_name):
-    pass  # TODO
 
 
 def add_overhangs(seq, overhangs):
