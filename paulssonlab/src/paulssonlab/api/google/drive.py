@@ -93,6 +93,65 @@ def copy_drive_file(service, source, name, parent):
     return new_file["id"]
 
 
+def copy_drive_folder(
+    service,
+    source_folder,
+    dest_folder,
+    folders_only=False,
+    transform_names=None,
+    recursive=True,
+    overwrite=True,
+):
+    source_files = list_drive(service, source_folder)
+    dest_files = list_drive(service, dest_folder)
+    for source_file in source_files.values():
+        if transform_names:
+            new_name = transform_names(
+                source_file["name"], source_file["mimeType"] == FOLDER_MIMETYPE
+            )
+        else:
+            new_name = source_file["name"]
+        if source_file["mimeType"] != FOLDER_MIMETYPE:
+            # file
+            if folders_only:
+                continue
+            if new_name in dest_files:
+                if overwrite:
+                    existing_file = dest_files[new_name]["id"]
+                    service.files().delete(fileId=existing_file).execute()
+                else:
+                    raise ValueError(
+                        f"attempting to overwrite existing file: '{new_name}' (id: {dest_files[new_name]['id']})"
+                    )
+            copy_drive_file(service, source_file["id"], new_name, dest_folder)
+        else:
+            # folder
+            folder = None
+            if new_name in dest_files:
+                if overwrite:
+                    folder = dest_files[new_name]["id"]
+                    service.files().delete(fileId=existing_folder).execute()
+                else:
+                    if dest_files[new_name]["mimeType"] != FOLDER_MIMETYPE:
+                        raise ValueError(
+                            f"expecting : '{new_name}' (id: {dest_files[new_name]['id']})"
+                        )
+                    # if there's an existing folder with the right name, just use it
+                folder = dest_files[new_name]["id"]
+            if folder is None:
+                folder = make_drive_folder(service, new_name, dest_folder)
+            if recursive:
+                copy_drive_folder(
+                    service,
+                    source_file["id"],
+                    folder,
+                    folders_only=folders_only,
+                    transform_names=transform_names,
+                    recursive=recursive,
+                    overwrite=overwrite,
+                )
+
+
 def get_drive_modified_time(service, file_id):
     res = service.files().get(fileId=file_id, fields="modifiedTime").execute()
     modified_time = res.get("modifiedTime")
@@ -124,9 +183,3 @@ def upload_drive(
         method = service.files().create
     response = method(body=body, media_body=media, fields="id").execute()
     return response.get("id")
-
-
-def recursive_copy(
-    service, source_folder, dest_folder, folders_only=False, transform_names=None
-):
-    pass
