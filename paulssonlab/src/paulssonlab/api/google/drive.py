@@ -23,7 +23,7 @@ def get_drive_query(service, query):
     return files[0]
 
 
-def get_drive_by_path(service, path, root=None, folder=None):
+def get_drive_by_path(service, path, root=None, is_folder=None):
     if isinstance(path, str):
         path = [path]
     for p in path[:-1]:
@@ -34,21 +34,21 @@ def get_drive_by_path(service, path, root=None, folder=None):
     query = f"(name = '{path[-1]}')"
     if root is not None:
         query += f" and ('{root}' in parents)"
-    if folder is True:
+    if is_folder is True:
         query += f" and (mimeType = '{FOLDER_MIMETYPE}')"
-    elif folder is False:
+    elif is_folder is False:
         query += f" and (mimeType != '{FOLDER_MIMETYPE}')"
     root = get_drive_query(service, query)["id"]
     return root
 
 
-def list_drive(service, root=None, query=None, folder=None, page_size=1000):
+def list_drive(service, root=None, query=None, is_folder=None, page_size=1000):
     qs = []
     if root:
         qs.append(f"'{root}' in parents")
-    if folder is True:
+    if is_folder is True:
         qs.append(f"mimeType = '{FOLDER_MIMETYPE}'")
-    elif folder is False:
+    elif is_folder is False:
         qs.append(f"mimeType != '{FOLDER_MIMETYPE}'")
     if query:
         qs.append(query)

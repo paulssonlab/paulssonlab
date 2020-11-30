@@ -1,5 +1,7 @@
 import pygsheets
 
+SHEETS_MIMETYPE = "application/vnd.google-apps.spreadsheet"
+
 
 def get_sheets_for_spreadsheet(sheets_service, spreadsheet_id):
     res = (
