@@ -10,6 +10,7 @@ from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
 from napari_browse_kymographs import main_kymograph_browser_function
 from corrections import main_corrections_function
+from metadata import main_print_metadata_function
 
 
 def range_expand(range_string):
@@ -230,7 +231,7 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     "--params-file",
     "params_file",
     required=True,
-    default="seg_params.yaml",
+    default="trench_params.yaml",
     type=str,
     help="Regions detection parameters file (YAML).",
     show_default=True,
@@ -443,6 +444,32 @@ def trench_measurements():
 def corrections(in_file, out_file, dark_channel, bg_file):
     """Generate camera bias and flat field corrections matrices from images."""
     main_corrections_function(in_file, out_file, dark_channel, bg_file)
+
+
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--in-file",
+    "in_file",
+    required=True,
+    default="HDF5/metadata.h5",
+    type=str,
+    help="Input HDF5 file with metadata.",
+    show_default=True,
+)
+@click.option(
+    "-f",
+    "--sub-file-name",
+    "sub_file_name",
+    required=False,
+    default=None,
+    type=str,
+    help="Name of sub-file to print metadata for. This file was a separate ND2 file before conversion to HDF5.",
+    show_default=False,
+)
+def print_metadata(in_file, sub_file_name):
+    """Print the HDF5 metadata to the terminal. If no sub-file is specified, then print a list of all sub-files."""
+    main_print_metadata_function(in_file, sub_file_name)
 
 
 ###

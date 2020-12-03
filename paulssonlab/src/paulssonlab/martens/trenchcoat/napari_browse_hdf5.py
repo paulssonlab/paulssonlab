@@ -17,7 +17,7 @@ Might also need to rework the similar functions used for nd2 browsing?
 ### Regions (e.g. Trenches) Layer
 
 
-def add_regions_layer(regions_table, viewer):
+def add_regions_layer(regions_table, viewer, width, height):
     """
     There are 2 kinds of regions:
     1. Trench rows
@@ -36,13 +36,15 @@ def add_regions_layer(regions_table, viewer):
     is not the same as the dims of the images or the masks? Will it "just work?"
     """
 
-    # TEMP: just do 1 row of trenches, and not the row itself.
-    trenches_stack = make_regions_lazy_dask_stack(regions_table)
-    viewer.add_labels(trenches_stack)  # , **layer_params) # TODO layer params?
+    ## TEMP: just do 1 row of trenches, and not the row itself.
+    # trenches_stack = make_regions_lazy_dask_stack(regions_table)
+    # viewer.add_labels(trenches_stack) #, **layer_params) # TODO layer params?
 
-    ## 1. Trench rows
-    # trench_rows_stack = make_regions_lazy_dask_stack(h5file, file_nodes, fields_of_view, frames, "row_coords")
-    # viewer.add_labels(trench_rows_stack) #, **layer_params) # TODO layer params?
+    # 1. Trench rows
+    trench_rows_stack = make_regions_lazy_dask_stack(regions_table, width, height)
+    viewer.add_labels(
+        trench_rows_stack, name="Trench Rows"
+    )  # , **layer_params) # TODO layer params?
 
     # row_coords_arr = h5file.get_node().read()
     # num_trench_rows = row_coords_arr.shape[0]
@@ -55,7 +57,7 @@ def add_regions_layer(regions_table, viewer):
     # viewer.add_labels(trenches_stack) #, **layer_params) # TODO layer params?
 
 
-def make_regions_lazy_dask_stack(regions_table):
+def make_regions_lazy_dask_stack(regions_table, width, height):
     """
     Input the location of the region (trench row or trenches) coordinates within the HDF5 file,
     output a dask array stacked for all the dimensions,
@@ -79,16 +81,17 @@ def make_regions_lazy_dask_stack(regions_table):
             # Frame nodes
             frame_array = []
             for frame in frames:
-                # Regions are always shared across Z, so it's OK to read them in at this level.
-                # path = "/{}/FOV_{}/Frame_{}/{}".format(file, fov, frame, node_path)
-                # FIXME pass in image width & height
+                # Regions are always shared across Z -> set to zero
+                Z_level = 0
+
                 arr = dask.array.from_delayed(
                     lazy_regions_arr_to_canvas(
-                        regions_table, file, fov, frame, 2048, 2048
+                        regions_table, file, fov, frame, Z_level, width, height
                     ),
-                    shape=(2048, 2048),
+                    shape=(width, height),
                     dtype=numpy.uint16,
                 )
+
                 frame_array.append(arr)
 
             frame_array_to_stack = dask.array.stack(frame_array)
@@ -102,9 +105,13 @@ def make_regions_lazy_dask_stack(regions_table):
     return megastack
 
 
-def regions_arr_to_canvas(table, file, fov, frame, width, height):
+def regions_arr_to_canvas(table, file, fov, frame, Z_level, width, height):
     """
-    ## Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+
+    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+
+    NOTE now, the input is a table containing relevant data,
+    and then the table is queried to create the regions arr.
 
     Pass in info from which to read corresponding trench coords from the global trench coords table.
 
@@ -113,7 +120,8 @@ def regions_arr_to_canvas(table, file, fov, frame, width, height):
     """
     # regions_coords = h5file_regions.get_node(path).read()
     # TODO: trench row number?
-    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame)"
+    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == Z_level)"
+    print("condition {}".format(condition))
     search = table.read_where(condition)
     df = pandas.DataFrame(search)
 
@@ -122,14 +130,21 @@ def regions_arr_to_canvas(table, file, fov, frame, width, height):
         regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
 
     regions = numpy.array(regions)
+    # DEBUG
+    print(regions)
 
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
 
+    # for i, r in enumerate(regions):
+    # canvas[r[0] : r[2], r[1] : r[3]] = i + 1
+
+    # return numpy.rot90(canvas, k=-1)
+
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = i + 1
 
-    return numpy.rot90(canvas, k=-1)
+    return canvas
 
 
 ### Masks (e.g. cells) Layer
@@ -161,6 +176,11 @@ def add_masks_layer(
     # If there were regions, then the masks need to be agglomerated into a larger image
     if regions_file:
         # Compile a canvas with all the masks from all the segmented areas
+        # FIXME Would it make sense to use regions_arr_to_canvas() instead??
+        # I think what this code is doing is recursing through all of the arrays on disk.
+        # However, the point of the table was to replace all that with queries instead.
+        # We can just iterate through the unique keys in the table,
+        # and query them for the coordinates.
         lazy_masks_to_canvas = delayed(masks_to_canvas)
 
         h5file_regions = tables.open_file(regions_file, "r")
@@ -328,7 +348,7 @@ def load_values(in_file):
 def masks_to_canvas(regions, h5file_masks, node, width, height):
     """
     ###Input a numpy array with many rows, each containing the rectangular coordinates of regions.
-    Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
+    ###Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
 
     Input an iterator over an H5 file node, below which hang individual segmentation masks.
     Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
@@ -597,15 +617,20 @@ def main_hdf5_browser_function(
             )
 
         # Regions (trench) layer
+        # TODO call this multiple times, if there are multiple trench rows?
+        # (With each trench row getting its own layer)
+        # Requires querying the table & determining the number of unique trench rows.
         if regions_file:
             h5file_regions = tables.open_file(regions_file, "r")
-            regions_table = h5file_regions.root.trench_coords
+            regions_table = h5file_regions.get_node("/", "row_coords")
 
             add_regions_layer(
                 regions_table,
                 # extents["fields_of_view"],
                 # extents["frames"],
                 viewer,
+                width,
+                height,
             )
 
     # Done!

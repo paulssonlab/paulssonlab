@@ -11,6 +11,7 @@ from params import read_params_file
 from properties import get_max_length
 from metadata import get_metadata
 import pathlib
+from scipy.signal import savgol_filter
 
 """
 Write two PyTables tables:
@@ -23,7 +24,155 @@ Typically, the idea is to use phase contrast images, in which these features sta
 The row or trench co-ordinates can then be used as "regions" during segmentation analysis.
 """
 
-# TODO what needs to change if the images are now stored with F-ordering?
+
+def find_trenches(
+    img,
+    axis=1,
+    crop_top=0,
+    crop_bottom=0,
+    unsharp_mask_radius=5,
+    unsharp_mask_amount=30.0,
+    cutoff=0.10,
+    plateau_size=4,
+    distance=15,
+    padding_ratio=0.5,
+    window_length=5,
+    polyorder=1,
+):
+    """
+    Find trenches within an image (or image slice). Ideally, the image slice only contains a single row of trenches.
+
+    Cropping can help, if the trench row isn't perfectly aligned,
+    by removing regions outside of the trenches area.
+
+    The unsharp mask filter helps to emphasize the edges of trenches.
+
+    The cutoff is used to separate trenches from inter-trench space.
+
+    The distance helps filter out the non-trenches, since their peaks are less than those of trenches.
+
+    The padding ratio helps to add back the darker edges of the trenches, which don't make the cutoff.
+    """
+    # The unsharp mask helps to accentuate local differences by "sharpening" the image.
+    # NOTE unsharp mask gives worse results when operating on floats. Not sure why?
+    unsharp = unsharp_mask(
+        img.astype(numpy.uint16), radius=unsharp_mask_radius, amount=unsharp_mask_amount
+    )
+
+    # The mean is useful as a normalization
+    mean = numpy.mean(unsharp, axis=axis)
+
+    # Run smoothing: this helps merge twin peaks from the edges
+    # of trenches with cells, and also the twin peaks for the space
+    # in between trenches.
+    sg = savgol_filter(mean, window_length=window_length, polyorder=polyorder)
+
+    # Define an arbitrary threshold, below which we ignore,
+    # and above which we deem peak-worthy.
+    gt = sg > cutoff
+
+    # By defining the plateau size as such, we can eliminate the peaks which arise
+    # from the emblazoned numerals. Plateau size helps to eliminate very small
+    # detected peaks, which are actually just noise.
+    #
+    # Distance is crucial in filtering out the "peaks" arising from the inter-trench
+    # spacing. These inter-trench spaces are almost always dimmer than trenches,
+    # even with cells in them.
+    #
+    # Note that trenches with cells generate two peaks, with a dip in the middle
+    # where the cells are, but these two peaks are merged as long as the entirety
+    # (peak, drop, peak) is greater than the low cutoff.
+    peaks, peaks_properties = find_peaks(
+        gt, plateau_size=plateau_size, distance=distance
+    )
+
+    # If it fails to find any peaks, then end now & return an empty array
+    if peaks.size == 0:
+        print("Warning: no peaks found!")
+        return peaks
+
+    # Then, it will be important to pad the left_edges and right_edges a bit,
+    # since the trench edges are dark and don't meet the cutoff, but can
+    # contain a lot of fluorescence intensity. To do this, define a padding,
+    # and subtract it from all left_edges, and add it to all right edges.
+    median_detected_width = int(
+        numpy.median(peaks_properties["right_edges"] - peaks_properties["left_edges"])
+    )
+
+    # Apply padding as some fraction or multiple of the median trench width.
+    # So first determine a uniform width, perhaps the median width,
+    # and then add +/- 50% to left & right sides.
+    # NOTE: With a value of 1.0, this will triple the effective trench width.
+    padding = int(padding_ratio * median_detected_width)
+
+    # Adjust all trenches to have equal widths
+    # NOTE: is the max value img.shape[0] or [1]?
+    (left_edges, right_edges) = correct_widths(
+        peaks_properties["left_edges"],
+        peaks_properties["right_edges"],
+        median_detected_width,
+        padding,
+        img.shape[0],
+    )
+
+    # Return rectangular coordinates for the left and right edges, sharing the min and max col.
+    result = numpy.array(
+        [[i[0], 0, i[1], img.shape[1]] for i in zip(left_edges, right_edges)]
+    )
+
+    return result
+
+
+def correct_widths(
+    left_edges_old, right_edges_old, median_detected_width, padding, max_value
+):
+    """
+    If a given trench is not equal to the median dimension, then it is either too wide, or too narrow.
+    The difference between the trench and the median is either odd, or even.
+    If the difference is even, then add (or subtract) half of this difference from the left & the right.
+    If the difference is odd, then we have to decide whether to add/remove 1 extra pixel from the left,
+    or from the right.
+    Let's just (arbitrarily decide to give more to the right.
+    """
+    left_edges = []
+    right_edges = []
+
+    # FIXME the width correction procedure doesn't work!
+    for l, r in zip(left_edges_old, right_edges_old):
+        difference = median_detected_width - (r - l)
+        left = l - padding
+        right = r + padding
+
+        # Wider than the median, must remove some width
+        if difference < 0:
+            if difference % 2 == 0:
+                left -= difference // 2
+                right += difference // 2
+            else:
+                # Integer divide with negative numbers!
+                # https://stackoverflow.com/questions/19517868/integer-division-by-negative-number
+                left -= ((-1 * difference) // 2) * -1
+                right += ((-1 * difference) // 2) * -1 - 1
+
+        # Narrower than the median, must add some width
+        elif difference > 0:
+            if difference % 2 == 0:
+                left -= difference // 2
+                right += difference // 2
+            else:
+                left -= difference // 2
+                right += difference // 2 + 1
+
+        # NOTE that now it is possible for a trench to extend outside of the image.
+        # Filter out any peaks which have left_edge < 0 or right_edge > img_dimension.
+        # by not adding them to the final list.
+        if (left > 0) & (right < max_value):
+            left_edges.append(left)
+            right_edges.append(right)
+
+    # All trenches now have padding and uniform widths and remain within the image bounds.
+
+    return (left_edges, right_edges)
 
 
 def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params):
@@ -43,6 +192,11 @@ def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params)
         in_file, filename, fov, frame, z_level, params
     )
 
+    # DEBUG
+    # img = numpy.rot90(img, -1)
+    # params["trench_rows"]["axis"] = 0
+    # params["trench_rows"]["axis_two"] = 1
+
     # 2. Create an HDF5 file for writing trench row & trench regions info.
     dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
     pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -52,6 +206,9 @@ def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params)
 
     # 3. Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
     rows = detect_trench_rows(regions_file, params, img, filename, fov, frame, z_level)
+    print(rows)
+    # DEBUG
+    # print(rows.shape)
 
     # 4. For each row, find all the trenches
     if "trenches" in params:
@@ -137,7 +294,9 @@ def load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, para
             ]
         except:
             # TODO Error!
-            print("Error loading cropped image. Invalid node? Missing crop params?")
+            print(
+                "Error loading cropped image. Invalid node? Missing crop params? Check channel name?"
+            )
             pass
     else:
         # Load the whole image
@@ -146,26 +305,54 @@ def load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, para
         img = h5file.get_node(node_path).read()
 
         # And define the missing crop params, so that they are always defined (for convenience)
-        # FIXME width & height?
-        params["crop"] = {"top": 0, "bottom": img.height, "left": 0, "right": img.width}
+        # FIXME width & height? 0 & 1, or 1 & 0?
+        params["crop"] = {
+            "top": 0,
+            "bottom": img.shape[0],
+            "left": 0,
+            "right": img.shape[1],
+        }
 
     h5file.close()
 
     return img
 
 
-def detect_trench_rows(regions_file, params, img, filename, fov, frame, z_level):
+def detect_trench_rows(regions_file, img, axis, cutoff, plateau_size):
     """
-    Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
+    Analyze the image to find trench rows, write coordinates to HDF5
     """
     # Peak detection parameters for rows of trenches: find all the trench rows in the image.
     if "trench_rows" in params:
-        rows = detect_rows_or_trenches(img, params["trench_rows"])  # , params["debug"])
+        # The variance is expected to be greater where there are features (numerals or trenches)
+        var = numpy.var(img, axis=axis)
+
+        # The mean is useful as a normalization
+        mean = numpy.mean(img, axis=axis)
+
+        # Normalize the variance by the mean
+        var_mean = var / mean
+
+        # Define an arbitrary threshold, below which we ignore,
+        # and above which we deem peak-worthy
+        gt = var_mean > cutoff
+
+        # By defining the plateau size as such, we can eliminate the peaks
+        # which arise from the emblazoned numerals.
+        peaks, peaks_properties = find_peaks(gt, plateau_size=plateau_size)
+
+        # FIXME img.shape[0] or [1] ? (width, or height?)
+        rows = numpy.array(
+            [
+                [0, i[0], img.shape[1], i[1]]
+                for i in zip(
+                    peaks_properties["left_edges"], peaks_properties["right_edges"]
+                )
+            ]
+        )
 
         # Adjust the coords to the raw image (pre-cropped)
         for r in rows:
-            # DEBUG
-            # print(r)
             r[0] -= params["crop"]["left"]
             r[1] -= params["crop"]["top"]
             r[2] -= params["crop"]["left"]
@@ -203,7 +390,9 @@ def detect_trenches_in_rows(
 
     for i, row in enumerate(rows):
         # Detect trenches within the row
-        regions = detect_rows_or_trenches(img, params["trenches"])  # , params["debug"])
+        trenches = find_trenches(
+            img[row[0] : row[2], row[1] : row[3]], **params["trenches"]
+        )
 
         # Convert coordinates back to pre-cropped (not in the region, but in the raw image).
         # NOTE confused. Why is it 0->1, 1->0, 2->1, 3->0 and not the converse?
@@ -229,151 +418,6 @@ def detect_trenches_in_rows(
 
     # Done!
     results.close()
-
-
-def detect_rows_or_trenches(img, params):
-    """
-    Find rows of trenches, or trenches within a row.
-
-    Input a single image (which may have already been cropped), and parameters:
-    1. axis along which to do the flattening (x for detecting rows, y for detecting trenches)
-    2. unsharp_mask filter: radius, amount
-    3. min (& max?) cutoffs
-    4. min distance between features
-
-    Return a 3D numpy array:
-    Dim 1: # of the feature (row0,row1,... or trench0,trench1,...)
-    Dim 2: [min_row, min_col, max_row, max_col] values in the *cropped* image.
-    [requires then editing to get raw coordinates.]
-
-    , each row containing 4 co-ordinates:
-    min_row, min_col, max_row, max_col, defining the rectangular region corresponding to that row of trenches.
-
-    TODO sanity checking on the result, to make sure that it's within the boundaries of the image?
-    FIXME what are the necessary parameters?
-    """
-    # Run the unsharp mask to enhance edges (e.g. trenches in phase contrast) & to normalize from 0.0 - 1.0
-    # Values that worked for trenches: radius=2, amount=40
-    img = unsharp_mask(
-        img, radius=params["unsharp_mask_radius"], amount=params["unsharp_mask_amount"]
-    )
-
-    # Flatten in the x-dimension: 1, y-dimension: 0
-    peaks_data = img.mean(axis=params["axis"])
-
-    # Dimension of the opposite axis (e.g. Width of image when detecting trenches)
-    img_dim = img.shape[params["axis_two"]]
-
-    # Use scipy's peak detection algorithm
-    peaks, _ = find_peaks(peaks_data)
-
-    # Remove non-trench peaks
-    feature_peaks = remove_non_features(peaks_data, peaks, params["min_cutoff"])
-
-    # Merge peaks which are close to each other
-    merged_peaks = merge_peaks(feature_peaks, params["min_distance"])
-
-    # Starting, ending x-coordinates for each trench.
-    # These can be used to define rectangular regions of interest.
-    # FIXME converting trench width to half width? best way?
-    # If it's always the same, then pass this in rather than the whole width?
-    feature_half_dim = params["feature_dimension"] // 2
-    # FIXME the max_col param should be the largest possible indexing value for trench heights
-    # -> equal to the cropped upper bounds.
-    ranges = define_features(merged_peaks, feature_half_dim, 0, img.shape[1])
-
-    # TODO 2 cleanup steps:
-
-    # 1. Filter out overlapping features
-    # UNIMPLEMENTED!
-
-    # 2. Remove out-of-bounds features
-    # TODO: replace if statements with while() loops, in case there are multiple trenches to be removed?
-    # (if they are overlapping...)
-
-    # Remove first or last trench if they are out of bounds
-    if len(ranges) != 0:
-        if ranges[0][0] < 0:
-            ranges.pop(0)
-
-    if len(ranges) != 0:
-        if ranges[-1][2] > img_dim:
-            ranges.pop()
-
-    # Convert to numpy array
-    return numpy.array(ranges)
-
-
-def remove_non_features(peaks_data, peaks, min_cutoff):
-    """
-    Remove non-features using min_cutoff.
-    """
-    # Filter out: only keep inter-feature peak indices
-    threshold = (peaks_data[peaks] > min_cutoff) * peaks
-
-    # Remove zero indices
-    nz = numpy.nonzero(threshold)
-
-    return peaks[nz]
-
-
-def merge_peaks(peaks, min_peak_distance):
-    """
-    Merge the nearby peaks in peaks, a numpy array resulting from
-    find_peaks().
-
-    TODO: also add a sanity check: only merge them if both are above or below the threshold line
-    """
-    merged_peaks = []
-
-    # Use double while loops to allow for merging clusters of nearby peaks
-    i = 0
-    while i < len(peaks) - 1:
-        cluster = []
-        cluster.append(peaks[i])
-
-        j = i + 1
-        # NOTE: comparison is always made to the i'th peak. This might behave weirdly
-        # if there are many peaks, in series, which are spaced ~= min_peak_distance from one another
-        while (j < len(peaks)) and (peaks[j] - peaks[i] < min_peak_distance):
-            cluster.append(peaks[j])
-            j += 1
-
-        avg = numpy.mean(cluster).astype(numpy.int)
-        merged_peaks.append(avg)
-        i = j
-
-    # Finally, the last peak
-    # If i > len(peaks) - 1, then we merged the last one, and so can skip it,
-    # but if i == len(peaks) - 1, then we have to keep it.
-    if i == len(peaks) - 1:
-        merged_peaks.append(peaks[i])
-
-    # Convert from numpy list to numpy array
-    return numpy.array(merged_peaks)
-
-
-def define_features(peaks, feature_half_dimension, min_col, max_col):
-    """
-    Detect Features using just the feature midpoints & the pre-specified dimensions:
-    define left -> right boundaries for each trench, or
-    top -> bottom boundaries for each row.
-
-    FIXME Assume each trench spans from top to bottom. --> change to not assuming the other dims.
-
-    TODO: sanity bounds check near the edges of the FOV (when adding or subbing trench_half_width)
-    Before making ranges, check whether would overlap?
-
-    TODO: return 4 co-ordinates: either
-    min_row, min_col, max_row, max_col,
-    OR x_min, x_max, y_min, y_max
-    """
-    ranges = [
-        (t - feature_half_dimension, min_col, t + feature_half_dimension, max_col)
-        for t in peaks
-    ]
-
-    return ranges
 
 
 def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
@@ -491,6 +535,7 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
             # Make it a list, so that the code in the main loop still works
             # file_to_frames[f] = [sorted(m["frames"][0])]
             # FIXME!! Temporarily just set it to zero.
+            # TODO allow the user to specify which frame to use
             file_to_frames[f] = [0]
 
             # store in a dictionary
@@ -563,4 +608,7 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
 
     # Go through all of those arrays & compile the information into a table,
     # for easier searching. Store the table in the same HDF5 file.
-    compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir)
+    # FIXME this function does both rows & trenches ~ but what if we only have rows, but no trenches?
+    # Should we even allow row detection without trench detection? What would be the point?
+    # if "trenches" in params_copy:
+    # compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir)

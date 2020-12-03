@@ -5,7 +5,6 @@ dependencies:
   - click
   - dask
   - ipywidgets
-  - napari
   - numpy
   - pathlib
   - pytables
@@ -14,3 +13,6 @@ dependencies:
   - scipy
   - tqdm
   - xmltodict
+  - magicgui
+  - napari
+  - pyside2

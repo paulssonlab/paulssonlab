@@ -27,6 +27,8 @@ Perform cell segmentation & measure fluorescence intensities in microscope image
 TODO:
 1. Pass in min. region size. Use pixel_microns to help convert from true area in microns^2 to region size in pixels.
    Makes this parameter magnification-independent.
+   
+2. Are the masks being symbolically linked correctly in the HDF5 files?
 """
 
 
@@ -45,8 +47,7 @@ def run_segmentation_analysis_regions(
     regions_file,
 ):
     """
-    Read region co-ordinates from an HDF5 file (with support for multiple
-    sets of regions per image).
+    Read region co-ordinates from an HDF5 file (with support for multiple sets of regions per image).
     Then call the code to do the actual segmentation work.
     """
     # H5file with image data
@@ -58,6 +59,8 @@ def run_segmentation_analysis_regions(
     # H5file with arrays denoting region co-ordinates
     # There can be multiple such arrays, e.g. if there are 2 rows of trenches,
     # then each row gets its own array, and each array specifies individual trenches 1 at a time.
+    # NOTE now, no need to look at the arrays anymore, because all the info for
+    # the entire dataset are compiled into a queryable table in advance.
     h5file_reg = tables.open_file(regions_file, mode="r")
 
     # Read in the array of regions from a table
@@ -185,12 +188,15 @@ def run_segmentation_analysis(
     channel images within a given File / FOV / Frame / Z-level, and extract
     regions using region co-ordinate Call function to do segmentation,
     measurements, and writing results to disk.
+
+    This function is shared by both the regions and no_regions codepaths (where they converge).
     """
 
     # Create directory structure to store the masks
-    # FIXME have to set exist_ok=True to allow multiple frames,
+    # NOTE Must set exist_ok=True to allow multiple frames or regions,
     # but now we have the possibility that someone running the same analysis multiple times
     # will just keep on appending data over & over!
+    # Thus it is essential to manually delete the directory structure if re-running an analysis.
     pathlib.Path("{}/{}/FOV_{}/".format(out_dir_masks, name, fov)).mkdir(
         parents=True, exist_ok=True
     )
@@ -206,7 +212,16 @@ def run_segmentation_analysis(
         "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_tables, name, fov, frame), mode="a"
     )
     Cell = make_cell_type(channels, seg_params.keys(), file_names)
-    table = h5file_tables.create_table("/", "measurements", Cell, createparents=True)
+
+    # NOTE If multiple regions, don't try creating pre-existing table:
+    # fix this by wrapping table creation in a try statement, and if that fails,
+    # then open the existing table.
+    try:
+        table = h5file_tables.create_table(
+            "/", "measurements", Cell, createparents=True
+        )
+    except:
+        table = h5file_tables.get_node("/measurements")
 
     # This function calls the segmentation code & cell measurements code, and writes the results to disk.
     write_masks_tables(
@@ -587,7 +602,6 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                 for fov in metadata["fields_of_view"]:
                     for frame in metadata["frames"]:
                         for z_level in metadata["z_levels"]:
-                            # 0 is the "zeroth" region set number (e.g. only 1 row of trenches)
                             func_args = [
                                 in_file,
                                 n._v_name,

@@ -46,6 +46,7 @@ Commands:
   convert              Convert a directory of ND2 files to an HDF5 file.
   corrections          Generate camera bias and flat field corrections...
   kymographs           Generate kymographs.
+  print-metadata       Print the HDF5 metadata to the terminal.
   segment              Detect cells and write their properties and masks to...
   trench-detect        Detect trenches and write their rectangular regions...
   trench-measurements  Analyze whole trenches, without cell segmentation.
@@ -194,6 +195,26 @@ Options:
 
 Note that *regions* are optional. Regions is a generic term for *e.g.* trenches. If no regions are specified, then the entire image is analyzed. This is useful for agar pads (which do not have trenches), or possibly for clustering-type trench detection which finds trenches after finding cells (currently unimplemented here).
 
+### print-metadata
+
+```
+Usage: trenchcoat print-metadata [OPTIONS]
+
+  Print the HDF5 metadata to the terminal. If no sub-file is specified, then
+  print a list of all sub-files.
+
+Options:
+  -i, --in-file TEXT        Input HDF5 file with metadata.  [default:
+                            HDF5/metadata.h5; required]
+
+  -f, --sub-file-name TEXT  Name of sub-file to print metadata for. This file
+                            was a separate ND2 file before conversion to HDF5.
+
+  --help                    Show this message and exit.
+```
+
+
+
 ### Unimplemented features:
 
 #### kymographs
@@ -228,7 +249,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	    opacity        : 1.0
 	    blending       : "additive"
 	    visible        : True
-	
+
 	CFP:
 	    rgb            : False
 	    multiscale     : False
@@ -239,7 +260,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	    opacity        : 1.0
 	    blending       : "additive"
 	    visible        : True
-	
+
 	YFP:
 	    rgb            : False
 	    multiscale     : False
@@ -250,7 +271,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	    opacity        : 1.0
 	    blending       : "additive"
 	    visible        : True
-	
+
 	MCHERRY:
 	    rgb            : False
 	    multiscale     : False
@@ -319,10 +340,10 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	```
 	CFP:
     algorithm: "niblack_phase"
-    
+
     fluorescent_channel: "CFP"
     phase_channel: "Phase"
-    
+
     parameters:
         niblack_k: -0.35
         niblack_w: [29, 3]
@@ -331,20 +352,20 @@ Instead of segmenting cells within trenches, just measure the properties of enti
         garbage_otsu_value: 200
         scaling_factor: 1
         fluor_sigma: 1.0
-        
+
         phase_background: 0
         phase_threshold_min: 0
         phase_threshold_max: 20000
         phase_sigma: 1.9
-        
+
         min_size: 60
-	
+
 	MCHERRY:
 	    algorithm: "niblack_phase"
-	    
+
 	    fluorescent_channel: "MCHERRY"
 	    phase_channel: "Phase"
-	    
+
 	    parameters:
 	        niblack_k: -0.35
 	        niblack_w: [29, 3]
@@ -352,12 +373,12 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	        fluor_background: 0
 	        garbage_otsu_value: 130
 	        scaling_factor: 1
-	        
+
 	        phase_background: 0
 	        phase_threshold_min: 0
 	        phase_threshold_max: 110
 	        phase_sigma: 10.0
-	        
+
 	        min_size: 60
 	```
 
@@ -373,7 +394,7 @@ Instead of segmenting cells within trenches, just measure the properties of enti
 	trenchcoat browse-hdf5 -i HDF5/data.h5 -S napari_settings.yaml -m SEGMENTATION/MASKS/masks.h5 -r REGIONS/regions_tables.h5
 	```
 
-### Scripting 
+### Scripting
 
 It is trivial to run a series of commands in a BASH script:
 
@@ -558,7 +579,9 @@ seg_params.yaml:
 mSCFP3:
 	algorithm: "single_threshold"
 	channel: "CFP"
-	cutoff: 500
+
+	parameters:
+		cutoff: 500
 ```
 
 Note that the name of the segmentation ("mSCFP3") needn't match the name of the channel ("CFP").
@@ -616,25 +639,25 @@ def get_image_stack(self, frame_number, field_of_view, z_level, height, width):
     image_group_number = self._calculate_image_group_number(frame_number, field_of_view, z_level)
     chunk = self._label_map.get_image_data_location(image_group_number)
     data = read_chunk(self._file_handle, chunk)
-    
+
     # Convert the flat intensities to an "array"
     # NOTE: why not an ndarray?
     image_group_data = array.array("H", data)
-    
+
     # NOTE What are the first 4 bytes? Timestamp? Is it bytes, or words, or ... ?
     image_data_start = 4
-    
+
     # Based on the total length of the data, and the known width and height,
     # extrapolate the number of channels in the data.
     # NOTE why not use integer divide, // ?
     number_of_true_channels = (len(image_group_data) - image_data_start) // (height * width)
     #number_of_true_channels = int((len(image_group_data) - image_data_start) / (height * width))
-    
+
     # Zeroth dimension is the channel
     # zeroth index -> first channel, 1st index -> 2nd channel etc.
     # This produces an array with channels as the first of 3 indices, which is inefficient for F-ordering.
     reshaped = np.reshape(image_group_data[image_data_start:], (number_of_true_channels, width, height), order='F')
-    
+
     # Fotran ordering works best when the last index is the slowest-changing
     # For image stacks, this typically means that 2D slices are stored in the 1st 2 dims,
     # and therefore a whole slice is in the 3rd dimension.
@@ -644,7 +667,7 @@ def get_image_stack(self, frame_number, field_of_view, z_level, height, width):
     image_stack = np.empty((width, height, number_of_true_channels), dtype=reshaped.dtype, order='F')
     for c in range(number_of_true_channels):
         image_stack[..., c] = reshaped[c]
-    
+
 
     # Skip images that are all zeros! This is important, since NIS Elements creates blank "gap" images if you
     # don't have the same number of images each cycle. We discovered this because we only took GFP images every
