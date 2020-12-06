@@ -17,6 +17,7 @@ from paulssonlab.api.google import (
 from paulssonlab.api import read_sequence, regex_key
 from paulssonlab.api.util import PROGRESS_BAR
 
+ID_REGEX = r"([A-Za-z]*)\s*(\d+(?:\.\d+)?)[a-zA-Z]*"
 
 MARKER_ABBREVIATIONS = {
     "ampicillin": "Ampicillin/Carbenicillin (50 µg/mL)",
@@ -71,9 +72,7 @@ def get_next_collection_id(worksheet):
         return (prefix, 1), 2
     # ID for last non-empty row
     last_id = df.iloc[last_idx - 1, 0]
-    prefix, number = re.match(
-        r"([A-Za-z]*)\s*(\d+(?:\.\d+)?)[a-zA-Z]*", str(last_id)
-    ).groups()
+    prefix, number = re.match(ID_REGEX, str(last_id)).groups()
     number_parts = number.split(".")
     if len(number_parts) == 2 and number_parts[0] == "0":
         # increment decimal if whole-part of the number is 0

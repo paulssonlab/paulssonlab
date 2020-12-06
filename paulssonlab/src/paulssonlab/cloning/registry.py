@@ -10,8 +10,10 @@ from paulssonlab.api.google import (
     FOLDER_MIMETYPE,
     SHEETS_MIMETYPE,
 )
-from paulssonlab.cloning.workflow import rename_ids
+from paulssonlab.cloning.workflow import rename_ids, ID_REGEX
+from paulssonlab.api import read_sequence, regex_key
 
+DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
 FOLDER_TYPES = ["maps", "sequencing"]
 TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
 TYPES_WITH_MAPS = ["plasmids"]
@@ -29,9 +31,17 @@ def _name_mapper_for_prefix(old_prefix, new_prefix):
 
 class Registry(object):
     def __init__(self, sheets_client, registry_folder):
+        self.sheets = {}
+        self.dfs = {}
+        self.maps = {}
         self.sheets_client = sheets_client
         self.registry_folder = registry_folder
         self.refresh()
+
+    def clear_cache(self):
+        self.sheets = {}
+        self.dfs = {}
+        self.maps = {}
 
     def refresh(self):
         collection_folders = list_drive(
@@ -155,16 +165,93 @@ class Registry(object):
                             rename_ids(dest_sheet, source_prefix, dest_type_prefix)
         return dest_folder
 
-    def get_loc(self, name):
-        pass
-        # pull number off, try to match to prefix (plasmid, strain, oligo)
-        # get spreadsheet file, worksheet index
-        # return worksheet, row
+    def get_sheet_by_id(self, id_):
+        sheet = self.sheets.get(id_)
+        if sheet is None:
+            sheet = self.sheets_client.open_by_key(id_).worksheet()
+            self.sheets[id_] = sheet
+        return sheet
 
-    def get_sequence(self, name):
+    def get_df_by_id(self, id_):
+        df = self.dfs.get(id_)
+        if df is None:
+            # include_tailing_empty=True is necessary to prevent an error if the last column of data is empty
+            df = self.get_sheet_by_id(id_).get_as_df(
+                index_column=1, include_tailing_empty=True
+            )
+            self.dfs[id_] = df
+        return df
+
+    def get_df(self, name, types=("plasmids", "strains", "oligos", "parts")):
+        match = re.match(ID_REGEX, name)
+        if match:
+            prefix = match.group(1)
+        else:
+            types = ("parts",)
+        for type_ in types:
+            if type_ == "parts":
+                for (prefix, part_type), id_ in self.registry.items():
+                    if part_type != "parts":
+                        continue
+                    sheet = self.get_df_by_id(id_)
+                    try:
+                        idx = sheet.index.get_loc(name)
+                        return sheet, prefix, part_type
+                    except KeyError:
+                        continue
+                return None, None, None
+            else:
+                id_ = self.registry.get((prefix, type_))
+                if id_ is not None:
+                    return self.get_df_by_id(id_), prefix, type_
+        return None, None, None
+
+    def get_map_list(self, prefix):
+        if prefix in self.maps:
+            return self.maps[prefix]
+        else:
+            key = (prefix, "maps")
+            maps_folder = self.registry.get(key)
+            if maps_folder is None:
+                raise ValueError(f"expecting a registry entry {key}")
+            maps = list_drive(
+                self.sheets_client.drive.service, root=maps_folder, is_folder=False
+            )
+            self.maps[prefix] = maps
+            return maps
+
+    def _get_map(self, prefix, name):
+        seq_files = self.get_map_list(prefix)
+        seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
+        seq = read_sequence(
+            self.sheets_client.drive.service.files()
+            .get_media(fileId=seq_file)
+            .execute()
+            .decode("utf8")
+        )
+        return seq
+
+    def eval_seq_expr(expr):
+        pass
+
+    def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
+        df, prefix, type_ = self.get_df(name, types=types)
+        if name not in df.index:
+            raise ValueError(f"cannot find {name}")
+        seq = df.loc[name].to_dict()
+        seq["_type"] = type_
+        seq["_prefix"] = prefix
+        if seq:
+            if type_ in TYPES_WITH_MAPS:
+                seq["_seq"] = self._get_map(prefix, name)
+            elif type_ == "parts":
+                seq["_seq"] = "*part*"
+        return seq
+        # maps_folder = self.registry.get((prefix, "maps"))
+        # if maps_folder is not None:
+        #     # map_ = get_drive_by_path(self.drive_service, root=maps_folder, is_folder=False)
         # name = pLIB99, oLIB99, Part_Name
         # try plasmid, strain, part
         # return
         # ("plasmid", SeqRecord)
         # ("part", ("5prime", SeqRecord("AAA"), "3prime"))
-        pass
