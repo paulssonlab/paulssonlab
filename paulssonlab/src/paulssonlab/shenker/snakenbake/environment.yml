@@ -7,7 +7,6 @@ dependencies:
   - black
   - cachetools
   - click
-  - click
   - cytoolz
   - freetype
   - freetype-py
