@@ -154,7 +154,7 @@ def manifold_snake(
     port_wayfinder_margin=400,
     port_wayfinder_length=200,
     port_wayfinder_width=100,
-    port_wayfinder_orientations=None,
+    port_wayfinder_orientations=("right", "top", "bottom"),
     registration_marks=False,
     barcode_num_bits=11,
     barcode_rows=4,
@@ -328,6 +328,8 @@ def manifold_snake(
                 feeding_channel_width / 2 + manifold_bend_margin
             )
             if manifold_input_style == "u-turn":
+                wf_base_rotation = 0
+                wf_x_reflection = True
                 port_x = -dims[0] / 2 + port_margin + port_radius
                 manifold_input_bend_x = (
                     port_x + manifold_width / 2 + manifold_bend_radius
@@ -338,6 +340,8 @@ def manifold_snake(
                 )
                 manifold_bend_angles = (0, -flip * np.pi)
             elif manifold_input_style == "bend-out":
+                wf_base_rotation = 90
+                wf_x_reflection = False
                 port_x = -dims[0] / 2 + port_margin + port_radius
                 manifold_input_bend_x = port_x + port_radius + manifold_input_margin
                 manifold_left_x = manifold_input_bend_x + manifold_bend_radius
@@ -349,6 +353,8 @@ def manifold_snake(
                 )
                 manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
             elif manifold_input_style == "bend-in":
+                wf_base_rotation = 90
+                wf_x_reflection = False
                 manifold_left_x = -dims[0] / 2 + border_margin
                 manifold_input_bend_x = (
                     manifold_left_x + manifold_width + manifold_bend_radius
@@ -383,7 +389,10 @@ def manifold_snake(
                 )
                 snake_manifold_cell.add(
                     CellReference(
-                        wf, (-flip * port_x, port_y), rotation=90 * (1 + flip)
+                        wf,
+                        (-flip * port_x, port_y),
+                        rotation=wf_base_rotation + 90 * flip,
+                        x_reflection=wf_x_reflection,
                     )
                 )
             snake_manifold_cell.add(
