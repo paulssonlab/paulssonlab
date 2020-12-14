@@ -2,6 +2,7 @@ import numpy as np
 from itertools import count
 import gdspy
 from geometry import Cell
+from util import get_uuid
 
 FOV_LAYER = 10
 
@@ -13,16 +14,18 @@ def get_fov_coverage(
     trench_gap=None,
     num_lanes=None,
     lane_with_trenches_length=None,
+    trench_sets_per_fov=np.inf,
     skip_first=False,
     **kwargs,
 ):
+    trench_sets_per_fov_target = trench_sets_per_fov
+    trench_sets_per_fov = 1
     start_by_skipping = skip_first
     y = trench_length
     unit_cell_height = None
-    trench_sets_per_fov = 1
     while True:
         delta_y = trench_gap + trench_length
-        if y + delta_y < fov[1]:
+        if y + delta_y < fov[1] and trench_sets_per_fov < trench_sets_per_fov_target:
             if start_by_skipping is not False:
                 start_by_skipping = None
                 y += delta_y
@@ -31,7 +34,7 @@ def get_fov_coverage(
         else:
             break
         delta_y = feeding_channel_width + trench_length
-        if y + delta_y < fov[1]:
+        if y + delta_y < fov[1] and trench_sets_per_fov < trench_sets_per_fov_target:
             if start_by_skipping is not True:
                 start_by_skipping = None
                 y += delta_y
@@ -45,17 +48,20 @@ def get_fov_coverage(
 def get_grid_metadata(fov_dims, metadata, skip_first=False):
     grid_metadata = {}
     for fov_name, fov_dim in fov_dims.items():
-        trench_sets_per_fov, offset1, active_height = get_fov_coverage(
+        trench_sets_per_fov, offset, active_height = get_fov_coverage(
             fov_dim, **metadata, skip_first=skip_first
         )
         if trench_sets_per_fov % 2 != 0:
             # TODO: there should be a more elegant way of getting this without a second call
             _, offset2, _ = get_fov_coverage(
-                fov_dim, **metadata, skip_first=not skip_first
+                fov_dim,
+                **metadata,
+                trench_sets_per_fov=trench_sets_per_fov,
+                skip_first=not skip_first,
             )
-            offsets = (offset1, offset2)
+            offsets = (offset, offset2)
         else:
-            offsets = (offset1,)
+            offsets = (offset,)
         grid_width = int(np.ceil(metadata["lane_with_trenches_length"] / fov_dim[0]))
         grid_height = int(np.ceil(metadata["num_lanes"] * 2 / trench_sets_per_fov))
         margin = fov_dim[1] - active_height
@@ -74,20 +80,33 @@ def get_grid_metadata(fov_dims, metadata, skip_first=False):
             "active_height": active_height,
             "margin": margin,
             "margin_frac": margin_frac,
-            "angle_tol": angle_tol,
+            "angle_tol": angle_tol,  # NOTE: this is in degrees
             "skip_first": skip_first,
         }
     return grid_metadata
 
 
 def draw_grid_overlay(
-    chip_cell, chip_metadata, fov_dims, grid_metadata, layer=FOV_LAYER
+    chip_cell,
+    chip_metadata,
+    fov_dims,
+    grid_metadata,
+    center_margins=True,
+    rotate=False,
+    layer=FOV_LAYER,
 ):
     for fov_name, fov_layer in zip(fov_dims.keys(), count(layer)):
         fov_dim = fov_dims[fov_name]
         grid_metadata_fov = grid_metadata[fov_name]
         fov_rect = gdspy.Rectangle((0, 0), (fov_dim[0], -fov_dim[1]), layer=fov_layer)
-        fov_cell = Cell(f"FOV-{fov_name}")
+        # if rotate:
+        #     fov_rect = fov_rect.rotate(
+        #         np.deg2rad(grid_metadata_fov["angle_tol"]),
+        #         (fov_dim[0] / 2, -fov_dim[1] / 2),
+        #     )
+        if center_margins:
+            fov_rect = fov_rect.translate(0, grid_metadata_fov["margin"] / 2)
+        fov_cell = Cell(f"FOV-{fov_name}-{get_uuid()}")
         fov_cell.add(fov_rect)
         y = 0
         offsets = grid_metadata_fov["offsets"]

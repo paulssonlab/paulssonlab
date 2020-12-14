@@ -17,14 +17,13 @@ from geometry import (
     flatten_or_merge,
 )
 from text import Text as _Text
-from util import make_odd, memoize, plot_cell, write_gds
+from util import make_odd, memoize, plot_cell, write_gds, get_uuid
 import hamming
 import bitarray.util
 from functools import partial
 from cytoolz import compose
 from itertools import product
 import numbers
-import shortuuid
 
 REFERENCE_LAYER = 0
 TRENCH_LAYER = 1
@@ -58,9 +57,6 @@ def Text(
         raise NotImplementedError
     objs = align_refs(objs, position=position, alignment=alignment)
     return objs
-
-
-get_uuid = partial(shortuuid.random, length=2)
 
 
 def _compute_lane_split(split, max_lanes, gap_lanes=0):

@@ -6,6 +6,9 @@ import cytoolz
 from cytoolz import partial, compose
 import gdspy
 import matplotlib.pyplot as plt
+import shortuuid
+
+get_uuid = partial(shortuuid.random, length=4)
 
 
 def plot_cell(cell, exclude=(2,)):
