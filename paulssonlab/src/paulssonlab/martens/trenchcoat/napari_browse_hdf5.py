@@ -72,6 +72,7 @@ def make_regions_lazy_dask_stack(regions_table, width, height):
     file_nodes = whole_df["info_file"].unique()
     fields_of_view = whole_df["info_fov"].unique()
     frames = whole_df["info_frame"].unique()
+    z_levels = whole_df["info_z_level"].unique()
 
     file_array = []
     for file in file_nodes:
@@ -81,18 +82,20 @@ def make_regions_lazy_dask_stack(regions_table, width, height):
             # Frame nodes
             frame_array = []
             for frame in frames:
-                # Regions are always shared across Z -> set to zero
-                Z_level = 0
+                z_array = []
+                # z_levels
+                for z in z_levels:
+                    arr = dask.array.from_delayed(
+                        lazy_regions_arr_to_canvas(
+                            regions_table, file, fov, frame, z, width, height
+                        ),
+                        shape=(width, height),
+                        dtype=numpy.uint16,
+                    )
+                    z_array.append(arr)
 
-                arr = dask.array.from_delayed(
-                    lazy_regions_arr_to_canvas(
-                        regions_table, file, fov, frame, Z_level, width, height
-                    ),
-                    shape=(width, height),
-                    dtype=numpy.uint16,
-                )
-
-                frame_array.append(arr)
+                z_array_to_stack = dask.array.stack(z_array)
+                frame_array.append(z_array_to_stack)
 
             frame_array_to_stack = dask.array.stack(frame_array)
             fov_array.append(frame_array_to_stack)
@@ -105,9 +108,8 @@ def make_regions_lazy_dask_stack(regions_table, width, height):
     return megastack
 
 
-def regions_arr_to_canvas(table, file, fov, frame, Z_level, width, height):
+def regions_arr_to_canvas(table, file, fov, frame, z_level, width, height):
     """
-
     Input a numpy array with many rows, each containing the rectangular coordinates of regions.
 
     NOTE now, the input is a table containing relevant data,
@@ -118,10 +120,8 @@ def regions_arr_to_canvas(table, file, fov, frame, Z_level, width, height):
     Return a numpy array with numbered pixel positions for each region, and zeros for background.
     NOTE: what happens if the regions overlap?
     """
-    # regions_coords = h5file_regions.get_node(path).read()
     # TODO: trench row number?
-    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == Z_level)"
-    print("condition {}".format(condition))
+    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
     search = table.read_where(condition)
     df = pandas.DataFrame(search)
 
@@ -130,28 +130,28 @@ def regions_arr_to_canvas(table, file, fov, frame, Z_level, width, height):
         regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
 
     regions = numpy.array(regions)
-    # DEBUG
-    print(regions)
 
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
 
-    # for i, r in enumerate(regions):
-    # canvas[r[0] : r[2], r[1] : r[3]] = i + 1
-
-    # return numpy.rot90(canvas, k=-1)
-
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = i + 1
 
-    return canvas
+    return numpy.rot90(canvas, k=-1)
 
 
 ### Masks (e.g. cells) Layer
 
 
 def add_masks_layer(
-    masks_file, regions_file, fields_of_view, frames, z_levels, height, width, viewer
+    h5file_masks,
+    h5file_regions,
+    fields_of_view,
+    frames,
+    z_levels,
+    height,
+    width,
+    viewer,
 ):
     """
     Because each region gets its own masks, they need to be merged!
@@ -163,8 +163,6 @@ def add_masks_layer(
 
     TODO pass in information for the labels layer params? name etc.
     """
-    h5file_masks = tables.open_file(masks_file, "r")
-
     # Load the segmentation channels from the masks h5file
     seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
     seg_params_str = seg_params_node.read().tostring().decode("utf-8")
@@ -174,7 +172,7 @@ def add_masks_layer(
     file_nodes = [x._v_name for x in h5file_masks.list_nodes("/masks")]
 
     # If there were regions, then the masks need to be agglomerated into a larger image
-    if regions_file:
+    if h5file_regions:
         # Compile a canvas with all the masks from all the segmented areas
         # FIXME Would it make sense to use regions_arr_to_canvas() instead??
         # I think what this code is doing is recursing through all of the arrays on disk.
@@ -183,8 +181,7 @@ def add_masks_layer(
         # and query them for the coordinates.
         lazy_masks_to_canvas = delayed(masks_to_canvas)
 
-        h5file_regions = tables.open_file(regions_file, "r")
-        table = h5file_regions.root.trench_coords
+        table_regions = h5file_regions.get_node("/trench_coords")
 
         # FIXME how to determine the number of region sets? should each region set get its own labels layer?
         # that would mean sc x region_sets total number of layers.
@@ -197,62 +194,50 @@ def add_masks_layer(
             # Needs to be the same order as the images were loaded.
             file_array = []
             for file in file_nodes:
-                # Go through series of de-references b/c pytables doesn't allow iterating
-                # over nodes if some of the nodes are symlinks.
-                path = "/masks/{}".format(file)
-                node_1 = h5file_masks.get_node(path)()
-
                 # FOV nodes
                 fov_array = []
                 for fov in fields_of_view:
-                    node_2 = h5file_masks.get_node(node_1, "/FOV_{}".format(fov))()
-
-                    # NOTE: for now, trenches are shared across frames
-                    # TODO: what if they aren't?
-                    condition = "(info_file == file) & (info_fov == fov)"
-                    search = table.read_where(condition)
-                    df = pandas.DataFrame(search)
-
                     # Frame nodes
                     frame_array = []
                     for frame in frames:
-                        node_3 = h5file_masks.get_node(
-                            node_2, "/Frame_{}".format(frame)
-                        )()
-
-                        # Regions are always shared across Z, so it's OK to read them in now.
-                        # FIXME read them in from the table.
-                        # path = "/{}/FOV_{}/Frame_{}"
-                        # regions_coords = h5file_regions.get_node(path).read()
-
-                        regions = {}
-                        for r in df.itertuples():
-                            key = "{}/region_{}".format(
-                                r.info_row_number, r.info_trench_number
-                            )
-                            regions[key] = [r.min_row, r.min_col, r.max_row, r.max_col]
-
                         # Z nodes
                         z_array = []
                         for z in z_levels:
-                            # TODO now, need to loop all the available regions,
-                            # and then copy over the corresponding data from the masks into
-                            # a single, "zeroed out" canvas
-                            # FIXME issue iterating nodes when accessing via symlink!
-                            # this is bad, because that would require opening separate files
-                            # depending on the data, but how do we lazy load from separate files?
-                            node_4 = h5file_masks.get_node(
-                                node_3, "/Z_{}/{}".format(z, sc)
-                            )
+                            condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z)"
+                            search_regions = table_regions.read_where(condition)
+                            df_regions = pandas.DataFrame(search_regions)
+
+                            # Create a dict: input row number & trench number,
+                            # output bbox coords of the corresponding trench.
+                            regions = {}
+                            for r in df_regions.itertuples():
+                                key = "{}/region_{}".format(
+                                    r.info_row_number, r.info_trench_number
+                                )
+                                regions[key] = (
+                                    r.min_row,
+                                    r.min_col,
+                                    r.max_row,
+                                    r.max_col,
+                                )
 
                             # FIXME how do we know that the nodes iteration is the same order as the numbering of the trenches?
                             # could be non-numeric sorting)
-                            # FIXME shape
+                            # FIXME check that shape is the right order
+
                             arr = dask.array.from_delayed(
                                 lazy_masks_to_canvas(
-                                    regions, h5file_masks, node_4, width, height
+                                    regions,
+                                    h5file_masks,
+                                    file,
+                                    fov,
+                                    frame,
+                                    z,
+                                    sc,
+                                    width,
+                                    height,
                                 ),
-                                shape=(2048, 2048),
+                                shape=(width, height),
                                 dtype=numpy.uint16,
                             )
                             z_array.append(arr)
@@ -321,6 +306,8 @@ def add_masks_layer(
             megastack = dask.array.stack(file_array)
             viewer.add_labels(megastack)
 
+    # Done!
+
 
 ### Misc functions
 
@@ -345,19 +332,27 @@ def load_values(in_file):
     return dict
 
 
-def masks_to_canvas(regions, h5file_masks, node, width, height):
+def masks_to_canvas(regions, h5file_masks, file, fov, frame, z, sc, width, height):
     """
-    ###Input a numpy array with many rows, each containing the rectangular coordinates of regions.
-    ###Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
+    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+
+    Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
 
     Input an iterator over an H5 file node, below which hang individual segmentation masks.
     Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
     NOTE: what happens if the regions overlap?
     """
+    # Go through series of de-references b/c pytables doesn't allow iterating
+    # over nodes if some of the nodes are symlinks.
+    path = "/masks/{}".format(file)
+    node_1 = h5file_masks.get_node(path)()
+    node_2 = h5file_masks.get_node(node_1, "/FOV_{}".format(fov))()
+    node_3 = h5file_masks.get_node(node_2, "/Frame_{}".format(frame))()
+    node_4 = h5file_masks.get_node(node_3, "/Z_{}/{}".format(z, sc))
+
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
-
-    for n in h5file_masks.walk_nodes(node, classname="CArray"):
+    for n in h5file_masks.walk_nodes(node_4, classname="CArray"):
         # Parse n's parent & its name to get keys
         row = n._v_parent._v_name
         trench = n.name.split("_")[1]
@@ -605,9 +600,15 @@ def main_hdf5_browser_function(
         # Masks layers
         # FIXME issue with opening/closing regions h5 file & lazy loading of the data...
         if masks_file:
+            h5file_masks = tables.open_file(masks_file, "r")
+            if regions_file:
+                h5file_regions = tables.open_file(regions_file, "r")
+            else:
+                h5file_regions = None
+
             add_masks_layer(
-                masks_file,
-                regions_file,
+                h5file_masks,
+                h5file_regions,
                 extents["fields_of_view"],
                 extents["frames"],
                 extents["z_levels"],
@@ -633,8 +634,14 @@ def main_hdf5_browser_function(
                 height,
             )
 
+    # FIXME how to close these files when we use "lazy" loading?
+    # Shouldn't it be ok to close these once we exit the Napari gui scope?
     # Done!
-    h5file.close()
+    if h5file:
+        h5file.close()
 
     if regions_file:
         h5file_regions.close()
+
+    if masks_file:
+        h5file_masks.close()

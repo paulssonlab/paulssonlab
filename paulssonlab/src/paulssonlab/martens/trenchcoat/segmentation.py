@@ -66,9 +66,9 @@ def run_segmentation_analysis_regions(
     # Read in the array of regions from a table
     # 1. Query the table for the relevant rows
     trench_table = h5file_reg.get_node("/trench_coords")
-    this_node = trench_table.read_where("""(info_file == name) & (info_fov == fov)""")
-    # FIXME Don't query frame & z_level, since for now we are just using the first ones across all! ??
-    # (info_frame == frame) & (info_z_level == z_level)
+    this_node = trench_table.read_where(
+        """(info_file == name) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"""
+    )
 
     # 2. Trench rows: unique entries in the "info_row_number" column
     df = pandas.DataFrame(this_node)
@@ -77,7 +77,7 @@ def run_segmentation_analysis_regions(
     # 3. Compile the rows into a numpy array & run segmentation
     for region_set_number in region_sets:
         # a. Grab all the relevant trenches
-        trenches = df[df["info_row_number"] == region_set_number]
+        trenches = df[(df["info_row_number"] == region_set_number)]
         # FIXME is it imperative to sort the rows in ascending order?
         # (they must be ascending; but maybe they will always be sorted, since that's the order they were written?)
 
@@ -102,6 +102,11 @@ def run_segmentation_analysis_regions(
         )
 
         # d. Run the analysis on the given image stack
+        # NOTE would it make sense to also pass in the region info,
+        # so that the cell centroids can also be recorded with respect
+        # to the entire image, and not just the trench bounding box?
+        # (when there are no regions, would have to be left empty,
+        # (or identical).
         run_segmentation_analysis(
             in_file,
             name,
@@ -139,7 +144,6 @@ def run_segmentation_analysis_no_regions(
     """
     Open h5file with images, load without regions. Call segmentation.
     """
-
     # Node in the input file, which may contain multiple channel images
     h5file = tables.open_file(in_file, mode="r")
     z_node = h5file.get_node(
@@ -265,7 +269,6 @@ def write_masks_tables(
     Write masks & measurements to HDF5 files. Analyze regions within
     images. (e.g. trenches, cropped images...)
     """
-
     for sc in seg_params.keys():
         # Calculate the mask(s)
         masks = algo_dict[sc](stack, ch_to_img, seg_params[sc])
@@ -321,6 +324,13 @@ def make_ch_to_img_stack_regions(h5file, z_node, channels, regions):
     NOTE: the skimage libraries technically follow the convention that images are between 0 and 1.
     This requires resampling data to that range, and then converting it back to the original range.
     Need to check for which algorithms this matters (Niblack? Otsu?).
+
+    TODO: pass in the image loading function & image variable,
+    to allow different kinds of image loading (not just HDF5).
+    e.g. For HDF5, we would pass in the image_node.
+    Might not even need to pass in a function, if all images
+    support bracketed indexing.
+    How to handle multiple images though?
     """
 
     # Assume all regions have the same dimensions.
@@ -582,7 +592,6 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 file_names,
                                 regions_file,
                             ]
-
                             pool.apply_async(
                                 run_segmentation_analysis_regions,
                                 func_args,
