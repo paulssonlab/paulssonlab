@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
 import os
-from tqdm import tqdm
+import pathlib
+
 import numpy
-from scipy.signal import find_peaks
-from skimage.filters import unsharp_mask
 import tables
+from tqdm import tqdm
 from multiprocessing import Pool
+
 from params import read_params_file
 from properties import get_max_length
 from metadata import get_metadata
-import pathlib
-from scipy.signal import savgol_filter
+from new_trench_algos import find_trenches, generate_boxes
 
 """
 Write two PyTables tables:
@@ -22,160 +22,13 @@ Uses a peak detection algorithm to detect features (rows or trenches) after appl
 Typically, the idea is to use phase contrast images, in which these features stand out.
 
 The row or trench co-ordinates can then be used as "regions" during segmentation analysis.
+
+TODO: come up with a way to pass in which detection algorithm to use.
+Add the ability to specify whether a given unit is in pixels or in microns in the YAML params file.
 """
 
 
-def find_trenches(
-    img,
-    axis=1,
-    crop_top=0,
-    crop_bottom=0,
-    unsharp_mask_radius=5,
-    unsharp_mask_amount=30.0,
-    cutoff=0.10,
-    plateau_size=4,
-    distance=15,
-    padding_ratio=0.5,
-    window_length=5,
-    polyorder=1,
-):
-    """
-    Find trenches within an image (or image slice). Ideally, the image slice only contains a single row of trenches.
-
-    Cropping can help, if the trench row isn't perfectly aligned,
-    by removing regions outside of the trenches area.
-
-    The unsharp mask filter helps to emphasize the edges of trenches.
-
-    The cutoff is used to separate trenches from inter-trench space.
-
-    The distance helps filter out the non-trenches, since their peaks are less than those of trenches.
-
-    The padding ratio helps to add back the darker edges of the trenches, which don't make the cutoff.
-    """
-    # The unsharp mask helps to accentuate local differences by "sharpening" the image.
-    # NOTE unsharp mask gives worse results when operating on floats. Not sure why?
-    unsharp = unsharp_mask(
-        img.astype(numpy.uint16), radius=unsharp_mask_radius, amount=unsharp_mask_amount
-    )
-
-    # The mean is useful as a normalization
-    mean = numpy.mean(unsharp, axis=axis)
-
-    # Run smoothing: this helps merge twin peaks from the edges
-    # of trenches with cells, and also the twin peaks for the space
-    # in between trenches.
-    sg = savgol_filter(mean, window_length=window_length, polyorder=polyorder)
-
-    # Define an arbitrary threshold, below which we ignore,
-    # and above which we deem peak-worthy.
-    gt = sg > cutoff
-
-    # By defining the plateau size as such, we can eliminate the peaks which arise
-    # from the emblazoned numerals. Plateau size helps to eliminate very small
-    # detected peaks, which are actually just noise.
-    #
-    # Distance is crucial in filtering out the "peaks" arising from the inter-trench
-    # spacing. These inter-trench spaces are almost always dimmer than trenches,
-    # even with cells in them.
-    #
-    # Note that trenches with cells generate two peaks, with a dip in the middle
-    # where the cells are, but these two peaks are merged as long as the entirety
-    # (peak, drop, peak) is greater than the low cutoff.
-    peaks, peaks_properties = find_peaks(
-        gt, plateau_size=plateau_size, distance=distance
-    )
-
-    # If it fails to find any peaks, then end now & return an empty array
-    if peaks.size == 0:
-        print("Warning: no peaks found!")
-        return peaks
-
-    # Then, it will be important to pad the left_edges and right_edges a bit,
-    # since the trench edges are dark and don't meet the cutoff, but can
-    # contain a lot of fluorescence intensity. To do this, define a padding,
-    # and subtract it from all left_edges, and add it to all right edges.
-    median_detected_width = int(
-        numpy.median(peaks_properties["right_edges"] - peaks_properties["left_edges"])
-    )
-
-    # Apply padding as some fraction or multiple of the median trench width.
-    # So first determine a uniform width, perhaps the median width,
-    # and then add +/- 50% to left & right sides.
-    # NOTE: With a value of 1.0, this will triple the effective trench width.
-    padding = int(padding_ratio * median_detected_width)
-
-    # Adjust all trenches to have equal widths
-    # NOTE: is the max value img.shape[0] or [1]?
-    (left_edges, right_edges) = correct_widths(
-        peaks_properties["left_edges"],
-        peaks_properties["right_edges"],
-        median_detected_width,
-        padding,
-        img.shape[0],
-    )
-
-    # Return rectangular coordinates for the left and right edges, sharing the min and max col.
-    result = numpy.array(
-        [[i[0], 0, i[1], img.shape[1]] for i in zip(left_edges, right_edges)]
-    )
-
-    return result
-
-
-def correct_widths(
-    left_edges_old, right_edges_old, median_detected_width, padding, max_value
-):
-    """
-    If a given trench is not equal to the median dimension, then it is either too wide, or too narrow.
-    The difference between the trench and the median is either odd, or even.
-    If the difference is even, then add (or subtract) half of this difference from the left & the right.
-    If the difference is odd, then we have to decide whether to add/remove 1 extra pixel from the left,
-    or from the right.
-    Let's just (arbitrarily decide to give more to the right.
-    """
-    left_edges = []
-    right_edges = []
-
-    # FIXME the width correction procedure doesn't work!
-    for l, r in zip(left_edges_old, right_edges_old):
-        difference = median_detected_width - (r - l)
-        left = l - padding
-        right = r + padding
-
-        # Wider than the median, must remove some width
-        if difference < 0:
-            if difference % 2 == 0:
-                left -= difference // 2
-                right += difference // 2
-            else:
-                # Integer divide with negative numbers!
-                # https://stackoverflow.com/questions/19517868/integer-division-by-negative-number
-                left -= ((-1 * difference) // 2) * -1
-                right += ((-1 * difference) // 2) * -1 - 1
-
-        # Narrower than the median, must add some width
-        elif difference > 0:
-            if difference % 2 == 0:
-                left -= difference // 2
-                right += difference // 2
-            else:
-                left -= difference // 2
-                right += difference // 2 + 1
-
-        # NOTE that now it is possible for a trench to extend outside of the image.
-        # Filter out any peaks which have left_edge < 0 or right_edge > img_dimension.
-        # by not adding them to the final list.
-        if (left > 0) & (right < max_value):
-            left_edges.append(left)
-            right_edges.append(right)
-
-    # All trenches now have padding and uniform widths and remain within the image bounds.
-
-    return (left_edges, right_edges)
-
-
-def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params):
+def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params, boxes):
     """
     Run basic trench analysis on an HDF5 file: detect trenches for each time
     frame, or just using the first time frame. Then, measure trench properties
@@ -186,16 +39,10 @@ def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params)
     Each array entry (row) has 4 values (min_row, min_col, max_row, max_col), and there is 1 row per region (trench).
     Regions must be rectangular, and must have the same dimension (for stacking purposes).
     """
-
     # 1. Load the image, optionally crop it
     img = load_image_for_regions_analysis(
         in_file, filename, fov, frame, z_level, params
     )
-
-    # DEBUG
-    # img = numpy.rot90(img, -1)
-    # params["trench_rows"]["axis"] = 0
-    # params["trench_rows"]["axis_two"] = 1
 
     # 2. Create an HDF5 file for writing trench row & trench regions info.
     dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
@@ -205,19 +52,41 @@ def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params)
     regions_file = tables.open_file(out_file_path, mode="w")
 
     # 3. Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
-    rows = detect_trench_rows(regions_file, params, img, filename, fov, frame, z_level)
-    print(rows)
-    # DEBUG
-    # print(rows.shape)
 
-    # 4. For each row, find all the trenches
-    if "trenches" in params:
-        # FIXME this is still the cropped image, but the co-ordinates are for uncropped ~ 2 solutions:
-        # a. add back the crop dimensions,
-        # b. re-load the image w/o cropping it
-        detect_trenches_in_rows(
-            filename, fov, frame, z_level, rows, img, params, regions_file
-        )
+    ## 4. For each row, find all the trenches
+    # if "trenches" in params:
+    ## FIXME this is still the cropped image, but the co-ordinates are for uncropped ~ 2 solutions:
+    ## a. add back the crop dimensions,
+    ## b. re-load the image w/o cropping it
+    # detect_trenches_in_rows(filename, fov, frame, z_level, rows, img, params, regions_file)
+
+    # UPDATE NEW trench row & trench detection algorithm
+    # This detects both the rows & trenches in a single step
+    # FIXME no correction for cropping; and the results are NOT written to disk!
+    # To do so, need to retroactively parse out the row coords from the trenches.
+
+    (trenches, y_offsets) = find_trenches(img, boxes, **params["trenches"])
+
+    # Take the y_offsets and create bounding boxes for the rows of trenches
+    rows = []
+    for y in y_offsets:
+        bbox = [0, y, img.shape[0], y + params["trenches"]["tr_height"]]
+        rows.append(bbox)
+
+    # Write all row coords to disk as a single array
+    regions_file.create_array("/", "row_coords", obj=rows)
+
+    # Write out the trench coordinates using a variable-length array in HDF5
+    results = regions_file.create_vlarray(
+        "/",
+        "trench_coords",
+        atom=tables.UInt16Atom(shape=(4)),
+        expectedrows=len(trenches),
+    )
+
+    # Iterate the rows
+    for r in trenches:
+        results.append(r)
 
     # Done!
     regions_file.close()
@@ -318,109 +187,13 @@ def load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, para
     return img
 
 
-def detect_trench_rows(regions_file, img, axis, cutoff, plateau_size):
-    """
-    Analyze the image to find trench rows, write coordinates to HDF5
-    """
-    # Peak detection parameters for rows of trenches: find all the trench rows in the image.
-    if "trench_rows" in params:
-        # The variance is expected to be greater where there are features (numerals or trenches)
-        var = numpy.var(img, axis=axis)
-
-        # The mean is useful as a normalization
-        mean = numpy.mean(img, axis=axis)
-
-        # Normalize the variance by the mean
-        var_mean = var / mean
-
-        # Define an arbitrary threshold, below which we ignore,
-        # and above which we deem peak-worthy
-        gt = var_mean > cutoff
-
-        # By defining the plateau size as such, we can eliminate the peaks
-        # which arise from the emblazoned numerals.
-        peaks, peaks_properties = find_peaks(gt, plateau_size=plateau_size)
-
-        # FIXME img.shape[0] or [1] ? (width, or height?)
-        rows = numpy.array(
-            [
-                [0, i[0], img.shape[1], i[1]]
-                for i in zip(
-                    peaks_properties["left_edges"], peaks_properties["right_edges"]
-                )
-            ]
-        )
-
-        # Adjust the coords to the raw image (pre-cropped)
-        for r in rows:
-            r[0] -= params["crop"]["left"]
-            r[1] -= params["crop"]["top"]
-            r[2] -= params["crop"]["left"]
-            r[3] -= params["crop"]["top"]
-
-    # If no trench row detection parameters were specified, then there is just a single row,
-    # equal to the original cropping parameters.
-    # If no cropping is desired, then the params must span the whole image.
-    # Return a 2D array with a single entry, so that the dims are compatible
-    # for when either just 1 row is detected, or more than 1 are detected.
-    else:
-        rows = numpy.array(
-            [
-                [
-                    params["crop"]["left"],
-                    params["crop"]["top"],
-                    params["crop"]["right"],
-                    params["crop"]["bottom"],
-                ]
-            ]
-        )
-
-    # Write all row coords to disk as a single array
-    regions_file.create_array("/", "row_coords", obj=rows)
-
-    return rows
-
-
-def detect_trenches_in_rows(
-    filename, fov, frame, z_level, rows, img, params, regions_file
-):
-    # Store all detected trenches as a list of numpy arrays, which will then be stored as a variable-length pytables array.
-    # NOTE: reading from the vlarray will return a list of numpy arrays, each with its own length.
-    detected_trenches_list = []
-
-    for i, row in enumerate(rows):
-        # Detect trenches within the row
-        trenches = find_trenches(
-            img[row[0] : row[2], row[1] : row[3]], **params["trenches"]
-        )
-
-        # Convert coordinates back to pre-cropped (not in the region, but in the raw image).
-        # NOTE confused. Why is it 0->1, 1->0, 2->1, 3->0 and not the converse?
-        for r in regions:
-            r[0] += row[1]
-            r[1] += row[0]
-            r[2] += row[1]
-            r[3] += row[0]
-
-        # Append to the global list
-        detected_trenches_list.append(regions)
-
-    # Write out the trench coordinates using a variable-length array in HDF5
-    results = regions_file.create_vlarray(
-        "/",
-        "trench_coords",
-        atom=tables.UInt16Atom(shape=(4)),
-        expectedrows=len(detected_trenches_list),
-    )
-
-    for i in detected_trenches_list:
-        results.append(i)
-
-    # Done!
-    results.close()
-
-
 def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
+    """
+    After the trench rows & trenches have been detected, compile the results to an
+    HDF5 table.
+    TODO: if some regions were shared across frames etc., then need to add duplicate
+    entries for those shared regions.
+    """
     max_filename_len = get_max_length(file_names)
 
     # Create the H5 file for writing the table to
@@ -460,8 +233,9 @@ def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
                         table_rowcoords_row["info_z_level"] = z
                         table_rowcoords_row["info_row_number"] = i
 
-                        # Doesn't work with pandas
-                        # table_rowcoords_row["bounding_box"]    = row
+                        # NOTE wanted to write a single column with 4 bbox values,
+                        # but that doesn't work with Pandas :(
+                        # table_rowcoords_row["bounding_box"] = row
                         table_rowcoords_row["min_row"] = row[0]
                         table_rowcoords_row["min_col"] = row[1]
                         table_rowcoords_row["max_row"] = row[2]
@@ -485,7 +259,7 @@ def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
                             table_trenchcoords_row["info_trench_number"] = j
 
                             # Doesn't work with pandas
-                            # table_trenchcoords_row["bounding_box"]       = trench
+                            # table_trenchcoords_row["bounding_box"] = trench
                             table_trenchcoords_row["min_row"] = trench[0]
                             table_trenchcoords_row["min_col"] = trench[1]
                             table_trenchcoords_row["max_row"] = trench[2]
@@ -520,6 +294,9 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
 
     # Metadata from each ND2 file
     metadata = {}
+    # TODO re-work how region sharing would be handled:
+    # Must specify which dims. to share across,
+    # and then must duplicate the table entries at the end!
     if share_regions:
         for f in file_names:
             # Get metadata for each file
@@ -573,12 +350,13 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
             params_copy = params
             px_mu = metadata[f]["pixel_microns"]
 
+            # FIXME need a more generic way to convert specific params to pixels from microns
+            # How to flag them for conversion?
             if "trenches" in params_copy:
-                params_copy["trenches"]["feature_dimension"] = int(
-                    params_copy["trenches"]["feature_dimension"] / px_mu
-                )
-                params_copy["trenches"]["min_distance"] = int(
-                    params_copy["trenches"]["min_distance"] / px_mu
+                # params_copy["trenches"]["feature_dimension"] = int(params_copy["trenches"]["feature_dimension"] / px_mu)
+                # params_copy["trenches"]["min_distance"]      = int(params_copy["trenches"]["min_distance"]      / px_mu)
+                params_copy["trenches"]["tr_height"] = int(
+                    params_copy["trenches"]["tr_height"] / px_mu
                 )
 
             if "trench_rows" in params_copy:
@@ -589,10 +367,27 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
                     params_copy["trench_rows"]["min_distance"] / px_mu
                 )
 
+            # Generate a set of rectangles which represent trenches
+            # but which do not yet have known x,y starting points
+            # which best match one or more of the trench rows.
+            # Re-use the same boxes for all iterations!
+            # TODO: more generic way to pass in shared variables,
+            # in an algorithm-agnostic way?
+            # Note that performance seems the same with or without
+            # re-computing the boxes. But if they really are the same,
+            # it makes sense to only calculate them once.
+            # Stick boxes into params_copy somehow?
+            boxes = generate_boxes(
+                params_copy["trenches"]["tr_width"],
+                params_copy["trenches"]["tr_height"],
+                params_copy["trenches"]["tr_spacing"],
+                metadata[f]["width"],
+            )
+
             for fov in metadata[f]["fields_of_view"]:
                 for frame in file_to_frames[f]:
                     for z in metadata[f]["z_levels"]:
-                        args = [in_file, out_dir, f, fov, frame, z, params_copy]
+                        args = [in_file, out_dir, f, fov, frame, z, params_copy, boxes]
                         p.apply_async(run_trench_analysis, args, callback=update_pbar)
                         # run_trench_analysis(*args) # DEBUG
 
@@ -610,5 +405,5 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file, share_region
     # for easier searching. Store the table in the same HDF5 file.
     # FIXME this function does both rows & trenches ~ but what if we only have rows, but no trenches?
     # Should we even allow row detection without trench detection? What would be the point?
-    # if "trenches" in params_copy:
-    # compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir)
+    if "trenches" in params_copy:
+        compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir)
