@@ -6,7 +6,6 @@ dependencies:
   - bitarray
   - black
   - cachetools
-  - click
   - cytoolz
   - freetype
   - freetype-py
@@ -15,6 +14,7 @@ dependencies:
   - matplotlib
   - nbformat
   - numpy
+  - pandas
   - pint
   - pip
   - pip:

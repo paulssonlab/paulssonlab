@@ -20,7 +20,6 @@ from text import Text as _Text
 from util import make_odd, memoize, plot_cell, write_gds
 import hamming
 import bitarray.util
-import click
 from functools import partial
 from cytoolz import compose
 from itertools import product
@@ -545,6 +544,9 @@ def manifold_snake(
     }
     metadata["lane_length"] = lane_fc_dims[0]
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
+    metadata["trench_xs"] = trench_xs
+    metadata["fov_origin_x"] = trench_xs[0] - trench_width / 2
+    metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
     return snake_cell, metadata
 
 
@@ -727,6 +729,9 @@ def snake(
     lane_length = lane_fc_dims[0]
     metadata["lane_length"] = lane_length
     metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
+    metadata["trench_xs"] = trench_xs
+    metadata["fov_origin_x"] = trench_xs[0] - trench_width / 2
+    metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
     snake_length = split * lane_length
     metadata["snake_length"] = snake_length
     snake_cell = Cell(f"Snake-{name}")
@@ -1338,7 +1343,7 @@ def wafer(
     text_left=None,
     diameter=76.2e3,
     chip_dims=None,
-    chip_margin=0.5e3,
+    chip_margin=1e3,
     alignment_mark_position=None,
     alignment_text_size=1000,
     right_text_size=2000,
@@ -1607,12 +1612,3 @@ def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
     outline = boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
-
-
-@click.group()
-def cli():
-    pass
-
-
-if __name__ == "__main__":
-    cli()
