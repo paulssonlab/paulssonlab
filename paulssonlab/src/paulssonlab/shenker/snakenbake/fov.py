@@ -48,25 +48,28 @@ def get_fov_coverage(
 def get_grid_metadata(fov_dims, metadata, skip_first=False):
     grid_metadata = {}
     for fov_name, fov_dim in fov_dims.items():
-        trench_sets_per_fov, offset, active_height = get_fov_coverage(
+        trench_sets_per_fov, offset, filled_height = get_fov_coverage(
             fov_dim, **metadata, skip_first=skip_first
         )
         if trench_sets_per_fov % 2 != 0:
             # TODO: there should be a more elegant way of getting this without a second call
-            _, offset2, _ = get_fov_coverage(
+            _, offset2, filled_height2 = get_fov_coverage(
                 fov_dim,
                 **metadata,
                 trench_sets_per_fov=trench_sets_per_fov,
                 skip_first=not skip_first,
             )
             offsets = (offset, offset2)
+            filled_heights = (filled_height, filled_height2)
         else:
             offsets = (offset,)
+            filled_heights = (filled_height,)
         grid_width = int(np.ceil(metadata["lane_with_trenches_length"] / fov_dim[0]))
         grid_height = int(np.ceil(metadata["num_lanes"] * 2 / trench_sets_per_fov))
-        margin = fov_dim[1] - active_height
+        max_filled_height = np.max(filled_heights)
+        margin = fov_dim[1] - max_filled_height
         margin_frac = margin / fov_dim[1]
-        angle_tol = np.rad2deg(np.arccos(active_height / fov_dim[1]))
+        angle_tol = np.rad2deg(np.arccos(filled_height / fov_dim[1]))
         grid_metadata[fov_name] = {
             "fov_name": fov_name,
             "fov_width": fov_dim[0],
@@ -77,7 +80,8 @@ def get_grid_metadata(fov_dims, metadata, skip_first=False):
             "num_fovs": grid_width * grid_height,
             "trench_sets_per_fov": trench_sets_per_fov,
             "offsets": offsets,
-            "active_height": active_height,
+            "filled_heights": filled_heights,
+            "max_filled_heights": max_filled_height,
             "margin": margin,
             "margin_frac": margin_frac,
             "angle_tol": angle_tol,  # NOTE: this is in degrees
@@ -104,21 +108,30 @@ def draw_grid_overlay(
         #         np.deg2rad(grid_metadata_fov["angle_tol"]),
         #         (fov_dim[0] / 2, -fov_dim[1] / 2),
         #     )
-        if center_margins:
-            fov_rect = fov_rect.translate(0, grid_metadata_fov["margin"] / 2)
+        # if center_margins:
+        #     fov_rect = fov_rect.translate(0, grid_metadata_fov["margin"] / 2)
         fov_cell = Cell(f"FOV-{fov_name}-{get_uuid()}")
         fov_cell.add(fov_rect)
         y = 0
         offsets = grid_metadata_fov["offsets"]
+        filled_heights = grid_metadata_fov["filled_heights"]
         total_offset = np.sum(offsets)
-        for idx, offset in enumerate(offsets):
+        for idx, (offset, filled_height) in enumerate(zip(offsets, filled_heights)):
+            margin = fov_dim[1] - filled_height
+            if center_margins:
+                margin_offset = margin / 2
+            else:
+                margin_offset = 0
             chip_cell.add(
                 gdspy.CellArray(
                     fov_cell,
                     grid_metadata_fov["grid_width"],
                     (grid_metadata_fov["grid_height"] - (idx + 1)) // len(offsets) + 1,
                     (fov_dim[0], -total_offset),
-                    (chip_metadata["fov_origin_x"], chip_metadata["fov_origin_y"] + y),
+                    (
+                        chip_metadata["fov_origin_x"],
+                        chip_metadata["fov_origin_y"] + margin_offset + y,
+                    ),
                 )
             )
             y -= offset
