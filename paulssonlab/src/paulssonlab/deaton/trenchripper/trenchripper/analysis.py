@@ -9,15 +9,16 @@ import os
 
 from matplotlib import pyplot as plt
 
+## Note that this is still fairly not scalable; convert to out of memory dataframe manipulations later if necessary
+
 class regionprops_extractor:
     def __init__(self,headpath,segmentationdir,intensity_channel_list=None,props=['centroid','area','mean_intensity']):
         self.headpath = headpath
         self.intensity_channel_list = intensity_channel_list
         self.kymographpath = headpath + "/kymograph"
         self.segmentationpath = headpath + "/" + segmentationdir
-        self.metapath = headpath + "/metadata.hdf5"
+        self.metapath = self.kymographpath + "/metadata"
         self.analysispath = headpath + "/analysis.pkl"
-        self.meta_handle = pandas_hdf5_handler(self.metapath)
         self.props = props
 
     def get_file_regionprops(self,file_idx):
@@ -58,7 +59,7 @@ class regionprops_extractor:
         return file_idx
 
     def analyze_all_files(self,dask_cont):
-        kymo_meta = self.meta_handle.read_df("kymograph")
+        kymo_meta = pd.read_parquet(self.metapath)
         file_list = kymo_meta["File Index"].unique().tolist()
         num_file_jobs = len(file_list)
 
@@ -69,7 +70,7 @@ class regionprops_extractor:
             dask_cont.futures["File Index: " + str(file_idx)] = future
 
     def compile_data(self,dask_cont):
-        kymo_meta = self.meta_handle.read_df("kymograph")
+        kymo_meta = pd.read_parquet(self.metapath)
         file_list = kymo_meta["File Index"].unique().tolist()
         num_file_jobs = len(file_list)
         file_idx_list = dask_cont.daskclient.gather([dask_cont.futures["File Index: " + str(file_idx)] for file_idx in file_list],errors="skip")
