@@ -1339,7 +1339,7 @@ def wafer(
     text_left=None,
     diameter=76.2e3,
     chip_dims=None,
-    chip_margin=1e3,
+    chip_margin=1.2e3,
     alignment_mark_position=None,
     alignment_text_size=1000,
     right_text_size=2000,
