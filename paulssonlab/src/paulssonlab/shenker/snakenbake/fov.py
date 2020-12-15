@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.optimize as optimize
 from itertools import count
 import gdspy
 from geometry import Cell
@@ -45,6 +46,27 @@ def get_fov_coverage(
     return trench_sets_per_fov, offset, y
 
 
+def rectangle_rotation_angle(fov_dim, margin):
+    width, height = fov_dim
+    return 2 * np.arctan(
+        (np.sqrt(2 * height * margin + width**2 - margin**2) - width)
+        / (2 * height - margin)
+    )
+
+
+def _rectangle_rotation_angle_root_finder(fov_dim, margin):
+    width, height = fov_dim
+
+    def func(theta):
+        return width * np.sin(theta) - height * (np.cos(theta) - 1) - margin
+
+    res = optimize.root_scalar(func, bracket=(0, np.pi / 4))
+    if not res.converged:
+        return None
+    else:
+        return res.root
+
+
 def get_grid_metadata(fov_dims, metadata, skip_first=False):
     grid_metadata = {}
     for fov_name, fov_dim in fov_dims.items():
@@ -69,7 +91,7 @@ def get_grid_metadata(fov_dims, metadata, skip_first=False):
         max_filled_height = np.max(filled_heights)
         margin = fov_dim[1] - max_filled_height
         margin_frac = margin / fov_dim[1]
-        angle_tol = np.rad2deg(np.arccos(filled_height / fov_dim[1]))
+        angle_tol = np.rad2deg(rectangle_rotation_angle(fov_dim, margin))
         grid_metadata[fov_name] = {
             "fov_name": fov_name,
             "fov_width": fov_dim[0],
@@ -103,13 +125,14 @@ def draw_grid_overlay(
         fov_dim = fov_dims[fov_name]
         grid_metadata_fov = grid_metadata[fov_name]
         fov_rect = gdspy.Rectangle((0, 0), (fov_dim[0], -fov_dim[1]), layer=fov_layer)
-        # if rotate:
-        #     fov_rect = fov_rect.rotate(
-        #         np.deg2rad(grid_metadata_fov["angle_tol"]),
-        #         (fov_dim[0] / 2, -fov_dim[1] / 2),
-        #     )
-        # if center_margins:
-        #     fov_rect = fov_rect.translate(0, grid_metadata_fov["margin"] / 2)
+        if center_margins:
+            rotation_center = (fov_dim[0] / 2, -fov_dim[1] / 2)
+        else:
+            rotation_center = (0, 0)
+        if rotate:
+            fov_rect = fov_rect.rotate(
+                np.deg2rad(grid_metadata_fov["angle_tol"]), rotation_center
+            )
         fov_cell = Cell(f"FOV-{fov_name}-{get_uuid()}")
         fov_cell.add(fov_rect)
         y = 0
