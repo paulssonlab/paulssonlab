@@ -690,7 +690,7 @@ class kymograph_cluster:
         """
 
         midpoint_seeds = self.filter_midpoints(all_midpoints,x_drift,trench_width_x,trench_present_thr)
-        corrected_midpoints = x_drift[:,np.newaxis]+midpoint_seeds[np.newaxis,:]
+        corrected_midpoints = x_drift[:,np.newaxis].astype(int)+midpoint_seeds[np.newaxis,:].astype(int) ### DIRTY FIX
 
         midpoints_up,midpoints_dn = (corrected_midpoints-trench_width_x//2,\
                                      corrected_midpoints+trench_width_x//2+1)
@@ -758,6 +758,7 @@ class kymograph_cluster:
             dataset_name = str(row_num) + "/" + str(channel)
             cropped_in_y = cropped_in_y_list[c][:,row_num] # t,y,x
             k_len,t_len,y_len,x_len = (working_in_bounds.shape[2],working_in_bounds.shape[1],cropped_in_y.shape[1],working_in_bounds[1,0,0]-working_in_bounds[0,0,0])
+
             kymo_out = np.zeros((k_len,t_len,y_len,x_len),dtype="uint16")
 
             for t in range(working_in_bounds.shape[1]):
@@ -1155,6 +1156,7 @@ class kymograph_cluster:
 
         num_timepoints = len(df["timepoints"].unique())
         new_trenches = df.groupby(["fov","row"]).apply(lambda x: np.repeat(list(range(0,len(x["trench"].unique()))),repeats=num_timepoints))
+        new_trenches = new_trenches.compute().sort_index()
         new_trenches = [element for list_ in new_trenches for element in list_]
         df = df.drop(["trenchid","trench"],axis=1)
 
@@ -1277,56 +1279,6 @@ class kymograph_cluster:
         outputdf = self.add_trenchids(outputdf)
 
         dd.to_parquet(outputdf, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True)
-
-
-
-
-
-#         df = dd.read_parquet(self.kymographpath + "/metadata").persist()
-# #         df = self.add_trenchids(df).persist() #NEW
-
-#         trenchid_list = df["trenchid"].unique().compute().tolist()
-#         file_list = df["File Index"].unique().compute().tolist()
-#         outputdf = df.drop(columns = ["File Index","Image Index"]).persist()
-#         trenchiddf = df.set_index("trenchid").persist()
-
-# #         with open(self.kymographpath + "/metadata.pkl", 'rb') as handle:
-# #             metadata = pickle.load(handle)
-
-#         num_tpts = len(trenchiddf["timepoints"].unique().compute().tolist())
-#         chunk_size = self.trenches_per_file*num_tpts
-#         if len(trenchid_list)%self.trenches_per_file == 0:
-#             num_files = (len(trenchid_list)//self.trenches_per_file)
-#         else:
-#             num_files = (len(trenchid_list)//self.trenches_per_file) + 1
-
-#         file_indices = np.repeat(np.array(range(num_files)),chunk_size)[:len(outputdf)]
-#         file_trenchid = np.repeat(np.array(range(self.trenches_per_file)),num_tpts)
-#         file_trenchid = np.repeat(file_trenchid[:,np.newaxis],num_files,axis=1).T.flatten()[:len(outputdf)]
-#         file_indices = pd.DataFrame(file_indices)
-#         file_trenchid = pd.DataFrame(file_trenchid)
-#         file_indices.index = outputdf.index
-#         file_trenchid.index = outputdf.index
-
-#         outputdf["File Index"] = file_indices[0]
-#         outputdf["File Trench Index"] = file_trenchid[0]
-#         parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):04}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1, meta=int)
-#         outputdf["File Parquet Index"] = parq_file_idx
-#         outputdf = outputdf.astype({"File Index":int,"File Trench Index":int,"File Parquet Index":int})
-
-#         random_priorities = np.random.uniform(size=(num_files,))
-#         for k in range(0,num_files):
-#             priority = random_priorities[k]
-#             future = dask_controller.daskclient.submit(self.reorg_kymograph,k,df,trenchid_list,trenchiddf,retries=1,priority=priority)
-#             dask_controller.futures["Kymograph Reorganized: " + str(k)] = future
-
-#         reorg_futures = [dask_controller.futures["Kymograph Reorganized: " + str(k)] for k in range(num_files)]
-#         future = dask_controller.daskclient.submit(self.cleanup_kymographs,reorg_futures,file_list,retries=1,priority=priority)
-#         dask_controller.futures["Kymographs Cleaned Up"] = future
-#         dask_controller.daskclient.gather([future])
-
-#         dd.to_parquet(outputdf, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True)
-
 
     def kymo_report(self):
         df = dd.read_parquet(self.kymographpath + "/metadata/").persist()
