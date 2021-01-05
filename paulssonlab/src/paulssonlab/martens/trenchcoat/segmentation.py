@@ -222,7 +222,11 @@ def run_segmentation_analysis(
     # then open the existing table.
     try:
         table = h5file_tables.create_table(
-            "/", "measurements", Cell, createparents=True
+            "/",
+            "measurements",
+            Cell,
+            createparents=True,
+            filters=tables.Filters(complevel=1, complib="zlib"),
         )
     except:
         table = h5file_tables.get_node("/measurements")

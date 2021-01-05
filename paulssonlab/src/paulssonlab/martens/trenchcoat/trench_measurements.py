@@ -92,7 +92,11 @@ def run_trench_analysis(
         node._f_remove()
 
     trench_properties_table = fov_h5file.create_table(
-        "/tables", table_name, Trench, "Measurements_whole_trench"
+        "/tables",
+        table_name,
+        Trench,
+        "Measurements_whole_trench",
+        filters=tables.Filters(complevel=1, complib="zlib"),
     )
     trench_properties_row = trench_properties_table.row
 

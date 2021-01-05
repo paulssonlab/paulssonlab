@@ -6,13 +6,62 @@ import dask.array
 import pandas
 from params import read_params_string, read_params_file
 
-
 """
 NOTE for now, assumes image dtype is float32
 
 TODO clean up the metadata functions, and their names, then stick them in the separate metadata Python file
 Might also need to rework the similar functions used for nd2 browsing?
 """
+
+
+def dask_stack_loop(
+    file_nodes,
+    fields_of_view,
+    frames,
+    z_levels,
+    width,
+    height,
+    loading_function,
+    dtype,
+    load_func_args,
+):
+    """
+    Create a "lazy" dask array to display information in Napari.
+    This is a generic routine which should abstract across many different kinds of data.
+    """
+    lazy_func = delayed(loading_function)
+
+    file_array = []
+    for file in file_nodes:
+        # FOV nodes
+        fov_array = []
+        for fov in fields_of_view:
+            # Frame nodes
+            frame_array = []
+            for frame in frames:
+                z_array = []
+                # z_levels
+                for z in z_levels:
+                    arr = dask.array.from_delayed(
+                        lazy_func(file, fov, frame, z, width, height, *load_func_args),
+                        shape=(width, height),
+                        dtype=dtype,
+                    )
+                    z_array.append(arr)
+
+                z_array_to_stack = dask.array.stack(z_array)
+                frame_array.append(z_array_to_stack)
+
+            frame_array_to_stack = dask.array.stack(frame_array)
+            fov_array.append(frame_array_to_stack)
+
+        fov_array_to_stack = dask.array.stack(fov_array)
+        file_array.append(fov_array_to_stack)
+
+    megastack = dask.array.stack(file_array)
+
+    return megastack
+
 
 ### Regions (e.g. Trench Rows, Trenches) Layer
 
@@ -30,69 +79,45 @@ def add_regions_layer(
     Create one label layer for trench rows, and another label layer for trenches.
     """
     # 1. Trench rows
-    trench_rows_stack = make_regions_lazy_dask_stack(
-        regions_file, file_nodes, fields_of_view, frames, z_levels, width, height
+    trench_rows_stack = dask_stack_loop(
+        file_nodes,
+        fields_of_view,
+        frames,
+        z_levels,
+        width,
+        height,
+        regions_arr_to_canvas,
+        numpy.uint16,
+        [regions_file],
     )
+
     viewer.add_labels(trench_rows_stack, name="Trench Rows")
 
     # 2. Trenches within each row
-    trenches_stack = make_trenches_lazy_dask_stack(
-        regions_file, file_nodes, fields_of_view, frames, z_levels, width, height
+    trenches_stack = dask_stack_loop(
+        file_nodes,
+        fields_of_view,
+        frames,
+        z_levels,
+        width,
+        height,
+        trenches_arr_to_canvas,
+        numpy.uint16,
+        [regions_file],
     )
+
     viewer.add_labels(trenches_stack, name="Trenches")
 
 
-def make_trenches_lazy_dask_stack(
-    regions_file, file_nodes, fields_of_view, frames, z_levels, width, height
-):
+def query_regions_from_file(file, fov, frame, z_level, regions_file):
     """
-    Create a "lazy" dask array to display trenches.
-    """
-    lazy_trenches_arr_to_canvas = delayed(trenches_arr_to_canvas)
-
-    file_array = []
-    for file in file_nodes:
-        # FOV nodes
-        fov_array = []
-        for fov in fields_of_view:
-            # Frame nodes
-            frame_array = []
-            for frame in frames:
-                z_array = []
-                # z_levels
-                for z in z_levels:
-                    arr = dask.array.from_delayed(
-                        lazy_trenches_arr_to_canvas(
-                            regions_file, file, fov, frame, z, width, height
-                        ),
-                        shape=(width, height),
-                        dtype=numpy.uint16,
-                    )
-                    z_array.append(arr)
-
-                z_array_to_stack = dask.array.stack(z_array)
-                frame_array.append(z_array_to_stack)
-
-            frame_array_to_stack = dask.array.stack(frame_array)
-            fov_array.append(frame_array_to_stack)
-
-        fov_array_to_stack = dask.array.stack(fov_array)
-        file_array.append(fov_array_to_stack)
-
-    megastack = dask.array.stack(file_array)
-
-    return megastack
-
-
-def trenches_arr_to_canvas(regions_file, file, fov, frame, z_level, width, height):
-    """
-    Read in bounding boxes for all the trenches, and write them to a canvas.
+    Read all regions matching a given query
+    Return a list of regions, and a list of trench numbers
     """
     h5file_regions = tables.open_file(regions_file, "r")
     regions_table = h5file_regions.get_node("/", "trench_coords")
-
-    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
-    search = regions_table.read_where(condition)
+    query = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
+    search = regions_table.read_where(query)
     df = pandas.DataFrame(search)
     h5file_regions.close()
 
@@ -102,7 +127,16 @@ def trenches_arr_to_canvas(regions_file, file, fov, frame, z_level, width, heigh
         regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
         trench_numbers.append(r.info_trench_number)
 
-    regions = numpy.array(regions)
+    return (regions, trench_numbers)
+
+
+def trenches_arr_to_canvas(file, fov, frame, z_level, width, height, regions_file):
+    """
+    Read in bounding boxes for all the trenches, and write them to a canvas.
+    """
+    (regions, trench_numbers) = query_regions_from_file(
+        file, fov, frame, z_level, regions_file
+    )
 
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
@@ -111,56 +145,10 @@ def trenches_arr_to_canvas(regions_file, file, fov, frame, z_level, width, heigh
         # +1 because zero is background
         canvas[r[0] : r[2], r[1] : r[3]] = tr + 1
 
-    return numpy.rot90(canvas, k=-1)
+    return canvas.T
 
 
-def make_regions_lazy_dask_stack(
-    regions_file, file_nodes, fields_of_view, frames, z_levels, width, height
-):
-    """
-    Input the location of the region (trench row or trenches) coordinates within the HDF5 file,
-    output a dask array stacked for all the dimensions,
-    whose final dimension is the canvas with the labeled regions,
-    representing either trench rows, or trenches within a row.
-    """
-    # Compile a canvas with all the trench regions
-    lazy_regions_arr_to_canvas = delayed(regions_arr_to_canvas)
-
-    file_array = []
-    for file in file_nodes:
-        # FOV nodes
-        fov_array = []
-        for fov in fields_of_view:
-            # Frame nodes
-            frame_array = []
-            for frame in frames:
-                z_array = []
-                # z_levels
-                for z in z_levels:
-                    arr = dask.array.from_delayed(
-                        lazy_regions_arr_to_canvas(
-                            regions_file, file, fov, frame, z, width, height
-                        ),
-                        shape=(width, height),
-                        dtype=numpy.uint16,
-                    )
-                    z_array.append(arr)
-
-                z_array_to_stack = dask.array.stack(z_array)
-                frame_array.append(z_array_to_stack)
-
-            frame_array_to_stack = dask.array.stack(frame_array)
-            fov_array.append(frame_array_to_stack)
-
-        fov_array_to_stack = dask.array.stack(fov_array)
-        file_array.append(fov_array_to_stack)
-
-    megastack = dask.array.stack(file_array)
-
-    return megastack
-
-
-def regions_arr_to_canvas(regions_file, file, fov, frame, z_level, width, height):
+def regions_arr_to_canvas(file, fov, frame, z_level, width, height, regions_file):
     """
     Input a numpy array with many rows, each containing the rectangular coordinates of regions.
 
@@ -173,7 +161,6 @@ def regions_arr_to_canvas(regions_file, file, fov, frame, z_level, width, height
     NOTE: what happens if the regions overlap?
     """
     # TODO: trench row number?
-
     h5file_regions = tables.open_file(regions_file, "r")
     regions_table = h5file_regions.get_node("/", "row_coords")
 
@@ -186,15 +173,13 @@ def regions_arr_to_canvas(regions_file, file, fov, frame, z_level, width, height
     for r in df.itertuples():
         regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
 
-    regions = numpy.array(regions)
-
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
 
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = i + 1
 
-    return numpy.rot90(canvas, k=-1)
+    return canvas.T
 
 
 ### Masks (e.g. cells) Layer
@@ -208,8 +193,8 @@ def add_masks_layer(
     frames,
     z_levels,
     seg_channels,
-    height,
     width,
+    height,
     viewer,
 ):
     """
@@ -223,113 +208,52 @@ def add_masks_layer(
     TODO pass in information for the labels layer params? name etc.
     """
     # If there were regions, then the masks need to be agglomerated into a larger image
+    # Compile a canvas with all the masks from all the segmented areas
+    # FIXME Would it make sense to use regions_arr_to_canvas() instead??
+    # I think what this code is doing is recursing through all of the arrays on disk.
+    # However, the point of the table was to replace all that with queries instead.
+    # We can just iterate through the unique keys in the table,
+    # and query them for the coordinates.
+    lazy_masks_to_canvas = delayed(masks_to_canvas)
+
+    # FIXME how to determine the number of region sets? should each region set get its own labels layer?
+    # that would mean sc x region_sets total number of layers.
+    #
+    # NOTE that if the regions within a set overlap, then they will overwrite each other
+    # when it comes time to merging them together in the same canvas.
     if regions_file:
-        # Compile a canvas with all the masks from all the segmented areas
-        # FIXME Would it make sense to use regions_arr_to_canvas() instead??
-        # I think what this code is doing is recursing through all of the arrays on disk.
-        # However, the point of the table was to replace all that with queries instead.
-        # We can just iterate through the unique keys in the table,
-        # and query them for the coordinates.
-        lazy_masks_to_canvas = delayed(masks_to_canvas)
-
-        # FIXME how to determine the number of region sets? should each region set get its own labels layer?
-        # that would mean sc x region_sets total number of layers.
-        #
-        # NOTE that if the regions within a set overlap, then they will overwrite each other
-        # when it comes time to merging them together in the same canvas.
         for sc in seg_channels:
-            # File nodes
-            # FIXME what order to iterate? do they need to be sorted?
-            # Needs to be the same order as the images were loaded.
-            file_array = []
-            for file in file_nodes:
-                # FOV nodes
-                fov_array = []
-                for fov in fields_of_view:
-                    # Frame nodes
-                    frame_array = []
-                    for frame in frames:
-                        # Z nodes
-                        z_array = []
-                        for z in z_levels:
-                            # FIXME how do we know that the nodes iteration is the same order as the numbering of the trenches?
-                            # could be non-numeric sorting)
-                            # FIXME check that shape is the right order
-                            arr = dask.array.from_delayed(
-                                lazy_masks_to_canvas(
-                                    regions_file,
-                                    masks_file,
-                                    file,
-                                    fov,
-                                    frame,
-                                    z,
-                                    sc,
-                                    width,
-                                    height,
-                                ),
-                                shape=(width, height),
-                                dtype=numpy.uint16,
-                            )
+            masks_stack = dask_stack_loop(
+                file_nodes,
+                fields_of_view,
+                frames,
+                z_levels,
+                width,
+                height,
+                masks_to_canvas,
+                numpy.uint16,
+                [sc, regions_file, masks_file],
+            )
 
-                            z_array.append(arr)
-
-                        z_array_to_stack = dask.array.stack(z_array)
-                        frame_array.append(z_array_to_stack)
-
-                    frame_array_to_stack = dask.array.stack(frame_array)
-                    fov_array.append(frame_array_to_stack)
-
-                fov_array_to_stack = dask.array.stack(fov_array)
-                file_array.append(fov_array_to_stack)
-
-            # TODO what params to pass in? use a yaml file?
-            megastack = dask.array.stack(file_array)
-            viewer.add_labels(megastack, name="Segmented Cells")
-
-    ### For reference:
-    ### h5file_masks.create_carray("/{}/{}/{}".format(z_level, sc, region_set_number),
+            viewer.add_labels(masks_stack, name="Segmented Cells {}".format(sc))
 
     # No regions file
     # FIXME need to re-work the lazy part! Follow the lead from the others.
     else:
-        lazy_whole_labeled_canvas = delayed(whole_labeled_canvas)
         for sc in seg_channels:
-            # File nodes
-            # FIXME what order to iterate? do they need to be sorted?
-            # Needs to be the same order as the images were loaded.
-            file_array = []
-            for file in file_nodes:
-                # FOV nodes
-                fov_array = []
-                for fov in fields_of_view:
-                    # Frame nodes
-                    frame_array = []
-                    for frame in frames:
-                        # Z nodes
-                        z_array = []
-                        for z in z_levels:
-                            arr = dask.array.from_delayed(
-                                lazy_whole_labeled_canvas(
-                                    masks_file, file, fov, frame, z, sc
-                                ),
-                                shape=(height, width),  # FIXME or width,height?
-                                dtype=numpy.uint16,
-                            )
+            masks_stack = dask_stack_loop(
+                file_nodes,
+                fields_of_view,
+                frames,
+                z_levels,
+                width,
+                height,
+                whole_labeled_canvas,
+                numpy.uint16,
+                [sc, masks_file],
+            )
 
-                            z_array.append(arr)
-
-                        z_array_to_stack = dask.array.stack(z_array)
-                        frame_array.append(z_array_to_stack)
-
-                    frame_array_to_stack = dask.array.stack(frame_array)
-                    fov_array.append(frame_array_to_stack)
-
-                fov_array_to_stack = dask.array.stack(fov_array)
-                file_array.append(fov_array_to_stack)
-
-            # TODO what params to pass in? use a yaml file?
-            megastack = dask.array.stack(file_array)
-            viewer.add_labels(megastack, name="Segmented Cells")
+            viewer.add_labels(masks_stack, name="Segmented Cells {}".format(sc))
 
     # Done!
 
@@ -357,9 +281,11 @@ def load_values(in_file):
     return dict
 
 
-def whole_labeled_canvas(masks_file, file, fov, frame, z, sc):
+def whole_labeled_canvas(file, fov, frame, z, width, height, sc, masks_file):
     """
-    FIXME untested!
+    FIXME Passing in width & height, even though they aren't needed, because it conforms
+    to the generic shape shared by all the other functions. There must be a better way to do this!
+    Maybe by using named arguments, or a dict of arguments?
     """
     h5file_masks = tables.open_file(masks_file, "r")
     # If no regions, then default to the zeroth region set number and region
@@ -373,7 +299,7 @@ def whole_labeled_canvas(masks_file, file, fov, frame, z, sc):
     return numpy.rot90(img, k=-1)
 
 
-def masks_to_canvas(regions_file, masks_file, file, fov, frame, z, sc, width, height):
+def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_file):
     """
     TODO update documentation how this function works
     Input a numpy array with many rows, each containing the rectangular coordinates of regions.
@@ -419,7 +345,7 @@ def masks_to_canvas(regions_file, masks_file, file, fov, frame, z, sc, width, he
 
     h5file_masks.close()
 
-    return numpy.rot90(canvas, k=-1)
+    return canvas.T
 
 
 ### Image Layers
@@ -428,8 +354,8 @@ def masks_to_canvas(regions_file, masks_file, file, fov, frame, z, sc, width, he
 def add_image_layers(
     images_file,
     file_nodes,
-    height,
     width,
+    height,
     fields_of_view,
     frames,
     z_levels,
@@ -450,54 +376,23 @@ def add_image_layers(
 
     Adds all the image layers to the Napari viewer.
     """
-
     # Define a function for lazily loading a single image from the h5 file
     lazy_load_img = delayed(load_img)
 
     for c in channels:
-        # File nodes
-        # FIXME what order to iterate? do they need to be sorted?
-        file_array = []
-        for file in file_nodes:
-            # FOV nodes
-            fov_array = []
-            for fov in fields_of_view:
-                # Frame nodes
-                frame_array = []
-                for frame in frames:
-                    # Z nodes
-                    z_array = []
-                    for z in z_levels:
-                        # FIXME problem here: what if camera_biases is None? Then we can't index it!
-                        arr = dask.array.from_delayed(
-                            lazy_load_img(
-                                images_file,
-                                corrections_file,
-                                file,
-                                fov,
-                                frame,
-                                z,
-                                c,
-                                height,
-                                width,
-                                numpy.float32,
-                            ),
-                            shape=(height, width),  # FIXME or width,height?
-                            dtype=numpy.float32,
-                        )
-                        z_array.append(arr)
+        image_stack = dask_stack_loop(
+            file_nodes,
+            fields_of_view,
+            frames,
+            z_levels,
+            width,
+            height,
+            load_img,
+            numpy.float32,
+            [numpy.float32, images_file, corrections_file, c],
+        )
 
-                    z_array_to_stack = dask.array.stack(z_array)
-                    frame_array.append(z_array_to_stack)
-
-                frame_array_to_stack = dask.array.stack(frame_array)
-                fov_array.append(frame_array_to_stack)
-
-            fov_array_to_stack = dask.array.stack(fov_array)
-            file_array.append(fov_array_to_stack)
-
-        megastack = dask.array.stack(file_array)
-        viewer.add_image(megastack, **layer_params[c])
+        viewer.add_image(image_stack, **layer_params[c])
 
 
 def get_largest_extents_hdf5(h5file, metadata_key):
@@ -565,7 +460,7 @@ def metadata_array_equal(h5file, attribute):
 
 
 def load_img(
-    images_file, corrections_file, file, fov, frame, z, channel, height, width, dtype
+    file, fov, frame, z, width, height, dtype, images_file, corrections_file, channel
 ):
     """
     Attempt to load an image, and if it cannot be found, return a zero'ed array instead.
@@ -597,7 +492,7 @@ def load_img(
         node = h5.get_node(path)
         img = (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
         h5.close()
-        return numpy.rot90(img, k=-1)
+        return img.T
 
     except:
         # FIXME width,height?
@@ -657,8 +552,8 @@ def main_hdf5_browser_function(
         add_image_layers(
             images_file,
             file_nodes,
-            height,
             width,
+            height,
             extents["fields_of_view"],
             extents["frames"],
             extents["z_levels"],
@@ -685,7 +580,6 @@ def main_hdf5_browser_function(
             )
 
         # Masks layers
-        # FIXME issue with opening/closing regions h5 file & lazy loading of the data...
         if masks_file:
             h5file_masks = tables.open_file(masks_file, "r")
 
@@ -705,7 +599,7 @@ def main_hdf5_browser_function(
                 extents["frames"],
                 extents["z_levels"],
                 seg_channels,
-                height,
                 width,
+                height,
                 viewer,
             )

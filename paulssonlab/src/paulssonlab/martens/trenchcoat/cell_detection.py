@@ -116,7 +116,11 @@ def run_bbox_detection(
         node._f_remove()
 
     bbox_table = fov_h5file.create_table(
-        "/tables", table_name, Bounding_Box, "Inner_trench_bounding_boxes"
+        "/tables",
+        table_name,
+        Bounding_Box,
+        "Inner_trench_bounding_boxes",
+        tables.Filters(complevel=1, complib="zlib"),
     )
     bbox_row = bbox_table.row
 

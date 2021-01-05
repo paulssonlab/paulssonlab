@@ -202,12 +202,19 @@ def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
 
     # Create the trench rows table
     RowCoords = make_row_coords_type(max_filename_len)
-    table_rowcoords = out_h5file.create_table("/", "row_coords", RowCoords)
+    table_rowcoords = out_h5file.create_table(
+        "/",
+        "row_coords",
+        RowCoords,
+        filters=tables.Filters(complevel=1, complib="zlib"),
+    )
     table_rowcoords_row = table_rowcoords.row
 
     # Create the trenches table
     TrenchCoords = make_trench_coords_type(max_filename_len)
-    table_trenchcoords = out_h5file.create_table("/", "trench_coords", TrenchCoords)
+    table_trenchcoords = out_h5file.create_table(
+        "/", "trench_coords", TrenchCoords, tables.Filters(complevel=1, complib="zlib")
+    )
     table_trenchcoords_row = table_trenchcoords.row
 
     # Iterate the same dimensions as before

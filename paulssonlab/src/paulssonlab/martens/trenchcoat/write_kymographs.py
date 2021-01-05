@@ -13,13 +13,13 @@ Write kymographs to disk
 """
 
 
-def make_kymograph(filename, fov_number, z_level, channel, frames, h5file, r):
+def make_kymograph(filename, fov_number, z_level, channel, frames, h5file, trench):
     """
     Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
     """
     # TODO make sure that this is the correct co-ordinate system!!
-    width = r[2] - r[0]
-    height = r[3] - r[1]
+    width = trench[2] - trench[0]
+    height = trench[3] - trench[1]
 
     # FIXME best way to figure out the dtype? assume it's float32?
     kymograph_array = numpy.empty(
@@ -28,12 +28,97 @@ def make_kymograph(filename, fov_number, z_level, channel, frames, h5file, r):
 
     for f in frames:
         # FIXME make sure this is still correct, with F-ordered arrays
-        kymograph_array[:, f * width : (f + 1) * width] = h5file.get_node(
-            "/Images/File_{}/FOV_{}/Frame_{}/Z_{}/{}".format(
-                filename, fov_number, f, z_level, channel
-            )
-        )[r[2] : r[3], r[0] : r[1]]
+        node_path = "/Images/File_{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+            filename, fov_number, f, z_level, channel
+        )
+        node = h5file.get_node(node_path)
+        kymograph_array[:, f * width : (f + 1) * width] = node[
+            trench[2] : trench[3], trench[0] : trench[1]
+        ]
         # TODO make sure that this is the correct co-ordinate system!!
+
+    return kymograph_array
+
+
+def query_regions_from_file(file, fov, z_level, regions_file):
+    """
+    Read all regions matching a given query
+    Return a list of regions, and a list of trench numbers
+    """
+    h5file_regions = tables.open_file(regions_file, "r")
+    regions_table = h5file_regions.get_node("/", "trench_coords")
+    query = "(info_file == file) & (info_fov == fov) & (info_z_level == z_level)"
+    search = regions_table.read_where(query)
+    df = pandas.DataFrame(search)
+    h5file_regions.close()
+
+    regions = []
+    trench_numbers = []
+    for r in df.itertuples():
+        regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+        trench_numbers.append(r.info_trench_number)
+
+    return (regions, trench_numbers)
+
+
+def query_regions_from_file(
+    trench_number, row_number, file, fov, z_level, regions_file
+):
+    """
+    Read all regions matching a given query
+    Return a list of regions, and a list of trench numbers
+    """
+    h5file_regions = tables.open_file(regions_file, "r")
+    regions_table = h5file_regions.get_node("/", "trench_coords")
+    query = "(info_trench_number == trench_number) \
+           & (info_row_number == row_number) \
+           & (info_file == file) \
+           & (info_fov == fov) \
+           & (info_z_level == z_level)"
+
+    search = regions_table.read_where(query)
+    df = pandas.DataFrame(search)
+    h5file_regions.close()
+
+    regions = []
+    frame_numbers = []
+    for r in df.itertuples():
+        regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+        frame_numbers.append(r.info_frame)
+
+    return (regions, frame_numbers)
+
+
+def make_kymograph_new(
+    trench_number, row_number, file, fov, z_level, channel, regions_file, images_file
+):
+    """
+    Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    """
+    (trenches, frame_numbers) = query_regions_from_file(
+        trench_number, row_number, file, fov, z_level, regions_file
+    )
+
+    first_trench = trenches[0]
+    width = first_trench[2] - first_trench[0]
+    height = first_trench[3] - first_trench[1]
+
+    kymograph_array = numpy.empty(
+        shape=(width * len(trenches), height), dtype=numpy.float32
+    )
+
+    h5file_images = tables.open_file(images_file, "r")
+
+    # Trenches across frames (over time)
+    for frame, trench in zip(frame_numbers, trenches):
+        node_path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+            file, fov, frame, z_level, channel
+        )
+        node = h5file_images.get_node(node_path)
+        img_slice = node[trench[0] : trench[2], trench[1] : trench[3]]
+        kymograph_array[frame * width : (frame + 1) * width, 0:height] = img_slice
+
+    h5file_images.close()
 
     return kymograph_array
 

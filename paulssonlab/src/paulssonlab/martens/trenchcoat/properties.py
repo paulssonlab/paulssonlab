@@ -177,7 +177,12 @@ def merge_tables(in_file, out_file, channels, seg_channels, file_names):
     h5file_in = tables.open_file(in_file, mode="r")
 
     h5file_out = tables.open_file(out_file, mode="w")
-    big_table = h5file_out.create_table("/", "concatenated_measurements", Cell)
+    big_table = h5file_out.create_table(
+        "/",
+        "concatenated_measurements",
+        Cell,
+        filters=tables.Filters(complevel=1, complib="zlib"),
+    )
 
     # NOTE: had to resort to much more complex code, and not a single walk_nodes,
     # because walk_nodes won't visit external links.

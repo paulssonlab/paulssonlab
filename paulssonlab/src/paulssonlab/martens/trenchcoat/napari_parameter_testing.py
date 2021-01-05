@@ -226,7 +226,7 @@ def main_function(
         )
 
         global trenches
-        (trenches, y_offsets) = find_trenches(numpy.rot90(img, 1), boxes, **kwargs)
+        (trenches, y_offsets) = find_trenches(img.T, boxes, **kwargs)
 
         # FIXME or height, width?
         canvas = numpy.zeros(shape=(img.shape[0], img.shape[1]), dtype=numpy.uint16)
@@ -236,7 +236,7 @@ def main_function(
         for r in trenches:
             canvas = regions_arr_to_canvas(canvas, r)
 
-        canvas = numpy.rot90(canvas, -1)
+        canvas = canvas.T
 
         return canvas
 
@@ -319,7 +319,7 @@ def main_function(
 
             # min_row, min_col, max_row, max_col
             # Load fluor data
-            this_img = numpy.rot90(Layer_Fluor.data, 1)
+            this_img = Layer_Fluor.data.T
             for j, r in enumerate(regions):
                 # NOTE Does copy flag actually make a difference?
                 stack[..., j, 0] = this_img[r[0] : r[2], r[1] : r[3]].astype(
@@ -327,7 +327,7 @@ def main_function(
                 )
 
             # Load phase data
-            this_img = numpy.rot90(Layer_Phase.data, 1)
+            this_img = Layer_Phase.data.T
             for j, r in enumerate(regions):
                 # NOTE Does copy flag actually make a difference?
                 stack[..., j, 1] = this_img[r[0] : r[2], r[1] : r[3]].astype(
@@ -359,7 +359,7 @@ def main_function(
             canvas = regions_arr_to_canvas_F_order(canvas, regions, labeled)
 
         # Done writing to canvas
-        canvas = numpy.rot90(canvas, -1)
+        canvas = canvas.T
         return canvas
 
     # Main GUI init:
@@ -408,7 +408,7 @@ def main_function(
                     FILE, FOV, FRAME, Z_LEVEL, c
                 )
             ).read()
-            img = numpy.rot90(img, -1)
+            img = img.T
             # NOTE it's possible to add rotate=-90 as one of the parameters,
             # however this causes the coordinates to become negative :(
             # Unclear how to do a rotation and keep normal coords.

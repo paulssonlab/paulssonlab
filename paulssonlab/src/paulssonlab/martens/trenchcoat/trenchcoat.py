@@ -2,15 +2,17 @@
 
 import click
 from convert import main_conversion_function
-from trench_detect import main_detection_function
+from lineages import main_lineages_function
+from metadata import main_print_metadata_function
+from corrections import main_corrections_function
 from segmentation import main_segmentation_function
+from trench_detect import main_detection_function
 from write_kymographs import main_kymographs_function
-from trench_measurements import main_trench_measurements_function
+from renumber_trenches import main_renumbering_function
 from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
+from trench_measurements import main_trench_measurements_function
 from napari_browse_kymographs import main_kymograph_browser_function
-from corrections import main_corrections_function
-from metadata import main_print_metadata_function
 
 
 def range_expand(range_string):
@@ -125,13 +127,90 @@ def browse_hdf5(
 
 
 @cli.command(no_args_is_help=True)
-def browse_kymographs():
-    """Use Napari to browse kymographs."""
-    # FIXME Should it also load the masks as well? Requires new code to gen. kymographs from image slices.
-    main_kymograph_browser_function()
+@click.option(
+    "-i",
+    "--images-file",
+    "images_file",
+    required=True,
+    default="HDF5/data.h5",
+    type=str,
+    help="Input HDF5 file with images.",
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--masks-file",
+    "masks_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with masks.",
+)
+@click.option(
+    "-r",
+    "--regions-file",
+    "regions_file",
+    required=True,
+    type=str,
+    help="Input HDF5 file with regions (trenches must be re-labeled for left/right drift).",
+)
+@click.option(
+    "-L",
+    "--lineages-file",
+    "lineages_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with cell measurements, re-labeled trenches and cell lineages."
+    # TODO: relabel the masks for lineages.
+    # If we do this, then we can't just paste in the entire mask,
+    # but have to go through a 1-to-1 relabeling of each mask.
+    # Relabel the masks for bottom trenches for the colors to go upwards.
+    # Specify whether to do these 2 operations as additional options.
+    # Both depend on the presence of -m, and lineages depends on -M too,
+    # with the appropriate relabeled cell masks column.
+)
+@click.option(
+    "-S",
+    "--napari-settings-file",
+    "napari_settings_file",
+    required=True,
+    default="napari_settings.yaml",
+    type=str,
+    help="Napari settings file (YAML).",
+    show_default=True,
+)
+@click.option(
+    "-C",
+    "--corrections-file",
+    "corrections_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
+)
+def browse_kymographs(
+    images_file,
+    masks_file,
+    regions_file,
+    napari_settings_file,
+    corrections_file,
+    lineages_file,
+):
+    """
+    Use Napari to browse kymographs.
+    The regions file must be post-processed for correcting stage drift,
+    and merging cell information with trench information.
+    Corrections are unimplemented.
+    """
+    main_kymograph_browser_function(
+        images_file,
+        masks_file,
+        regions_file,
+        napari_settings_file,
+        corrections_file,
+        lineages_file,
+    )
 
 
-@cli.command()  # no_args_is_help=True)
+@cli.command(no_args_is_help=True)
 @click.option(
     "-o",
     "--out-dir",
@@ -419,8 +498,6 @@ def trench_measurements():
     help="Input HDF5 file with images.",
     show_default=True,
 )
-# TODO process channels in parallel?
-# @click.option('-n', '--num-cpu', 'num_cpu', required=False, default=None, type=click.IntRange(1, None, clamp=True), help='Number of CPUs to use. [default: all CPUs]', show_default=False)
 @click.option(
     "-D",
     "--dark-channel",
@@ -470,6 +547,136 @@ def corrections(in_file, out_file, dark_channel, bg_file):
 def print_metadata(in_file, sub_file_name):
     """Print the HDF5 metadata to the terminal. If no sub-file is specified, then print a list of all sub-files."""
     main_print_metadata_function(in_file, sub_file_name)
+
+
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--in-file",
+    "in_file",
+    required=True,
+    default="HDF5/metadata.h5",
+    type=str,
+    help="Input HDF5 file with metadata.",
+    show_default=True,
+)
+@click.option(
+    "-R",
+    "--regions-file",
+    "regions_file",
+    required=False,
+    default=None,
+    type=str,
+    help="HDF5 file containing image regions. [default: analyze entire image, no regions]",
+    show_default=True,
+)
+@click.option(
+    "-O",
+    "--regions-out-file",
+    "regions_outfile",
+    required=True,
+    default=None,
+    type=str,
+    help="Write renumbered trenches & regions.",
+    show_default=True,
+)
+@click.option(
+    "-M",
+    "--measurements-file",
+    "cell_measurements_file",
+    required=False,
+    default=None,
+    type=str,
+    help="Cell measurements with original trench numbering.",
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--measurements-out-file",
+    "cell_measurements_outfile",
+    required=False,
+    default=None,
+    type=str,
+    help="Write renumbered trenches paired with cell measurements.",
+    show_default=True,
+)
+# NOTE The value of this threshold working depends on how much drift there is left unaccounted for
+# by the stage offsets.
+# - A lower value be more likely to cause re-numbering.
+# - An intermediate value could have the weird effect of only re-numbering some
+# of the frames.
+# - A high value will not have any effect.
+@click.option(
+    "-T",
+    "--threshold",
+    "threshold",
+    required=True,
+    default=10,
+    type=int,
+    help="Threshold for calling a renumbering event (pixels).",
+    show_default=True,
+)
+def correct_trench_numbering(
+    in_file,
+    regions_file,
+    regions_outfile,
+    cell_measurements_file,
+    cell_measurements_outfile,
+    threshold,
+):
+    """Take into account when a trench lies near the edge of an image by re-numbering all the trenches as needed."""
+    main_renumbering_function(
+        in_file,
+        regions_file,
+        regions_outfile,
+        cell_measurements_file,
+        cell_measurements_outfile,
+        threshold,
+    )
+
+
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--in-file",
+    "in_file",
+    required=True,
+    default="newsegs.h5",  # TODO come up with a better name
+    type=str,
+    help="Input HDF5 file with cell measurements data and trench labels.",
+    show_default=True,
+)
+@click.option(
+    "-o",
+    "--out-file",
+    "out_file",
+    required=True,
+    default="lineages.h5",
+    type=str,
+    help="Output HDF5 file with lineages table.",
+    show_default=True,
+)
+@click.option(
+    "-L",
+    "--length-buffer",
+    "length_buffer",
+    required=True,
+    default=5,
+    type=int,
+    help="Fudge factor: a change in length less than this much is not considered to reflect a cell division.",
+    show_default=True,
+)
+@click.option(
+    "-C",
+    "--seg-channel",
+    "seg_channel",
+    required=True,
+    type=str,
+    help="Segmentation channel for calculating lineages.",
+)
+def lineage_tracking(in_file, out_file, length_buffer, seg_channel):
+    """Track lineages using HDF5 tables. Write a new HDF5 table."""
+    main_lineages_function(in_file, out_file, length_buffer, seg_channel)
 
 
 ###
