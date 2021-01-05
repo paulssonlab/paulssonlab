@@ -109,69 +109,51 @@ class DsSeqRecord(SeqRecord):
     def reindex(self, loc):
         if not self.circular:
             raise ValueError("cannot reindex a non-circular sequence")
-        return self[loc:] + self[:loc]
+        new = self[loc:] + self[:loc]
+        new.circular = True
+        return new
 
     def cut(self, cut5, cut3):
         cut5 = cut5 % len(self)
         cut3 = cut3 % len(self)
         min_loc = min(cut5, cut3)
         max_loc = max(cut5, cut3)
-        wraparound_length = min_loc + len(self) - max_loc
+        overhang = cut5 - cut3
         if self.circular:
+            wraparound_length = min_loc + len(self) - max_loc
             if wraparound_length < max_loc - min_loc:
-                new = self.reindex(max_loc) + self[max_loc:] + self[:min_loc]
-                # new = self.reindex(min_loc) + self[max_loc:min_loc]
-                overhang = sign(cut5 - cut3) * wraparound_length
-            else:
-                new = self.reindex(min_loc) + self[min_loc:max_loc]
-                overhang = cut5 - cut3
-            new.upstream_overhang = overhang
-            new.downstream_overhang = -overhang
+                min_loc, max_loc = max_loc, min_loc
+                overhang = -sign(cut5 - cut3) * wraparound_length
+            new = self.reindex(min_loc) + self[min_loc:max_loc]
+            new.upstream_overhang = -overhang
+            new.downstream_overhang = overhang
             return [new]
-            # new = self.reindex(max_loc) + self[:]
-            # new.upstream_overhang = 0
-            # new.downstream_overhang = cut5 - cut3
-            # return [new]
-            # return self.__class__(self, upstream_overhang=cut5)
-            # first = self + self[min_loc : min_loc + wraparound_length]
-            # overhang = wraparound_length
-            # first.upstream_overhang = overhang
-            # first.downstream_overhang = -overhang
-            # return [first]
-            # first = self[max_loc:min_loc]
-            # second = self[min_loc:max_loc]
-            # first.upstream_overhang = cut5 - cut3
-            # first.downstream_overhang = cut5 - cut3
-            # second.upstream_overhang = overhang
-            # second.downstream_overhang = -
         else:
             first = self[:max_loc]
             second = self[min_loc:]
-            first.downstream_overhang = cut5 - cut3
-            second.upstream_overhang = cut3 - cut5
+            second.upstream_overhang = -overhang
+            first.downstream_overhang = overhang
             return [first, second]
 
     def slice(self, start, stop, annotation_start=None, annotation_stop=None):
         if start is None:
             start = 0
         if stop is None:
-            stop = len(seq)
+            stop = len(self)
         if start < 0:
-            start = start % len(seq)
+            start = start % len(self)
         if stop < 0:
-            stop = stop % len(seq)
+            stop = stop % len(self)
         if stop < start:
             if not self.circular:
                 raise ValueError(
                     "attempting to slice a non-circular sequence with stop < start"
                 )
-            slice1 = seq.slice(start, None, annotation_start=annotation_start)
-            slice2 = seq.slice(None, stop, annotation_stop=annotation_stop)
+            slice1 = self.slice(start, None, annotation_start=annotation_start)
+            slice2 = self.slice(None, stop, annotation_stop=annotation_stop)
             new_seq = slice1 + slice2
         else:
             new_seq = SeqRecord.__getitem__(self, slice(start, stop))
-            # trim overhangs if necessary
-            # new_seq.upstream_overhang = math.copysign(min(abs(start)))
             new_seq.upstream_overhang = max(
                 abs(self.upstream_overhang) - start, 0
             ) * sign(self.upstream_overhang)
