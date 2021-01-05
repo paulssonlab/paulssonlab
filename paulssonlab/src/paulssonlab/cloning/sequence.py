@@ -1,5 +1,4 @@
 from numbers import Integral
-from math import copysign
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import FeatureLocation, ExactPosition
@@ -35,6 +34,9 @@ class DsSeqRecord(SeqRecord):
         letter_annotations=None,
     ):
         self.circular = circular
+        if circular:
+            upstream_overhang = 0
+            downstream_overhang = 0
         self.upstream_overhang = upstream_overhang or 0
         self.downstream_overhang = downstream_overhang or 0
         if isinstance(seq, SeqRecord):
@@ -54,6 +56,24 @@ class DsSeqRecord(SeqRecord):
             annotations=annotations,
             letter_annotations=letter_annotations,
         )
+
+    @property
+    def upstream_strand(self):
+        return sign(self.upstream_overhang)
+
+    @property
+    def downstream_strand(self):
+        return sign(self.downstream_overhang)
+
+    @property
+    def upstream_overhang_seq(self):
+        return str(self.seq[: abs(self.upstream_overhang)]).lower()
+
+    @property
+    def downstream_overhang_seq(self):
+        return str(
+            self.seq[len(self) - abs(self.downstream_overhang) : len(self)]
+        ).lower()
 
     def ligate(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
         # TAKE seq or seqs as input, join with best and return rest of pool?
@@ -86,6 +106,51 @@ class DsSeqRecord(SeqRecord):
         )
         return rc
 
+    def reindex(self, loc):
+        if not self.circular:
+            raise ValueError("cannot reindex a non-circular sequence")
+        return self[loc:] + self[:loc]
+
+    def cut(self, cut5, cut3):
+        cut5 = cut5 % len(self)
+        cut3 = cut3 % len(self)
+        min_loc = min(cut5, cut3)
+        max_loc = max(cut5, cut3)
+        wraparound_length = min_loc + len(self) - max_loc
+        if self.circular:
+            if wraparound_length < max_loc - min_loc:
+                new = self.reindex(max_loc) + self[max_loc:] + self[:min_loc]
+                # new = self.reindex(min_loc) + self[max_loc:min_loc]
+                overhang = sign(cut5 - cut3) * wraparound_length
+            else:
+                new = self.reindex(min_loc) + self[min_loc:max_loc]
+                overhang = cut5 - cut3
+            new.upstream_overhang = overhang
+            new.downstream_overhang = -overhang
+            return [new]
+            # new = self.reindex(max_loc) + self[:]
+            # new.upstream_overhang = 0
+            # new.downstream_overhang = cut5 - cut3
+            # return [new]
+            # return self.__class__(self, upstream_overhang=cut5)
+            # first = self + self[min_loc : min_loc + wraparound_length]
+            # overhang = wraparound_length
+            # first.upstream_overhang = overhang
+            # first.downstream_overhang = -overhang
+            # return [first]
+            # first = self[max_loc:min_loc]
+            # second = self[min_loc:max_loc]
+            # first.upstream_overhang = cut5 - cut3
+            # first.downstream_overhang = cut5 - cut3
+            # second.upstream_overhang = overhang
+            # second.downstream_overhang = -
+        else:
+            first = self[:max_loc]
+            second = self[min_loc:]
+            first.downstream_overhang = cut5 - cut3
+            second.upstream_overhang = cut3 - cut5
+            return [first, second]
+
     def slice(self, start, stop, annotation_start=None, annotation_stop=None):
         if start is None:
             start = 0
@@ -103,21 +168,19 @@ class DsSeqRecord(SeqRecord):
             slice1 = seq.slice(start, None, annotation_start=annotation_start)
             slice2 = seq.slice(None, stop, annotation_stop=annotation_stop)
             new_seq = slice1 + slice2
-            # TODO: join features that wrap around? using a join_features func?
         else:
-            new_seq = SeqRecord.__getitem__(seq, slice(start, stop))
+            new_seq = SeqRecord.__getitem__(self, slice(start, stop))
             # trim overhangs if necessary
             # new_seq.upstream_overhang = math.copysign(min(abs(start)))
-            new_seq.upstream_overhang = copysign(
-                max(abs(self.upstream_overhang) - start, 0), self.upstream_overhang
-            )
-            new_seq.downstream_overhang = copysign(
-                max(len(seq) - abs(self.downstream_overhang) - stop, 0),
-                self.downstream_overhang,
-            )
+            new_seq.upstream_overhang = max(
+                abs(self.upstream_overhang) - start, 0
+            ) * sign(self.upstream_overhang)
+            new_seq.downstream_overhang = max(
+                len(self) - abs(self.downstream_overhang) - stop, 0
+            ) * sign(self.downstream_overhang)
             # copy features
             features = []
-            for feature in seq.features:
+            for feature in self.features:
                 new_feature = _slice_seqrecord_feature(
                     feature,
                     start,
@@ -131,7 +194,7 @@ class DsSeqRecord(SeqRecord):
             # copy letter_annotations
             # NOTE: annotation_start and annotation_stop only affect features
             # letter_annotations are dropped outside of start:stop
-            for key, value in seq.letter_annotations.items():
+            for key, value in self.letter_annotations.items():
                 new_seq._per_letter_annotations[key] = value[start:stop]
         return new_seq
 
@@ -148,11 +211,9 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("invalid index")
 
     def __add__(self, other):
-        self_overhang_seq = self.seq[-abs(self.downstream_overhang) :]
-        other_overhang_seq = other.seq[: abs(other.upstream_overhang)]
         if not (
             self.downstream_overhang == -other.upstream_overhang
-            and self_overhang_seq.lower() == other_overhang_seq.lower()
+            and self.downstream_overhang_seq == other.upstream_overhang_seq
         ):
             raise ValueError(
                 f"attempting to join incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
@@ -165,6 +226,7 @@ class DsSeqRecord(SeqRecord):
             downstream_overhang=other.downstream_overhang,
         )
         length = len(self)
+        # TODO: join features that wrap around? using a join_features func?
         for f in other.features:
             new.features.append(f._shift(length))
         if self.id == other.id:
@@ -307,7 +369,6 @@ def slice_seq(seq, start, stop, annotation_start=None, annotation_stop=None):
         slice1 = slice_seq(seq, start, None, annotation_start=annotation_start)
         slice2 = slice_seq(seq, None, stop, annotation_stop=annotation_stop)
         new_seq = slice1 + slice2
-        # TODO: join features that wrap around? using a join_features func?
     else:
         new_seq = seq[start:stop]
         if hasattr(seq, "features"):
