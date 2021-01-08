@@ -32,20 +32,20 @@ class DsSeqRecord(SeqRecord):
         downstream_overhang=0,
         upstream_inward_cutter=None,
         downstream_inward_cutter=None,
-        id="<unknown id>",
-        name="<unknown name>",
-        description="<unknown description>",
+        id=None,
+        name=None,
+        description=None,
         features=None,
         annotations=None,
         letter_annotations=None,
     ):
         if isinstance(seq, (DsSeqRecord, SeqRecord)):
-            id = seq.id or id
-            name = seq.name or name
-            description = seq.description or description
-            features = seq.features.copy() or features
-            annotations = seq.annotations.copy() or annotations
-            letter_annotations = seq.letter_annotations.copy() or letter_annotations
+            id = id or seq.id or "<unknown id>"
+            name = name or seq.name or "<unknown name>"
+            description = description or seq.description or "<unknown description>"
+            features = features or seq.features.copy()
+            annotations = annotations or seq.annotations.copy()
+            letter_annotations = letter_annotations or seq.letter_annotations.copy()
             seq = seq.seq
             if isinstance(seq, DsSeqRecord):
                 circular = circular or seq.circular
