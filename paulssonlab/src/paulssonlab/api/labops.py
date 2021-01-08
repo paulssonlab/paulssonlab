@@ -64,6 +64,9 @@ async def get_orders(
     urls = [ORDERS_URL + "?" + urllib.parse.urlencode(params)]
     dfs = [await _get_table(browser, url, ORDERS_TABLE_SELECTOR) for url in urls]
     df = pd.concat(dfs, ignore_index=True)
+    df = df.iloc[:, 1:]
+    for col in ("Submitted", "Ordered"):
+        df[col] = pd.to_datetime(df[col])
     return df
 
 
