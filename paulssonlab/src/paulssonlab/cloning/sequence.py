@@ -1,7 +1,8 @@
-from numbers import Integral
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio.SeqFeature import FeatureLocation, ExactPosition
+from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
+from numbers import Integral
+from collections import defaultdict, OrderedDict
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
 
@@ -40,9 +41,9 @@ class DsSeqRecord(SeqRecord):
         letter_annotations=None,
     ):
         if isinstance(seq, (DsSeqRecord, SeqRecord)):
-            id = id or seq.id or "<unknown id>"
-            name = name or seq.name or "<unknown name>"
-            description = description or seq.description or "<unknown description>"
+            id = id or seq.id
+            name = name or seq.name
+            description = description or seq.description
             features = features or seq.features.copy()
             annotations = annotations or seq.annotations.copy()
             letter_annotations = letter_annotations or seq.letter_annotations.copy()
@@ -57,6 +58,9 @@ class DsSeqRecord(SeqRecord):
                 downstream_inward_cutter = (
                     downstream_inward_cutter or seq.downstream_inward_cutter
                 )
+        id = id or "<unknown id>"
+        name = name or "<unknown name>"
+        description = description or "<unknown description>"
         self.circular = circular
         if circular:
             upstream_overhang = 0
@@ -264,6 +268,10 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("invalid index")
 
     def __add__(self, other):
+        if self.circular:
+            raise ValueError("cannot append to a circular sequence")
+        if other.circular:
+            raise ValueError("cannot append a circular sequence")
         if not self.can_ligate(other):
             raise ValueError(
                 f"attempting to join incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
@@ -278,9 +286,7 @@ class DsSeqRecord(SeqRecord):
             downstream_inward_cutter=other.downstream_inward_cutter,
         )
         length = len(self)
-        # TODO: join features that wrap around? using a join_features func?
-        for f in other.features:
-            new.features.append(f._shift(length))
+        new.features = _join_features(self.features, other.features, length)
         if self.id == other.id:
             new.id = self.id
         if self.name == other.name:
@@ -379,6 +385,53 @@ def reverse_complement(seq):
         return Seq(seq).reverse_complement()
 
 
+def _join_features(a, b, length):
+    features = []
+    to_join = defaultdict(list)
+    for feature in a:
+        if int(feature.location.end) < length:
+            features.append(feature)
+        else:
+            key = (feature.type, feature.location_operator, feature.id)
+            to_join[key].append(feature)
+    for other_feature in b:
+        if int(other_feature.location.start) > 0:
+            features.append(other_feature._shift(length))
+        else:
+            key = (
+                other_feature.type,
+                other_feature.location_operator,
+                other_feature.id,
+            )
+            match = False
+            if key in to_join:
+                for idx, feature in enumerate(to_join[key]):
+                    if feature.qualifiers == other_feature.qualifiers:
+                        other_feature_shifted = other_feature._shift(length)
+                        location = FeatureLocation(
+                            feature.location.start,
+                            other_feature_shifted.location.end,
+                            strand=feature.location.strand,
+                        )
+                        new_feature = SeqFeature(
+                            location=location,
+                            type=feature.type,
+                            location_operator=feature.location_operator,
+                            id=feature.id,
+                            qualifiers=OrderedDict(feature.qualifiers.items()),
+                        )
+                        features.append(new_feature)
+                        to_join[key].pop(idx)
+                        match = True
+                        break
+            if not match:
+                features.append(other_feature._shift(length))
+    for unmatched_features in to_join.values():
+        for feature in unmatched_features:
+            features.append(feature)
+    return features
+
+
 def _slice_seqrecord_feature(
     feature, start, stop, annotation_start=None, annotation_stop=None
 ):
@@ -386,17 +439,16 @@ def _slice_seqrecord_feature(
         annotation_start = start
     if annotation_stop is None:
         annotation_stop = stop
-    if (
-        annotation_stop <= feature.location.nofuzzy_start
-        or annotation_start >= feature.location.nofuzzy_end
+    if annotation_stop <= int(feature.location.start) or annotation_start >= int(
+        feature.location.end
     ):
         return None
-    new_feature = feature._shift(-start)
+    new_feature = feature._shift(-start)  # copy feature and shift
     start_loc = new_feature.location.start
     stop_loc = new_feature.location.end
-    if annotation_start > feature.location.nofuzzy_start:
+    if annotation_start > int(feature.location.start):
         start_loc = ExactPosition(start - annotation_start)
-    if annotation_stop < feature.location.nofuzzy_end:
+    if annotation_stop < int(feature.location.end):
         stop_loc = ExactPosition(annotation_stop - start)
     new_feature.location = FeatureLocation(
         start_loc, stop_loc, strand=new_feature.location.strand
