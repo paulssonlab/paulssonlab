@@ -2,6 +2,7 @@ from numbers import Integral
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import FeatureLocation, ExactPosition
+from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
 
 MAX_SEQUENCE_STR_LENGTH = 34
