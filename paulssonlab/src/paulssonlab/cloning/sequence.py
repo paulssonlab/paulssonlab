@@ -20,6 +20,9 @@ LIGATION_METHODS = {"goldengate": _ligate_goldengate, "gibson": _ligate_gibson}
 
 
 class DsSeqRecord(SeqRecord):
+    _upstream_overhang = 0
+    _downstream_overhang = 0
+
     def __init__(
         self,
         seq,
@@ -57,6 +60,29 @@ class DsSeqRecord(SeqRecord):
             letter_annotations=letter_annotations,
         )
 
+    def _check_overhang(self, overhang1, overhang2):
+        if sign(overhang1) == sign(overhang2) != 0:
+            if abs(overhang1) + abs(overhang2) > len(self):
+                raise ValueError("invalid overhang length")
+
+    @property
+    def upstream_overhang(self):
+        return self._upstream_overhang
+
+    @upstream_overhang.setter
+    def upstream_overhang(self, value):
+        self._check_overhang(value, self.downstream_overhang)
+        self._upstream_overhang = value
+
+    @property
+    def downstream_overhang(self):
+        return self._downstream_overhang
+
+    @downstream_overhang.setter
+    def downstream_overhang(self, value):
+        self._check_overhang(self.upstream_overhang, value)
+        self._downstream_overhang = value
+
     @property
     def upstream_strand(self):
         return sign(self.upstream_overhang)
@@ -74,6 +100,12 @@ class DsSeqRecord(SeqRecord):
         return str(
             self.seq[len(self) - abs(self.downstream_overhang) : len(self)]
         ).lower()
+
+    def can_ligate(self, other):
+        return (
+            self.downstream_overhang == -other.upstream_overhang
+            and self.downstream_overhang_seq == other.upstream_overhang_seq
+        )
 
     def ligate(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
         # TAKE seq or seqs as input, join with best and return rest of pool?
@@ -114,6 +146,8 @@ class DsSeqRecord(SeqRecord):
         return new
 
     def cut(self, cut5, cut3):
+        if not (-len(self) <= cut5 < len(self) and -len(self) <= cut3 < len(self)):
+            raise IndexError("attempting to cut out of bounds")
         cut5 = cut5 % len(self)
         cut3 = cut3 % len(self)
         min_loc = min(cut5, cut3)
@@ -127,13 +161,31 @@ class DsSeqRecord(SeqRecord):
             new = self.reindex(min_loc) + self[min_loc:max_loc]
             new.upstream_overhang = -overhang
             new.downstream_overhang = overhang
-            return [new]
+            return [new], min_loc
         else:
+            if not (
+                (
+                    abs(self.upstream_overhang) * (self.upstream_overhang > 0)
+                    <= cut5
+                    < len(self)
+                    - abs(self.downstream_overhang) * (self.downstream_overhang > 0)
+                )
+                and (
+                    abs(self.upstream_overhang) * (self.upstream_overhang < 0)
+                    <= cut3
+                    < len(self)
+                    - abs(self.downstream_overhang) * (self.downstream_overhang < 0)
+                )
+            ):
+                raise ValueError("attempting to cut a missing strand")
+            min_loc = min(cut5, cut3)
+            max_loc = max(cut5, cut3)
+            overhang = cut5 - cut3
             first = self[:max_loc]
             second = self[min_loc:]
             second.upstream_overhang = -overhang
             first.downstream_overhang = overhang
-            return [first, second]
+            return [first, second], min_loc
 
     def slice(self, start, stop, annotation_start=None, annotation_stop=None):
         if start is None:
@@ -158,7 +210,7 @@ class DsSeqRecord(SeqRecord):
                 abs(self.upstream_overhang) - start, 0
             ) * sign(self.upstream_overhang)
             new_seq.downstream_overhang = max(
-                len(self) - abs(self.downstream_overhang) - stop, 0
+                abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
             # copy features
             features = []
@@ -193,10 +245,7 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("invalid index")
 
     def __add__(self, other):
-        if not (
-            self.downstream_overhang == -other.upstream_overhang
-            and self.downstream_overhang_seq == other.upstream_overhang_seq
-        ):
+        if not self.can_ligate(other):
             raise ValueError(
                 f"attempting to join incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
             )
@@ -229,7 +278,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
-            f" id={self.id!r},"
+            f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )
 
@@ -259,9 +308,11 @@ class DsSeqRecord(SeqRecord):
             if sign(self.upstream_overhang) == strand:
                 length = abs(self.upstream_overhang)
                 formatted_seq = " " * length + formatted_seq[length:]
-            if sign(self.downstream_overhang) == strand:
+            elif sign(self.downstream_overhang) == strand:
                 length = abs(self.downstream_overhang)
                 formatted_seq = formatted_seq[:-length] + " " * length
+            if self.circular:
+                formatted_seq += " >"
             lines.append(formatted_seq)
         # TODO: do we want to output this metadata?
         # if self.id:
