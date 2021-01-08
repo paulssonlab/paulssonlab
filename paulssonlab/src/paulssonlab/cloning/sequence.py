@@ -29,6 +29,8 @@ class DsSeqRecord(SeqRecord):
         circular=False,
         upstream_overhang=0,
         downstream_overhang=0,
+        upstream_inward_cutter=None,
+        downstream_inward_cutter=None,
         id="<unknown id>",
         name="<unknown name>",
         description="<unknown description>",
@@ -36,13 +38,7 @@ class DsSeqRecord(SeqRecord):
         annotations=None,
         letter_annotations=None,
     ):
-        self.circular = circular
-        if circular:
-            upstream_overhang = 0
-            downstream_overhang = 0
-        self.upstream_overhang = upstream_overhang or 0
-        self.downstream_overhang = downstream_overhang or 0
-        if isinstance(seq, SeqRecord):
+        if isinstance(seq, (DsSeqRecord, SeqRecord)):
             id = seq.id or id
             name = seq.name or name
             description = seq.description or description
@@ -50,6 +46,24 @@ class DsSeqRecord(SeqRecord):
             annotations = seq.annotations.copy() or annotations
             letter_annotations = seq.letter_annotations.copy() or letter_annotations
             seq = seq.seq
+            if isinstance(seq, DsSeqRecord):
+                circular = circular or seq.circular
+                upstream_overhang = upstream_overhang or seq.upstream_overhang
+                downstream_overhang = downstream_overhang or seq.downstream_overhang
+                upstream_inward_cutter = (
+                    upstream_inward_cutter or seq.upstream_inward_cutter
+                )
+                downstream_inward_cutter = (
+                    downstream_inward_cutter or seq.downstream_inward_cutter
+                )
+        self.circular = circular
+        if circular:
+            upstream_overhang = 0
+            downstream_overhang = 0
+        self.upstream_overhang = upstream_overhang or 0
+        self.downstream_overhang = downstream_overhang or 0
+        self.upstream_inward_cutter = upstream_inward_cutter
+        self.downstream_inward_cutter = downstream_inward_cutter
         super().__init__(
             seq,
             id=id,
@@ -212,6 +226,10 @@ class DsSeqRecord(SeqRecord):
             new_seq.downstream_overhang = max(
                 abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
+            if start == 0:
+                new_seq.upstream_inward_cutter = self.upstream_inward_cutter
+            if stop == len(self):
+                new_seq.downstream_inward_cutter = self.downstream_inward_cutter
             # copy features
             features = []
             for feature in self.features:
@@ -255,6 +273,8 @@ class DsSeqRecord(SeqRecord):
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
             downstream_overhang=other.downstream_overhang,
+            upstream_inward_cutter=self.upstream_inward_cutter,
+            downstream_inward_cutter=other.downstream_inward_cutter,
         )
         length = len(self)
         # TODO: join features that wrap around? using a join_features func?
@@ -278,6 +298,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
+            f" upstream_inward_cutter={self.upstream_inward_cutter}, downstream_inward_cutter={self.downstream_inward_cutter},"
             f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )
