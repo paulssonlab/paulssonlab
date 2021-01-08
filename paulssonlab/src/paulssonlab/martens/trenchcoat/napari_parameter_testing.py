@@ -2,13 +2,12 @@
 
 import click
 
-##
+from dask import delayed
+import dask.array
 
 from magicgui import magicgui
 import napari
 from napari.layers import Image, Labels
-
-##
 
 import tables
 import numpy
@@ -25,7 +24,7 @@ from napari_browse_hdf5 import (
     metadata_array_equal,
 )
 
-from scipy.signal import find_peaks
+# from scipy.signal import find_peaks
 
 ###
 
@@ -78,14 +77,8 @@ def regions_arr_to_canvas_F_order(canvas, regions, labels):
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = labels[..., i]
 
-    # for i in range(array.shape[2]):
-    # r = array[..., i]
-    # canvas[r[0] : r[2], r[1] : r[3]] = i + 1
-
     return canvas
 
-
-###
 
 ###
 
@@ -149,8 +142,8 @@ def main_function(
     # auto_call    = False,
     # layout       = "vertical",
     # call_button  = "Calculate",
-    # plateau_size = {"minimum": 0,   "maximum": 1000},
-    # cutoff       = {"minimum": 0, "maximum": 100},
+    # plateau_size = {"min": 0,   "max": 1000},
+    # cutoff       = {"min": 0, "max": 100},
     # )
     # def run_trench_row_detection_napari(
     # Layer_Phase: Image,
@@ -185,13 +178,16 @@ def main_function(
         auto_call=False,
         layout="vertical",
         call_button="Calculate",
-        tr_height={"minimum": 0, "maximum": 100},
-        tr_width={"minimum": 0, "maximum": 100},
-        tr_spacing={"minimum": 0, "maximum": 1000, "decimals": 3},
-        pad_left={"minimum": 0, "maximum": 10},
-        pad_right={"minimum": 0, "maximum": 10},
-        pad_top={"minimum": 0, "maximum": 20},
-        pad_bottom={"minimum": 0, "maximum": 20},
+        tr_height={"min": 0, "max": 100},
+        tr_width={"min": 0, "max": 100},
+        tr_spacing={
+            "min": 0,
+            "max": 1000,
+        },  # "decimals": 3}, # FIXME how to set the number of decimals in new version of MagicGUI?
+        pad_left={"min": 0, "max": 10},
+        pad_right={"min": 0, "max": 10},
+        pad_top={"min": 0, "max": 20},
+        pad_bottom={"min": 0, "max": 20},
     )
     def run_trench_detection_napari(
         Layer_Phase: Image,
@@ -226,7 +222,7 @@ def main_function(
         )
 
         global trenches
-        (trenches, y_offsets) = find_trenches(numpy.rot90(img, 1), boxes, **kwargs)
+        (trenches, y_offsets) = find_trenches(img.T, boxes, **kwargs)
 
         # FIXME or height, width?
         canvas = numpy.zeros(shape=(img.shape[0], img.shape[1]), dtype=numpy.uint16)
@@ -236,7 +232,7 @@ def main_function(
         for r in trenches:
             canvas = regions_arr_to_canvas(canvas, r)
 
-        canvas = numpy.rot90(canvas, -1)
+        canvas = canvas.T
 
         return canvas
 
@@ -244,23 +240,24 @@ def main_function(
         auto_call=False,
         layout="vertical",
         call_button="Calculate",
-        niblack_k={"minimum": -1.0, "maximum": 1.0},
+        niblack_k={"min": -1.0, "max": 1.0},
         # Horizontal window size
         # Must be an odd number! TODO How to force or enforce this constraint?
-        niblack_w_h={"minimum": 1, "maximum": 21},
+        # Maybe set the value to an odd number, and the step to 2.
+        niblack_w_h={"min": 1, "max": 21, "value": 11, "step": 2},
         # Vertical window size
         # Must be an odd number! TODO How to force or enforce this constraint?
-        niblack_w_v={"minimum": 1, "maximum": 41},
-        otsu_multiplier={"maximum": 10.0},
-        fluor_background={"minimum": 0.0, "maximum": 65536.0},
-        garbage_otsu_value={"minimum": 0, "maximum": 65536},
-        scaling_factor={"minimum": 0.0, "maximum": 10.0},
-        fluor_sigma={"minimum": 0.0, "maximum": 10.0},
-        phase_background={"minimum": 0.0, "maximum": 10.0},
-        phase_threshold_min={"minimum": 0.0, "maximum": 65536.0},
-        phase_threshold_max={"minimum": 0.0, "maximum": 65536.0},
-        phase_sigma={"minimum": 0.0, "maximum": 10.0},
-        min_size={"minimum": 0, "maximum": 1000},
+        niblack_w_v={"min": 1, "max": 41, "value": 11, "step": 2},
+        otsu_multiplier={"max": 10.0},
+        fluor_background={"min": 0.0, "max": 65536.0},
+        garbage_otsu_value={"min": 0, "max": 65536},
+        scaling_factor={"min": 0.0, "max": 10.0},
+        fluor_sigma={"min": 0.0, "max": 10.0},
+        phase_background={"min": 0.0, "max": 10.0},
+        phase_threshold_min={"min": 0.0, "max": 65536.0},
+        phase_threshold_max={"min": 0.0, "max": 65536.0},
+        phase_sigma={"min": 0.0, "max": 10.0},
+        min_size={"min": 0, "max": 1000},
     )
     def run_niblack_phase_segmentation_napari(
         Layer_Fluor: Image,
@@ -319,7 +316,7 @@ def main_function(
 
             # min_row, min_col, max_row, max_col
             # Load fluor data
-            this_img = numpy.rot90(Layer_Fluor.data, 1)
+            this_img = Layer_Fluor.data.T
             for j, r in enumerate(regions):
                 # NOTE Does copy flag actually make a difference?
                 stack[..., j, 0] = this_img[r[0] : r[2], r[1] : r[3]].astype(
@@ -327,7 +324,7 @@ def main_function(
                 )
 
             # Load phase data
-            this_img = numpy.rot90(Layer_Phase.data, 1)
+            this_img = Layer_Phase.data.T
             for j, r in enumerate(regions):
                 # NOTE Does copy flag actually make a difference?
                 stack[..., j, 1] = this_img[r[0] : r[2], r[1] : r[3]].astype(
@@ -359,7 +356,7 @@ def main_function(
             canvas = regions_arr_to_canvas_F_order(canvas, regions, labeled)
 
         # Done writing to canvas
-        canvas = numpy.rot90(canvas, -1)
+        canvas = canvas.T
         return canvas
 
     # Main GUI init:
@@ -401,6 +398,8 @@ def main_function(
         # corrections_file,
         # )
 
+        # add_image_layers(images_file, file_nodes, width, height, fields_of_view, frames, z_levels, viewer, channels, layer_params, corrections_file)
+
         for c in CHANNELS:
             c = c.decode("utf-8")
             img = h5file.get_node(
@@ -408,7 +407,7 @@ def main_function(
                     FILE, FOV, FRAME, Z_LEVEL, c
                 )
             ).read()
-            img = numpy.rot90(img, -1)
+            img = img.T
             # NOTE it's possible to add rotate=-90 as one of the parameters,
             # however this causes the coordinates to become negative :(
             # Unclear how to do a rotation and keep normal coords.
@@ -433,31 +432,39 @@ def main_function(
         # Trenches
 
         # instantiate the widget
-        gui_detect_trenches = run_trench_detection_napari.Gui()
-        gui_detect_trenches.result_name = "Detected Trenches"
+        # gui_detect_trenches = run_trench_detection_napari.Gui()
+        # gui_detect_trenches.result_name = "Detected Trenches"
+        # run_trench_detection_napari.show(run=True)
 
         # add the gui to the viewer as a dock widget
-        viewer.window.add_dock_widget(gui_detect_trenches, name="Trenches", area="left")
+        # viewer.window.add_dock_widget(gui_detect_trenches, name="Trenches", area="left")
+        viewer.window.add_dock_widget(
+            run_trench_detection_napari, name="Trenches", area="left"
+        )
 
         # if a layer gets added or removed, refresh the dropdown choices
-        viewer.layers.events.changed.connect(
-            lambda x: gui_detect_trenches.refresh_choices("Layer_Phase")
-        )
+        viewer.layers.events.inserted.connect(run_trench_detection_napari.reset_choices)
+        viewer.layers.events.removed.connect(run_trench_detection_napari.reset_choices)
 
         # Segmentation
 
         # instantiate the widget
-        gui_detect_trenches = run_niblack_phase_segmentation_napari.Gui()
-        gui_detect_trenches.result_name = "Segmented Cells"
+        # gui_detect_trenches = run_niblack_phase_segmentation_napari.Gui()
+        # gui_detect_trenches.result_name = "Segmented Cells"
+        # run_niblack_phase_segmentation_napari.show(run=True)
 
         # add the gui to the viewer as a dock widget
+        # viewer.window.add_dock_widget(gui_detect_trenches, name="Segmentation", area="left")
         viewer.window.add_dock_widget(
-            gui_detect_trenches, name="Segmentation", area="left"
+            run_niblack_phase_segmentation_napari, name="Segmentation", area="left"
         )
 
         # if a layer gets added or removed, refresh the dropdown choices
-        viewer.layers.events.changed.connect(
-            lambda x: gui_detect_trenches.refresh_choices("Layer_Phase")
+        viewer.layers.events.inserted.connect(
+            run_niblack_phase_segmentation_napari.reset_choices
+        )
+        viewer.layers.events.removed.connect(
+            run_niblack_phase_segmentation_napari.reset_choices
         )
 
     h5file.close()

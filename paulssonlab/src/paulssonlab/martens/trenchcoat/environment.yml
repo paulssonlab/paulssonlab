@@ -16,3 +16,4 @@ dependencies:
   - magicgui
   - napari
   - pyside2
+  - matplotlib

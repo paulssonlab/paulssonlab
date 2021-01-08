@@ -282,7 +282,11 @@ def copy_fov_metadata(h5file, frames, fields_of_view, reader):
     # FOV metadata: X, Y, Z, timestamp
     FOV_Frame_Time = make_fov_metadata_table_info_type()
     fov_metadata_table = h5file.create_table(
-        "/", "fov_metadata", FOV_Frame_Time, "FOV Metadata"
+        "/",
+        "fov_metadata",
+        FOV_Frame_Time,
+        "FOV Metadata",
+        filters=tables.Filters(complevel=1, complib="zlib"),
     )
     fov_metadata_row = fov_metadata_table.row
 
