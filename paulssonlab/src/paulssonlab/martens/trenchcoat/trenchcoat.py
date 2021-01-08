@@ -113,16 +113,56 @@ def browse_nd2(in_dir, napari_settings_file):
     type=str,
     help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
+@click.option(
+    "-F",
+    "--computed-image-function",
+    "computed_image_function",
+    required=False,
+    type=str,
+    help="Name of function ~ use a dict. to lookup from list of available functions",
+)
+@click.option(
+    "-d",
+    "--data-table-file",
+    "data_table_file",
+    required=False,
+    type=str,
+    help="Path to HDF5 file containing cell measurements for computed image.",
+)
+@click.option(
+    "-t",
+    "--data-table-name",
+    "data_table_name",
+    required=False,
+    type=str,
+    help="Name of data table within the data table file.",
+)
 def browse_hdf5(
-    images_file, masks_file, regions_file, corrections_file, napari_settings_file
+    images_file,
+    masks_file,
+    regions_file,
+    corrections_file,
+    napari_settings_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
 ):
     """Use Napari to browse a dataset & to visualize trenches and cell masks.
 
     camera_biases_file, flatfield_corrections_file are paths to HDF5
     files containing channel-specific correction values.
+
+    Add option to "compute" an image based on properties within segmented regions.
     """
     main_hdf5_browser_function(
-        images_file, masks_file, regions_file, corrections_file, napari_settings_file
+        images_file,
+        masks_file,
+        regions_file,
+        corrections_file,
+        napari_settings_file,
+        computed_image_function,
+        data_table_file,
+        data_table_name,
     )
 
 
@@ -186,6 +226,30 @@ def browse_hdf5(
     type=str,
     help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
+@click.option(
+    "-F",
+    "--computed-image-function",
+    "computed_image_function",
+    required=False,
+    type=str,
+    help="Name of function ~ use a dict. to lookup from list of available functions",
+)
+@click.option(
+    "-d",
+    "--data-table-file",
+    "data_table_file",
+    required=False,
+    type=str,
+    help="Path to HDF5 file containing cell measurements for computed image.",
+)
+@click.option(
+    "-t",
+    "--data-table-name",
+    "data_table_name",
+    required=False,
+    type=str,
+    help="Name of data table within the data table file.",
+)
 def browse_kymographs(
     images_file,
     masks_file,
@@ -193,6 +257,9 @@ def browse_kymographs(
     napari_settings_file,
     corrections_file,
     lineages_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
 ):
     """
     Use Napari to browse kymographs.
@@ -207,6 +274,9 @@ def browse_kymographs(
         napari_settings_file,
         corrections_file,
         lineages_file,
+        computed_image_function,
+        data_table_file,
+        data_table_name,
     )
 
 

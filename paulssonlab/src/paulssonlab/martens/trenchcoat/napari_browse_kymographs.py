@@ -12,7 +12,9 @@ from napari_browse_hdf5 import (
     metadata_attributes_equal,
     metadata_array_equal,
 )
-from lineages import relabel_mask_complete
+from lineages import relabel_mask_complete, relabel_mask
+import matplotlib.cm
+
 
 """
 Browse kymographs from an HDF5 file using Napari.
@@ -104,12 +106,6 @@ def query_regions_from_file(
 
     search = table.read_where(query)
     df = pandas.DataFrame(search)
-
-    # df = df[ (df["corrected_trench_label"] == trench_number)
-    # & (df["info_row_number"]        == row_number)
-    # & (df["info_file"]              == file)
-    # & (df["info_fov"]               == fov)
-    # & (df["info_z_level"]           == z_level) ]
 
     regions = {}
     for r in df.itertuples():
@@ -216,6 +212,204 @@ def kymo_mask_layer(
         viewer.add_labels(mask_stack, name="Segmented Cells {}".format(sc))
 
 
+def kymo_computed_image_layer(
+    num_trenches,
+    num_rows,
+    file_nodes,
+    fields_of_view,
+    frames,
+    z_levels,
+    tr_width,
+    img_width,
+    height,
+    viewer,
+    sc,
+    masks_file,
+    regions_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
+):
+    """
+    Generate computed images based on cell properties & masks.
+    """
+    for c in sc:
+        mask_stack = dask_stack_loop(
+            num_trenches,
+            num_rows,
+            file_nodes,
+            fields_of_view,
+            z_levels,
+            tr_width,
+            img_width,
+            height,
+            kymo_computed_image,
+            numpy.uint16,
+            [
+                c,
+                masks_file,
+                frames,
+                regions_file,
+                computed_image_function,
+                data_table_file,
+                data_table_name,
+            ],
+        )
+
+        viewer.add_image(mask_stack, name="Computed Image {}".format(c))
+
+
+# TODO: select a function from a list of available functions,
+# specified on the command line.
+def run_computed_image_function(mask, df):
+    # Example function: for every unique cell label, replace its
+    # contents with the mean of its mVenus fluorescence intensities.
+    # Calculate mVenus / pixel
+    # Make a copy if we want to add a new column.
+    df = df.copy()
+    df["mean_mVenus"] = df["total_intensity_YFP"] / df["geometry_Area"]
+    key = "mean_mVenus"
+
+    # Alternatively: just display the Area without calculating anything
+    # key = "geometry_Area"
+
+    new_img = numpy.zeros(mask.shape, dtype=numpy.float32)
+    for cell in df.itertuples():
+        # TODO Can this be sped up by doing pixel_value -> f(pixel_value),
+        # where f() is input cell label, output a const number?
+        # Avoids looping. But it's actually pretty fast now.
+        new_img += (mask == cell.info_label) * getattr(cell, key)
+        # DEBUG
+        # new_img = mask.astype(numpy.float32)
+
+    return new_img
+
+
+def query_for_masks(
+    file, fov, z, row_number, trench_number, sc, data_table_file, data_table_name
+):
+    """
+    Return a dataframe matching the query.
+    Useful for getting matching cells in a cell measurements table.
+    """
+    h5file_data = tables.open_file(data_table_file, "r")
+    data_table = h5file_data.get_node("/", data_table_name)
+    # NOTE the speed of the queries might be sensitive to the order
+    # in which the data are searched. If there are many trenches, but few files,
+    # then it's much faster to search trenches first, then files.
+    query = """(corrected_trench_label == trench_number) & \
+               (info_row_number == row_number) & \
+               (info_fov == fov) & \
+               (info_file == file) & \
+               (info_z_level == z) & \
+               (info_seg_channel == sc)"""
+
+    search = data_table.read_where(query)
+    h5file_data.close()
+
+    df = pandas.DataFrame(search)
+    return df
+
+
+def kymo_computed_image(
+    trench_number,
+    row_number,
+    file,
+    fov,
+    z_level,
+    tr_width,
+    img_width,
+    height,
+    sc,
+    masks_file,
+    frames,
+    regions_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
+):
+    """
+    Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    """
+    h5file = tables.open_file(regions_file, "r")
+    table = h5file.get_node("/regions_table")
+    query = """(info_file == file) & \
+               (info_fov == fov) & \
+               (info_z_level == z_level) & \
+               (info_row_number == row_number) & \
+               (corrected_trench_label == trench_number)"""
+
+    search = table.read_where(query)
+    df_regions = pandas.DataFrame(search)
+
+    kymograph_array = numpy.empty(shape=(img_width, height), dtype=numpy.float32)
+    h5file_masks = tables.open_file(masks_file, "r")
+
+    df_this_row_trench = query_for_masks(
+        file,
+        fov,
+        z_level,
+        row_number,
+        trench_number,
+        sc,
+        data_table_file,
+        data_table_name,
+    )
+
+    # Trenches across frames (over time)
+    for frame in frames:
+        try:
+            # FIXME remove the .iloc once I fix the table merging stuff?
+            # Right now it returns an entry for each segmented cell.
+            tr = df_regions[(df_regions["info_frame"] == frame)][
+                "info_trench_number"
+            ].iloc[0]
+            node_path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/{}/region_{}".format(
+                file, fov, frame, z_level, sc, row_number, tr
+            )
+            node = h5file_masks.get_node(node_path)
+            mask = node.read()
+            computed_image = computed_image_function(mask, df_this_row_trench)
+
+        except:
+            computed_image = numpy.zeros(shape=(tr_width, height), dtype=numpy.float32)
+
+        kymograph_array[
+            frame * tr_width : (frame + 1) * tr_width, 0:height
+        ] = computed_image
+
+    h5file_masks.close()
+    h5file.close()
+
+    return kymograph_array.T
+
+
+def make_tab20_mapping(num_colors=4096):
+    """
+    Use the "tab20" colormap to color pairs of cells,
+    and add "black" (transparent) for 0, and white for the first cell.
+    NOTE/FIXME: how high do we want the labels to be? Use 4096 for now,
+    but since the labels increase as powers of 2, this might not be enough
+    for very long timelapses.
+    tab20 is good because the colors come in pairs with similar hues,
+    whereas the default mapping in Napari is more "randomized," which
+    makes it hard to visually match pairs of cells.
+    Could search the lineages file & find the maximum possible label?
+    """
+    tab20 = matplotlib.cm.get_cmap("tab20")
+
+    mapping = {}
+    # Transparent for background
+    mapping[0] = (0.0, 0.0, 0.0)
+    # White for the first cell
+    mapping[1] = (1.0, 1.0, 1.0)
+    for i in range(num_colors):
+        # The tab20 map has 20 colors, so cycle them every 20 using modulo
+        mapping[i + 2] = tab20((i + 2) % 20)
+
+    return mapping
+
+
 def kymo_lineages_layer(
     num_trenches,
     num_rows,
@@ -235,6 +429,7 @@ def kymo_lineages_layer(
     Generate kymographs of masks data and re-label the cells based on a computed lineage.
     """
     for c in sc:
+        c = c.decode("utf-8")
         mask_stack = dask_stack_loop(
             num_trenches,
             num_rows,
@@ -249,7 +444,8 @@ def kymo_lineages_layer(
             [c, frames, masks_file, lineages_file],
         )
 
-        viewer.add_labels(mask_stack, name="Lineages ({})".format(sc))
+        mapping = make_tab20_mapping()
+        viewer.add_labels(mask_stack, name="Lineages ({})".format(c), color=mapping)
 
 
 def kymo_lineage_masks(
@@ -274,8 +470,6 @@ def kymo_lineage_masks(
     h5file_lineages = tables.open_file(lineages_file, "r")
     table_lineages = h5file_lineages.get_node("/cells_and_lineages")
 
-    sc = sc.decode("utf-8")
-
     query = """(info_file == file) & \
                (info_fov == fov) & \
                (info_z_level == z_level) & \
@@ -291,33 +485,68 @@ def kymo_lineage_masks(
 
     # Trenches across frames (over time)
     for frame in frames:
+        new_mask = numpy.zeros(shape=(tr_width, height), dtype=numpy.uint16)
         try:
             # FIXME remove the .iloc once I fix the table merging stuff?
             # Right now it returns an entry for each segmented cell.
-            print(1)
             this_frame = df_cells[df_cells["info_frame"] == frame]
-            print(2)
-            tr = this_frame["info_trench_number"].iloc[0]
-            print(3)
-            print(file, fov, frame, z_level, sc, row_number, tr)
+            tr = this_frame["info_trench_number"].iloc[
+                0
+            ]  # FIXME sometimes getting out-of-bounds??
             node_path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/{}/region_{}".format(
                 file, fov, frame, z_level, sc, row_number, tr
             )
-            print(4)
             node = h5file_masks.get_node(node_path)
-            print(5)
-            img_slice = node.read()
-            print(6)
-            # Re-label the image slice
-            old_labels = this_frame["info_label"].values
-            new_labels = this_frame["progeny_id"].values
-            print(7)
-            img_slice = relabel_mask_complete(img_slice, old_labels, new_labels)
-        except:
-            print("oops!", trench_number)
-            img_slice = numpy.zeros(shape=(tr_width, height), dtype=numpy.uint16)
+            mask = node.read()
 
-        kymograph_array[frame * tr_width : (frame + 1) * tr_width, 0:height] = img_slice
+            # Re-label the labeled mask slice
+            all_lineages = this_frame["lineage"].unique()
+            all_lineages = [0]
+            for lineage in all_lineages:
+
+                # Re-label this lineage according to the progeny id
+                this_lineage = this_frame[this_frame["lineage"] == lineage]
+                old_labels = this_lineage["info_label"].values
+
+                # Run a series of logical ORs across all labels to get all matching pixels
+                # This "mask" only contains pixels from this lineage.
+                this_lineage_mask = numpy.zeros(new_mask.shape, dtype=numpy.bool)
+                for o in old_labels:
+                    this_lineage_mask |= mask == o
+
+                # Convert back to the original dtype so that we can do sums & multiplications
+                this_lineage_mask = this_lineage_mask.astype(new_mask.dtype)
+
+                # Apply the lineage mask to the original labels mask
+                labeled_pixels_this_lineage = mask * this_lineage_mask
+
+                # Now get the progeny_id as a mask too:
+                # Replace the labels in the lineage pixels with their progeny_id
+                new_labels = this_lineage["progeny_id"].values
+                labeled_pixels_progeny = relabel_mask_complete(
+                    labeled_pixels_this_lineage, old_labels, new_labels
+                )
+                new_mask += labeled_pixels_progeny
+
+                # TODO purge OLD CODE
+                ## Filter out all other lineages from the mask
+                ## If it matches this lineage, replace the lineage with a 1
+                ## Otherwise, replace it with a 0.
+                # mask_this_lineage = relabel_mask(mask, lineage, 1, 0).astype(numpy.bool)
+
+                ## Apply this filter to the original mask -> only keep pixels from this lineage,
+                ## but preserve their original labels.
+                # mask_this_lineage = mask * mask_this_lineage
+
+                ## Re-label this lineage according to the progeny id
+                # this_lineage = this_frame[this_frame["lineage"] == lineage]
+                # old_labels = this_lineage["info_label"].values
+                # new_labels = this_lineage["progeny_id"].values
+                # new_mask += relabel_mask_complete(mask_this_lineage, old_labels, new_labels)
+        except Exception as e:
+            print(str(e))
+
+        kymograph_array[frame * tr_width : (frame + 1) * tr_width, 0:height] = new_mask
 
     h5file_masks.close()
     h5file_lineages.close()
@@ -414,6 +643,9 @@ def main_kymograph_browser_function(
     napari_settings_file,
     corrections_file,
     lineages_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
 ):
     """
     Main function, invoked from the command-line.
@@ -546,4 +778,34 @@ def main_kymograph_browser_function(
                 seg_channels,
                 masks_file,
                 lineages_file,
+            )
+
+        # FIXME TEMP
+        computed_image_function = run_computed_image_function
+        # Would it make more sense to pre-compute the columns? Basically
+        # make it a column display, and just pass in the name of the column.
+        # Input a set of images, but also run a calculation on them before displaying.
+        if computed_image_function and data_table_file and data_table_name:
+            # TODO: specify which channels to perform the calculation
+            # Pass in a list... best way? comma-separated? YAML?
+            # These must match segmentation names, NOT microscope channel names.
+            seg_channels = ["mKate2"]
+
+            kymo_computed_image_layer(
+                num_trenches,
+                num_rows,
+                file_nodes,
+                extents["fields_of_view"],
+                extents["frames"],
+                extents["z_levels"],
+                tr_width,
+                img_width,
+                height,
+                viewer,
+                seg_channels,
+                masks_file,
+                regions_file,
+                computed_image_function,
+                data_table_file,
+                data_table_name,
             )

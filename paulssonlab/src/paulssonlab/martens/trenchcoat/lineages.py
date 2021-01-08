@@ -50,7 +50,7 @@ TODO:
 """
 
 
-def make_kymograph_from_centroids(table, seg_channel, is_top_row):
+def make_kymograph_from_centroids(table, seg_channel, is_top_row, trench_length):
     """
     1. Input dataframe slice corresponding to a single trench with a given File, FOV & trench number,
        a segmentation channel, and whether the row of trenches is top or bottom.
@@ -84,8 +84,10 @@ def make_kymograph_from_centroids(table, seg_channel, is_top_row):
 
         # Sort the sliced dataframe by centroid row
         # NOTE: Ascending will be False (top) or True (bottom), depending on top or bottom row of trenches.
+        # NOTE: we use the "col" because the arrays are F-ordered.
+        # A more typical C-ordered image would use the "row" to sort.
         cells_this_frame.sort_values(
-            by=["centroid_row"], inplace=True, ascending=is_top_row
+            by=["centroid_col"], inplace=True, ascending=is_top_row
         )
 
         # Iterate in this new order and append the labels to a new list
@@ -93,7 +95,19 @@ def make_kymograph_from_centroids(table, seg_channel, is_top_row):
         for c in cells_this_frame.itertuples():
             label = c.info_label
             length = c.axis_length_major
-            this_cell = {"label": label, "cell_length": length}
+
+            # A bool to state whether a cell touches the trench opening
+            # Useful for not erroneously calling cell divisions when a cell is exiting the trench
+            if is_top_row:
+                not_cell_edge = c.bounding_box_max_col != trench_length
+            else:
+                not_cell_edge = c.bounding_box_min_col != 0
+
+            this_cell = {
+                "label": label,
+                "cell_length": length,
+                "not_cell_edge": not_cell_edge,
+            }
 
             cell_order.append(this_cell)
 
@@ -112,6 +126,7 @@ def run_kymograph_to_lineages(
     This algorithm makes assumptions: see above.
     Allow length_buffer pixel margin of error +/- cell length b/w time frames,
     for determining whether or not a division took place.
+    TODO allow the user to change other parameters?
     """
     # In the zeroth time frame, define cells as lineage progenitors.
     # For each, run the lineage algorithm on the remaining kymograph time frame entries.
@@ -129,6 +144,7 @@ def run_kymograph_to_lineages(
             "progeny_id": 1,
             "label": cell["label"],
             "cell_length": cell["cell_length"],
+            "not_cell_edge": cell["not_cell_edge"],
         }
 
         stack.append(job)
@@ -146,10 +162,6 @@ def run_kymograph_to_lineages(
             this_progeny_id = previous_cell["progeny_id"]
             next_frame = previous_cell["frame"] + 1
 
-            # NOTE do we check that there is a next frame here?
-            # i.e. if (next_frame < len(kymograph):
-            # If not, then there's no point in continuing, and no other cells to look for.
-
             # Are there more frames to process?
             # Are there any cells in the next frame?
             if (next_frame < len(kymograph)) and (kymograph[next_frame]):
@@ -160,22 +172,22 @@ def run_kymograph_to_lineages(
                 top_cell = next_frame_group.pop(0)
 
                 # Is the top cell shorter than the cell in the previous frame? -> There was a cell division
-                # NOTE if a cell is slowly sliding out of the trench, then
-                # it will be mis-characterized as dividing, as it becomes shorter.
-                # To fix this, can try to compare the position of the centroid or
-                # the tip of the cell & see whether it moved?
-
+                # BUT if a cell borders the edge, then a change in size cannot be differentiated from
+                # division or sliding out of the trench.
+                # FIXME the check doesn't seem to work?
                 if (
                     top_cell["cell_length"] + length_buffer
                     < previous_cell["cell_length"]
-                ):
+                ) and (job["not_cell_edge"]):
 
                     # If the cell is ~ 2x larger than that in the previous frame, then
                     # there might be a cell merging issue (segmentation problem).
+                    # NOTE this didn't work. Clearly there are some mergers, but no warnings are printed.
                     if top_cell["cell_length"] > 2 * previous_cell["cell_length"]:
                         print("Warning: possible cell merger detected.")
 
                     # Is there also a next (sister) cell, from this division? Add it to the stack first.
+                    # It's added first, because the stack is FILO.
                     if next_frame_group:
                         # Contains a label and a major axis length
                         next_cell = next_frame_group.pop(0)
@@ -186,6 +198,7 @@ def run_kymograph_to_lineages(
                             "progeny_id": this_progeny_id * 2 + 1,
                             "label": next_cell["label"],
                             "cell_length": next_cell["cell_length"],
+                            "not_cell_edge": cell["not_cell_edge"],
                         }
 
                         stack.append(job)
@@ -197,6 +210,7 @@ def run_kymograph_to_lineages(
                         "progeny_id": this_progeny_id * 2,
                         "label": top_cell["label"],
                         "cell_length": top_cell["cell_length"],
+                        "not_cell_edge": cell["not_cell_edge"],
                     }
 
                     stack.append(job)
@@ -210,6 +224,7 @@ def run_kymograph_to_lineages(
                         "progeny_id": this_progeny_id,
                         "label": top_cell["label"],
                         "cell_length": top_cell["cell_length"],
+                        "not_cell_edge": cell["not_cell_edge"],
                     }
 
                     stack.append(job)
@@ -231,7 +246,7 @@ def write_cell_to_lineage_table(
     lineage_row["info_seg_channel"] = seg_channel
     lineage_row["info_frame"] = cell["frame"]
     lineage_row["info_row_number"] = trench_row
-    lineage_row["info_trench_number"] = trench_number
+    lineage_row["corrected_trench_label"] = trench_number
     lineage_row["lineage"] = cell["lineage"]
     lineage_row["progeny_id"] = cell["progeny_id"]
     lineage_row["info_label"] = cell["label"]
@@ -249,7 +264,7 @@ def make_lineage_table_type(filename_itemsize, segchannel_itemsize):
         "info_fov": tables.UInt16Col(),
         "info_frame": tables.UInt16Col(),
         "info_row_number": tables.UInt16Col(),
-        "info_trench_number": tables.UInt16Col(),
+        "corrected_trench_label": tables.UInt16Col(),
         "info_seg_channel": tables.StringCol(segchannel_itemsize),
         "lineage": tables.UInt16Col(),
         "progeny_id": tables.UInt16Col(),
@@ -424,7 +439,7 @@ def relabel_mask(mask, old_label, new_label, alternative_label):
 
 def relabel_mask_mono(mask, label):
     """
-    Re-label all non-zero pixels with the given label
+    Re-label all non-zero pixels with the given label.
     """
     new_mask = (mask != 0) * label
     return new_mask
@@ -435,9 +450,14 @@ def relabel_mask_complete(mask, old_labels, new_labels):
     For each label, replace it with a new label.
     Input a mask with labeled pixels.
     """
+    # FIXME problem when different regions have the same label -- this can happen,
+    # for example, when two cells are of a different lineage but the same
+    # progeny id. Either disallow more than 1 lineage at a time,
+    # or come up with a way to color all lineages without interference.
+    # As is, each repeat of a progeny id will further increment previous iterations of that progeny id.
     new_mask = numpy.zeros(mask.shape, dtype=mask.dtype)
     for (o, n) in zip(old_labels, new_labels):
-        new_mask += (mask == o) * n
+        new_mask += ((mask == o).astype(mask.dtype) * n).astype(mask.dtype)
 
     return new_mask
 
@@ -492,6 +512,9 @@ def main_lineages_function(infile, outfile, length_buffer, seg_channel):
     length_buffer for calling cell divisions, in pixels
     seg channel used to identify & label the cells TODO make this a list and process multiple seg channels?
     """
+    # TODO/FIXME infer trench length from the regions or somewhere else
+    trench_length = 152
+
     # Open the measurements table as a Pandas dataframe
     # NOTE this code assumes that the data were processed
     # after re-numbering the trenches to account for stage drift over time.
@@ -530,11 +553,19 @@ def main_lineages_function(infile, outfile, length_buffer, seg_channel):
     # For appending entries
     lineage_row = lineage_table.row
 
-    # TODO it might be possible to walk through the dataframe using
-    # groupby and apply or map etc., but for now let's just loop
-    # something like:
-    # df.groupby(["info_file", "info_fov", "info_row_number", "corrected_trench_label"]).apply(lambda x: run_kymo_func(x))
-    # def run_kymo_func(dataframe_slice): # call make_kymograph_from_centroids and run_kymograph_to_lineages
+    ## TODO it might be possible to walk through the dataframe using
+    ## groupby and apply or map etc., something like:
+    # def run_lin(df):
+    # kymograph = make_kymograph_from_centroids(this_trench, seg_channel, is_top_row, trench_length)
+
+    # run_kymograph_to_lineages(kymograph, file, fov, seg_channel, lineage_row, row, trench, length_buffer)
+    ## df.groupby(["info_file", "info_fov", "info_row_number", "corrected_trench_label"]).apply(lambda x: run_kymo_func(x))
+    ## def run_kymo_func(dataframe_slice): # call make_kymograph_from_centroids and run_kymograph_to_lineages
+    # df.loc[:, ("lineage", "progeny_id") = \
+    # df.groupby(["info_file", "info_fov", "info_row_number", "corrected_trench_label"]) \
+    # .apply(lambda x: run_lin(x))
+    # This would require a lot of changes.
+
     # Note that the df isn't modified in the code, it just writes a new HDF5 file.
     # Alternatively, could add a new column to the original df, with the lineage_id and progeny_id,
     # however I have questions about the memory footprint vs. using PyTables.
@@ -554,14 +585,12 @@ def main_lineages_function(infile, outfile, length_buffer, seg_channel):
                 # This assumes an alternating even/odd numbering scheme.
                 is_top_row = row % 2 == 0
                 for trench in trenches:
-                    this_trench = this_row[
-                        (this_row["corrected_trench_label"] == trench)
-                    ]
+                    this_trench = this_row[this_row["corrected_trench_label"] == trench]
 
                     # Returns a list of lists for storing & popping cells in the same trench, but over time.
                     # Kymograph now contains cell labels & lengths over time
                     kymograph = make_kymograph_from_centroids(
-                        this_trench, seg_channel, is_top_row
+                        this_trench, seg_channel, is_top_row, trench_length
                     )
 
                     # Process the kymograph to calculate lineages & write them to a table
@@ -593,7 +622,7 @@ def main_lineages_function(infile, outfile, length_buffer, seg_channel):
         "info_file",
         "info_fov",
         "info_row_number",
-        "info_trench_number",
+        "corrected_trench_label",
         "info_frame",
         "info_seg_channel",
         "info_label",

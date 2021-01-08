@@ -116,9 +116,11 @@ def query_regions_from_file(file, fov, frame, z_level, regions_file):
     """
     h5file_regions = tables.open_file(regions_file, "r")
     regions_table = h5file_regions.get_node("/", "trench_coords")
+
     query = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
     search = regions_table.read_where(query)
     df = pandas.DataFrame(search)
+
     h5file_regions.close()
 
     regions = []
@@ -148,6 +150,30 @@ def trenches_arr_to_canvas(file, fov, frame, z_level, width, height, regions_fil
     return canvas.T
 
 
+def regions_to_list(regions_file, file, fov, frame, z_level):
+    """
+    Return a list of region min_row, min_col, max_row, max_col matching the given condition.
+    """
+    # TODO: trench row number?
+    h5file_regions = tables.open_file(regions_file, "r")
+    regions_table = h5file_regions.get_node("/", "row_coords")
+
+    condition = "(info_file == file) & \
+                 (info_fov == fov) & \
+                 (info_frame == frame) & \
+                 (info_z_level == z_level)"
+
+    search = regions_table.read_where(condition)
+    df = pandas.DataFrame(search)
+    h5file_regions.close()
+
+    regions = []
+    for r in df.itertuples():
+        regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+
+    return regions
+
+
 def regions_arr_to_canvas(file, fov, frame, z_level, width, height, regions_file):
     """
     Input a numpy array with many rows, each containing the rectangular coordinates of regions.
@@ -160,22 +186,10 @@ def regions_arr_to_canvas(file, fov, frame, z_level, width, height, regions_file
     Return a numpy array with numbered pixel positions for each region, and zeros for background.
     NOTE: what happens if the regions overlap?
     """
-    # TODO: trench row number?
-    h5file_regions = tables.open_file(regions_file, "r")
-    regions_table = h5file_regions.get_node("/", "row_coords")
-
-    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
-    search = regions_table.read_where(condition)
-    df = pandas.DataFrame(search)
-    h5file_regions.close()
-
-    regions = []
-    for r in df.itertuples():
-        regions.append([r.min_row, r.min_col, r.max_row, r.max_col])
+    regions = regions_to_list(file, fov, frame, z_level, regions_file)
 
     # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
-
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = i + 1
 
@@ -292,11 +306,31 @@ def whole_labeled_canvas(file, fov, frame, z, width, height, sc, masks_file):
     path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/0/region_0".format(
         file, fov, frame, z, sc
     )
-    img = h5file_masks.get_node(path).read()
+    mask = h5file_masks.get_node(path).read()
     h5file_masks.close()
 
-    # Rotate by -90 deg to account for F -> C ordering of arrays when visualizing in Napari
-    return numpy.rot90(img, k=-1)
+    return mask.T
+
+
+def regions_to_dict(regions_file, file, fov, frame, z_level):
+    """
+    Returns a dictionary mapping a region number to the a tuple of min_row, min_col, max_row, max_col.
+    """
+    h5file_regions = tables.open_file(regions_file, "r")
+    table_regions = h5file_regions.get_node("/trench_coords")
+    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
+    search_regions = table_regions.read_where(condition)
+    h5file_regions.close()
+    df_regions = pandas.DataFrame(search_regions)
+
+    # Create a dict: input row number & trench number,
+    # output bbox coords of the corresponding trench.
+    regions = {}
+    for r in df_regions.itertuples():
+        key = "{}/region_{}".format(r.info_row_number, r.info_trench_number)
+        regions[key] = (r.min_row, r.min_col, r.max_row, r.max_col)
+
+    return regions
 
 
 def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_file):
@@ -309,19 +343,7 @@ def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_
     Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
     NOTE: what happens if the regions overlap?
     """
-    h5file_regions = tables.open_file(regions_file, "r")
-    table_regions = h5file_regions.get_node("/trench_coords")
-    condition = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z)"
-    search_regions = table_regions.read_where(condition)
-    h5file_regions.close()
-    df_regions = pandas.DataFrame(search_regions)
-
-    # Create a dict: input row number & trench number,
-    # output bbox coords of the corresponding trench.
-    regions = {}
-    for r in df_regions.itertuples():
-        key = "{}/region_{}".format(r.info_row_number, r.info_trench_number)
-        regions[key] = (r.min_row, r.min_col, r.max_row, r.max_col)
+    regions = regions_to_dict(regions_file, file, fov, frame, z)
 
     h5file_masks = tables.open_file(masks_file, "r")
 
@@ -346,6 +368,125 @@ def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_
     h5file_masks.close()
 
     return canvas.T
+
+
+def query_for_masks(file, fov, frame, z, sc, data_table_file, data_table_name):
+    """
+    Return a dataframe matching the query.
+    Useful for getting matching cells in a cell measurements table.
+    """
+    h5file_data = tables.open_file(data_table_file, "r")
+    data_table = h5file_data.get_node("/", data_table_name)
+    # NOTE the speed of the queries might be sensitive to the order
+    # in which the data are searched. If there are many trenches, but few files,
+    # then it's much faster to search trenches first, then files.
+    query = """(info_frame == frame) & \
+               (info_fov == fov) & \
+               (info_file == file) & \
+               (info_z_level == z) & \
+               (info_seg_channel == sc)"""
+
+    search = data_table.read_where(query)
+    h5file_data.close()
+
+    df = pandas.DataFrame(search)
+    return df
+
+
+def computed_masks_to_canvas(
+    file,
+    fov,
+    frame,
+    z,
+    width,
+    height,
+    sc,
+    regions_file,
+    masks_file,
+    function,
+    data_table_file,
+    data_table_name,
+):
+    """
+    TODO update documentation how this function works
+    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
+
+    Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
+
+    Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
+    NOTE: what happens if the regions overlap?
+    """
+    regions = regions_to_dict(regions_file, file, fov, frame, z)
+
+    df = query_for_masks(file, fov, frame, z, sc, data_table_file, data_table_name)
+
+    # Go through series of de-references b/c pytables doesn't allow iterating
+    # over nodes if some of the nodes are symlinks.
+    h5file_masks = tables.open_file(masks_file, "r")
+    path = "/masks/{}".format(file)
+    node_1 = h5file_masks.get_node(path)()
+    node_2 = h5file_masks.get_node(node_1, "/FOV_{}".format(fov))()
+    node_3 = h5file_masks.get_node(node_2, "/Frame_{}".format(frame))()
+    node_4 = h5file_masks.get_node(node_3, "/Z_{}/{}".format(z, sc))
+
+    # Initialize the canvas
+    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
+
+    # Iterate all nodes: all trenches & rows
+    for n in h5file_masks.walk_nodes(node_4, classname="CArray"):
+        # Parse n's parent & its name to get keys
+        row = n._v_parent._v_name
+        trench = n.name.split("_")[1]
+        mask = n.read()
+
+        # Run a query on the data table & the mask, and return a modified float32 according to the function
+        df_this_row_trench = df[
+            (df["info_row_number"] == int(row))
+            & (df["info_trench_number"] == int(trench))
+        ]
+        computed_image = function(mask, df_this_row_trench)
+
+        # Write the result into the canvas
+        key = "{}/region_{}".format(row, trench)
+        r = regions[key]
+        canvas[r[0] : r[2], r[1] : r[3]] = computed_image
+
+    h5file_masks.close()
+
+    return canvas.T
+
+
+def computed_whole_labeled_canvas(
+    file,
+    fov,
+    frame,
+    z,
+    width,
+    height,
+    sc,
+    masks_file,
+    function,
+    data_table_file,
+    data_table_name,
+):
+    """
+    FIXME Passing in width & height, even though they aren't needed, because it conforms
+    to the generic shape shared by all the other functions. There must be a better way to do this!
+    Maybe by using named arguments, or a dict of arguments?
+    """
+    h5file_masks = tables.open_file(masks_file, "r")
+    # If no regions, then default to the zeroth region set number and region
+    path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/0/region_0".format(
+        file, fov, frame, z, sc
+    )
+    mask = h5file_masks.get_node(path).read()
+    h5file_masks.close()
+
+    # Run a query on the data table & the mask, and return a modified float32 according to the function
+    df = query_for_masks(data_table_file, data_table_name)
+    computed_image = function(mask, df)
+
+    return computed_img.T
 
 
 ### Image Layers
@@ -376,9 +517,6 @@ def add_image_layers(
 
     Adds all the image layers to the Napari viewer.
     """
-    # Define a function for lazily loading a single image from the h5 file
-    lazy_load_img = delayed(load_img)
-
     for c in channels:
         image_stack = dask_stack_loop(
             file_nodes,
@@ -393,6 +531,103 @@ def add_image_layers(
         )
 
         viewer.add_image(image_stack, **layer_params[c])
+
+
+def add_computed_image_layers(
+    masks_file,
+    regions_file,
+    file_nodes,
+    fields_of_view,
+    frames,
+    z_levels,
+    seg_channels,
+    width,
+    height,
+    viewer,
+    function,
+    data_table_file,
+    data_table_name,
+):
+    """
+    Input an HDF5 file with images,
+    image dimensions,
+    fovs, frames, z dimensions,
+    *segmentation* channel names,
+    layer params.
+
+    function: some sort of function which modifies the image
+
+    data_table_file: HDF5 file containing a pytables table with measurements to use for computation
+    data_table_name: name of the table file node within the file
+
+    Adds all the image layers to the Napari viewer.
+    """
+    if regions_file:
+        for sc in seg_channels:
+            images_stack = dask_stack_loop(
+                file_nodes,
+                fields_of_view,
+                frames,
+                z_levels,
+                width,
+                height,
+                computed_masks_to_canvas,
+                numpy.float32,
+                [
+                    sc,
+                    regions_file,
+                    masks_file,
+                    function,
+                    data_table_file,
+                    data_table_name,
+                ],
+            )
+
+            viewer.add_image(images_stack, name="Computed Cell Masks {}".format(sc))
+
+    # No regions file
+    else:
+        for sc in seg_channels:
+            images_stack = dask_stack_loop(
+                file_nodes,
+                fields_of_view,
+                frames,
+                z_levels,
+                width,
+                height,
+                computed_whole_labeled_canvas,
+                numpy.float32,
+                [sc, masks_file, function, data_table_file, data_table_name],
+            )
+
+            viewer.add_image(images_stack, name="Computed Cell Masks {}".format(sc))
+
+
+# TODO: select a function from a list of available functions,
+# specified on the command line.
+def run_computed_image_function(mask, df):
+    # Example function: for every unique cell label, replace its
+    # contents with the mean of its mVenus fluorescence intensities.
+    # Calculate mVenus / pixel
+    # Make a copy if we want to add a new column.
+    df = df.copy()
+    df["mean_mVenus"] = df["total_intensity_YFP"] / df["geometry_Area"]
+    key = "mean_mVenus"
+
+    # Alternatively: just display the Area without calculating anything
+    # key = "geometry_Area"
+
+    new_img = numpy.zeros(mask.shape, dtype=numpy.float32)
+    for cell in df.itertuples():
+        # TODO Can this be sped up by doing pixel_value -> f(pixel_value),
+        # where f() is input cell label, output a const number?
+        # Avoids looping. But it's actually pretty fast now.
+        new_img += (mask == cell.info_label) * getattr(cell, key)
+
+    return new_img
+
+
+###
 
 
 def get_largest_extents_hdf5(h5file, metadata_key):
@@ -465,7 +700,6 @@ def load_img(
     """
     Attempt to load an image, and if it cannot be found, return a zero'ed array instead.
     Apply camera bias and flat field corrections.
-    We use Fortran indexing, Napari usese C indexing, so rotate the image by -90 degrees.
     """
     try:
         # Open & parse the corrections file
@@ -492,6 +726,7 @@ def load_img(
         node = h5.get_node(path)
         img = (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
         h5.close()
+
         return img.T
 
     except:
@@ -503,7 +738,14 @@ def load_img(
 
 
 def main_hdf5_browser_function(
-    images_file, masks_file, regions_file, corrections_file, napari_settings_file
+    images_file,
+    masks_file,
+    regions_file,
+    corrections_file,
+    napari_settings_file,
+    computed_image_function,
+    data_table_file,
+    data_table_name,
 ):
     """
     Use Napari to browse an HDF5 file with microscope images arranged in a hierarchy:
@@ -602,4 +844,31 @@ def main_hdf5_browser_function(
                 width,
                 height,
                 viewer,
+            )
+
+        # FIXME TEMP
+        computed_image_function = run_computed_image_function
+        # Would it make more sense to pre-compute the columns? Basically
+        # make it a column display, and just pass in the name of the column.
+        # Input a set of images, but also run a calculation on them before displaying.
+        if computed_image_function and data_table_file and data_table_name:
+            # TODO: specify which channels to perform the calculation
+            # Pass in a list... best way? comma-separated? YAML?
+            # These must match segmentation names, NOT microscope channel names.
+            seg_channels = ["mKate2"]
+
+            add_computed_image_layers(
+                masks_file,
+                regions_file,
+                file_nodes,
+                extents["fields_of_view"],
+                extents["frames"],
+                extents["z_levels"],
+                seg_channels,
+                width,
+                height,
+                viewer,
+                computed_image_function,
+                data_table_file,
+                data_table_name,
             )
