@@ -236,7 +236,7 @@ def _import_addgene_data(
     callback=None,
     progress_bar=PROGRESS_BAR,
 ):
-    if isinstance(urls, str):
+    if isinstance(urls, (str, int)):
         urls = [urls]
     data = []
     if progress_bar is not None and len(urls) > 1:

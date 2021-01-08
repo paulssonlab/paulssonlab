@@ -217,7 +217,11 @@ def _get_addgene_kit(
     progress_bar=PROGRESS_BAR,
     session=None,
 ):
-    table = html.find("table.kit-inventory-table")[0]
+    table = html.find("table.kit-inventory-table", first=True)
+    if table is None:
+        table = html.find("div#kit-contents > table", first=True)
+    if table is None:
+        raise ValueError("could not find Addgene kit table")
     wells = parse_html_table(table, row_parser=_parse_addgene_kit_row)
     if progress_bar is not None and (include_sequences or include_details):
         wells_iter = progress_bar(wells)
