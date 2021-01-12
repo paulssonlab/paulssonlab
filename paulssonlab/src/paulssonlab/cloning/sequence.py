@@ -2,6 +2,7 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
 from numbers import Integral
+from cytoolz import partial
 from collections import defaultdict, OrderedDict
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
@@ -59,14 +60,6 @@ class DsSeqRecord(SeqRecord):
         id = id or "<unknown id>"
         name = name or "<unknown name>"
         description = description or "<unknown description>"
-        self.circular = circular
-        if circular:
-            upstream_overhang = 0
-            downstream_overhang = 0
-        self.upstream_overhang = upstream_overhang or 0
-        self.downstream_overhang = downstream_overhang or 0
-        self.upstream_inward_cut = upstream_inward_cut
-        self.downstream_inward_cut = downstream_inward_cut
         super().__init__(
             seq,
             id=id,
@@ -76,6 +69,14 @@ class DsSeqRecord(SeqRecord):
             annotations=annotations,
             letter_annotations=letter_annotations,
         )
+        self.circular = circular
+        if circular:
+            upstream_overhang = 0
+            downstream_overhang = 0
+        self.upstream_overhang = upstream_overhang or 0
+        self.downstream_overhang = downstream_overhang or 0
+        self.upstream_inward_cut = upstream_inward_cut
+        self.downstream_inward_cut = downstream_inward_cut
 
     def _check_overhang(self, overhang1, overhang2):
         if sign(overhang1) == sign(overhang2) != 0:
@@ -147,13 +148,20 @@ class DsSeqRecord(SeqRecord):
     def annotate(self, label, overhangs=True):
         pass
 
-    def reverse_complement(self):
-        rc = self.__class__(super().reverse_complement())
-        rc.upstream_overhang, rc.downstream_overhang = (
-            -self.downstream_overhang,
-            -self.upstream_overhang,
+    def reverse_complement(self, **kwargs):
+        kwargs = {
+            **dict(
+                id=True, name=True, description=True, annotations=True, dbxrefs=True
+            ),
+            **kwargs,
+        }
+        return self.__class__(
+            super().reverse_complement(**kwargs),
+            upstream_overhang=-self.downstream_overhang,
+            downstream_overhang=-self.upstream_overhang,
+            upstream_inward_cut=self.downstream_inward_cut,
+            downstream_inward_cut=self.upstream_inward_cut,
         )
-        return rc
 
     def reindex(self, loc):
         if not self.circular:
@@ -311,9 +319,9 @@ class DsSeqRecord(SeqRecord):
     def __str__(self):
         seq = str(self.seq)
         if hasattr(self.seq, "complement"):
-            seq_rc = str(self.seq.complement())
+            seq_compl = str(self.seq.complement())
         else:
-            seq_rc = seq
+            seq_compl = seq
         if len(seq) > 80:
             upstream_length = max(
                 abs(self.upstream_overhang) + SEQUENCE_OVERHANG_STR_BUFFER,
@@ -324,17 +332,19 @@ class DsSeqRecord(SeqRecord):
                 MAX_SEQUENCE_STR_LENGTH,
             )
             seq = seq[:upstream_length] + "..." + seq[-downstream_length:]
-            seq_rc = seq_rc[:upstream_length] + "..." + seq_rc[-downstream_length:]
+            seq_compl = (
+                seq_compl[:upstream_length] + "..." + seq_compl[-downstream_length:]
+            )
         lines = []
         for strand in (-1, 1):
             if strand == 1:
-                formatted_seq = seq_rc
+                formatted_seq = seq_compl
             else:
                 formatted_seq = seq
             if sign(self.upstream_overhang) == strand:
                 length = abs(self.upstream_overhang)
                 formatted_seq = " " * length + formatted_seq[length:]
-            elif sign(self.downstream_overhang) == strand:
+            if sign(self.downstream_overhang) == strand:
                 length = abs(self.downstream_overhang)
                 formatted_seq = formatted_seq[:-length] + " " * length
             if self.circular:
@@ -351,11 +361,6 @@ class DsSeqRecord(SeqRecord):
         # for a in self.annotations:
         #     lines.append(f"/{a}={str(self.annotations[a])}")
         return "\n".join(lines)
-
-
-def anneal(a, b):
-    # TODO
-    return DsSeqRecord(a)
 
 
 def ligate(seqs, method="goldengate"):
@@ -375,6 +380,17 @@ def join_seqs(seqs):
         offset += len(seq)
     concatenated_seq = sum(to_concat, Seq(""))
     return SeqRecord(concatenated_seq, features=features)
+
+
+def complement(seq):
+    if hasattr(seq, "features"):
+        return seq.complement(
+            id=True, name=True, description=True, annotations=True, dbxrefs=True
+        )
+    elif hasattr(seq, "complement"):
+        return seq.complement()
+    else:
+        return Seq(seq).complement()
 
 
 def reverse_complement(seq):
@@ -524,7 +540,7 @@ def smoosh_sequences(a, b):
     return a + b
 
 
-def count_matching_chars(a, b):
+def count_matching(a, b):
     s = 0
     for i in range(min(len(a), len(b))):
         if a[i] == b[i]:
@@ -532,7 +548,7 @@ def count_matching_chars(a, b):
     return s
 
 
-def count_contiguous_matching_chars(a, b, right=False):
+def count_contiguous_matching(a, b, right=False):
     s = 0
     idxs = range(min(len(a), len(b)))
     if right:
@@ -545,11 +561,29 @@ def count_contiguous_matching_chars(a, b, right=False):
     return s
 
 
+def iterate_shifts(a, b):
+    for shift in range(1, len(a) + len(b)):
+        a_start = max(shift - len(b), 0)
+        a_stop = min(shift, len(a))
+        b_start = a_start + len(b) - shift
+        b_stop = a_stop + len(b) - shift
+        a_overlap = a[a_start:a_stop]
+        b_overlap = b[b_start:b_stop]
+        yield shift, a_start, a_stop, b_start, b_stop
+
+
 # TODO: LINEAR!!
 # TODO: add min_tm option?
 def find_primer_binding_site(
-    primer, template, linear=False, try_reverse_complement=True, min_score=8
+    template,
+    primer,
+    circular=None,
+    try_reverse_complement=True,
+    scoring_func=partial(count_contiguous_matching, right=True),
+    min_score=8,
 ):
+    if hasattr(template, "circular") and circular is None:
+        circular = template.circular
     orig_template = template
     if try_reverse_complement:
         strands = (1, -1)
@@ -558,29 +592,28 @@ def find_primer_binding_site(
     sites = []
     for strand in strands:
         if strand == -1:
-            template = sequence.reverse_complement(orig_template)
+            template = reverse_complement(orig_template)
         else:
             template = orig_template
-        template_padded = " " * (len(primer) - 1) + template + " " * (len(primer) - 1)
-        for loc in range(1, len(template) + len(primer)):
-            score = count_contiguous_matching_chars(
-                primer, template_padded[loc - 1 : loc + len(primer) - 1], right=True
-            )
-            if score >= min_score:
-                sites.append((strand, loc, score))
+            for shift, template_overlap, primer_overlap in iterate_shifts(
+                template, primer
+            ):
+                score = scoring_func(template_overlap, primer_overlap)
+                loc = len(b) - shift  # TODO
+                if score >= min_score:
+                    sites.append((strand, loc, score))
     return sites
 
 
 # TODO: make work with SeqRecords
 # TODO: make sure join_seqs sets topology correctly?
-def pcr(template, primer1, primer2, linear=False, min_score=6):
-    # TODO: duplicate circular= handling
+def pcr(template, primer1, primer2, circular=None, min_score=6):
     both_sites = []
     for primer in (primer1, primer2):
         sites = find_primer_binding_site(
-            primer,
             template,
-            linear=linear,
+            primer,
+            circular=circular,
             try_reverse_complement=True,
             min_score=min_score,
         )
@@ -598,6 +631,34 @@ def pcr(template, primer1, primer2, linear=False, min_score=6):
     start = loc1
     stop = len(template) - loc2
     # TODO
-    amplicon = sequence.slice_seq(template, start, stop)
-    product = sequence.join_seqs([primer1, amplicon, primer2])
+    amplicon = slice_seq(template, start, stop)
+    product = join_seqs([primer1, amplicon, primer2])
     return product
+
+
+def anneal(a, b, min_score=6):
+    b = reverse_complement(b)
+    loc = None
+    best_score = -1
+    for shift, a_start, a_stop, b_start, b_stop in iterate_shifts(a, b):
+        a_overlap = a[a_start:a_stop]
+        b_overlap = b[b_start:b_stop]
+        score = len(a_overlap)
+        if a_overlap == b_overlap and score > best_score:
+            loc = len(b) - shift
+            best_score = score
+            if b_start > 0:
+                seq = b[:b_stop] + a[a_stop:]
+                upstream_overhang = -b_start
+                downstream_overhang = len(a) - a_stop
+            else:
+                seq = a[:a_stop] + b[b_stop:]
+                upstream_overhang = a_start
+                downstream_overhang = -(len(b) - b_stop)
+    if loc is None or best_score < min_score:
+        raise ValueError(f"could not anneal sequences {a!r} and {b!r}")
+    return DsSeqRecord(
+        seq,
+        upstream_overhang=upstream_overhang,
+        downstream_overhang=downstream_overhang,
+    )
