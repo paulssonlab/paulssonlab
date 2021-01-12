@@ -1,4 +1,5 @@
 import re
+import Bio.Restriction
 from paulssonlab.api.google import (
     get_drive_by_path,
     ensure_drive_folder,
@@ -10,8 +11,15 @@ from paulssonlab.api.google import (
     FOLDER_MIMETYPE,
     SHEETS_MIMETYPE,
 )
-from paulssonlab.cloning.workflow import rename_ids, ID_REGEX
+from paulssonlab.cloning.workflow import (
+    rename_ids,
+    ID_REGEX,
+    part_entry_to_seq,
+    re_digest_part,
+)
 from paulssonlab.api import read_sequence, regex_key
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr
+from paulssonlab.cloning.commands import expr_parser, command_parser
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
 FOLDER_TYPES = ["maps", "sequencing"]
@@ -20,6 +28,7 @@ TYPES_WITH_MAPS = ["plasmids"]
 TYPES_WITHOUT_IDS = ["parts"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
+EXPR_PRIORITY = ["digest", "pcr"]
 
 
 def _name_mapper_for_prefix(old_prefix, new_prefix):
@@ -229,29 +238,65 @@ class Registry(object):
             .execute()
             .decode("utf8")
         )
+        seq = DsSeqRecord(seq, id=name, name=name, description=name)
         return seq
 
-    def eval_seq_expr(expr):
+    def eval_exprs(s):
+        ast = expr_parser.parse(s)
+        expr = None
+        for type_ in EXPR_PRIORITY:
+            priority_expr = [e for e in ast if e["_type"] == type_]
+            if len(priority_expr):
+                expr = priority_expr[0]
+                break
+        if expr is None and len(ast):
+            expr = ast[0]
+        return _eval(expr)
+
+    def eval_expr(expr):
+        if expr is None:
+            return None
+        type_ = expr["_type"]
+        if type_ == "pcr":
+            return pcr(
+                self.eval_expr(expr["template"]),
+                self.eval_expr(expr["primer1"]),
+                self.eval_expr(expr["primer2"]),
+            )
+        elif type_ == "digest":
+            enzyme_name = expr["enzyme"]["name"]
+            if not hasattr(Bio.Restriction, enzyme_name):
+                raise ValueError(f"unknown enzyme '{enzyme_name}'")
+            enzyme = getattr(Bio.Restriction, enzyme_name)
+            return re_digest_part(self.eval_expr(expr["input"]), enzyme)
+        elif type_ == "anneal":
+            return anneal(
+                self.eval_expr(expr["strand1"]), self.eval_expr(expr["strand2"])
+            )
+        elif type_ == "name":
+            entry = self.get(expr["name"])
+            if entry is None or "_seq" not in entry:
+                return None
+            else:
+                return entry["_seq"]
+        else:
+            return NotImplementedError
+
+    def command(s):
         pass
 
     def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
         df, prefix, type_ = self.get_df(name, types=types)
         if name not in df.index:
             raise ValueError(f"cannot find {name}")
-        seq = df.loc[name].to_dict()
-        seq["_type"] = type_
-        seq["_prefix"] = prefix
-        if seq:
-            if type_ in TYPES_WITH_MAPS:
-                seq["_seq"] = self._get_map(prefix, name)
-            elif type_ == "parts":
-                seq["_seq"] = "*part*"
-        return seq
-        # maps_folder = self.registry.get((prefix, "maps"))
-        # if maps_folder is not None:
-        #     # map_ = get_drive_by_path(self.drive_service, root=maps_folder, is_folder=False)
-        # name = pLIB99, oLIB99, Part_Name
-        # try plasmid, strain, part
-        # return
-        # ("plasmid", SeqRecord)
-        # ("part", ("5prime", SeqRecord("AAA"), "3prime"))
+        entry = df.loc[name].to_dict()
+        entry["_type"] = type_
+        entry["_prefix"] = prefix
+        if type_ in TYPES_WITH_MAPS:
+            entry["_seq"] = self._get_map(prefix, name)
+        elif type_ == "parts":
+            seq = self.eval(entry["Usage*"])
+            if seq is None:
+                seq = part_entry_to_seq(entry)
+            entry["_seq"] = seq
+        return entry

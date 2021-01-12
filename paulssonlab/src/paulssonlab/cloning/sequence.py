@@ -31,8 +31,8 @@ class DsSeqRecord(SeqRecord):
         circular=False,
         upstream_overhang=0,
         downstream_overhang=0,
-        upstream_inward_cutter=None,
-        downstream_inward_cutter=None,
+        upstream_inward_cut=None,
+        downstream_inward_cut=None,
         id=None,
         name=None,
         description=None,
@@ -52,11 +52,9 @@ class DsSeqRecord(SeqRecord):
                 circular = circular or seq.circular
                 upstream_overhang = upstream_overhang or seq.upstream_overhang
                 downstream_overhang = downstream_overhang or seq.downstream_overhang
-                upstream_inward_cutter = (
-                    upstream_inward_cutter or seq.upstream_inward_cutter
-                )
-                downstream_inward_cutter = (
-                    downstream_inward_cutter or seq.downstream_inward_cutter
+                upstream_inward_cut = upstream_inward_cut or seq.upstream_inward_cut
+                downstream_inward_cut = (
+                    downstream_inward_cut or seq.downstream_inward_cut
                 )
         id = id or "<unknown id>"
         name = name or "<unknown name>"
@@ -67,8 +65,8 @@ class DsSeqRecord(SeqRecord):
             downstream_overhang = 0
         self.upstream_overhang = upstream_overhang or 0
         self.downstream_overhang = downstream_overhang or 0
-        self.upstream_inward_cutter = upstream_inward_cutter
-        self.downstream_inward_cutter = downstream_inward_cutter
+        self.upstream_inward_cut = upstream_inward_cut
+        self.downstream_inward_cut = downstream_inward_cut
         super().__init__(
             seq,
             id=id,
@@ -232,9 +230,9 @@ class DsSeqRecord(SeqRecord):
                 abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
             if start == 0:
-                new_seq.upstream_inward_cutter = self.upstream_inward_cutter
+                new_seq.upstream_inward_cut = self.upstream_inward_cut
             if stop == len(self):
-                new_seq.downstream_inward_cutter = self.downstream_inward_cutter
+                new_seq.downstream_inward_cut = self.downstream_inward_cut
             # copy features
             features = []
             for feature in self.features:
@@ -282,8 +280,8 @@ class DsSeqRecord(SeqRecord):
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
             downstream_overhang=other.downstream_overhang,
-            upstream_inward_cutter=self.upstream_inward_cutter,
-            downstream_inward_cutter=other.downstream_inward_cutter,
+            upstream_inward_cut=self.upstream_inward_cut,
+            downstream_inward_cut=other.downstream_inward_cut,
         )
         length = len(self)
         new.features = _join_features(self.features, other.features, length)
@@ -305,7 +303,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
-            f" upstream_inward_cutter={self.upstream_inward_cutter}, downstream_inward_cutter={self.downstream_inward_cutter},"
+            f" upstream_inward_cut={self.upstream_inward_cut}, downstream_inward_cut={self.downstream_inward_cut},"
             f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )
@@ -353,6 +351,11 @@ class DsSeqRecord(SeqRecord):
         # for a in self.annotations:
         #     lines.append(f"/{a}={str(self.annotations[a])}")
         return "\n".join(lines)
+
+
+def anneal(a, b):
+    # TODO
+    return DsSeqRecord(a)
 
 
 def ligate(seqs, method="goldengate"):
@@ -519,3 +522,82 @@ def smoosh_sequences(a, b):
         if a_tail == b_head:
             return a + b[min_length - i :]
     return a + b
+
+
+def count_matching_chars(a, b):
+    s = 0
+    for i in range(min(len(a), len(b))):
+        if a[i] == b[i]:
+            s += 1
+    return s
+
+
+def count_contiguous_matching_chars(a, b, right=False):
+    s = 0
+    idxs = range(min(len(a), len(b)))
+    if right:
+        idxs = reversed(idxs)
+    for i in idxs:
+        if a[i] == b[i]:
+            s += 1
+        else:
+            return s
+    return s
+
+
+# TODO: LINEAR!!
+# TODO: add min_tm option?
+def find_primer_binding_site(
+    primer, template, linear=False, try_reverse_complement=True, min_score=8
+):
+    orig_template = template
+    if try_reverse_complement:
+        strands = (1, -1)
+    else:
+        strands = (1,)
+    sites = []
+    for strand in strands:
+        if strand == -1:
+            template = sequence.reverse_complement(orig_template)
+        else:
+            template = orig_template
+        template_padded = " " * (len(primer) - 1) + template + " " * (len(primer) - 1)
+        for loc in range(1, len(template) + len(primer)):
+            score = count_contiguous_matching_chars(
+                primer, template_padded[loc - 1 : loc + len(primer) - 1], right=True
+            )
+            if score >= min_score:
+                sites.append((strand, loc, score))
+    return sites
+
+
+# TODO: make work with SeqRecords
+# TODO: make sure join_seqs sets topology correctly?
+def pcr(template, primer1, primer2, linear=False, min_score=6):
+    # TODO: duplicate circular= handling
+    both_sites = []
+    for primer in (primer1, primer2):
+        sites = find_primer_binding_site(
+            primer,
+            template,
+            linear=linear,
+            try_reverse_complement=True,
+            min_score=min_score,
+        )
+        if len(sites) != 1:
+            raise ValueError(
+                f"expecting a unique primer binding site, instead found {len(sites)}"
+            )
+        both_sites.append(sites[0])
+    if both_sites[0][0] == -1:
+        both_sites = both_sites[::-1]
+    sense1, loc1, len1 = both_sites[0]
+    sense2, loc2, len2 = both_sites[1]
+    if sense1 != -sense2:
+        raise ValueError("expecting a forward/reverse primer pair")
+    start = loc1
+    stop = len(template) - loc2
+    # TODO
+    amplicon = sequence.slice_seq(template, start, stop)
+    product = sequence.join_seqs([primer1, amplicon, primer2])
+    return product
