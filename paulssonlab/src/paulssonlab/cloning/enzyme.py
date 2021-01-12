@@ -74,7 +74,7 @@ def _re_digest(seq, cuts):
     return seqs
 
 
-def re_digest(seq, enzyme, circular=None, allow_single=True):
+def re_digest(seq, enzyme, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import DsSeqRecord
 
