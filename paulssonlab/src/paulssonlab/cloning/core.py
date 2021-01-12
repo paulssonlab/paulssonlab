@@ -35,7 +35,6 @@ def ligate(seqs, method, linear=True):
             if _check_seq_compatibility(seq1, seq2):
                 pass
             elif _check_seq_compatibility(seq1, seq2_rc):
-                # raise NotImplementedError
                 seq2 = seqs[idx + 1] = seq2_rc
             else:
                 raise ValueError(
@@ -68,22 +67,32 @@ def ligate(seqs, method, linear=True):
     return joined_seq
 
 
-def assemble(seqs, linear=True):
+def assemble(parts, linear=True):
     seqs_to_assemble = []
-    for seq, enzyme, part_name, part_type in seqs:
-        subseqs = re_digest(seq, enzyme, linear=linear)
-        part, overhang1, overhang2 = subseqs[0]
-        if hasattr(part, "features"):
-            part = deepcopy(part)
-            label = SeqFeature(
-                FeatureLocation(-len(overhang1[0]), len(part) + len(overhang2[0])),
-                type=part_type,
+    for part in parts:
+        if len(part) < 2 or len(part) >= 5:
+            raise ValueError(
+                "expected between two and four arguments: sequence, enzyme, part_name, part_type"
             )
-            label.qualifiers["label"] = [part_name]
-            features = [
-                feature for feature in part.features if feature.type != "source"
-            ]
-            part.features = [label, *features]
-        seqs_to_assemble.append((part, overhang1, overhang2))
+        part_seq, enzyme, part_name, part_type = [*part, *[None] * (4 - len(part))]
+        subseqs = re_digest(part_seq, enzyme, linear=linear)
+        part_seq, overhang1, overhang2 = subseqs[0]
+        if hasattr(part_seq, "features"):
+            part_seq = deepcopy(part_seq)
+            if part_type is None:
+                part_type = "misc_feature"
+            if part_name is not None:
+                label = SeqFeature(
+                    FeatureLocation(
+                        -len(overhang1[0]), len(part_seq) + len(overhang2[0])
+                    ),
+                    type=part_type,
+                )
+                label.qualifiers["label"] = [part_name]
+                features = [
+                    feature for feature in part.features if feature.type != "source"
+                ]
+                part_seq.features = [label, *features]
+        seqs_to_assemble.append((part_seq, overhang1, overhang2))
     assembly = ligate(seqs_to_assemble, linear=linear)
     return assembly
