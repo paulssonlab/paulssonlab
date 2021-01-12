@@ -5,15 +5,13 @@ def _re_search(enzyme, seq, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import get_seq
 
+    seq = str(get_seq(seq))
     compsite = re.compile(
         enzyme.compsite.pattern, enzyme.compsite.flags | re.IGNORECASE
     )
     if circular:
         seq = seq + seq[: enzyme.size - 1]
-    re_sites = [
-        (i.start(), i.group(1) is not None)
-        for i in re.finditer(compsite, str(get_seq(seq)))
-    ]
+    re_sites = [(i.start(), i.group(1) is not None) for i in re.finditer(compsite, seq)]
     return re_sites
 
 
@@ -78,14 +76,5 @@ def re_digest(seq, enzyme, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import DsSeqRecord
 
-    if hasattr(seq, "circular"):
-        if circular is None:
-            circular = seq.circular
-        else:
-            seq = DsSeqRecord(seq)  # make a copy
-            seq.circular = circular
-    else:
-        seq = DsSeqRecord(seq)  # make a copy
-        seq.circular = circular
     cuts = re_search(seq, enzyme, circular=circular)
     return _re_digest(seq, cuts)
