@@ -369,17 +369,26 @@ def ligate(seqs, method="goldengate"):
 
 
 def join_seqs(seqs):
+    if any(isinstance(seq, DsSeqRecord) for seq in seqs):
+        cls = DsSeqRecord
+    elif any(hasattr(seq, "feature") for seq in seqs):
+        cls = SeqRecord
+    else:
+        cls = Seq
     to_concat = []
     features = []
     offset = 0
     for seq in seqs:
-        to_concat.appstop(get_seq(seq))
+        to_concat.append(get_seq(seq))
         if hasattr(seq, "features"):
             for feature in seq.features:
-                features.appstop(feature._shift(offset))
+                features.append(feature._shift(offset))
         offset += len(seq)
     concatenated_seq = sum(to_concat, Seq(""))
-    return SeqRecord(concatenated_seq, features=features)
+    seq = cls(concatenated_seq)
+    if features:
+        seq.features = features
+    return seq
 
 
 def complement(seq):
@@ -573,18 +582,19 @@ def iterate_shifts(a, b):
 
 
 # TODO: LINEAR!!
-# TODO: add min_tm option?
 def find_primer_binding_site(
     template,
     primer,
     circular=None,
     try_reverse_complement=True,
     scoring_func=partial(count_contiguous_matching, right=True),
-    min_score=8,
+    min_score=6,
 ):
     if hasattr(template, "circular") and circular is None:
         circular = template.circular
-    orig_template = template
+    # TODO: circular
+    orig_primer = primer
+    # orig_template = template
     if try_reverse_complement:
         strands = (1, -1)
     else:
@@ -592,22 +602,34 @@ def find_primer_binding_site(
     sites = []
     for strand in strands:
         if strand == -1:
-            template = reverse_complement(orig_template)
+            primer = reverse_complement(orig_primer)
         else:
-            template = orig_template
-            for shift, template_overlap, primer_overlap in iterate_shifts(
-                template, primer
-            ):
-                score = scoring_func(template_overlap, primer_overlap)
-                loc = len(b) - shift  # TODO
-                if score >= min_score:
-                    sites.append((strand, loc, score))
+            primer = orig_primer
+        for (
+            shift,
+            template_start,
+            template_stop,
+            primer_start,
+            primer_stop,
+        ) in iterate_shifts(template, primer):
+            template_overlap = template[template_start:template_stop]
+            primer_overlap = primer[primer_start:primer_stop]
+            score = scoring_func(template_overlap, primer_overlap)
+            if score >= min_score:
+                sites.append((strand, shift, score))
     return sites
 
 
-# TODO: make work with SeqRecords
-# TODO: make sure join_seqs sets topology correctly?
+# TODO: option to add features for primer binding sites, tails, full primers
 def pcr(template, primer1, primer2, circular=None, min_score=6):
+    # cast input sequences to DsSeqRecords if needed
+    seqs = [template, primer1, primer2]
+    for idx in range(len(seqs)):
+        if isinstance(seqs[idx], str):
+            seqs[idx] = Seq(seqs[idx])
+        if not isinstance(seqs[idx], DsSeqRecord):
+            seqs[idx] = DsSeqRecord(seqs[idx])
+    template, primer1, primer2 = seqs
     both_sites = []
     for primer in (primer1, primer2):
         sites = find_primer_binding_site(
@@ -630,9 +652,8 @@ def pcr(template, primer1, primer2, circular=None, min_score=6):
         raise ValueError("expecting a forward/reverse primer pair")
     start = loc1
     stop = len(template) - loc2
-    # TODO
-    amplicon = slice_seq(template, start, stop)
-    product = join_seqs([primer1, amplicon, primer2])
+    amplicon = template[start:stop]
+    product = primer1 + amplicon + primer2
     return product
 
 
