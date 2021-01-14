@@ -19,19 +19,15 @@ def _ligate_gibson(seq1, seq2):
     pass
 
 
-LIGATION_METHODS = {"goldengate": _ligate_goldengate, "gibson": _ligate_gibson}
-
-
 class DsSeqRecord(SeqRecord):
-    _upstream_overhang = 0
-    _downstream_overhang = 0
+    ligation_methods = {"goldengate": _ligate_goldengate, "gibson": _ligate_gibson}
 
     def __init__(
         self,
         seq,
-        circular=False,
-        upstream_overhang=0,
-        downstream_overhang=0,
+        circular=None,
+        upstream_overhang=None,
+        downstream_overhang=None,
         upstream_inward_cut=None,
         downstream_inward_cut=None,
         id=None,
@@ -41,6 +37,8 @@ class DsSeqRecord(SeqRecord):
         annotations=None,
         letter_annotations=None,
     ):
+        self._upstream_overhang = 0
+        self._downstream_overhang = 0
         if isinstance(seq, (DsSeqRecord, SeqRecord)):
             id = id or seq.id
             name = name or seq.name
@@ -50,12 +48,26 @@ class DsSeqRecord(SeqRecord):
             letter_annotations = letter_annotations or seq.letter_annotations.copy()
             seq = seq.seq
             if isinstance(seq, DsSeqRecord):
-                circular = circular or seq.circular
-                upstream_overhang = upstream_overhang or seq.upstream_overhang
-                downstream_overhang = downstream_overhang or seq.downstream_overhang
-                upstream_inward_cut = upstream_inward_cut or seq.upstream_inward_cut
+                circular = circular if circular is not None else seq.circular
+                upstream_overhang = (
+                    upstream_overhang
+                    if upstream_overhang is not None
+                    else seq.upstream_overhang
+                )
+                downstream_overhang = (
+                    downstream_overhang
+                    if downstream_overhang is not None
+                    else seq.downstream_overhang
+                )
+                upstream_inward_cut = (
+                    upstream_inward_cut
+                    if upstream_inward_cut is not None
+                    else seq.upstream_inward_cut
+                )
                 downstream_inward_cut = (
-                    downstream_inward_cut or seq.downstream_inward_cut
+                    downstream_inward_cut
+                    if downstream_inward_cut is not None
+                    else seq.downstream_inward_cut
                 )
         id = id or "<unknown id>"
         name = name or "<unknown name>"
@@ -69,14 +81,25 @@ class DsSeqRecord(SeqRecord):
             annotations=annotations,
             letter_annotations=letter_annotations,
         )
-        self.circular = circular
-        if circular:
+        if circular is not None:
+            self.circular = circular
+        elif "topology" not in self.annotations:
+            self.circular = False  # default to linear
+        if self.circular:
             upstream_overhang = 0
             downstream_overhang = 0
         self.upstream_overhang = upstream_overhang or 0
         self.downstream_overhang = downstream_overhang or 0
         self.upstream_inward_cut = upstream_inward_cut
         self.downstream_inward_cut = downstream_inward_cut
+
+    @property
+    def circular(self):
+        return self.annotations["topology"] == "circular"
+
+    @circular.setter
+    def circular(self, value):
+        self.annotations["topology"] = "circular" if value else "linear"
 
     def _check_overhang(self, overhang1, overhang2):
         if sign(overhang1) == sign(overhang2) != 0:
@@ -126,27 +149,43 @@ class DsSeqRecord(SeqRecord):
         )
 
     def ligate(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
+        if isinstance(seqs, (Seq, SeqRecord, DsSeqRecord)):
+            seqs = [seqs]
+        else:
+            # cast all sequences to DsSeqRecord if needed
+            seqs = [
+                DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs
+            ]
         # TAKE seq or seqs as input, join with best and return rest of pool?
-        score1, ligated1 = self._ligate(seq, method=method, **kwargs)
+        ligated1, score1 = self._ligate(seq, method=method, **kwargs)
         if try_reverse_complement:
-            score2, ligated2 = self._ligate(
+            ligated2, score2 = self._ligate(
                 reverse_complement(seq), method=method, **kwargs
             )
-            # negative score means sequences cannot be ligated (e.g., incompatible sticky stops)
+            # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
             if max(score1, score2) < 0:
                 raise ValueError("attempting to ligate incompatible sequences")
             if score1 >= score2:
                 return ligated1
             else:
                 return ligated2
-        # TODO: raise error if cannot ligate
 
     def _ligate(self, seq, method="goldengate", **kwargs):
         pass
         # return score
+        # if cannot ligate
+        return None, -1
 
-    def annotate(self, label, overhangs=True):
-        pass
+    def annotate(self, label, type="misc_feature", overhangs=True):
+        if overhangs:
+            start = 0
+            stop = len(self)
+        else:
+            start = abs(self.upstream_overhang)
+            stop = len(self) - abs(self.downstream_overhang)
+        feature = SeqFeature(FeatureLocation(start, stop), type=type)
+        feature.qualifiers["label"] = [label]
+        return self.__class__(self, features=[feature, *self.features])
 
     def reverse_complement(self, **kwargs):
         kwargs = {
@@ -183,7 +222,9 @@ class DsSeqRecord(SeqRecord):
             if wraparound_length < max_loc - min_loc:
                 min_loc, max_loc = max_loc, min_loc
                 overhang = -sign(cut5 - cut3) * wraparound_length
-            new = self.reindex(min_loc) + self[min_loc:max_loc]
+            # we do self[min_loc:] + self[:min_loc] instead of self.reindex(min_loc)
+            # because the latter returns a circular sequence
+            new = self[min_loc:] + self[:min_loc] + self[min_loc:max_loc]
             new.upstream_overhang = -overhang
             new.downstream_overhang = overhang
             return [new], min_loc
@@ -363,9 +404,15 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
-def ligate(seqs, method="goldengate"):
-    # handle seq/seqrecord/dsseqrecord seqs by promoting all to dsseqrecords
-    pass
+def ligate(seqs, **kwargs):
+    # cast all sequences to DsSeqRecord if needed
+    seqs = [DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs]
+    if not len(seqs):
+        return DsSeqRecord(Seq(""))
+    product = seqs[0]
+    for seq in seqs[1:]:
+        product = product.ligate(seq, **kwargs)
+    return product
 
 
 def join_seqs(seqs):
@@ -389,17 +436,6 @@ def join_seqs(seqs):
     if features:
         seq.features = features
     return seq
-
-
-def complement(seq):
-    if hasattr(seq, "features"):
-        return seq.complement(
-            id=True, name=True, description=True, annotations=True, dbxrefs=True
-        )
-    elif hasattr(seq, "complement"):
-        return seq.complement()
-    else:
-        return Seq(seq).complement()
 
 
 def reverse_complement(seq):
@@ -581,7 +617,6 @@ def iterate_shifts(a, b):
         yield shift, a_start, a_stop, b_start, b_stop
 
 
-# TODO: LINEAR!!
 def find_primer_binding_site(
     template,
     primer,
@@ -620,7 +655,6 @@ def find_primer_binding_site(
     return sites
 
 
-# TODO: option to add features for primer binding sites, tails, full primers
 def pcr(template, primer1, primer2, circular=None, min_score=6):
     # cast input sequences to DsSeqRecords if needed
     seqs = [template, primer1, primer2]

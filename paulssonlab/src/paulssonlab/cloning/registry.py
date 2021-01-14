@@ -238,7 +238,13 @@ class Registry(object):
             .execute()
             .decode("utf8")
         )
-        seq = DsSeqRecord(seq, id=name, name=name, description=name)
+        molecule_type = seq.annotations["molecule_type"]
+        if molecule_type == "ds-DNA":
+            seq = DsSeqRecord(seq, id=name, name=name, description=name)
+        else:
+            raise NotImplementedError(
+                f"cannot import genbank molecule_type: '{molecule_type}'"
+            )
         return seq
 
     def eval_exprs(s):
