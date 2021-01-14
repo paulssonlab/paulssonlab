@@ -12,16 +12,19 @@ MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
 
 
-def _ligate_goldengate(seq1, seq2):
-    pass
+def _assemble_goldengate(seq1, seq2):
+    if seq1.can_ligate(seq2):
+        return seq1 + seq2, abs(seq1.downstream_overhang)
+    else:
+        return None, -1
 
 
-def _ligate_gibson(seq1, seq2):
+def _assemble_gibson(seq1, seq2):
     pass
 
 
 class DsSeqRecord(SeqRecord):
-    ligation_methods = {"goldengate": _ligate_goldengate, "gibson": _ligate_gibson}
+    assembly_methods = {"goldengate": _assemble_goldengate, "gibson": _assemble_gibson}
 
     def __init__(
         self,
@@ -149,21 +152,19 @@ class DsSeqRecord(SeqRecord):
             and self.downstream_overhang_seq == other.upstream_overhang_seq
         )
 
-    def ligate(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
-        if isinstance(seqs, (Seq, SeqRecord, DsSeqRecord)):
-            seqs = [seqs]
-        else:
-            # cast all sequences to DsSeqRecord if needed
-            seqs = [
-                DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs
-            ]
+    # change this to assemble?
+    def assemble(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
+        if not isinstance(seq, self.__class__):
+            seq = self.__class__(seq)
         if try_reverse_complement:
-            possible_ligations = product(
+            possible_assemblies = product(
                 (self, self.reverse_complement()), (seq, reverse_complement(seq))
             )
         else:
-            possible_ligations = []
-        results = [l[0]._ligate(l[1], method=method, **kwargs)]
+            possible_assemblies = []
+        results = [
+            l[0]._assemble(l[1], method=method, **kwargs) for l in possible_assemblies
+        ]
         results = sorted(
             [r for r in results if r[1] > 0], key=lambda x: x[1], reverse=True
         )
@@ -172,11 +173,8 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("attempting to ligate incompatible sequences")
         return results[0][0]
 
-    def _ligate(self, seq, method="goldengate", **kwargs):
-        pass
-        # return score
-        # if cannot ligate
-        return None, -1
+    def _assemble(self, seq, method="goldengate", **kwargs):
+        return self.assembly_methods[method](self, seq, **kwargs)
 
     def annotate(self, label, type="misc_feature", overhangs=True):
         if overhangs:
@@ -406,14 +404,16 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
-def ligate(seqs, **kwargs):
+def assemble(seqs, circularize=True, **kwargs):
     # cast all sequences to DsSeqRecord if needed
     seqs = [DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs]
     if not len(seqs):
         return DsSeqRecord(Seq(""))
     product = seqs[0]
     for seq in seqs[1:]:
-        product = product.ligate(seq, **kwargs)
+        product = product.assemble(seq, **kwargs)
+    # TODO: __add__ should handle circularity?
+    # TODO: or .can_circularize and .circularize()?
     return product
 
 
