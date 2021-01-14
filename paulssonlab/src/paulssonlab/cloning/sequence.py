@@ -3,6 +3,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
 from numbers import Integral
 from cytoolz import partial
+from itertools import product
 from collections import defaultdict, OrderedDict
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
@@ -156,19 +157,20 @@ class DsSeqRecord(SeqRecord):
             seqs = [
                 DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs
             ]
-        # TAKE seq or seqs as input, join with best and return rest of pool?
-        ligated1, score1 = self._ligate(seq, method=method, **kwargs)
         if try_reverse_complement:
-            ligated2, score2 = self._ligate(
-                reverse_complement(seq), method=method, **kwargs
+            possible_ligations = product(
+                (self, self.reverse_complement()), (seq, reverse_complement(seq))
             )
-            # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
-            if max(score1, score2) < 0:
-                raise ValueError("attempting to ligate incompatible sequences")
-            if score1 >= score2:
-                return ligated1
-            else:
-                return ligated2
+        else:
+            possible_ligations = []
+        results = [l[0]._ligate(l[1], method=method, **kwargs)]
+        results = sorted(
+            [r for r in results if r[1] > 0], key=lambda x: x[1], reverse=True
+        )
+        # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
+        if not len(results):
+            raise ValueError("attempting to ligate incompatible sequences")
+        return results[0][0]
 
     def _ligate(self, seq, method="goldengate", **kwargs):
         pass
