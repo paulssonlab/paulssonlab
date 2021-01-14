@@ -152,6 +152,20 @@ class DsSeqRecord(SeqRecord):
             and self.downstream_overhang_seq == other.upstream_overhang_seq
         )
 
+    def can_circularize(self):
+        return self.can_ligate(self)
+
+    def circularize(self):
+        if not self.can_circularize():
+            raise ValueError(
+                f"attempting to circularize by ligating incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {self.upstream_overhang_seq} ({format_sign(self.upstream_overhang)})"
+            )
+        seq = self[: len(self) - abs(self.downstream_overhang)]
+        seq.upstream_overhang = 0
+        seq.upstream_inward_cut = None
+        seq.circular = True
+        return seq
+
     # change this to assemble?
     def assemble(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
         if not isinstance(seq, self.__class__):
@@ -170,7 +184,7 @@ class DsSeqRecord(SeqRecord):
         )
         # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
         if not len(results):
-            raise ValueError("attempting to ligate incompatible sequences")
+            raise ValueError("attempting to assemble incompatible sequences")
         return results[0][0]
 
     def _assemble(self, seq, method="goldengate", **kwargs):
@@ -321,7 +335,7 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("cannot append a circular sequence")
         if not self.can_ligate(other):
             raise ValueError(
-                f"attempting to join incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
+                f"attempting to ligate incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
             )
         # trim overhang
         other = other[abs(self.downstream_overhang) :]
@@ -412,8 +426,11 @@ def assemble(seqs, circularize=True, **kwargs):
     product = seqs[0]
     for seq in seqs[1:]:
         product = product.assemble(seq, **kwargs)
-    # TODO: __add__ should handle circularity?
-    # TODO: or .can_circularize and .circularize()?
+    if circularize:
+        try:
+            product = product.circularize()
+        except:
+            pass
     return product
 
 
