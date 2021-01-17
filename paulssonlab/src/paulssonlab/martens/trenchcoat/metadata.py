@@ -5,7 +5,6 @@ import numpy
 import xmltodict
 import xml.etree.ElementTree as ElementTree
 import re
-from pprint import pprint
 
 
 def get_metadata(n):
@@ -401,20 +400,47 @@ def metadata_channels_equal(metadata_nodes):
 
 def main_print_metadata_function(in_file, sub_file_name):
     """
-    Print the HDF5 metadata to the terminal. If no sub-file is specified, then print a list of all sub-files.
-    This is useful, for example, if one wants to quickly see the names & order of the channels,
-    or the image dimensions, etc.
+    Print the ND2 or HDF5 metadata to the terminal. If no sub-file is specified,
+    then print a list of all sub-files. This is useful, for example, if one
+    wants to quickly see the names & order of the channels, or the image dimensions, etc.
     """
-    h5file = tables.open_file(in_file, mode="r")
+    root, extension = os.path.splitext(in_file)
 
-    # The user specified a sub-file
-    if sub_file_name:
-        node = h5file.get_node("/{}".format(sub_file_name))()
-        metadata = get_metadata(node)
-        pprint(metadata)
-    # The user did not specify a sub-file
+    if extension.upper() == ".ND2":
+        reader = nd2reader.Nd2(in_file)
+        print("channels: ", reader.channels)
+        print("fields_of_view: ", reader.fields_of_view)
+        print("frames: ", reader.frames)
+        print("height: ", reader.height)
+        print("pixel_microns: ", reader.pixel_microns)
+        print("unix timestamp: ", reader.date.timestamp())
+        print("width: ", reader.width)
+        print("z_levels: ", reader.z_levels)
+
+    elif extension.upper() == ".H5":
+        h5file = tables.open_file(in_file, mode="r")
+        parent = h5file.get_node("/Metadata")()
+
+        # The user specified a sub-file
+        if sub_file_name:
+            try:
+                node = h5file.get_node(parent, "/{}".format(sub_file_name))()
+                metadata = get_metadata(node)
+                # Print in sorted order so that the order matches how it prints
+                # when loading from HDF5, after conversion.
+                for k in sorted(metadata.keys()):
+                    print("{}: {}".format(k, metadata[k]))
+            except:
+                print("Error reading file node {}.".format(sub_file_name))
+
+        # The user did not specify a sub-file
+        else:
+            print(
+                "Please specify a converted ND2 file within the HDF5 hierarchy, using -f:"
+            )
+            for n in h5file.iter_nodes(parent):
+                print(n._v_name)
+
+        h5file.close()
     else:
-        for n in h5file.iter_nodes("/"):
-            print(n._v_name)
-
-    h5file.close()
+        print("Invalid file extension. Options are ND2 or H5.")
