@@ -61,8 +61,8 @@ def _re_digest(seq, cuts):
             frags[0].upstream_inward_cut = not cut_upstream
             frags[0].downstream_inward_cut = cut_upstream
         elif len(frags) == 2:
-            frags[0].downstream_inward_cut = cut_upstream
-            frags[1].upstream_inward_cut = not cut_upstream
+            frags[0].downstream_inward_cut = not cut_upstream
+            frags[1].upstream_inward_cut = cut_upstream
         else:
             raise NotImplementedError
         seqs.extend(frags[:-1])

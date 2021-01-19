@@ -442,7 +442,10 @@ def part_entry_to_seq(entry):
     downstream_overhang_seq = entry["Downstream overhang*"]
     if upstream_overhang_seq.lower() != seq[: len(upstream_overhang_seq)].lower():
         raise ValueError("upstream overhang does not match part sequence")
-    if downstream_overhang_seq.lower() != seq[-len(downstream_overhang_seq) :].lower():
+    if (
+        downstream_overhang_seq.lower()
+        != seq[len(seq) - len(downstream_overhang_seq) :].lower()
+    ):
         raise ValueError("downstream overhang does not match part sequence")
     # TODO: this assumes a particular overhang convention for golden gate/type IIS restriction enzymes
     upstream_overhang = len(upstream_overhang_seq)
@@ -457,7 +460,9 @@ def part_entry_to_seq(entry):
 def re_digest_part(seq, enzyme):
     frags = re_digest(seq, enzyme)
     inward_cut_frags = [
-        f for f in frags if f.upstream_inward_cut and f.downstream_inward_cut
+        f
+        for f in frags
+        if f.upstream_inward_cut is not False and f.downstream_inward_cut is not False
     ]
     if len(inward_cut_frags) == 0:
         raise ValueError("no fragments with inward cuts were generated")

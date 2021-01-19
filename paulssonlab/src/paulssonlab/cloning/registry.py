@@ -1,4 +1,5 @@
 import re
+from Bio.Seq import Seq
 import Bio.Restriction
 from paulssonlab.api.google import (
     get_drive_by_path,
@@ -208,12 +209,12 @@ class Registry(object):
                         return sheet, prefix, part_type
                     except KeyError:
                         continue
-                return None, None, None
+                break
             else:
                 id_ = self.registry.get((prefix, type_))
                 if id_ is not None:
                     return self.get_df_by_id(id_), prefix, type_
-        return None, None, None
+        raise ValueError(f"could not find dataframe for '{name}'")
 
     def get_map_list(self, prefix):
         if prefix in self.maps:
@@ -247,7 +248,9 @@ class Registry(object):
             )
         return seq
 
-    def eval_exprs(s):
+    def eval_exprs(self, s):
+        if not s.strip():
+            return None
         ast = expr_parser.parse(s)
         expr = None
         for type_ in EXPR_PRIORITY:
@@ -257,9 +260,9 @@ class Registry(object):
                 break
         if expr is None and len(ast):
             expr = ast[0]
-        return _eval(expr)
+        return self.eval_expr(expr)
 
-    def eval_expr(expr):
+    def eval_expr(self, expr):
         if expr is None:
             return None
         type_ = expr["_type"]
@@ -288,7 +291,7 @@ class Registry(object):
         else:
             return NotImplementedError
 
-    def command(s):
+    def command(self, s):
         pass
 
     def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
@@ -301,8 +304,10 @@ class Registry(object):
         if type_ in TYPES_WITH_MAPS:
             entry["_seq"] = self._get_map(prefix, name)
         elif type_ == "parts":
-            seq = self.eval(entry["Usage*"])
+            seq = self.eval_exprs(entry["Usage*"])
             if seq is None:
                 seq = part_entry_to_seq(entry)
             entry["_seq"] = seq
+        elif "Sequence*" in entry:
+            entry["_seq"] = Seq(entry["Sequence*"])
         return entry

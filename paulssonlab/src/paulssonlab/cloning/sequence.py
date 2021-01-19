@@ -12,15 +12,46 @@ MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
 
 
-def _assemble_goldengate(seq1, seq2):
+def _assemble_goldengate(
+    seq1, seq2, junction_annotation="GG overhang", keep_junction_annotations=True
+):
     if seq1.can_ligate(seq2):
-        return seq1 + seq2, abs(seq1.downstream_overhang)
+        junction_length = abs(seq1.downstream_overhang)
+        if keep_junction_annotations:
+            product = seq1 + seq2
+        else:
+            product = seq1.slice(
+                None, None, annotation_stop=len(seq1) - junction_length
+            ) + seq2.slice(None, None, annotation_start=junction_length)
+        return product, junction_length
     else:
         return None, -1
 
 
-def _assemble_gibson(seq1, seq2):
-    pass
+def _assemble_gibson(
+    seq1,
+    seq2,
+    max_overlap=200,
+    junction_annotation="Gibson homology",
+    keep_junction_annotations=True,
+):
+    # TODO: we ignore overhangs and assume the full sequence is double-stranded
+    # this is probably not too unreasonable for gibson
+    junction_length = find_homologous_ends(
+        seq1.seq_lower(), seq2.seq_lower(), max_overlap=max_overlap
+    )
+    if junction_length is not None:
+        if keep_junction_annotations:
+            product = seq1.fill_in("downstream") + seq2.fill_in("upstream").slice(
+                junction_length, None, annotation_start=0
+            )
+        else:
+            product = seq1.fill_in("downstream").slice(
+                None, None, annotation_stop=len(seq1) - junction_length
+            ) + seq2.fill_in("upstream").slice(junction_length, None)
+        return product, junction_length
+    else:
+        return None, -1
 
 
 class DsSeqRecord(SeqRecord):
@@ -138,13 +169,11 @@ class DsSeqRecord(SeqRecord):
 
     @property
     def upstream_overhang_seq(self):
-        return str(self.seq[: abs(self.upstream_overhang)]).lower()
+        return self.seq_lower()[: abs(self.upstream_overhang)]
 
     @property
     def downstream_overhang_seq(self):
-        return str(
-            self.seq[len(self) - abs(self.downstream_overhang) : len(self)]
-        ).lower()
+        return self.seq_lower()[len(self) - abs(self.downstream_overhang) : len(self)]
 
     def can_ligate(self, other):
         return (
@@ -153,9 +182,13 @@ class DsSeqRecord(SeqRecord):
         )
 
     def can_circularize(self):
+        if self.circular:
+            return True
         return self.can_ligate(self)
 
     def circularize(self):
+        if self.circular:
+            return self
         if not self.can_circularize():
             raise ValueError(
                 f"attempting to circularize by ligating incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {self.upstream_overhang_seq} ({format_sign(self.upstream_overhang)})"
@@ -216,11 +249,29 @@ class DsSeqRecord(SeqRecord):
             downstream_inward_cut=self.upstream_inward_cut,
         )
 
+    def lower(self):
+        new = self.__class__(self)
+        new.seq = new.seq.lower()
+        return new
+
+    def seq_lower(self):
+        return str(self.seq).lower()
+
     def reindex(self, loc):
         if not self.circular:
             raise ValueError("cannot reindex a non-circular sequence")
         new = self[loc:] + self[:loc]
         new.circular = True
+        return new
+
+    def fill_in(self, ends="both"):
+        new = self.__class__(self)
+        if ends in ("both", "upstream"):
+            new.upstream_overhang = 0
+            new.upstream_inward_cut = None
+        if ends in ("both", "downstream"):
+            new.downstream_overhang = 0
+            new.downstream_inward_cut = None
         return new
 
     def cut(self, cut5, cut3):
@@ -458,6 +509,8 @@ def join_seqs(seqs):
 
 
 def reverse_complement(seq):
+    if seq is None:
+        raise ValueError("cannot reverse complement None")
     if hasattr(seq, "features"):
         return seq.reverse_complement(
             id=True, name=True, description=True, annotations=True, dbxrefs=True
@@ -516,22 +569,24 @@ def _join_features(a, b, length):
 
 
 def _slice_seqrecord_feature(
-    feature, start, stop, annotation_start=None, annotation_stop=None
+    feature, start, stop, annotation_start=True, annotation_stop=True
 ):
-    if annotation_start is None:
+    if annotation_start is True:
         annotation_start = start
-    if annotation_stop is None:
+    if annotation_stop is True:
         annotation_stop = stop
-    if annotation_stop <= int(feature.location.start) or annotation_start >= int(
-        feature.location.end
+    if (
+        annotation_stop is not None and annotation_stop <= int(feature.location.start)
+    ) or (
+        annotation_start is not None and annotation_start >= int(feature.location.end)
     ):
         return None
     new_feature = feature._shift(-start)  # copy feature and shift
     start_loc = new_feature.location.start
     stop_loc = new_feature.location.end
-    if annotation_start > int(feature.location.start):
+    if annotation_start is not None and annotation_start > int(feature.location.start):
         start_loc = ExactPosition(start - annotation_start)
-    if annotation_stop < int(feature.location.end):
+    if annotation_stop is not None and annotation_stop < int(feature.location.end):
         stop_loc = ExactPosition(annotation_stop - start)
     new_feature.location = FeatureLocation(
         start_loc, stop_loc, strand=new_feature.location.strand
@@ -589,19 +644,31 @@ def get_seq(seq):
         return seq
 
 
-def smoosh_sequences(a, b):
+def find_homologous_ends(a, b, max_overlap=None):
+    _max_overlap = min(len(a), len(b))
+    if max_length is not None:
+        max_overlap = min(_max_overlap, max_length)
+    else:
+        max_overlap = _max_overlap
+    for overlap in reversed(range(1, max_overlap + 1)):
+        a_tail = a[-overlap:]
+        b_head = b[:overlap]
+        if a_tail == b_head:
+            return overlap
+    return None
+
+
+def smoosh_sequences(a, b, max_overlap=None):
     """Returns the shortest sequence beginning with `a` and stoping with `b`.
 
     For example, this will eliminate a common substring on the junction
     between the two sequences.
     """
-    min_length = min(len(a), len(b))
-    for i in range(min_length):
-        a_tail = a[-min_length + i :]
-        b_head = b[: min_length - i]
-        if a_tail == b_head:
-            return a + b[min_length - i :]
-    return a + b
+    overlap = find_homologous_ends(a, b, max_overlap=max_overlap)
+    if overlap is not None:
+        return a + b[overlap:]
+    else:
+        return a + b
 
 
 def count_matching(a, b):
