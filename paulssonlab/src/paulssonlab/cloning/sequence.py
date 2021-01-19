@@ -571,10 +571,16 @@ def _join_features(a, b, length):
 def _slice_seqrecord_feature(
     feature, start, stop, annotation_start=True, annotation_stop=True
 ):
+    # annotation_start/stop=True means cut annotations along sequence slice boundaries
+    # =False causes unintuitive behavior, so set to None instead
     if annotation_start is True:
         annotation_start = start
+    elif annotation_start is False:
+        annotation_start = None
     if annotation_stop is True:
         annotation_stop = stop
+    elif annotation_stop is False:
+        annotation_stop = None
     if (
         annotation_stop is not None and annotation_stop <= int(feature.location.start)
     ) or (
@@ -585,7 +591,7 @@ def _slice_seqrecord_feature(
     start_loc = new_feature.location.start
     stop_loc = new_feature.location.end
     if annotation_start is not None and annotation_start > int(feature.location.start):
-        start_loc = ExactPosition(start - annotation_start)
+        start_loc = ExactPosition(annotation_start - start)
     if annotation_stop is not None and annotation_stop < int(feature.location.end):
         stop_loc = ExactPosition(annotation_stop - start)
     new_feature.location = FeatureLocation(
