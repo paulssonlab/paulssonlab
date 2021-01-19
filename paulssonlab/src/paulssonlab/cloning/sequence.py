@@ -318,7 +318,7 @@ class DsSeqRecord(SeqRecord):
             first.downstream_overhang = overhang
             return [first, second], min_loc
 
-    def slice(self, start, stop, annotation_start=None, annotation_stop=None):
+    def slice(self, start, stop, annotation_start=True, annotation_stop=True):
         if start is None:
             start = 0
         if stop is None:
