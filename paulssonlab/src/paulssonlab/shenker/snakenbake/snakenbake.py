@@ -263,6 +263,7 @@ def manifold_snake(
     remainder = len(split) % num_manifolds
     if remainder > 0:
         manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
+    manifold_split = np.array(manifold_split)
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
     # define trench parameters
     trench_xs = np.arange(
