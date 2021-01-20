@@ -305,10 +305,10 @@ class Registry(object):
         if type_ in TYPES_WITH_MAPS:
             entry["_seq"] = self._get_map(prefix, name)
         elif type_ == "parts":
-            seq = self.eval_exprs(entry["Usage*"])
+            seq = self.eval_exprs(entry["Usage"])
             if seq is None:
                 seq = part_entry_to_seq(entry)
             entry["_seq"] = seq
-        elif "Sequence*" in entry:
-            entry["_seq"] = Seq(entry["Sequence*"])
+        elif "Sequence" in entry:
+            entry["_seq"] = Seq(entry["Sequence"])
         return entry
