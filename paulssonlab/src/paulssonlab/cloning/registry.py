@@ -186,6 +186,7 @@ class Registry(object):
         df = self.dfs.get(id_)
         if df is None:
             # include_tailing_empty=True is necessary to prevent an error if the last column of data is empty
+            # TODO: this may no longer be true in pygsheets 2.0.4
             df = self.get_sheet_by_id(id_).get_as_df(
                 index_column=1, include_tailing_empty=True
             )

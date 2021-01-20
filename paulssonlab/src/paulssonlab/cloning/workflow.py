@@ -43,6 +43,8 @@ def get_next_empty_row(worksheet, skip_columns=0):
 
 
 def _get_next_empty_row(worksheet, skip_columns=0):
+    # TODO: we can probably remove these kwargs to get_as_df
+    # since pygsheets 2.0.4 fixed the bug with trailing empty cells
     df = worksheet.get_as_df(has_header=False, empty_value=None)
     df = df[1:]
     has_datavalidation = columns_with_validation(
