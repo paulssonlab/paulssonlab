@@ -1,10 +1,13 @@
 #!/usr/bin/env python
-
+import os
 import tables
 import pandas
 import numpy
-from metadata import get_metadata
+from metadata import get_metadata, get_files_list, get_attribute_list
 from dataframe_conversion import write_dataframe_to_hdf5
+
+from multiprocessing import Pool
+from skimage.registration import phase_cross_correlation
 
 """
 TODO:
@@ -111,9 +114,10 @@ def subtract_and_divide(a, px_mu):
     Helper function for normalizing stage xyz values (see below)
     """
     # Subtract the zeroth x, y, z information from all rows
-    diff = a.loc[:, ("info_x", "info_y", "info_z")].astype(numpy.int32) - a.loc[
-        :, ("info_x", "info_y", "info_z")
-    ].iloc[0].astype(numpy.int32)
+    diff = (
+        a.loc[:, ("info_x", "info_y", "info_z")]
+        - a.loc[:, ("info_x", "info_y", "info_z")].iloc[0]
+    )
 
     # Convert from microns to pixels
     diff /= px_mu
@@ -135,11 +139,13 @@ def normalize_stage_xyz_and_convert_to_pixels(ts_data, px_mu):
     - Assign the result into the x,y,z positions in the original dataframe
     """
     ts_data.loc[:, ("info_x", "info_y", "info_z")] = (
-        ts_data.groupby("info_fov")
+        ts_data.groupby(["info_file", "info_fov"])
         .apply(lambda a: subtract_and_divide(a, px_mu))
         .reset_index(0, 1)
         .loc[:, ("info_x", "info_y", "info_z")]
     )
+
+    return ts_data
 
 
 def update_cell_measurements(
@@ -150,8 +156,10 @@ def update_cell_measurements(
     Also add the timestamps (they're handy).
     """
     # Load the cell measurements table
-    h5_seg = tables.open_file(cell_measurements_file, "r")
-    properties_table = h5_seg.get_node("/concatenated_measurements")
+    h5_seg = tables.open_file(
+        os.path.join(cell_measurements_file, "TABLES/tables_merged.h5"), "r"
+    )
+    properties_table = h5_seg.get_node("/cell_measurements")
     df_cell_props = pandas.DataFrame(properties_table.read())
     h5_seg.close()
 
@@ -165,11 +173,11 @@ def update_cell_measurements(
         "info_frame",
     ]
     right_on = [
-        "info_filename",
+        "info_file",
         "info_fov",
         "info_z_level",
-        "info_region_set_number",
-        "info_region_number",
+        "info_row_number",
+        "info_trench_number",
         "info_frame",
     ]
     merge_tr_cell_total = pandas.merge(
@@ -177,15 +185,20 @@ def update_cell_measurements(
     )
 
     # These columns are now redundant
-    merge_tr_cell_total = merge_tr_cell_total.drop(
-        ["info_filename", "info_region_number", "info_region_set_number"], axis=1
-    )
+    # TODO check whether the duplicate column is dropped automatically
+    # merge_tr_cell_total = merge_tr_cell_total.drop(["info_file", "info_trench_number", "info_row_number"], axis=1)
 
     # And we don't care about these: the regions file will always be more complete, as we did an inner merge.
     merge_tr_cell_total = merge_tr_cell_total.drop(
-        ["min_row", "min_col", "max_row", "max_col", "info_x", "info_y", "info_z"],
-        axis=1,
+        ["min_row", "min_col", "max_row", "max_col", "info_x", "info_y"], axis=1
     )
+
+    # And depending on the method, maybe also drop info_z
+    # FIXME this doesn't work?
+    try:
+        merge_tr_cell_total = merge_tr_cell_total.drop(["info_z"], axis=1)
+    except:
+        pass
 
     # Convert the info_file column back to numpy.bytes_ type
     merge_tr_cell_total["info_file"] = merge_tr_cell_total["info_file"].astype(
@@ -199,28 +212,63 @@ def update_cell_measurements(
 
     # Write to disk
     write_dataframe_to_hdf5(
-        merge_tr_cell_total, cell_measurements_outfile, "cells_in_labeled_trenches"
+        merge_tr_cell_total, cell_measurements_outfile, "cell_measurements"
     )
+
+    # And then add the stored seg. params information to the new file, too
+    print("Copying YAML parameters...")
+    h5file = tables.open_file(
+        os.path.join(cell_measurements_file, "MASKS/masks.h5"), "r"
+    )
+    seg_params_node = h5file.get_node("/Parameters", "seg_params.yaml")
+    seg_params_str = seg_params_node.read()
+    h5file.close()
+
+    h5file_masks = tables.open_file(cell_measurements_outfile, "r+")
+    h5file_masks.create_array(
+        "/Parameters",
+        "seg_params.yaml",
+        obj=numpy.array(seg_params_str),
+        createparents=True,
+    )
+    h5file_masks.close()
 
 
 def load_xyz_data(hdf5_file_path):
     """
     Load xyz & timestamps, normalize to zeroth timepoint.
     """
+    all_dfs = []
     h5file = tables.open_file(hdf5_file_path, "r")
-    table_timestamps = h5file.get_node("/Metadata/File_run/fov_metadata")
-    xyz_data = pandas.DataFrame(table_timestamps.read())
-    metadata_node = h5file.get_node("/Metadata/File_run")()
-    metadata = get_metadata(metadata_node)
+    metadata_node = h5file.get_node("/Metadata")
+    for n in h5file.list_nodes(metadata_node()):
+        # Load the metadata for pixel microns
+        metadata = get_metadata(n())
+        table_timestamps = h5file.get_node(n, "fov_metadata")
+
+        # Read into a dataframe
+        xyz_data = pandas.DataFrame(table_timestamps.read())
+
+        # Add a new column, which is the file name
+        xyz_data["info_file"] = n._v_name
+
+        # Don't care about these columns
+        xyz_data = xyz_data.drop(["info_pfs_status", "info_pfs_offset"], axis=1)
+
+        # Normalize
+        xyz_data = normalize_stage_xyz_and_convert_to_pixels(
+            xyz_data, metadata["pixel_microns"]
+        )
+
+        # Append to the list
+        all_dfs.append(xyz_data)
+
     h5file.close()
 
-    # Don't care about these columns
-    xyz_data = xyz_data.drop(["info_pfs_status", "info_pfs_offset"], axis=1)
+    # Merge all the dataframes, from each file
+    all_dfs = pandas.concat(all_dfs)
 
-    # Normalize
-    normalize_stage_xyz_and_convert_to_pixels(xyz_data, metadata["pixel_microns"])
-
-    return xyz_data
+    return all_dfs
 
 
 def load_regions(regions_file):
@@ -240,6 +288,145 @@ def load_regions(regions_file):
     return df_regions
 
 
+def cross_corr_offsets(file, fov, z_level, channel, df, in_file):
+    """
+    Input a dataframe with region information,
+    a channel for comparing between frames,
+    and the path to the H5 file which contains the images.
+
+    Return X/Y offsets for every frame, relative to the zeroth
+    (first available) frame.
+
+    TODO is there a way to supplement the calculation with stage offsets,
+    to give a little bit of help? (In case there is a very large offset
+    which was mostly recorded by the stage).
+    Can't figure out the proper way to crop the images accordingly before comparing.
+    """
+    h5_in = tables.open_file(in_file, "r")
+
+    # Store all shifts here. At the end, will convert to Pandas dataframe.
+    total_size = len(df)
+    result = {
+        "info_file": [],  # Storing bytes is trickier... use a regular Python list.
+        "info_fov": numpy.empty(shape=total_size, dtype=numpy.uint16),
+        "info_frame": numpy.empty(shape=total_size, dtype=numpy.uint16),
+        "info_z_level": numpy.empty(shape=total_size, dtype=numpy.uint16),
+        "info_x": numpy.empty(shape=total_size, dtype=numpy.int16),
+        "info_y": numpy.empty(shape=total_size, dtype=numpy.int16),
+    }
+
+    # Get the unique values and sort.
+    # Try to avoid issues if there are gaps in the frame numbers.
+    # FIXME just sort the dataframe and walk through using itertuples
+    all_frames = df["info_frame"].unique()
+    all_frames = sorted(all_frames)
+
+    # Pre-initialize, before the loop, with the first two frames.
+    # This is because otherwise we'll run out of bounds on the
+    # final frame, trying to look ahead into the eternal void.
+    result["info_file"].append(file)
+    result["info_fov"][0] = fov
+    result["info_frame"][0] = all_frames[0]
+    result["info_z_level"][0] = z_level
+    result["info_x"][0] = 0
+    result["info_y"][0] = 0
+
+    # The initial frame.
+    path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+        file, fov, all_frames[0], z_level, channel
+    )
+    frame_b = h5_in.get_node(path).read()
+
+    # Zeroth frame is special. Remove it.
+    all_frames.pop(0)
+
+    # Iterate the actual frame values, rather than their positions,
+    # in case there are gaps between frames.
+    # Always use the closest available frame for comparing.
+    for i, fr in enumerate(all_frames):
+        # Now, frame_b is reassigned as frame_a
+        frame_a = frame_b
+
+        # And we load a new frame_b
+        path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+            file, fov, fr, z_level, channel
+        )
+        frame_b = h5_in.get_node(path).read()
+
+        # Compute the difference between the two images
+        # NOTE frame_a comes first, or second?
+        (shift_y, shift_x), error, diffphase = phase_cross_correlation(frame_a, frame_b)
+
+        # Normalize this to the previous frame.
+        # This ultimately has the effect of normalizing all shifts
+        # to the zeroth frame.
+        # Note that i enumerates from zero, but result already has
+        # 1 element. So compare against element i, and add to element
+        shift_x += result["info_x"][i]
+        shift_y += result["info_y"][i]
+
+        # Store the result
+        result["info_file"].append(file)
+        result["info_fov"][i + 1] = fov
+        result["info_frame"][i + 1] = fr
+        result["info_z_level"][i + 1] = z_level
+        result["info_x"][i + 1] = shift_x
+        result["info_y"][i + 1] = shift_y
+
+    # Done!
+    h5_in.close()
+    return pandas.DataFrame.from_dict(result)
+
+
+def start_cross_corr(in_file, channel):
+    files = get_files_list(in_file)
+
+    h5_in = tables.open_file(in_file, "r")
+    file_to_z = get_attribute_list(h5_in, "z_levels")
+    h5_in.close()
+
+    # Store individual DF results in here,
+    # concatenate into a single DF at the end.
+    all_offsets = []
+
+    def log_result(result):
+        # This is called whenever Pool returns a result.
+        # Result_list is modified only by the main process, not the pool workers.
+        # https://izziswift.com/multiprocessing-pool-when-to-use-apply-apply_async-or-map/
+        all_offsets.append(result)
+
+    # TODO figure out multi-processing
+    with Pool() as pool:
+        for file in files:
+            h5_in = tables.open_file(in_file, "r")
+            path = "/Metadata/{}/fov_metadata".format(file)
+            table_fov_metadata = h5_in.get_node(path).read()
+            h5_in.close()
+            df_fov_metadata = pandas.DataFrame(table_fov_metadata)
+            fovs = df_fov_metadata["info_fov"].unique()
+
+            for fov in fovs:
+                df_this_fov = df_fov_metadata[df_fov_metadata["info_fov"] == fov]
+                z_levels = file_to_z[file]
+
+                for z_level in z_levels:
+                    # Z-level information isn't stored in the regions
+                    # table, but that doesn't have to stop us from
+                    # calculating drift for every z-level.
+                    args = [file, fov, z_level, channel, df_this_fov, in_file]
+                    # offset = cross_corr_offsets(*args)
+                    # all_offsets.append(offset)
+                    pool.apply_async(cross_corr_offsets, args, callback=log_result)
+
+        pool.close()
+        pool.join()
+
+        # Concatenate all the individual dataframe results into a single dataframe
+        big_df = pandas.concat(all_offsets)
+
+    return big_df
+
+
 def main_renumbering_function(
     in_file,
     regions_file,
@@ -247,6 +434,8 @@ def main_renumbering_function(
     cell_measurements_file,
     cell_measurements_outfile,
     threshold,
+    method,
+    channel,
 ):
     """
     Use XYZ information in conjunction with trench coordinates to determine when
@@ -255,18 +444,39 @@ def main_renumbering_function(
     This function does not take into account the possibility that the trench detection
     procedure itself may be error-prone.
     """
-    # Load the FOV information
-    xyz_data = load_xyz_data(in_file)
-
     # Load the regions information
     df_regions = load_regions(regions_file)
 
-    # Merge the trench regions coordinates table with the timestamps / xyz table
-    regions = pandas.merge(
-        df_regions, xyz_data, on=["info_fov", "info_frame"], how="left"
-    )
+    # Method 1
+    # Use images to calculate offsets
+    if method == "image":
+        df_offsets = start_cross_corr(in_file, channel)
+        # DEBUG
+        df_offsets.to_hdf("image_result.h5", "data")
 
-    # ### KEY FUNCTION ###
+        # Merge the trench regions coordinates table with the computed img offsets
+        regions = pandas.merge(
+            df_regions,
+            df_offsets,
+            on=["info_file", "info_fov", "info_frame", "info_z_level"],
+            how="left",
+        )
+
+    # Method 2
+    # Load the FOV information
+    elif method == "stage":
+        xyz_data = load_xyz_data(in_file)
+        # DEBUG
+        xyz_data.to_hdf("stage_result.h5", "data")
+
+        # Merge the trench regions coordinates table with the timestamps / xyz table
+        regions = pandas.merge(
+            df_regions, xyz_data, on=["info_file", "info_fov", "info_frame"], how="left"
+        )
+    else:
+        print("Error: no valid method provided. Must be image or stage.")
+        return
+
     # Correct trench bounding boxes for stage drift
     # NOTE if we pass in actual images, then it may be possible to supplelement
     # this step with e.g. phase cross correlation or template matching.
@@ -283,7 +493,6 @@ def main_renumbering_function(
         "info_y"
     ].astype(numpy.int32)
 
-    # ### KEY FUNCTION ###
     # Given the stage drift-corrected regions, determine for every FOV & Frame
     # whether or not a trench appeared or disappeared at the leftmost edge,
     # causing an offset by 1 in the trench numbering.

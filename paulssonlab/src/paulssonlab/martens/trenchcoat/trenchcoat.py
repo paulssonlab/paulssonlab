@@ -114,12 +114,12 @@ def browse_nd2(in_dir, napari_settings_file):
     help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
-    "-F",
-    "--computed-image-function",
-    "computed_image_function",
+    "-V",
+    "--viewer-params",
+    "viewer_params_file",
     required=False,
     type=str,
-    help="Name of function ~ use a dict. to lookup from list of available functions",
+    help="YAML file with image viewer params & information for displaying column data.",
 )
 @click.option(
     "-d",
@@ -129,23 +129,14 @@ def browse_nd2(in_dir, napari_settings_file):
     type=str,
     help="Path to HDF5 file containing cell measurements for computed image.",
 )
-@click.option(
-    "-t",
-    "--data-table-name",
-    "data_table_name",
-    required=False,
-    type=str,
-    help="Name of data table within the data table file.",
-)
 def browse_hdf5(
     images_file,
     masks_file,
     regions_file,
     corrections_file,
     napari_settings_file,
-    computed_image_function,
+    viewer_params_file,
     data_table_file,
-    data_table_name,
 ):
     """Use Napari to browse a dataset & to visualize trenches and cell masks.
 
@@ -160,9 +151,8 @@ def browse_hdf5(
         regions_file,
         corrections_file,
         napari_settings_file,
-        computed_image_function,
+        viewer_params_file,
         data_table_file,
-        data_table_name,
     )
 
 
@@ -183,6 +173,7 @@ def browse_hdf5(
     "masks_file",
     required=False,
     type=str,
+    default="SEG/MASKS/masks.h5",
     help="Input HDF5 file with masks.",
 )
 @click.option(
@@ -191,6 +182,7 @@ def browse_hdf5(
     "regions_file",
     required=True,
     type=str,
+    default="REG/regions_tables.h5",
     help="Input HDF5 file with regions (trenches must be re-labeled for left/right drift).",
 )
 @click.option(
@@ -227,12 +219,12 @@ def browse_hdf5(
     help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
-    "-F",
-    "--computed-image-function",
-    "computed_image_function",
+    "-V",
+    "--viewer-params",
+    "viewer_params_file",
     required=False,
     type=str,
-    help="Name of function ~ use a dict. to lookup from list of available functions",
+    help="YAML file with image viewer params & information for displaying column data.",
 )
 @click.option(
     "-d",
@@ -242,14 +234,6 @@ def browse_hdf5(
     type=str,
     help="Path to HDF5 file containing cell measurements for computed image.",
 )
-@click.option(
-    "-t",
-    "--data-table-name",
-    "data_table_name",
-    required=False,
-    type=str,
-    help="Name of data table within the data table file.",
-)
 def browse_kymographs(
     images_file,
     masks_file,
@@ -257,9 +241,8 @@ def browse_kymographs(
     napari_settings_file,
     corrections_file,
     lineages_file,
-    computed_image_function,
+    viewer_params_file,
     data_table_file,
-    data_table_name,
 ):
     """
     Use Napari to browse kymographs.
@@ -274,9 +257,8 @@ def browse_kymographs(
         napari_settings_file,
         corrections_file,
         lineages_file,
-        computed_image_function,
+        viewer_params_file,
         data_table_file,
-        data_table_name,
     )
 
 
@@ -385,18 +367,9 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     help="Regions detection parameters file (YAML).",
     show_default=True,
 )
-@click.option(
-    "-s",
-    "--share-regions",
-    "share_regions",
-    required=True,
-    default=False,
-    type=bool,
-    help="Share region detection across frames (detect only within the first frame)",
-)
-def trench_detect(out_dir, in_file, num_cpu, params_file, share_regions):
+def trench_detect(out_dir, in_file, num_cpu, params_file):
     """Detect trenches and write their rectangular regions to an HDF5 file."""
-    main_detection_function(out_dir, in_file, num_cpu, params_file, share_regions)
+    main_detection_function(out_dir, in_file, num_cpu, params_file)
 
 
 @cli.command(no_args_is_help=True)
@@ -625,7 +598,7 @@ def print_metadata(in_file, sub_file_name):
     "--in-file",
     "in_file",
     required=True,
-    default="HDF5/metadata.h5",
+    default="HDF5/data.h5",
     type=str,
     help="Input HDF5 file with metadata.",
     show_default=True,
@@ -635,9 +608,9 @@ def print_metadata(in_file, sub_file_name):
     "--regions-file",
     "regions_file",
     required=False,
-    default=None,
+    default="REG/regions_tables.h5",
     type=str,
-    help="HDF5 file containing image regions. [default: analyze entire image, no regions]",
+    help="HDF5 file containing image regions",
     show_default=True,
 )
 @click.option(
@@ -655,9 +628,9 @@ def print_metadata(in_file, sub_file_name):
     "--measurements-file",
     "cell_measurements_file",
     required=False,
-    default=None,
+    default="SEG",
     type=str,
-    help="Cell measurements with original trench numbering.",
+    help="Directory containing subdir with cell measurements with original trench numbering.",
     show_default=True,
 )
 @click.option(
@@ -668,6 +641,26 @@ def print_metadata(in_file, sub_file_name):
     default=None,
     type=str,
     help="Write renumbered trenches paired with cell measurements.",
+    show_default=True,
+)
+@click.option(
+    "-H",
+    "--method",
+    "method",
+    required=True,
+    default="stage",
+    type=str,
+    help="Method to use for calculating drift. Options are stage or image.",
+    show_default=True,
+)
+@click.option(
+    "-C",
+    "--channel",
+    "channel",
+    required=False,
+    default=None,
+    type=str,
+    help="Channel to use if using images to correct for drift.",
     show_default=True,
 )
 # NOTE The value of this threshold working depends on how much drift there is left unaccounted for
@@ -693,6 +686,8 @@ def correct_trench_numbering(
     cell_measurements_file,
     cell_measurements_outfile,
     threshold,
+    method,
+    channel,
 ):
     """Take into account when a trench lies near the edge of an image by re-numbering all the trenches as needed."""
     main_renumbering_function(
@@ -702,6 +697,8 @@ def correct_trench_numbering(
         cell_measurements_file,
         cell_measurements_outfile,
         threshold,
+        method,
+        channel,
     )
 
 
@@ -737,16 +734,16 @@ def correct_trench_numbering(
     show_default=True,
 )
 @click.option(
-    "-C",
-    "--seg-channel",
-    "seg_channel",
+    "-T",
+    "--trench-length",
+    "trench_length",
     required=True,
     type=str,
-    help="Segmentation channel for calculating lineages.",
+    help="Length of a trench. Used to check whether a cell is at the trench exit.",
 )
-def lineage_tracking(in_file, out_file, length_buffer, seg_channel):
+def lineage_tracking(in_file, out_file, length_buffer, trench_length):
     """Track lineages using HDF5 tables. Write a new HDF5 table."""
-    main_lineages_function(in_file, out_file, length_buffer, seg_channel)
+    main_lineages_function(in_file, out_file, length_buffer, trench_length)
 
 
 ###

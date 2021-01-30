@@ -150,7 +150,7 @@ def trenches_arr_to_canvas(file, fov, frame, z_level, width, height, regions_fil
     return canvas.T
 
 
-def regions_to_list(regions_file, file, fov, frame, z_level):
+def regions_to_list(file, fov, frame, z_level, regions_file):
     """
     Return a list of region min_row, min_col, max_row, max_col matching the given condition.
     """
@@ -230,8 +230,8 @@ def add_masks_layer(
     # and query them for the coordinates.
     lazy_masks_to_canvas = delayed(masks_to_canvas)
 
-    # FIXME how to determine the number of region sets? should each region set get its own labels layer?
-    # that would mean sc x region_sets total number of layers.
+    # FIXME how to determine the number of rows? should each row set get its own labels layer?
+    # that would mean sc x rows total number of layers.
     #
     # NOTE that if the regions within a set overlap, then they will overwrite each other
     # when it comes time to merging them together in the same canvas.
@@ -370,13 +370,15 @@ def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_
     return canvas.T
 
 
-def query_for_masks(file, fov, frame, z, sc, data_table_file, data_table_name):
+def query_for_masks(file, fov, frame, z, sc, data_table_file):
     """
     Return a dataframe matching the query.
     Useful for getting matching cells in a cell measurements table.
     """
     h5file_data = tables.open_file(data_table_file, "r")
-    data_table = h5file_data.get_node("/", data_table_name)
+    data_table = h5file_data.get_node("/cell_measurements")
+    dftemp = pandas.DataFrame(data_table.read())
+    print(dftemp.columns)
     # NOTE the speed of the queries might be sensitive to the order
     # in which the data are searched. If there are many trenches, but few files,
     # then it's much faster to search trenches first, then files.
@@ -403,22 +405,17 @@ def computed_masks_to_canvas(
     sc,
     regions_file,
     masks_file,
-    function,
+    column_expression,
     data_table_file,
-    data_table_name,
 ):
     """
     TODO update documentation how this function works
-    Input a numpy array with many rows, each containing the rectangular coordinates of regions.
 
-    Input a dict with keys structured as "rownum/region_regionnum", each containing the rectangular coordinates of regions.
-
-    Return a numpy array with labeled pixel positions across all the masks, and zeros for background.
-    NOTE: what happens if the regions overlap?
+    TODO can we speed up the compuation by only masking the bbox area?
     """
     regions = regions_to_dict(regions_file, file, fov, frame, z)
 
-    df = query_for_masks(file, fov, frame, z, sc, data_table_file, data_table_name)
+    df = query_for_masks(file, fov, frame, z, sc, data_table_file)
 
     # Go through series of de-references b/c pytables doesn't allow iterating
     # over nodes if some of the nodes are symlinks.
@@ -430,7 +427,7 @@ def computed_masks_to_canvas(
     node_4 = h5file_masks.get_node(node_3, "/Z_{}/{}".format(z, sc))
 
     # Initialize the canvas
-    canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
+    canvas = numpy.zeros(shape=(width, height), dtype=numpy.float32)
 
     # Iterate all nodes: all trenches & rows
     for n in h5file_masks.walk_nodes(node_4, classname="CArray"):
@@ -444,7 +441,18 @@ def computed_masks_to_canvas(
             (df["info_row_number"] == int(row))
             & (df["info_trench_number"] == int(trench))
         ]
-        computed_image = function(mask, df_this_row_trench)
+
+        computed_image = numpy.zeros(shape=mask.shape, dtype=numpy.float32)
+        for cell in df_this_row_trench.itertuples():
+            mask_area = mask[
+                cell.bounding_box_min_row : cell.bounding_box_max_row,
+                cell.bounding_box_min_col : cell.bounding_box_max_col,
+            ]
+
+            computed_image[
+                cell.bounding_box_min_row : cell.bounding_box_max_row,
+                cell.bounding_box_min_col : cell.bounding_box_max_col,
+            ] = (mask_area == cell.info_label) * eval(column_expression)
 
         # Write the result into the canvas
         key = "{}/region_{}".format(row, trench)
@@ -465,9 +473,8 @@ def computed_whole_labeled_canvas(
     height,
     sc,
     masks_file,
-    function,
+    column_expression,
     data_table_file,
-    data_table_name,
 ):
     """
     FIXME Passing in width & height, even though they aren't needed, because it conforms
@@ -483,10 +490,22 @@ def computed_whole_labeled_canvas(
     h5file_masks.close()
 
     # Run a query on the data table & the mask, and return a modified float32 according to the function
-    df = query_for_masks(data_table_file, data_table_name)
-    computed_image = function(mask, df)
+    df = query_for_masks(file, fov, frame, z, sc, data_table_file)
 
-    return computed_img.T
+    # Speed up the compuation by only masking the bbox area.
+    computed_image = numpy.zeros(shape=(width, height), dtype=numpy.float32)
+    for cell in df.itertuples():
+        mask_area = mask[
+            cell.bounding_box_min_row : cell.bounding_box_max_row,
+            cell.bounding_box_min_col : cell.bounding_box_max_col,
+        ]
+
+        computed_image[
+            cell.bounding_box_min_row : cell.bounding_box_max_row,
+            cell.bounding_box_min_col : cell.bounding_box_max_col,
+        ] = (mask_area == cell.info_label) * eval(column_expression)
+
+    return computed_image.T
 
 
 ### Image Layers
@@ -544,9 +563,8 @@ def add_computed_image_layers(
     width,
     height,
     viewer,
-    function,
+    viewer_params,
     data_table_file,
-    data_table_name,
 ):
     """
     Input an HDF5 file with images,
@@ -558,49 +576,49 @@ def add_computed_image_layers(
     function: some sort of function which modifies the image
 
     data_table_file: HDF5 file containing a pytables table with measurements to use for computation
-    data_table_name: name of the table file node within the file
 
     Adds all the image layers to the Napari viewer.
     """
     if regions_file:
-        for sc in seg_channels:
-            images_stack = dask_stack_loop(
-                file_nodes,
-                fields_of_view,
-                frames,
-                z_levels,
-                width,
-                height,
-                computed_masks_to_canvas,
-                numpy.float32,
-                [
-                    sc,
-                    regions_file,
-                    masks_file,
-                    function,
-                    data_table_file,
-                    data_table_name,
-                ],
-            )
+        for channel, categories in viewer_params.items():
+            for category, items in categories.items():
+                eval_string = items["eval_string"]
+                params = items["viewer_params"]
 
-            viewer.add_image(images_stack, name="Computed Cell Masks {}".format(sc))
+                images_stack = dask_stack_loop(
+                    file_nodes,
+                    fields_of_view,
+                    frames,
+                    z_levels,
+                    width,
+                    height,
+                    computed_masks_to_canvas,
+                    numpy.float32,
+                    [channel, regions_file, masks_file, eval_string, data_table_file],
+                )
+
+                viewer.add_image(images_stack, **params)
 
     # No regions file
     else:
-        for sc in seg_channels:
-            images_stack = dask_stack_loop(
-                file_nodes,
-                fields_of_view,
-                frames,
-                z_levels,
-                width,
-                height,
-                computed_whole_labeled_canvas,
-                numpy.float32,
-                [sc, masks_file, function, data_table_file, data_table_name],
-            )
+        for channel, categories in viewer_params.items():
+            for category, items in categories.items():
+                eval_string = items["eval_string"]
+                params = items["viewer_params"]
 
-            viewer.add_image(images_stack, name="Computed Cell Masks {}".format(sc))
+                images_stack = dask_stack_loop(
+                    file_nodes,
+                    fields_of_view,
+                    frames,
+                    z_levels,
+                    width,
+                    height,
+                    computed_whole_labeled_canvas,
+                    numpy.float32,
+                    [channel, masks_file, eval_string, data_table_file],
+                )
+
+                viewer.add_image(images_stack, **params)
 
 
 # TODO: select a function from a list of available functions,
@@ -743,9 +761,8 @@ def main_hdf5_browser_function(
     regions_file,
     corrections_file,
     napari_settings_file,
-    computed_image_function,
+    viewer_params_file,
     data_table_file,
-    data_table_name,
 ):
     """
     Use Napari to browse an HDF5 file with microscope images arranged in a hierarchy:
@@ -846,16 +863,11 @@ def main_hdf5_browser_function(
                 viewer,
             )
 
-        # FIXME TEMP
-        computed_image_function = run_computed_image_function
         # Would it make more sense to pre-compute the columns? Basically
         # make it a column display, and just pass in the name of the column.
         # Input a set of images, but also run a calculation on them before displaying.
-        if computed_image_function and data_table_file and data_table_name:
-            # TODO: specify which channels to perform the calculation
-            # Pass in a list... best way? comma-separated? YAML?
-            # These must match segmentation names, NOT microscope channel names.
-            seg_channels = ["mKate2"]
+        if viewer_params_file and data_table_file and masks_file:
+            viewer_params = read_params_file(viewer_params_file)
 
             add_computed_image_layers(
                 masks_file,
@@ -868,7 +880,6 @@ def main_hdf5_browser_function(
                 width,
                 height,
                 viewer,
-                computed_image_function,
+                viewer_params,
                 data_table_file,
-                data_table_name,
             )

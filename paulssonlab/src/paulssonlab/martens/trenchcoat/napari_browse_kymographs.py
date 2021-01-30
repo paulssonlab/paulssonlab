@@ -12,9 +12,8 @@ from napari_browse_hdf5 import (
     metadata_attributes_equal,
     metadata_array_equal,
 )
-from lineages import relabel_mask_complete, relabel_mask
+from lineages import relabel_mask_complete
 import matplotlib.cm
-
 
 """
 Browse kymographs from an HDF5 file using Napari.
@@ -95,16 +94,17 @@ def query_regions_from_file(
     Read all regions matching a given query
     Return a list of regions, and a list of trench numbers
     """
-    # df = pandas.read_hdf(regions_file, "/regions_table")
     h5file = tables.open_file(regions_file, "r")
     table = h5file.get_node("/regions_table")
-    query = """(info_file == file) & \
-               (info_fov == fov) & \
-               (info_z_level == z_level) & \
+    query = """(corrected_trench_label == trench_number) & \
                (info_row_number == row_number) & \
-               (corrected_trench_label == trench_number)"""
+               (info_file == file) & \
+               (info_fov == fov) & \
+               (info_z_level == z_level)"""
 
     search = table.read_where(query)
+    h5file.close()
+
     df = pandas.DataFrame(search)
 
     regions = {}
@@ -117,8 +117,6 @@ def query_regions_from_file(
             r.max_row + r.info_x,
             r.max_col - r.info_y,
         ]
-
-    h5file.close()
 
     return regions
 
@@ -223,77 +221,52 @@ def kymo_computed_image_layer(
     img_width,
     height,
     viewer,
-    sc,
     masks_file,
     regions_file,
-    computed_image_function,
     data_table_file,
-    data_table_name,
+    viewer_params,
 ):
     """
     Generate computed images based on cell properties & masks.
+    Input a column name from a data table, and use that to fill in the pixels of a mask,
+    and present it as an intensity image.
     """
-    for c in sc:
-        mask_stack = dask_stack_loop(
-            num_trenches,
-            num_rows,
-            file_nodes,
-            fields_of_view,
-            z_levels,
-            tr_width,
-            img_width,
-            height,
-            kymo_computed_image,
-            numpy.uint16,
-            [
-                c,
-                masks_file,
-                frames,
-                regions_file,
-                computed_image_function,
-                data_table_file,
-                data_table_name,
-            ],
-        )
+    for channel, categories in viewer_params.items():
+        for category, items in categories.items():
+            eval_string = items["eval_string"]
+            params = items["viewer_params"]
 
-        viewer.add_image(mask_stack, name="Computed Image {}".format(c))
+            mask_stack = dask_stack_loop(
+                num_trenches,
+                num_rows,
+                file_nodes,
+                fields_of_view,
+                z_levels,
+                tr_width,
+                img_width,
+                height,
+                kymo_computed_image,
+                numpy.uint16,
+                [
+                    channel,
+                    masks_file,
+                    frames,
+                    regions_file,
+                    eval_string,
+                    data_table_file,
+                ],
+            )
 
-
-# TODO: select a function from a list of available functions,
-# specified on the command line.
-def run_computed_image_function(mask, df):
-    # Example function: for every unique cell label, replace its
-    # contents with the mean of its mVenus fluorescence intensities.
-    # Calculate mVenus / pixel
-    # Make a copy if we want to add a new column.
-    df = df.copy()
-    df["mean_mVenus"] = df["total_intensity_YFP"] / df["geometry_Area"]
-    key = "mean_mVenus"
-
-    # Alternatively: just display the Area without calculating anything
-    # key = "geometry_Area"
-
-    new_img = numpy.zeros(mask.shape, dtype=numpy.float32)
-    for cell in df.itertuples():
-        # TODO Can this be sped up by doing pixel_value -> f(pixel_value),
-        # where f() is input cell label, output a const number?
-        # Avoids looping. But it's actually pretty fast now.
-        new_img += (mask == cell.info_label) * getattr(cell, key)
-        # DEBUG
-        # new_img = mask.astype(numpy.float32)
-
-    return new_img
+            viewer.add_image(mask_stack, **params)
 
 
-def query_for_masks(
-    file, fov, z, row_number, trench_number, sc, data_table_file, data_table_name
-):
+def query_for_masks(file, fov, z, row_number, trench_number, sc, data_table_file):
     """
     Return a dataframe matching the query.
     Useful for getting matching cells in a cell measurements table.
     """
     h5file_data = tables.open_file(data_table_file, "r")
-    data_table = h5file_data.get_node("/", data_table_name)
+    data_table = h5file_data.get_node("/cell_measurements")
     # NOTE the speed of the queries might be sensitive to the order
     # in which the data are searched. If there are many trenches, but few files,
     # then it's much faster to search trenches first, then files.
@@ -324,20 +297,20 @@ def kymo_computed_image(
     masks_file,
     frames,
     regions_file,
-    computed_image_function,
+    column_expression,
     data_table_file,
-    data_table_name,
 ):
     """
     Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    This version is for filling in intensities by performing a query on the data table for specific quantities.
     """
     h5file = tables.open_file(regions_file, "r")
     table = h5file.get_node("/regions_table")
-    query = """(info_file == file) & \
-               (info_fov == fov) & \
-               (info_z_level == z_level) & \
+    query = """(corrected_trench_label == trench_number) & \
                (info_row_number == row_number) & \
-               (corrected_trench_label == trench_number)"""
+               (info_file == file) & \
+               (info_fov == fov) & \
+               (info_z_level == z_level)"""
 
     search = table.read_where(query)
     df_regions = pandas.DataFrame(search)
@@ -346,14 +319,7 @@ def kymo_computed_image(
     h5file_masks = tables.open_file(masks_file, "r")
 
     df_this_row_trench = query_for_masks(
-        file,
-        fov,
-        z_level,
-        row_number,
-        trench_number,
-        sc,
-        data_table_file,
-        data_table_name,
+        file, fov, z_level, row_number, trench_number, sc, data_table_file
     )
 
     # Trenches across frames (over time)
@@ -369,7 +335,22 @@ def kymo_computed_image(
             )
             node = h5file_masks.get_node(node_path)
             mask = node.read()
-            computed_image = computed_image_function(mask, df_this_row_trench)
+
+            df_this_frame = df_this_row_trench[
+                df_this_row_trench["info_frame"] == frame
+            ]
+            computed_image = numpy.zeros(mask.shape, dtype=numpy.float32)
+            # Speed up the compuation by only masking the bbox area
+            for cell in df_this_frame.itertuples():
+                mask_area = mask[
+                    cell.bounding_box_min_row : cell.bounding_box_max_row,
+                    cell.bounding_box_min_col : cell.bounding_box_max_col,
+                ]
+
+                computed_image[
+                    cell.bounding_box_min_row : cell.bounding_box_max_row,
+                    cell.bounding_box_min_col : cell.bounding_box_max_col,
+                ] = (mask_area == cell.info_label) * eval(column_expression)
 
         except:
             computed_image = numpy.zeros(shape=(tr_width, height), dtype=numpy.float32)
@@ -384,16 +365,18 @@ def kymo_computed_image(
     return kymograph_array.T
 
 
-def make_tab20_mapping(num_colors=4096):
+def make_tab20_mapping(num_colors=65535):
     """
     Use the "tab20" colormap to color pairs of cells,
     and add "black" (transparent) for 0, and white for the first cell.
-    NOTE/FIXME: how high do we want the labels to be? Use 4096 for now,
-    but since the labels increase as powers of 2, this might not be enough
-    for very long timelapses.
+
     tab20 is good because the colors come in pairs with similar hues,
     whereas the default mapping in Napari is more "randomized," which
     makes it hard to visually match pairs of cells.
+
+    NOTE/FIXME: how high do we want the labels to be? Use 65535 for now,
+    but since the labels increase as powers of 2, this might not be enough
+    for very long timelapses.
     Could search the lineages file & find the maximum possible label?
     """
     tab20 = matplotlib.cm.get_cmap("tab20")
@@ -465,17 +448,16 @@ def kymo_lineage_masks(
     """
     Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
     In addition, re-label the cells based on information from a computed lineage.
-    # NOTE thus far lineages weren't computed using z-levels.
     """
     h5file_lineages = tables.open_file(lineages_file, "r")
-    table_lineages = h5file_lineages.get_node("/cells_and_lineages")
+    table_lineages = h5file_lineages.get_node("/cell_measurements")
 
-    query = """(info_file == file) & \
+    query = """(corrected_trench_label == trench_number) & \
+               (info_row_number == row_number) & \
+               (info_file == file) & \
                (info_fov == fov) & \
                (info_z_level == z_level) & \
-               (info_seg_channel == sc) & \
-               (info_row_number == row_number) & \
-               (corrected_trench_label == trench_number)"""
+               (info_seg_channel == sc)"""
 
     cells_of_interest = table_lineages.read_where(query)
     df_cells = pandas.DataFrame(cells_of_interest)
@@ -490,9 +472,7 @@ def kymo_lineage_masks(
             # FIXME remove the .iloc once I fix the table merging stuff?
             # Right now it returns an entry for each segmented cell.
             this_frame = df_cells[df_cells["info_frame"] == frame]
-            tr = this_frame["info_trench_number"].iloc[
-                0
-            ]  # FIXME sometimes getting out-of-bounds??
+            tr = this_frame["info_trench_number"].iloc[0]
             node_path = "/masks/{}/FOV_{}/Frame_{}/Z_{}/{}/{}/region_{}".format(
                 file, fov, frame, z_level, sc, row_number, tr
             )
@@ -501,9 +481,7 @@ def kymo_lineage_masks(
 
             # Re-label the labeled mask slice
             all_lineages = this_frame["lineage"].unique()
-            all_lineages = [0]
             for lineage in all_lineages:
-
                 # Re-label this lineage according to the progeny id
                 this_lineage = this_frame[this_frame["lineage"] == lineage]
                 old_labels = this_lineage["info_label"].values
@@ -528,21 +506,6 @@ def kymo_lineage_masks(
                 )
                 new_mask += labeled_pixels_progeny
 
-                # TODO purge OLD CODE
-                ## Filter out all other lineages from the mask
-                ## If it matches this lineage, replace the lineage with a 1
-                ## Otherwise, replace it with a 0.
-                # mask_this_lineage = relabel_mask(mask, lineage, 1, 0).astype(numpy.bool)
-
-                ## Apply this filter to the original mask -> only keep pixels from this lineage,
-                ## but preserve their original labels.
-                # mask_this_lineage = mask * mask_this_lineage
-
-                ## Re-label this lineage according to the progeny id
-                # this_lineage = this_frame[this_frame["lineage"] == lineage]
-                # old_labels = this_lineage["info_label"].values
-                # new_labels = this_lineage["progeny_id"].values
-                # new_mask += relabel_mask_complete(mask_this_lineage, old_labels, new_labels)
         except Exception as e:
             print(str(e))
 
@@ -636,6 +599,30 @@ def kymo_img_layers(
         viewer.add_image(image_stack, **layer_params[c])
 
 
+def get_reg_dims(regions_file):
+    """
+    Use the regions h5file table to infer trench dimensions,
+    max number of rows of trenches, and max number of trenches per FOV.
+    """
+    h5file_reg = tables.open_file(regions_file, "r")
+    table = h5file_reg.get_node("/regions_table")
+    df_reg = pandas.DataFrame(table.read())
+    h5file_reg.close()
+
+    # Assume all trenches have the same dimensions,
+    # and use the zeroth trench to determine what they are.
+    first_element = df_reg.iloc[0]
+    height = first_element.max_col - first_element.min_col
+    tr_width = first_element.max_row - first_element.min_row
+
+    num_rows = df_reg["info_row_number"].max()
+
+    # This requires running trench drift correction
+    num_trenches = df_reg["corrected_trench_label"].max()
+
+    return (tr_width, height, num_rows, num_trenches)
+
+
 def main_kymograph_browser_function(
     images_file,
     masks_file,
@@ -643,9 +630,8 @@ def main_kymograph_browser_function(
     napari_settings_file,
     corrections_file,
     lineages_file,
-    computed_image_function,
+    viewer_params_file,
     data_table_file,
-    data_table_name,
 ):
     """
     Main function, invoked from the command-line.
@@ -671,10 +657,6 @@ def main_kymograph_browser_function(
             else:
                 extents[a] = [i for i in range(smallest, largest + 1)]
 
-        # Get the height & width, while checking that they are identical across all nd2 files
-        height = metadata_attributes_equal(h5file, "height")
-        width = metadata_attributes_equal(h5file, "width")
-
         # Define the channels
         channels = metadata_array_equal(h5file, "channels")
         channels = [c.decode("utf-8") for c in channels]
@@ -684,22 +666,9 @@ def main_kymograph_browser_function(
 
         h5file.close()
 
-        # FIXME Need to open the merged cell & region info table, with
-        # corrected trench bboxes.
-
-        # Or, could open the regions table, get the first region, and
+        # Open the regions table, get the first region, and
         # recalculate based on min_row, max_row; min_col, max_col.
-        tr_width = 15
-        height = 153
-
-        # What to do if this value changes from one FOV to another?
-        # Need to set this to the max of all possible (or unique?), and then
-        # fill in empty as necessary. Can extract this
-        num_rows = 2
-
-        # This needs to be the max value of the drift-corrected,
-        # re-labeled trenches.
-        num_trenches = 96
+        (tr_width, height, num_rows, num_trenches) = get_reg_dims(regions_file)
 
         # This is the max value of info_frame. Or unique.
         num_frames = len(extents["frames"])
@@ -758,7 +727,7 @@ def main_kymograph_browser_function(
         if lineages_file:
             # Load the segmentation channels from the measurements & lineages table
             h5file_lineages = tables.open_file(lineages_file, "r")
-            table = h5file_lineages.get_node("/cells_and_lineages")
+            table = h5file_lineages.get_node("/cell_measurements")
             df = pandas.DataFrame(table.read())
             seg_channels = df["info_seg_channel"].unique()
             # TODO what about converting to / from bytes & utf-8?
@@ -780,16 +749,10 @@ def main_kymograph_browser_function(
                 lineages_file,
             )
 
-        # FIXME TEMP
-        computed_image_function = run_computed_image_function
-        # Would it make more sense to pre-compute the columns? Basically
-        # make it a column display, and just pass in the name of the column.
         # Input a set of images, but also run a calculation on them before displaying.
-        if computed_image_function and data_table_file and data_table_name:
-            # TODO: specify which channels to perform the calculation
-            # Pass in a list... best way? comma-separated? YAML?
-            # These must match segmentation names, NOT microscope channel names.
-            seg_channels = ["mKate2"]
+        # Store the result of the calculation within the regions defined by cell masks.
+        if viewer_params_file and data_table_file and masks_file:
+            viewer_params = read_params_file(viewer_params_file)
 
             kymo_computed_image_layer(
                 num_trenches,
@@ -802,10 +765,8 @@ def main_kymograph_browser_function(
                 img_width,
                 height,
                 viewer,
-                seg_channels,
                 masks_file,
                 regions_file,
-                computed_image_function,
                 data_table_file,
-                data_table_name,
+                viewer_params,
             )

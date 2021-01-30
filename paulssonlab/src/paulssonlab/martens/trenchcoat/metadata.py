@@ -266,6 +266,38 @@ def copy_raw_metadata(h5file, reader):
     xml_to_h5_metadata_ascii(tree, root_node, h5file, types_xml)
 
 
+def get_files_list(in_file):
+    """
+    Input an opened HDF5 file with metadata stored by ND2 file.
+    Return all available files (by name) stored within the HDF5 hierarchy,
+    each corresponding to a separate ND2 file.
+    """
+    h5_in = tables.open_file(in_file, "r")
+    n = h5_in.get_node("/Metadata")()
+    all_files = [i._v_name for i in h5_in.list_nodes(n)]
+    h5_in.close()
+
+    return all_files
+
+
+def get_attribute_list(h5_in, attribute):
+    """
+    Input an opened HDF5 file with metadata stored by ND2 file
+    Look up a metadata attribute info for each "File,"" return a dict: file -> attribute value.
+    """
+    n = h5_in.get_node("/Metadata")()
+    all_files = h5_in.list_nodes(n)
+    result = {}
+
+    for file_node in all_files:
+        n = h5_in.get_node(file_node, "/{}".format(attribute))
+        v = n.read()
+        name = file_node._v_name
+        result[name] = v
+
+    return result
+
+
 def copy_fov_metadata(h5file, frames, fields_of_view, reader):
     """
     Make a table of X, Y, Z, Timestamp, PFS information for each FOV.
@@ -426,8 +458,7 @@ def main_print_metadata_function(in_file, sub_file_name):
             try:
                 node = h5file.get_node(parent, "/{}".format(sub_file_name))()
                 metadata = get_metadata(node)
-                # Print in sorted order so that the order matches how it prints
-                # when loading from HDF5, after conversion.
+
                 for k in sorted(metadata.keys()):
                     print("{}: {}".format(k, metadata[k]))
             except:

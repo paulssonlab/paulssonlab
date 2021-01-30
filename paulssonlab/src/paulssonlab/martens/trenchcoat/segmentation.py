@@ -10,6 +10,7 @@ from tqdm import tqdm
 import pandas
 
 import algorithms
+import algo_sharp
 
 # import arrayfire_algorithms
 from properties import (
@@ -66,18 +67,17 @@ def run_segmentation_analysis_regions(
     # Read in the array of regions from a table
     # 1. Query the table for the relevant rows
     trench_table = h5file_reg.get_node("/trench_coords")
-    this_node = trench_table.read_where(
-        """(info_file == name) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"""
-    )
+    query = """(info_file == name) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"""
+    this_node = trench_table.read_where(query)
 
     # 2. Trench rows: unique entries in the "info_row_number" column
     df = pandas.DataFrame(this_node)
-    region_sets = df["info_row_number"].unique()
+    rows = df["info_row_number"].unique()
 
     # 3. Compile the rows into a numpy array & run segmentation
-    for region_set_number in region_sets:
+    for row in rows:
         # a. Grab all the relevant trenches
-        trenches = df[(df["info_row_number"] == region_set_number)]
+        trenches = df[(df["info_row_number"] == row)]
         # FIXME is it imperative to sort the rows in ascending order?
         # (they must be ascending; but maybe they will always be sorted, since that's the order they were written?)
 
@@ -119,7 +119,7 @@ def run_segmentation_analysis_regions(
             out_dir_tables,
             algo_dict,
             file_names,
-            region_set_number,
+            row,
             stack,
             ch_to_index,
         )
@@ -152,6 +152,8 @@ def run_segmentation_analysis_no_regions(
     (stack, ch_to_index) = make_ch_to_img_stack_no_regions(h5file, z_node, channels)
     h5file.close()
 
+    Cell = make_cell_type(channels, seg_params.keys(), file_names, False)
+
     # No regions, no regions_set_number -> set to 0
     run_segmentation_analysis(
         in_file,
@@ -183,7 +185,7 @@ def run_segmentation_analysis(
     out_dir_tables,
     algo_dict,
     file_names,
-    region_set_number,
+    row_number,
     stack,
     ch_to_index,
 ):
@@ -215,7 +217,12 @@ def run_segmentation_analysis(
     h5file_tables = tables.open_file(
         "{}/{}/FOV_{}/Frame_{}.h5".format(out_dir_tables, name, fov, frame), mode="a"
     )
-    Cell = make_cell_type(channels, seg_params.keys(), file_names)
+
+    # Regions? If so, allow extra columns for mother machine data.
+    if stack.shape[2] > 1:
+        Cell = make_cell_type(channels, seg_params.keys(), file_names, True)
+    else:
+        Cell = make_cell_type(channels, seg_params.keys(), file_names, False)
 
     # NOTE If multiple regions, don't try creating pre-existing table:
     # fix this by wrapping table creation in a try statement, and if that fails,
@@ -244,7 +251,7 @@ def run_segmentation_analysis(
         stack,
         ch_to_index,
         algo_dict,
-        region_set_number,
+        row_number,
     )
 
     # Done!
@@ -265,7 +272,7 @@ def write_masks_tables(
     stack,
     ch_to_img,
     algo_dict,
-    region_set_number,
+    row_number,
 ):
     """
     Compute masks using specified segmentation algorithm.
@@ -277,12 +284,16 @@ def write_masks_tables(
         # Calculate the mask(s)
         masks = algo_dict[sc](stack, ch_to_img, seg_params[sc])
 
+        # Are there multiple regions? If so, then assume
+        # that this is a mother machine dataset. Add
+        # extra columns during the measurements!
+
         # Write the masks & tables
         for region_number in range(masks.shape[2]):
             mask = masks[..., region_number]
             # Write to disk
             h5file_masks.create_carray(
-                "/Z_{}/{}/{}".format(z_level, sc, region_set_number),
+                "/Z_{}/{}/{}".format(z_level, sc, row_number),
                 "region_{}".format(region_number),
                 obj=mask,
                 createparents=True,
@@ -301,7 +312,7 @@ def write_masks_tables(
                     fov,
                     frame,
                     z_level,
-                    region_set_number,
+                    row_number,
                     region_number,
                     p,
                     sc,
@@ -309,6 +320,7 @@ def write_masks_tables(
                     row,
                     stack,
                     ch_to_img,
+                    mask,
                 )
 
 
@@ -540,7 +552,8 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
             "threshold": algorithms.run_single_threshold,
             #'dual_threshold'    : algorithms.run_dual_thresholding,
             "niblack": algorithms.run_niblack_segmentation,
-            "niblack_phase": algorithms.run_niblack_phase_segmentation,
+            "fluor_phase": algorithms.run_fluor_phase_segmentation,
+            "fluor_sharpen": algo_sharp.run_fluor_sharp_segmentation
             #'niblack_phase_gpu' : algorithms.run_segmentation_GPU
         }
 
@@ -654,7 +667,11 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     print("Merging tables...")
     in_file = os.path.join(out_dir, "TABLES/tables.h5")
     out_file = os.path.join(out_dir, "TABLES/tables_merged.h5")
-    merge_tables(in_file, out_file, channels, params.keys(), file_names)
+
+    if regions_file:
+        merge_tables(in_file, out_file, channels, params.keys(), file_names, True)
+    else:
+        merge_tables(in_file, out_file, channels, params.keys(), file_names, False)
 
     # Write the segmentation params YAML to the masks h5file, so that the params can be referenced later on
     print("Saving YAML parameters...")
