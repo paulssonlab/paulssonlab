@@ -615,7 +615,7 @@ def get_reg_dims(regions_file):
     height = first_element.max_col - first_element.min_col
     tr_width = first_element.max_row - first_element.min_row
 
-    num_rows = df_reg["info_row_number"].max()
+    num_rows = df_reg["info_row_number"].max() + 1
 
     # This requires running trench drift correction
     num_trenches = df_reg["corrected_trench_label"].max()
