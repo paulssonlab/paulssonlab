@@ -49,7 +49,7 @@ def write_properties_to_table(
         # FIXME but this doesn't take into account the no_other_cell bit
         # Instead, make it the sum of no_other_cell?
         # row["geometry_Max_Width_Area"] = (stack.shape[0]) * (properties.bbox[3] - properties.bbox[1])
-        row["geometry_Max_Width_Area"] = no_other_cell.sum()
+        row["geometry_Max_Width_Area"] = not_other_cell.sum()
 
         for ch, index in ch_to_index.items():
             rect_region = stack[

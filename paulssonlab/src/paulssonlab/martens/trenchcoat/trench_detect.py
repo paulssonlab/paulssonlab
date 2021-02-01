@@ -182,6 +182,7 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file):
     # Add new algorithms here!
     algo_dict = {"algo_1": new_trench_algos.launch}
 
+    in_file = os.path.join(in_file, "data.h5")
     h5file = tables.open_file(in_file, mode="r")
 
     # Iterate all the files & get their metadata

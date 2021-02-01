@@ -799,10 +799,10 @@ def get_image_stack(self, frame_number, field_of_view, z_level, height, width):
     # This produces an array with channels as the first of 3 indices, which is inefficient for F-ordering.
     reshaped = np.reshape(image_group_data[image_data_start:], (number_of_true_channels, width, height), order='F')
 
-    # Fotran ordering works best when the last index is the slowest-changing
+    # Fortran ordering works best when the last index is the slowest-changing
     # For image stacks, this typically means that 2D slices are stored in the 1st 2 dims,
     # and therefore a whole slice is in the 3rd dimension.
-    # NOTE because the data are Fotran-ordered, they will appear Transposed
+    # NOTE because the data are Fortran-ordered, they will appear Transposed
     # when viewing with matplotlib pyplot. However, it's more appropriate to Transpose later,
     # and to leave the data intact now.
     image_stack = np.empty((width, height, number_of_true_channels), dtype=reshaped.dtype, order='F')

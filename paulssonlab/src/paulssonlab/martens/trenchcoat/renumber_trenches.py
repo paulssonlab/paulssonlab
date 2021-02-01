@@ -447,6 +447,8 @@ def main_renumbering_function(
     # Load the regions information
     df_regions = load_regions(regions_file)
 
+    in_file = os.path.join(in_file, "data.h5")
+
     # Method 1
     # Use images to calculate offsets
     if method == "image":

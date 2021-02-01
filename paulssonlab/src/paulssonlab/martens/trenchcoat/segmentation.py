@@ -281,12 +281,11 @@ def write_masks_tables(
     images. (e.g. trenches, cropped images...)
     """
     for sc in seg_params.keys():
-        # Calculate the mask(s)
-        masks = algo_dict[sc](stack, ch_to_img, seg_params[sc])
+        # Retrieve the segmentation function
+        function = algo_dict[sc]
 
-        # Are there multiple regions? If so, then assume
-        # that this is a mother machine dataset. Add
-        # extra columns during the measurements!
+        # Calculate the mask(s)
+        masks = function(stack, ch_to_img, seg_params[sc])
 
         # Write the masks & tables
         for region_number in range(masks.shape[2]):
@@ -308,19 +307,19 @@ def write_masks_tables(
             # NOTE / TODO: future versions of skimage will allow spitting out a properties object all at once, rather than lazily calculating them one at a time.
             for p in properties:
                 write_properties_to_table(
-                    name,
-                    fov,
-                    frame,
-                    z_level,
-                    row_number,
-                    region_number,
-                    p,
-                    sc,
-                    seg_params[sc],
-                    row,
-                    stack,
-                    ch_to_img,
-                    mask,
+                    name=name,
+                    fov=fov,
+                    frame=frame,
+                    z_level=z_level,
+                    row_number=row_number,
+                    trench_number=region_number,
+                    properties=p,
+                    sc=sc,
+                    params=seg_params[sc],
+                    row=row,
+                    stack=stack,
+                    ch_to_index=ch_to_img,
+                    mask=mask,
                 )
 
 
@@ -535,6 +534,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     params = read_params_file(params_file)
 
     # HDF5 file with images & metadata
+    in_file = os.path.join(in_file, "data.h5")
     h5file = tables.open_file(in_file, mode="r")
 
     # Loop the nodes immediately under Images to get the file names

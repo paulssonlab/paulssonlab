@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import os
 import tables
 import numpy
 import napari
@@ -678,28 +678,30 @@ def main_kymograph_browser_function(
 
         # Image layers
         kymo_img_layers(
-            num_trenches,
-            num_rows,
-            file_nodes,
-            extents["fields_of_view"],
-            extents["frames"],
-            extents["z_levels"],
-            viewer,
-            tr_width,
-            img_width,
-            height,
-            channels,
-            layer_params,
-            corrections_file,
-            regions_file,
-            images_file,
+            num_trenches=num_trenches,
+            num_rows=num_rows,
+            file_nodes=file_nodes,
+            fields_of_view=extents["fields_of_view"],
+            frames=extents["frames"],
+            z_levels=extents["z_levels"],
+            viewer=viewer,
+            tr_width=tr_width,
+            img_width=img_width,
+            height=height,
+            channels=channels,
+            layer_params=layer_params,
+            corrections_file=corrections_file,
+            regions_file=regions_file,
+            images_file=images_file,
         )
 
         # Masks layers
         if masks_file:
-            h5file_masks = tables.open_file(masks_file, "r")
+            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
 
             # Load the segmentation channels from the masks h5file
+            h5file_masks = tables.open_file(masks_file_path, "r")
+
             seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
             seg_params_str = seg_params_node.read().tobytes().decode("utf-8")
             seg_params_dict = read_params_string(seg_params_str)
@@ -708,19 +710,19 @@ def main_kymograph_browser_function(
             h5file_masks.close()
 
             kymo_mask_layer(
-                num_trenches,
-                num_rows,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                tr_width,
-                img_width,
-                height,
-                viewer,
-                seg_channels,
-                masks_file,
-                regions_file,
+                num_trenches=num_trenches,
+                num_rows=num_rows,
+                file_nodes=file_nodes,
+                fields_of_view=extents["fields_of_view"],
+                frames=extents["frames"],
+                z_levels=extents["z_levels"],
+                tr_width=tr_width,
+                img_width=img_width,
+                height=height,
+                viewer=viewer,
+                sc=seg_channels,
+                masks_file=masks_file_path,
+                regions_file=regions_file,
             )
 
         # Lineages layers
@@ -732,41 +734,43 @@ def main_kymograph_browser_function(
             seg_channels = df["info_seg_channel"].unique()
             # TODO what about converting to / from bytes & utf-8?
             h5file_lineages.close()
+            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
 
             kymo_lineages_layer(
-                num_trenches,
-                num_rows,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                tr_width,
-                img_width,
-                height,
-                viewer,
-                seg_channels,
-                masks_file,
-                lineages_file,
+                num_trenches=num_trenches,
+                num_rows=num_rows,
+                file_nodes=file_nodes,
+                fields_of_view=extents["fields_of_view"],
+                frames=extents["frames"],
+                z_levels=extents["z_levels"],
+                tr_width=tr_width,
+                img_width=img_width,
+                height=height,
+                viewer=viewer,
+                sc=seg_channels,
+                masks_file=masks_file_path,
+                lineages_file=lineages_file,
             )
 
         # Input a set of images, but also run a calculation on them before displaying.
         # Store the result of the calculation within the regions defined by cell masks.
         if viewer_params_file and data_table_file and masks_file:
             viewer_params = read_params_file(viewer_params_file)
+            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
 
             kymo_computed_image_layer(
-                num_trenches,
-                num_rows,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                tr_width,
-                img_width,
-                height,
-                viewer,
-                masks_file,
-                regions_file,
-                data_table_file,
-                viewer_params,
+                num_trenches=num_trenches,
+                num_rows=num_rows,
+                file_nodes=file_nodes,
+                fields_of_view=extents["fields_of_view"],
+                frames=extents["frames"],
+                z_levels=extents["z_levels"],
+                tr_width=tr_width,
+                img_width=img_width,
+                height=height,
+                viewer=viewer,
+                masks_file=masks_file_path,
+                regions_file=regions_file,
+                data_table_file=data_table_file,
+                viewer_params=viewer_params,
             )

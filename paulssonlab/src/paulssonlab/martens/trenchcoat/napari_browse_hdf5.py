@@ -377,8 +377,6 @@ def query_for_masks(file, fov, frame, z, sc, data_table_file):
     """
     h5file_data = tables.open_file(data_table_file, "r")
     data_table = h5file_data.get_node("/cell_measurements")
-    dftemp = pandas.DataFrame(data_table.read())
-    print(dftemp.columns)
     # NOTE the speed of the queries might be sensitive to the order
     # in which the data are searched. If there are many trenches, but few files,
     # then it's much faster to search trenches first, then files.
@@ -621,30 +619,6 @@ def add_computed_image_layers(
                 viewer.add_image(images_stack, **params)
 
 
-# TODO: select a function from a list of available functions,
-# specified on the command line.
-def run_computed_image_function(mask, df):
-    # Example function: for every unique cell label, replace its
-    # contents with the mean of its mVenus fluorescence intensities.
-    # Calculate mVenus / pixel
-    # Make a copy if we want to add a new column.
-    df = df.copy()
-    df["mean_mVenus"] = df["total_intensity_YFP"] / df["geometry_Area"]
-    key = "mean_mVenus"
-
-    # Alternatively: just display the Area without calculating anything
-    # key = "geometry_Area"
-
-    new_img = numpy.zeros(mask.shape, dtype=numpy.float32)
-    for cell in df.itertuples():
-        # TODO Can this be sped up by doing pixel_value -> f(pixel_value),
-        # where f() is input cell label, output a const number?
-        # Avoids looping. But it's actually pretty fast now.
-        new_img += (mask == cell.info_label) * getattr(cell, key)
-
-    return new_img
-
-
 ###
 
 
@@ -840,7 +814,8 @@ def main_hdf5_browser_function(
 
         # Masks layers
         if masks_file:
-            h5file_masks = tables.open_file(masks_file, "r")
+            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
+            h5file_masks = tables.open_file(masks_file_path, "r")
 
             # Load the segmentation channels from the masks h5file
             seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
@@ -851,7 +826,7 @@ def main_hdf5_browser_function(
             h5file_masks.close()
 
             add_masks_layer(
-                masks_file,
+                masks_file_path,
                 regions_file,
                 file_nodes,
                 extents["fields_of_view"],
@@ -868,9 +843,10 @@ def main_hdf5_browser_function(
         # Input a set of images, but also run a calculation on them before displaying.
         if viewer_params_file and data_table_file and masks_file:
             viewer_params = read_params_file(viewer_params_file)
+            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
 
             add_computed_image_layers(
-                masks_file,
+                masks_file_path,
                 regions_file,
                 file_nodes,
                 extents["fields_of_view"],

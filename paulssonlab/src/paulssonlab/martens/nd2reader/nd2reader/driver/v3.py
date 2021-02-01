@@ -78,10 +78,10 @@ class V3Driver(object):
             order="F",
         )
 
-        # Fotran ordering works best when the last index is the slowest-changing
+        # Fortran ordering works best when the last index is the slowest-changing
         # For image stacks, this typically means that 2D slices are stored in the 1st 2 dims,
         # and therefore a whole slice is in the 3rd dimension.
-        # NOTE because the data are Fotran-ordered, they will appear Transposed
+        # NOTE because the data are Fortran-ordered, they will appear Transposed
         # when viewing with matplotlib pyplot. However, it's more appropriate to Transpose later,
         # and to leave the data intact now.
         image_stack = np.empty(
