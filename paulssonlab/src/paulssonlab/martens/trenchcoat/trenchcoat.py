@@ -318,7 +318,7 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
         fovs = range_expand(fovs)
 
     main_conversion_function(
-        out_dir=out_dir, in_dir=in_dir, num_cpu=num_cpu, frames=frames, fovs=fovs
+        hdf_dir=out_dir, nd2_dir=in_dir, num_cpu=num_cpu, frames=frames, fovs=fovs
     )
 
 
