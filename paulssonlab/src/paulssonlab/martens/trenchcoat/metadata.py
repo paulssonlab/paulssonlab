@@ -132,14 +132,18 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
         else:
             # NOTE: converted to ascii
             # To decode, use decode('unicode-escape')
-            new_node = h5file.create_array(
-                parent_node,
-                child.tag,
-                obj=numpy.array(
-                    child.attrib["value"].encode("ascii", "backslashreplace"),
-                    dtype=types_xml[child.attrib["runtype"]],
-                ),
-            )
+            data = child.attrib["value"].encode("ascii", "backslashreplace")
+            dtype = types_xml[child.attrib["runtype"]]
+
+            try:
+                arr = numpy.array(data, dtype=dtype)
+                new_node = h5file.create_array(parent_node, child.tag, obj=arr)
+            except:
+                print(
+                    "Could not convert {}->{}, type {}->{}".format(
+                        child.attrib["value"], data, child.attrib["runtype"], dtype
+                    )
+                )
 
 
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
@@ -204,7 +208,9 @@ def copy_raw_metadata(h5file, reader):
     Copy the "raw" metadata, which are accessible but with more effort.
     """
     types_xml = {
-        "CLxStringW": numpy.unicode,
+        # NOTE numpy.unicode worked on my PC, but not on the SLURM cluster.
+        # numpy.bytes_ seems to be more robust?
+        "CLxStringW": numpy.bytes_,
         "lx_int32": numpy.int32,
         "lx_uint32": numpy.uint32,
         "double": numpy.float64,

@@ -140,7 +140,6 @@ def trenches_arr_to_canvas(file, fov, frame, z_level, width, height, regions_fil
         file, fov, frame, z_level, regions_file
     )
 
-    # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
 
     for r, tr in zip(regions, trench_numbers):
@@ -188,7 +187,6 @@ def regions_arr_to_canvas(file, fov, frame, z_level, width, height, regions_file
     """
     regions = regions_to_list(file, fov, frame, z_level, regions_file)
 
-    # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
     for i, r in enumerate(regions):
         canvas[r[0] : r[2], r[1] : r[3]] = i + 1
@@ -252,7 +250,6 @@ def add_masks_layer(
             viewer.add_labels(masks_stack, name="Segmented Cells {}".format(sc))
 
     # No regions file
-    # FIXME need to re-work the lazy part! Follow the lead from the others.
     else:
         for sc in seg_channels:
             masks_stack = dask_stack_loop(
@@ -722,8 +719,7 @@ def load_img(
         return img.T
 
     except:
-        # FIXME width,height?
-        return dask.array.from_delayed(numpy.zeros(shape=(height, width), dtype=dtype))
+        return numpy.zeros((height, width), dtype=dtype)
 
 
 ### Main function
