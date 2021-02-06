@@ -300,6 +300,7 @@ class Registry(object):
         if name not in df.index:
             raise ValueError(f"cannot find {name}")
         entry = df.loc[name].to_dict()
+        entry["_id"] = name
         entry["_type"] = type_
         entry["_prefix"] = prefix
         if type_ in TYPES_WITH_MAPS:
