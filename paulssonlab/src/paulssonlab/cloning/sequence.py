@@ -235,6 +235,30 @@ class DsSeqRecord(SeqRecord):
         feature.qualifiers["label"] = [label]
         return self.__class__(self, features=[feature, *self.features])
 
+    def annotate_overhangs(self, type="misc_feature"):
+        features = []
+        if self.upstream_overhang:
+            upstream_feature = SeqFeature(
+                FeatureLocation(
+                    0, abs(self.upstream_overhang), strand=self.upstream_strand
+                ),
+                type=type,
+            )
+            upstream_feature.qualifiers["label"] = ["overhang"]
+            features.append(upstream_feature)
+        if self.downstream_overhang:
+            downstream_feature = SeqFeature(
+                FeatureLocation(
+                    len(self) - abs(self.downstream_overhang),
+                    len(self),
+                    strand=self.downstream_strand,
+                ),
+                type=type,
+            )
+            downstream_feature.qualifiers["label"] = ["overhang"]
+            features.append(downstream_feature)
+        return self.__class__(self, features=[*features, *self.features])
+
     def reverse_complement(self, **kwargs):
         kwargs = {
             **dict(
