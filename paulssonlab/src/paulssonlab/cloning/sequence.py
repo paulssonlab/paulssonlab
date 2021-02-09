@@ -117,6 +117,7 @@ class DsSeqRecord(SeqRecord):
             annotations=annotations,
             letter_annotations=letter_annotations,
         )
+        self.annotations.setdefault("molecule_type", "ds-DNA")  # default to ds-DNA
         if circular is not None:
             self.circular = circular
         elif "topology" not in self.annotations:
