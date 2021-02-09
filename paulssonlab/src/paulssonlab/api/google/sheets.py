@@ -1,3 +1,4 @@
+import re
 import pygsheets
 
 SHEETS_MIMETYPE = "application/vnd.google-apps.spreadsheet"
@@ -54,7 +55,11 @@ def clear_sheet(sheet, skiprows=1):
     )
     bounds = []
     for col, value in enumerate(first_row):
-        if not isinstance(value, str) or not value.startswith("="):
+        if (
+            not isinstance(value, str)
+            or re.match(r"=HYPERLINK\(", value, re.IGNORECASE)
+            or not value.startswith("=")
+        ):
             bounds.append(((skiprows, col), (None, col + 1)))
     _clear_sheet_request(sheet, bounds)
 
