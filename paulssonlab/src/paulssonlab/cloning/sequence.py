@@ -81,7 +81,6 @@ class DsSeqRecord(SeqRecord):
             features = features or seq.features.copy()
             annotations = annotations or seq.annotations.copy()
             letter_annotations = letter_annotations or seq.letter_annotations.copy()
-            seq = seq.seq
             if isinstance(seq, DsSeqRecord):
                 circular = circular if circular is not None else seq.circular
                 upstream_overhang = (
@@ -104,6 +103,8 @@ class DsSeqRecord(SeqRecord):
                     if downstream_inward_cut is not None
                     else seq.downstream_inward_cut
                 )
+            # need to grab the actual sequence
+            seq = seq.seq
         id = id or "<unknown id>"
         name = name or "<unknown name>"
         description = description or "<unknown description>"
