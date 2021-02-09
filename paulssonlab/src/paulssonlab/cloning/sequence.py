@@ -200,7 +200,6 @@ class DsSeqRecord(SeqRecord):
         seq.circular = True
         return seq
 
-    # change this to assemble?
     def assemble(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
         if not isinstance(seq, self.__class__):
             seq = self.__class__(seq)
@@ -337,7 +336,9 @@ class DsSeqRecord(SeqRecord):
             slice2 = self.slice(None, stop, annotation_stop=annotation_stop)
             new_seq = slice1 + slice2
         else:
+            # SeqRecord.__getitem__ does not preserve annotations or features
             new_seq = SeqRecord.__getitem__(self, slice(start, stop))
+            new_seq.annotations = self.annotations
             new_seq.upstream_overhang = max(
                 abs(self.upstream_overhang) - start, 0
             ) * sign(self.upstream_overhang)
