@@ -17,16 +17,20 @@ from paulssonlab.cloning.workflow import (
     ID_REGEX,
     part_entry_to_seq,
     re_digest_part,
+    is_bases,
 )
 from paulssonlab.api import read_sequence, regex_key
-from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr
+from paulssonlab.api.benchling import upload_sequence
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
 from paulssonlab.cloning.commands import expr_parser, command_parser
+from paulssonlab.api.util import PROGRESS_BAR
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
 FOLDER_TYPES = ["maps", "sequencing"]
 TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
 TYPES_WITH_MAPS = ["plasmids"]
 TYPES_WITHOUT_IDS = ["parts"]
+BENCHLING_SYNC_TYPES = ["parts", "plasmids", "oligos"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
 EXPR_PRIORITY = ["digest", "pcr"]
@@ -40,13 +44,18 @@ def _name_mapper_for_prefix(old_prefix, new_prefix):
 
 
 class Registry(object):
-    def __init__(self, sheets_client, registry_folder):
+    def __init__(self, sheets_client, registry_folder, benchling_folder=None):
         self.sheets = {}
         self.dfs = {}
         self.maps = {}
         self.sheets_client = sheets_client
         self.registry_folder = registry_folder
+        self.benchling_folder = benchling_folder
         self.refresh()
+
+    @property
+    def benchling_session(self):
+        return self.benchling_folder.session
 
     def clear_cache(self):
         self.sheets = {}
@@ -193,7 +202,7 @@ class Registry(object):
             self.dfs[id_] = df
         return df
 
-    def get_df(self, name, types=("plasmids", "strains", "oligos", "parts")):
+    def get_df_by_name(self, name, types=("plasmids", "strains", "oligos", "parts")):
         match = re.match(ID_REGEX, name)
         if match:
             prefix = match.group(1)
@@ -216,6 +225,9 @@ class Registry(object):
                 if id_ is not None:
                     return self.get_df_by_id(id_), prefix, type_
         raise ValueError(f"could not find dataframe for '{name}'")
+
+    def get_df(self, key):
+        return self.get_df_by_id(self.registry[key])
 
     def get_map_list(self, prefix):
         if prefix in self.maps:
@@ -295,8 +307,7 @@ class Registry(object):
     def command(self, s):
         pass
 
-    def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
-        df, prefix, type_ = self.get_df(name, types=types)
+    def _get(self, df, prefix, type_, name):
         if name not in df.index:
             raise ValueError(f"cannot find {name}")
         entry = df.loc[name].to_dict()
@@ -313,3 +324,59 @@ class Registry(object):
         elif "Sequence" in entry:
             entry["_seq"] = Seq(entry["Sequence"])
         return entry
+
+    def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
+        df, prefix, type_ = self.get_df_by_name(name, types=types)
+        return self._get(df, prefix, type_, name)
+
+    def sync_benchling(
+        self, overwrite=None, return_data=False, progress_bar=PROGRESS_BAR
+    ):
+        cache = {}
+        problems = []
+        prefixes = self.registry.keys()
+        if progress_bar is not None and len(prefixes):
+            prefixes = progress_bar(prefixes)
+        for prefix, type_ in prefixes:
+            if type_ not in BENCHLING_SYNC_TYPES:
+                continue
+            if hasattr(prefixes, "set_description"):
+                prefixes.set_description(f"Scanning {prefix} ({type_})")
+            oligo = type_ == "oligos"
+            df = self.get_df((prefix, type_))
+            rows = df.index[:6]  # TODO
+            if progress_bar is not None and len(rows) >= 2:
+                rows = progress_bar(rows)
+            for name in rows:
+                if not name:
+                    continue
+                if hasattr(rows, "set_description"):
+                    rows.set_description(f"Processing {name}")
+                try:
+                    seq = self._get(df, prefix, type_, name)["_seq"]
+                except:
+                    problems.append((prefix, type_, name))
+                    continue
+                bases = str(get_seq(seq))
+                if not is_bases(bases):
+                    problems.append((prefix, type_, name))
+                    continue
+                # for parts, add annotations to indicate overhangs
+                # because Benchling can't display dsDNA with sticky ends
+                if type_ == "parts":
+                    seq = seq.annotate_overhangs()
+                path = (f"{prefix}_{type_}", name)
+                dna = upload_sequence(
+                    self.benchling_folder,
+                    path,
+                    seq,
+                    oligo=oligo,
+                    overwrite=overwrite,
+                    cache=cache,
+                )
+                if return_data:
+                    cache[path] = dna
+        if return_data:
+            return problems, cache
+        else:
+            return problems

@@ -223,7 +223,11 @@ def _get_addgene_kit(
     if table is None:
         raise ValueError("could not find Addgene kit table")
     wells = parse_html_table(table, row_parser=_parse_addgene_kit_row)
-    if progress_bar is not None and (include_sequences or include_details):
+    if (
+        progress_bar is not None
+        and len(wells) >= 2
+        and (include_sequences or include_details)
+    ):
         wells_iter = progress_bar(wells)
     else:
         wells_iter = wells

@@ -265,7 +265,7 @@ def _import_addgene_data(
     if isinstance(urls, (str, int)):
         urls = [urls]
     data = []
-    if progress_bar is not None and len(urls) > 1:
+    if progress_bar is not None and len(urls) >= 2:
         urls = progress_bar(urls)
     for url in urls:
         addgene = get_addgene(
@@ -495,3 +495,7 @@ def re_digest_part(seq, enzyme):
             f"{len(inward_cut_frags)} fragments with inward cuts were generated, expecting one"
         )
     return inward_cut_frags[0]
+
+
+def is_bases(s):
+    return re.match(r"^[atcgrymkswbdhvn]+$", s, re.IGNORECASE) is not None
