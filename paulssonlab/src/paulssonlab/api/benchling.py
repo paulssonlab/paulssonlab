@@ -1,6 +1,7 @@
 import benchlingapi
 from paulssonlab.cloning.sequence import get_seq
-
+import jsondiff
+from copy import deepcopy
 
 # TODO: horribly hacky monkey-patch
 benchlingapi.models.Folder.CREATE_SCHEMA = dict(
@@ -24,8 +25,38 @@ def get_project_root(session, project_name):
     return root_folder
 
 
+def _dictsorter(x):
+    return tuple(x[k] for k in sorted(x.keys()))
+
+
+def dnasequence_diff(a, b):
+    a = deepcopy(a)
+    b = deepcopy(b)
+    for d in (a, b):
+        for key in ("creator", "webUrl"):
+            d.pop(key, None)
+        if "translations" in d:
+            for translation in d["translations"]:
+                for key in ("start", "end"):
+                    translation.pop(key, None)
+        if "annotations" in d:
+            for annotation in d["annotations"]:
+                annotation.pop("color", None)
+            d["annotations"] = sorted(d["annotations"], key=_dictsorter)
+    diff = jsondiff.diff(a, b)
+    return diff
+
+
 def upload_sequence(
-    root_folder, path, seq, oligo=False, overwrite=True, check_existing=True, cache=None
+    root_folder,
+    path,
+    seq,
+    oligo=False,
+    overwrite=True,
+    check_existing=True,
+    update_in_place=True,
+    mtime=None,
+    cache=None,
 ):
     session = root_folder.session
     if cache is None:
@@ -34,6 +65,7 @@ def upload_sequence(
         path = (path,)
     if len(path) >= 2:
         root_folder = ensure_folder(root_folder, path[:-1], cache=cache)
+    will_update = False
     if check_existing:
         if oligo:
             entity_cls = session.Oligo
@@ -41,8 +73,13 @@ def upload_sequence(
             entity_cls = session.DNASequence
         existing_dna = entity_cls.find_by_name(path[-1], folder_id=root_folder.id)
         if existing_dna is not None:
+            # TODO: read benchling mtime
+            # TODO: don't set will_update if mtime isn't newer than Benchling mtime
             if overwrite is True:
-                existing_dna.archive()
+                if update_in_place:
+                    will_update = True
+                else:
+                    existing_dna.archive()
             elif overwrite is False:
                 raise ValueError(f"Benchling sequence already exists: {path}")
             elif overwrite is None:
@@ -52,7 +89,12 @@ def upload_sequence(
         dna = session.Oligo(name=path[-1], bases=bases, folder_id=root_folder.id)
     else:
         dna = seqrecord_to_benchling(session, root_folder.id, path[-1], seq)
-    dna.save()
+    if will_update:
+        if len(dnasequence_diff(dna, existing_dna)) != 0:
+            dna.id = existing_dna.id
+            dna.update()
+    else:
+        dna.save()
     return dna
 
 
@@ -88,6 +130,7 @@ def seqrecord_to_benchling(
             f"unexpected value for molecule_type: {seq.annotations['molecule_type']}"
         )
     bases = seq.seq
+    length = len(bases)
     annotations = []
     translations = []
     for feature in seq.features:
@@ -130,17 +173,19 @@ def seqrecord_to_benchling(
             for loc in feature.location.parts:
                 start = int(loc.start)
                 end = int(loc.end)
+                # modulo length here and below because benchling seems to encode
+                # a whole-plasmid annotation as 0-0 instead of 0-end
                 annotation = {
-                    "start": start,
-                    "end": end,
+                    "start": start % length,
+                    "end": end % length,
                     "strand": loc.strand,
                     "name": feature_name + f" [{start}-{end}]",
                     "type": feature.type,
                 }
                 annotations.append(annotation)
         annotation = {
-            "start": int(feature.location.start),
-            "end": int(feature.location.end),
+            "start": int(feature.location.start) % length,
+            "end": int(feature.location.end) % length,
             "strand": feature.location.strand,
             "name": feature_name_all,
             "type": feature.type,
@@ -153,7 +198,7 @@ def seqrecord_to_benchling(
                 "strand": annotation["strand"],
                 "aminoAcids": feature.qualifiers["translation"],
                 "regions": [
-                    {"start": int(loc.start), "end": int(loc.end)}
+                    {"start": int(loc.start) % length, "end": int(loc.end) % length}
                     for loc in feature.location.parts
                 ],
             }
@@ -183,10 +228,16 @@ def seqrecord_to_benchling(
     if custom_fields:
         _custom_fields = {**_custom_fields, **custom_fields}
     _custom_fields = {k: {"value": v} for k, v in _custom_fields.items()}
+    # we set a value for lengths and add empty aliases, fields, primers
+    # so that we can compute diffs against server-side models
     dna = session.DNASequence(
         name=name,
         folder_id=folder_id,
         bases=bases,
+        length=length,
+        aliases=[],
+        fields={},
+        primers=[],
         annotations=annotations,
         translations=translations,
         is_circular=is_circular,
