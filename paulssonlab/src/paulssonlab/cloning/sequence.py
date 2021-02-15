@@ -364,6 +364,8 @@ class DsSeqRecord(SeqRecord):
             # SeqRecord.__getitem__ does not preserve annotations or features
             new_seq = SeqRecord.__getitem__(self, slice(start, stop))
             new_seq.annotations = self.annotations
+            # because circular is stored in annotations, need to set this after setting annotations
+            new_seq.circular = False
             new_seq.upstream_overhang = max(
                 abs(self.upstream_overhang) - start, 0
             ) * sign(self.upstream_overhang)
@@ -404,7 +406,7 @@ class DsSeqRecord(SeqRecord):
                 raise ValueError("step != 1 not allowed")
             return self.slice(start, stop)
         else:
-            raise ValueError("invalid index")
+            raise ValueError(f"invalid index: {index}")
 
     def __add__(self, other):
         if self.circular:

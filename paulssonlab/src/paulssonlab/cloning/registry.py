@@ -43,6 +43,13 @@ def _name_mapper_for_prefix(old_prefix, new_prefix):
     return mapper
 
 
+def apply_expr(func, *args):
+    # this is a placeholder to wrap all sequence expressions as {"_seq": DsSeqRecord(...)}
+    # until we have a need to pass information beyond the bare sequence
+    args = [a["_seq"] if isinstance(a, dict) and "_seq" in a else a for a in args]
+    return {"_seq": func(*args)}
+
+
 class Registry(object):
     def __init__(self, sheets_client, registry_folder, benchling_folder=None):
         self.sheets = {}
@@ -238,17 +245,20 @@ class Registry(object):
             if maps_folder is None:
                 raise ValueError(f"expecting a registry entry {key}")
             maps = list_drive(
-                self.sheets_client.drive.service, root=maps_folder, is_folder=False
+                self.sheets_client.drive.service,
+                root=maps_folder,
+                is_folder=False,
+                fields=["modifiedTime"],
             )
             self.maps[prefix] = maps
             return maps
 
     def _get_map(self, prefix, name):
         seq_files = self.get_map_list(prefix)
-        seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
+        seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)
         seq = read_sequence(
             self.sheets_client.drive.service.files()
-            .get_media(fileId=seq_file)
+            .get_media(fileId=seq_file["id"])
             .execute()
             .decode("utf8")
         )
@@ -259,7 +269,8 @@ class Registry(object):
             raise NotImplementedError(
                 f"cannot import genbank molecule_type: '{molecule_type}'"
             )
-        return seq
+        entry = {"_seq": seq, "_mtime": seq_file["modifiedTime"]}
+        return entry
 
     def eval_exprs(self, s):
         if not s.strip():
@@ -280,7 +291,8 @@ class Registry(object):
             return None
         type_ = expr["_type"]
         if type_ == "pcr":
-            return pcr(
+            return apply_expr(
+                pcr,
                 self.eval_expr(expr["template"]),
                 self.eval_expr(expr["primer1"]),
                 self.eval_expr(expr["primer2"]),
@@ -290,17 +302,13 @@ class Registry(object):
             if not hasattr(Bio.Restriction, enzyme_name):
                 raise ValueError(f"unknown enzyme '{enzyme_name}'")
             enzyme = getattr(Bio.Restriction, enzyme_name)
-            return re_digest_part(self.eval_expr(expr["input"]), enzyme)
+            return apply_expr(re_digest_part, self.eval_expr(expr["input"]), enzyme)
         elif type_ == "anneal":
-            return anneal(
-                self.eval_expr(expr["strand1"]), self.eval_expr(expr["strand2"])
+            return apply_expr(
+                anneal, self.eval_expr(expr["strand1"]), self.eval_expr(expr["strand2"])
             )
         elif type_ == "name":
-            entry = self.get(expr["name"])
-            if entry is None or "_seq" not in entry:
-                return None
-            else:
-                return entry["_seq"]
+            return self.get(expr["name"])
         else:
             return NotImplementedError
 
@@ -315,14 +323,21 @@ class Registry(object):
         entry["_type"] = type_
         entry["_prefix"] = prefix
         if type_ in TYPES_WITH_MAPS:
-            entry["_seq"] = self._get_map(prefix, name)
+            entry.update(self._get_map(prefix, name))
         elif type_ == "parts":
-            seq = self.eval_exprs(entry["Usage"])
+            res = self.eval_exprs(entry["Usage"])
+            print(">>>", res)
+            seq = res["_seq"]
+            mtime = res["_mtime"]
+            # TODO: this mtime will account for plasmid map mtime but NOT if the Usage column is changed
             if seq is None:
                 seq = part_entry_to_seq(entry)
+                mtime = None
             entry["_seq"] = seq
+            entry["_mtime"] = mtime
         elif "Sequence" in entry:
             entry["_seq"] = Seq(entry["Sequence"])
+            entry["_mtime"] = None
         return entry
 
     def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
@@ -344,7 +359,7 @@ class Registry(object):
                 prefixes.set_description(f"Scanning {prefix} ({type_})")
             oligo = type_ == "oligos"
             df = self.get_df((prefix, type_))
-            rows = df.index[:6]  # TODO
+            rows = df.index[:1]  # TODO
             if progress_bar is not None and len(rows) >= 2:
                 rows = progress_bar(rows)
             for name in rows:
@@ -354,12 +369,12 @@ class Registry(object):
                     rows.set_description(f"Processing {name}")
                 try:
                     seq = self._get(df, prefix, type_, name)["_seq"]
-                except:
-                    problems.append((prefix, type_, name))
+                except Exception as e:
+                    problems.append((prefix, type_, name, e))
                     continue
                 bases = str(get_seq(seq))
                 if not is_bases(bases):
-                    problems.append((prefix, type_, name))
+                    problems.append((prefix, type_, name, None))
                     continue
                 # for parts, add annotations to indicate overhangs
                 # because Benchling can't display dsDNA with sticky ends

@@ -42,7 +42,9 @@ def get_drive_by_path(service, path, root=None, is_folder=None):
     return root
 
 
-def list_drive(service, root=None, query=None, is_folder=None, page_size=1000):
+def list_drive(
+    service, root=None, query=None, is_folder=None, page_size=1000, fields=[]
+):
     qs = []
     if root:
         qs.append(f"'{root}' in parents")
@@ -54,7 +56,9 @@ def list_drive(service, root=None, query=None, is_folder=None, page_size=1000):
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
     files_service = service.files()
-    req = files_service.list(q=q, pageSize=page_size)
+    fields = ["kind", "id", "name", "mimeType", *fields]
+    fields = "files({})".format(",".join(fields))
+    req = files_service.list(q=q, pageSize=page_size, fields=fields)
     files = []
     while req is not None:
         doc = req.execute()
@@ -65,6 +69,9 @@ def list_drive(service, root=None, query=None, is_folder=None, page_size=1000):
         if file["name"] in name_to_file:
             raise ValueError(f"got duplicate file name in drive list: {file['name']}")
         name_to_file[file["name"]] = file
+    for file in name_to_file.values():
+        if "modifiedTime" in file:
+            file["modifiedTime"] = from_rfc3339(file["modifiedTime"])
     return name_to_file
 
 

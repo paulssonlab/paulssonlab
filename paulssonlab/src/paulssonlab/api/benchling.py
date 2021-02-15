@@ -7,6 +7,7 @@ from copy import deepcopy
 benchlingapi.models.Folder.CREATE_SCHEMA = dict(
     only=("id", "name", "parent_folder_id", "project_id", "archive_record")
 )
+benchlingapi.models.Oligo.UPDATE_SCHEMA = benchlingapi.models.Oligo.CREATE_SCHEMA
 # handle autoreloading
 if benchlingapi.models.mixins.CreateMixin not in benchlingapi.models.Folder.__bases__:
     benchlingapi.models.Folder.__bases__ = (
@@ -15,6 +16,10 @@ if benchlingapi.models.mixins.CreateMixin not in benchlingapi.models.Folder.__ba
 if benchlingapi.models.mixins.ListMixin not in benchlingapi.models.Oligo.__bases__:
     benchlingapi.models.Oligo.__bases__ = (
         benchlingapi.models.mixins.ListMixin,
+    ) + benchlingapi.models.Oligo.__bases__
+if benchlingapi.models.mixins.UpdateMixin not in benchlingapi.models.Oligo.__bases__:
+    benchlingapi.models.Oligo.__bases__ = (
+        benchlingapi.models.mixins.UpdateMixin,
     ) + benchlingapi.models.Oligo.__bases__
 
 
@@ -29,20 +34,25 @@ def _dictsorter(x):
     return tuple(x[k] for k in sorted(x.keys()))
 
 
-def dnasequence_diff(a, b):
+def strip_dnasequence(seq):
+    for key in ("iseq", "creator", "webUrl"):
+        seq.pop(key, None)
+    if "translations" in seq:
+        for translation in seq["translations"]:
+            for key in ("start", "enseq"):
+                translation.pop(key, None)
+    if "annotations" in seq:
+        for annotation in seq["annotations"]:
+            annotation.pop("color", None)
+        seq["annotations"] = sorted(seq["annotations"], key=_dictsorter)
+    return seq
+
+
+def diff_dnasequence(a, b):
     a = deepcopy(a)
     b = deepcopy(b)
     for d in (a, b):
-        for key in ("creator", "webUrl"):
-            d.pop(key, None)
-        if "translations" in d:
-            for translation in d["translations"]:
-                for key in ("start", "end"):
-                    translation.pop(key, None)
-        if "annotations" in d:
-            for annotation in d["annotations"]:
-                annotation.pop("color", None)
-            d["annotations"] = sorted(d["annotations"], key=_dictsorter)
+        strip_dnasequence(d)
     diff = jsondiff.diff(a, b)
     return diff
 
@@ -86,11 +96,21 @@ def upload_sequence(
                 return existing_dna
     if oligo:
         bases = str(get_seq(seq))
-        dna = session.Oligo(name=path[-1], bases=bases, folder_id=root_folder.id)
+        # we set a value for lengths and add empty aliases, fields, custom_fields
+        # so that we can compute diffs against server-side models
+        dna = session.Oligo(
+            name=path[-1],
+            bases=bases,
+            length=len(bases),
+            fields={},
+            aliases=[],
+            custom_fields={},
+            folder_id=root_folder.id,
+        )
     else:
         dna = seqrecord_to_benchling(session, root_folder.id, path[-1], seq)
     if will_update:
-        if len(dnasequence_diff(dna, existing_dna)) != 0:
+        if len(diff_dnasequence(dna.dump(), existing_dna.dump())) != 0:
             dna.id = existing_dna.id
             dna.update()
     else:
