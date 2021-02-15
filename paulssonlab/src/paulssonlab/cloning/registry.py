@@ -245,10 +245,7 @@ class Registry(object):
             if maps_folder is None:
                 raise ValueError(f"expecting a registry entry {key}")
             maps = list_drive(
-                self.sheets_client.drive.service,
-                root=maps_folder,
-                is_folder=False,
-                fields=["modifiedTime"],
+                self.sheets_client.drive.service, root=maps_folder, is_folder=False
             )
             self.maps[prefix] = maps
             return maps
@@ -269,7 +266,7 @@ class Registry(object):
             raise NotImplementedError(
                 f"cannot import genbank molecule_type: '{molecule_type}'"
             )
-        entry = {"_seq": seq, "_mtime": seq_file["modifiedTime"]}
+        entry = {"_seq": seq}
         return entry
 
     def eval_exprs(self, s):
@@ -326,18 +323,13 @@ class Registry(object):
             entry.update(self._get_map(prefix, name))
         elif type_ == "parts":
             res = self.eval_exprs(entry["Usage"])
-            print(">>>", res)
             seq = res["_seq"]
-            mtime = res["_mtime"]
-            # TODO: this mtime will account for plasmid map mtime but NOT if the Usage column is changed
             if seq is None:
                 seq = part_entry_to_seq(entry)
-                mtime = None
+            seq.id = seq.name = seq.description = name
             entry["_seq"] = seq
-            entry["_mtime"] = mtime
         elif "Sequence" in entry:
             entry["_seq"] = Seq(entry["Sequence"])
-            entry["_mtime"] = None
         return entry
 
     def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):

@@ -35,11 +35,11 @@ def _dictsorter(x):
 
 
 def strip_dnasequence(seq):
-    for key in ("iseq", "creator", "webUrl"):
+    for key in ("id", "creator", "webUrl"):
         seq.pop(key, None)
     if "translations" in seq:
         for translation in seq["translations"]:
-            for key in ("start", "enseq"):
+            for key in ("start", "end"):
                 translation.pop(key, None)
     if "annotations" in seq:
         for annotation in seq["annotations"]:
