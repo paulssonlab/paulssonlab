@@ -1,7 +1,11 @@
 import benchlingapi
 from paulssonlab.cloning.sequence import get_seq
+import json
+import hashlib
 import jsondiff
 from copy import deepcopy
+
+HASH_FIELD = "_hash"
 
 # TODO: horribly hacky monkey-patch
 benchlingapi.models.Folder.CREATE_SCHEMA = dict(
@@ -35,6 +39,7 @@ def _dictsorter(x):
 
 
 def strip_dnasequence(seq):
+    seq = deepcopy(seq)
     for key in ("id", "creator", "webUrl"):
         seq.pop(key, None)
     if "translations" in seq:
@@ -45,16 +50,24 @@ def strip_dnasequence(seq):
         for annotation in seq["annotations"]:
             annotation.pop("color", None)
         seq["annotations"] = sorted(seq["annotations"], key=_dictsorter)
+    if "customFields" in seq:
+        seq["customFields"].pop(HASH_FIELD, None)
     return seq
 
 
 def diff_dnasequence(a, b):
-    a = deepcopy(a)
-    b = deepcopy(b)
     for d in (a, b):
         strip_dnasequence(d)
     diff = jsondiff.diff(a, b)
     return diff
+
+
+def hash_dnasequence(seq):
+    seq = strip_dnasequence(seq)
+    s = json.dumps(seq, sort_keys=True)
+    # TODO: add a usedforsecurity=False flag to the constructor
+    # in Python 3.9
+    return hashlib.sha256(s.encode()).hexdigest()
 
 
 def upload_sequence(
@@ -65,7 +78,7 @@ def upload_sequence(
     overwrite=True,
     check_existing=True,
     update_in_place=True,
-    mtime=None,
+    use_hash=True,
     cache=None,
 ):
     session = root_folder.session
@@ -83,8 +96,6 @@ def upload_sequence(
             entity_cls = session.DNASequence
         existing_dna = entity_cls.find_by_name(path[-1], folder_id=root_folder.id)
         if existing_dna is not None:
-            # TODO: read benchling mtime
-            # TODO: don't set will_update if mtime isn't newer than Benchling mtime
             if overwrite is True:
                 if update_in_place:
                     will_update = True
@@ -110,7 +121,18 @@ def upload_sequence(
     else:
         dna = seqrecord_to_benchling(session, root_folder.id, path[-1], seq)
     if will_update:
-        if len(diff_dnasequence(dna.dump(), existing_dna.dump())) != 0:
+        dna_data = dna.dump()
+        existing_dna_data = existing_dna.dump()
+        if not oligo:
+            new_hash = dna.custom_fields[HASH_FIELD]["value"]
+            try:
+                old_hash = existing_dna.custom_fields[HASH_FIELD]["value"]
+            except:
+                old_hash = None
+            if use_hash and old_hash == new_hash:
+                # don't update anything
+                return existing_dna
+        if len(diff_dnasequence(dna_data, existing_dna_data)) != 0:
             dna.id = existing_dna.id
             dna.update()
     else:
@@ -263,4 +285,5 @@ def seqrecord_to_benchling(
         is_circular=is_circular,
         custom_fields=_custom_fields,
     )
+    dna.custom_fields["_hash"] = {"value": hash_dnasequence(dna.dump())}
     return dna
