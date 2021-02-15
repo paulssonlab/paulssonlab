@@ -42,9 +42,18 @@ def columns_with_validation(service, spreadsheet_id, worksheets=None):
     return has_datavalidation
 
 
-def insert_sheet_rows(sheet, row, entries):
+def insert_sheet_rows(sheet, row, entries, ignore_missing_columns=False):
     columns = sheet.get_row(1)
-    values = [[entry.get(col) for col in columns] for entry in entries]
+    seen_columns = set()
+    values = []
+    for entry in entries:
+        seen_columns.update(entry.keys())
+        values.append([entry.get(col) for col in columns])
+    unused_columns = seen_columns - set(columns)
+    if len(unused_columns) and not ignore_missing_columns:
+        raise ValueError(
+            f"attempting to insert rows with data for missing columns: {unused_columns}"
+        )
     # we insert at row - 1 because this inserts below the given row number
     sheet.insert_rows(row - 1, number=len(values), values=values)
 
