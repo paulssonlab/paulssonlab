@@ -3,8 +3,6 @@ import numpy as np
 import gdspy as g
 from gdspy import CellReference, CellArray, Rectangle
 from geometry import (
-    MAX_POINTS,
-    ROUND_POINTS,
     Cell,
     Round,
     cross,
@@ -305,7 +303,7 @@ def manifold_snake(
     # manifolds
     if manifold_round_radius:
         rounded_corner = Cell(f"Snake-round-{name}")
-        rounded_curve = g.Curve(0, 0)
+        rounded_curve = g.Curve(0, 0, tolerance=0.2)
         rounded_curve.v(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
         rounded_corner.add(

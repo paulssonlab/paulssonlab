@@ -1,12 +1,13 @@
 import numpy as np
-from gdspy import Cell, Round, Polygon, boolean, Rectangle
+import gdspy
+from gdspy import Cell, Polygon, boolean, Rectangle
 from functools import partial
 
-MAX_POINTS = 4094  # 8191 # same as LayoutEditor
-ROUND_POINTS = 100
+MAX_POINTS = 2000  # LayoutEditor uses 8191
+ROUND_TOLERANCE = 0.3
 
 Cell = partial(Cell, exclude_from_current=True)
-Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
+Round = partial(gdspy.Round, tolerance=ROUND_TOLERANCE, max_points=MAX_POINTS)
 boolean = partial(boolean, max_points=MAX_POINTS)
 
 
