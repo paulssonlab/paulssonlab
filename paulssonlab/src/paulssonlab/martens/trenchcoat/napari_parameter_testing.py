@@ -2,8 +2,8 @@
 
 import click
 
-from dask import delayed
-import dask.array
+# from dask import delayed
+# import dask.array
 
 from magicgui import magicgui
 import napari
@@ -12,7 +12,7 @@ from napari.layers import Image, Labels
 import tables
 import numpy
 
-from algorithms import niblack_phase_segmentation
+from algo_sharp import fluor_sharpen_segmentation
 from params import read_params_file
 from metadata import get_metadata
 
@@ -24,37 +24,7 @@ from napari_browse_hdf5 import (
     metadata_array_equal,
 )
 
-# from scipy.signal import find_peaks
-
 ###
-
-# def detect_rows(img, axis, cutoff, plateau_size):
-# """
-# TODO I think it might be worth adding a manual padding ability,
-# in case it's just slightly off. Or a a way to constrain or define
-# the final dimension (length of trenches).
-# """
-## The variance is expected to be greater where there are features (numerals or trenches)
-# var = numpy.var(img, axis=axis)
-
-## The mean is useful as a normalization
-# mean = numpy.mean(img, axis=axis)
-
-## Normalize the variance by the mean
-# var_mean = var/mean
-
-## Define an arbitrary threshold, below which we ignore,
-## and above which we deem peak-worthy
-# gt = var_mean > cutoff
-
-## By defining the plateau size as such, we can eliminate the peaks
-## which arise from the emblazoned numerals.
-# peaks, peaks_properties = find_peaks(gt, plateau_size=plateau_size)
-
-## FIXME img.shape[0] or [1] ? (width, or height?)
-# rows = numpy.array([ [0, i[0], img.shape[1], i[1]] for i in zip (peaks_properties["left_edges"], peaks_properties["right_edges"]) ])
-
-# return rows
 
 
 def regions_arr_to_canvas(canvas, array):
@@ -81,6 +51,18 @@ def regions_arr_to_canvas_F_order(canvas, regions, labels):
 
 
 ###
+
+
+def edit_params(params):
+    """
+    Go through "parameters" and just write over its value.
+    We can't do px_mu conversion, because the widgets also have to.
+    """
+    p = params["parameters"]["trenches"]
+    for k, parameter in p.items():
+        p[k] = p[k]["value"]
+
+    return p
 
 
 def main_function(
@@ -122,9 +104,9 @@ def main_function(
     layer_params = read_params_file(napari_settings_file)
 
     # Load the params from a file
-    params_trenches_and_rows = read_params_file(params_file_trenches)
-    # trench_row_params = params_trenches_and_rows["trench_rows"]
-    trench_params = params_trenches_and_rows["trenches"]
+    trench_params = read_params_file(params_file_trenches)
+    # Skip px_mu conversion
+    trench_params = edit_params(trench_params)
 
     params_segmentation = read_params_file(params_file_segmentation)
     params_segmentation = params_segmentation["mKate2"]["parameters"]
@@ -135,42 +117,6 @@ def main_function(
     # This feels really clunky, defining a function within a function.
     # For one, it prohibits re-use outside of this function.
     # Is there no other way?
-
-    #### Make the Trench Row GUI
-
-    # @magicgui(
-    # auto_call    = False,
-    # layout       = "vertical",
-    # call_button  = "Calculate",
-    # plateau_size = {"min": 0,   "max": 1000},
-    # cutoff       = {"min": 0, "max": 100},
-    # )
-    # def run_trench_row_detection_napari(
-    # Layer_Phase: Image,
-    # plateau_size : float = trench_row_params["plateau_size"],
-    # cutoff       : int = trench_row_params["cutoff"],
-    # ) -> Labels:
-
-    # kwargs = {
-    # "axis"         : 0,
-    # "plateau_size" : int(plateau_size / px_mu),
-    # "cutoff"       : cutoff,
-    # }
-
-    # img = Layer_Phase.data
-    # img = numpy.rot90(img, 1)
-
-    ## Get a numpy array of regions
-    # ranges = detect_rows(img, **kwargs)
-
-    ## Make a labeled image
-    ## FIXME or height, width?
-    # canvas = numpy.zeros(shape=(img.shape[0], img.shape[1]), dtype=numpy.uint16)
-    # canvas = regions_arr_to_canvas(canvas, ranges)
-    # canvas = numpy.rot90(canvas, -1)
-
-    ## TODO how to pass in a name for the resulting labels layer?
-    # return canvas
 
     ### Make the Trench GUI
 
@@ -190,9 +136,8 @@ def main_function(
         pad_bottom={"min": 0, "max": 20},
     )
     def run_trench_detection_napari(
-        Layer_Phase: Image,
+        channel: Image,
         tr_height: float = trench_params["tr_height"],
-        # tr_width:   float = trench_params["tr_width"],
         tr_width: int = trench_params["tr_width"],
         tr_spacing: float = trench_params["tr_spacing"],
         pad_left: int = trench_params["pad_left"],
@@ -201,10 +146,10 @@ def main_function(
         pad_bottom: int = trench_params["pad_bottom"],
     ) -> Labels:
         kwargs = {
+            # "tr_height"  : tr_height,
             "tr_height": int(tr_height / px_mu),
-            # "tr_width"   : int(tr_width / px_mu),
             "tr_width": tr_width,
-            # "tr_spacing" : tr_spacing / px_mu,
+            # "tr_width"   : int(tr_width / px_mu),
             "tr_spacing": tr_spacing,
             "pad_left": pad_left,
             "pad_top": pad_top,
@@ -212,7 +157,7 @@ def main_function(
             "pad_bottom": pad_bottom,
         }
 
-        img = Layer_Phase.data
+        img = channel.data.T
 
         # find_trenches() returns a multi-dimensional numpy list (and not a numpy array,
         # because each row might have a different number of trenches,
@@ -222,7 +167,7 @@ def main_function(
         )
 
         global trenches
-        (trenches, y_offsets) = find_trenches(img.T, boxes, **kwargs)
+        (trenches, y_offsets) = find_trenches(img, boxes, **kwargs)
 
         # FIXME or height, width?
         canvas = numpy.zeros(shape=(img.shape[0], img.shape[1]), dtype=numpy.uint16)
@@ -234,7 +179,7 @@ def main_function(
 
         canvas = canvas.T
 
-        return canvas
+        return Labels(canvas, name="Trenches")
 
     @magicgui(
         auto_call=False,
@@ -249,34 +194,23 @@ def main_function(
         # Must be an odd number! TODO How to force or enforce this constraint?
         niblack_w_v={"min": 1, "max": 41, "value": 11, "step": 2},
         otsu_multiplier={"max": 10.0},
-        fluor_background={"min": 0.0, "max": 65536.0},
         garbage_otsu_value={"min": 0, "max": 65536},
-        scaling_factor={"min": 0.0, "max": 10.0},
-        fluor_sigma={"min": 0.0, "max": 10.0},
-        phase_background={"min": 0.0, "max": 10.0},
-        phase_threshold_min={"min": 0.0, "max": 65536.0},
-        phase_threshold_max={"min": 0.0, "max": 65536.0},
-        phase_sigma={"min": 0.0, "max": 10.0},
         min_size={"min": 0, "max": 1000},
+        unsharp_mask_radius={"min": 1, "max": 10},
+        unsharp_mask_amount={"min": 1, "max": 10},
     )
-    def run_niblack_phase_segmentation_napari(
+    def run_fluor_sharpen_segmentation_napari(
         Layer_Fluor: Image,
-        Layer_Phase: Image,
         # Layer_Trenches: Labels,
         niblack_k: float = params_segmentation["niblack_k"],
         # NOTE: assumes that the params are passed in as a list of 2 values
         niblack_w_h: int = params_segmentation["niblack_w"][0],
         niblack_w_v: int = params_segmentation["niblack_w"][1],
         otsu_multiplier: float = params_segmentation["otsu_multiplier"],
-        fluor_background: float = params_segmentation["fluor_background"],
         garbage_otsu_value: int = params_segmentation["garbage_otsu_value"],
-        scaling_factor: float = params_segmentation["scaling_factor"],
-        fluor_sigma: float = params_segmentation["fluor_sigma"],
-        phase_background: float = params_segmentation["phase_background"],
-        phase_threshold_min: float = params_segmentation["phase_threshold_min"],
-        phase_threshold_max: float = params_segmentation["phase_threshold_max"],
-        phase_sigma: float = params_segmentation["phase_sigma"],
         min_size: float = params_segmentation["min_size"],
+        unsharp_mask_radius: int = params_segmentation["unsharp_mask_radius"],
+        unsharp_mask_amount: int = params_segmentation["unsharp_mask_amount"],
     ) -> Labels:
         # Take the 2 layers & convert each into an appropriate stack-like object
         # Initalize the empty ndarray
@@ -292,13 +226,11 @@ def main_function(
         )
         # Must state that var. is global so that it can use the info from trench detection routine!
         global trenches
-        # TODO change these so that, instead of loading the entire images,
-        # it uses detected trench rows or trenches.
 
         # FIXME or height, width?
-        canvas = numpy.zeros(
-            shape=(Layer_Fluor.shape[0], Layer_Fluor.shape[1]), dtype=numpy.uint16
-        )
+        dim_1 = int(Layer_Fluor.extent.data[1][0]) + 1
+        dim_2 = int(Layer_Fluor.extent.data[1][1]) + 1
+        canvas = numpy.zeros((dim_2, dim_1), dtype=numpy.uint16)
 
         # First row of trenches, previously detected using another GUI
         # NOTE Here, regions is a *global* variable, previously
@@ -323,41 +255,27 @@ def main_function(
                     numpy.float64, casting="safe", copy=False
                 )
 
-            # Load phase data
-            this_img = Layer_Phase.data.T
-            for j, r in enumerate(regions):
-                # NOTE Does copy flag actually make a difference?
-                stack[..., j, 1] = this_img[r[0] : r[2], r[1] : r[3]].astype(
-                    numpy.float64, casting="safe", copy=False
-                )
-
             # Temporarily assign values to any variables which aren't connected to magicgui
             kwargs = {
                 "niblack_k": niblack_k,
                 "niblack_w": [niblack_w_h, niblack_w_v],
                 "otsu_multiplier": otsu_multiplier,
-                "fluor_background": fluor_background,
                 "garbage_otsu_value": garbage_otsu_value,
-                "scaling_factor": scaling_factor,
-                "fluor_sigma": fluor_sigma,
-                "phase_background": phase_background,
-                "phase_threshold_min": phase_threshold_min,
-                "phase_threshold_max": phase_threshold_max,
-                "phase_sigma": phase_sigma,
-                "min_size": int(min_size / px_mu),
+                "min_size": min_size,
+                "unsharp_mask_radius": unsharp_mask_radius,
+                "unsharp_mask_amount": unsharp_mask_amount,
             }
 
             stack_fl = stack[..., 0]
-            stack_ph = stack[..., 1]
 
             # Call the function & get a labeled image
-            labeled = niblack_phase_segmentation(stack_fl, stack_ph, **kwargs)
+            labeled = fluor_sharpen_segmentation(stack_fl, **kwargs)
 
             canvas = regions_arr_to_canvas_F_order(canvas, regions, labeled)
 
         # Done writing to canvas
         canvas = canvas.T
-        return canvas
+        return Labels(canvas, name="Segmentation mask")
 
     # Main GUI init:
     with napari.gui_qt():
@@ -413,31 +331,10 @@ def main_function(
             # Unclear how to do a rotation and keep normal coords.
             viewer.add_image(img.astype("float"), **layer_params[c])
 
-        ## Trench Rows
-
-        ## instantiate the widget
-        # gui_detect_rows = run_trench_row_detection_napari.Gui()
-        # gui_detect_rows.result_name = "Detected Rows"
-
-        ## add the gui to the viewer as a dock widget
-        ## TODO is there also a way to manually add a widget (the first one) which is just a Label?
-        # viewer.window.add_dock_widget(gui_detect_rows, name="Trench Rows", area="left")
-
-        ## if a layer gets added or removed, refresh the dropdown choices
-        ## NOTE why Layer_Phase? Does that set the default?
-        # viewer.layers.events.changed.connect(lambda x: gui_detect_rows.refresh_choices("Layer_Phase"))
-
         # TODO Assume that at this point we will have access to the rows which were returned by the previous widget.
 
         # Trenches
-
-        # instantiate the widget
-        # gui_detect_trenches = run_trench_detection_napari.Gui()
-        # gui_detect_trenches.result_name = "Detected Trenches"
-        # run_trench_detection_napari.show(run=True)
-
         # add the gui to the viewer as a dock widget
-        # viewer.window.add_dock_widget(gui_detect_trenches, name="Trenches", area="left")
         viewer.window.add_dock_widget(
             run_trench_detection_napari, name="Trenches", area="left"
         )
@@ -447,24 +344,17 @@ def main_function(
         viewer.layers.events.removed.connect(run_trench_detection_napari.reset_choices)
 
         # Segmentation
-
-        # instantiate the widget
-        # gui_detect_trenches = run_niblack_phase_segmentation_napari.Gui()
-        # gui_detect_trenches.result_name = "Segmented Cells"
-        # run_niblack_phase_segmentation_napari.show(run=True)
-
         # add the gui to the viewer as a dock widget
-        # viewer.window.add_dock_widget(gui_detect_trenches, name="Segmentation", area="left")
         viewer.window.add_dock_widget(
-            run_niblack_phase_segmentation_napari, name="Segmentation", area="left"
+            run_fluor_sharpen_segmentation_napari, name="Segmentation", area="left"
         )
 
         # if a layer gets added or removed, refresh the dropdown choices
         viewer.layers.events.inserted.connect(
-            run_niblack_phase_segmentation_napari.reset_choices
+            run_fluor_sharpen_segmentation_napari.reset_choices
         )
         viewer.layers.events.removed.connect(
-            run_niblack_phase_segmentation_napari.reset_choices
+            run_fluor_sharpen_segmentation_napari.reset_choices
         )
 
     h5file.close()
@@ -485,7 +375,7 @@ def cli():
     "--in-file",
     "in_file",
     required=True,
-    default="ND2/data.h5",
+    default="HDF5/data.h5",
     type=str,
     help="Input HDF5 file.",
     show_default=True,
@@ -579,32 +469,3 @@ def browse_parameters(
 
 if __name__ == "__main__":
     cli()
-
-    # rows = find_trench_rows(numpy.rot90(img, 1), tr_width, int(tr_height / px_mu), tr_spacing)
-
-    ## FIXME or height, width?
-    # canvas = numpy.zeros(shape=(img.shape[0], img.shape[1]), dtype=numpy.uint16)
-
-    # for row in rows:
-    ## Rotate
-    ## NOTE Apparently all Napari layers are loaded as F32. Doing any computation
-    ## might vary if expecting uint16!
-    # img = img.astype(numpy.uint16)
-    # img = numpy.rot90(img, 1)
-    # img_slice = img[row[0] : row[2], row[1] : row[3]]
-
-    # trenches = find_trenches(img_slice)
-
-    ## Fix the coordinates to match the whole image
-    ## NOTE it's also possible to create a smaller canvas,
-    ## and to apply the "translate" parameter to it in Napari.
-    ## Could be better? Would that make the coordinates confusing?
-    ## Use less memory?
-    # for tr in trenches:
-    # tr[0] += row[0]
-    # tr[1] += row[1]
-    # tr[2] += row[0]
-    # tr[3] += row[1]
-
-    ## Make a canvas
-    # canvas = regions_arr_to_canvas(canvas, trenches)

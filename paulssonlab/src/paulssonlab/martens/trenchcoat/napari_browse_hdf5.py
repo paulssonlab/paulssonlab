@@ -5,6 +5,7 @@ from dask import delayed
 import dask.array
 import pandas
 from params import read_params_string, read_params_file
+import os
 
 """
 NOTE for now, assumes image dtype is float32
