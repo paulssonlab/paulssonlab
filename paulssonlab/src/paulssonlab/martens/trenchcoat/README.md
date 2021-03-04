@@ -14,6 +14,7 @@ TrenchCoat requires the following Python packages:
   - dask -- for displaying multi-dimensional datasets in Napari
   - ipywidgets -- for (optionally) enabling widget sliders on segmentation algorithms, for quick testing of parameters (may be removed in future versions)
   - napari -- interface for displaying images
+  - pyside2 -- Qt library for Napari
   - numpy -- for working with arrays
   - pathlib -- for handling paths
   - pytables -- for working with HDF5 files & data tables
@@ -22,8 +23,9 @@ TrenchCoat requires the following Python packages:
   - scipy -- for analyzing images
   - tqdm -- for progress bars
   - xmltodict -- for converting some of the ND2 metadata
+  - matplotlib -- for access to the tab20 colormap to display cell lineages
 
-In addition, it requires a slightly modified version of the [nd2reader](https://github.com/jimrybarski/nd2reader) Python package (see [here](https://github.com/paulssonlab/paulssonlab/tree/master/paulssonlab/src/paulssonlab/martens/nd2reader)). See below for an explanation.
+In addition, it requires a slightly modified version of the [nd2reader](https://github.com/jimrybarski/nd2reader) Python package (see [here](https://github.com/paulssonlab/paulssonlab/tree/master/paulssonlab/src/paulssonlab/martens/nd2reader)). See [below](#nd2reader) for an explanation.
 
 The source can be downloaded from GitHub and executed from the command line like any Python program.
 
@@ -40,19 +42,39 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  browse-hdf5          Use Napari to browse a dataset & to visualize...
-  browse-kymographs    Use Napari to browse kymographs.
-  browse-nd2           Use Napari to browse a directory of ND2 files.
-  convert              Convert a directory of ND2 files to an HDF5 file.
-  corrections          Generate camera bias and flat field corrections...
-  kymographs           Generate kymographs.
-  print-metadata       Print the HDF5 metadata to the terminal.
-  segment              Detect cells and write their properties and masks to...
-  trench-detect        Detect trenches and write their rectangular regions...
-  trench-measurements  Analyze whole trenches, without cell segmentation.
+  browse-hdf5               Use Napari to browse a dataset & to visualize...
+  browse-kymographs         Use Napari to browse kymographs.
+  browse-nd2                Use Napari to browse a directory of ND2 files.
+  convert                   Convert a directory of ND2 files to an HDF5...
+  correct-trench-numbering  Take into account when a trench lies near the...
+  corrections               Generate camera bias and flat field corrections...
+  kymographs                Generate kymographs.
+  lineage-tracking          Track lineages using HDF5 tables.
+  print-metadata            Print the HDF5 metadata to the terminal.
+  segment                   Detect cells and write their properties and...
+  trench-detect             Detect trenches and write their rectangular...
+  trench-measurements       Analyze whole trenches, without cell...
 ```
 
-Below is a description of each command, followed by an example series of steps used for a typical workflow.
+Below is a description of each command, followed by an example series of steps used for a typical workflow. The commands have been ordered as one might perform them during analysis.
+
+### print-metadata
+
+```
+Usage: trenchcoat print-metadata [OPTIONS]
+
+  Print the HDF5 metadata to the terminal. If no sub-file is specified, then
+  print a list of all sub-files.
+
+Options:
+  -i, --in-file TEXT        Input HDF5 file with metadata.  [default:
+                            HDF5/metadata.h5; required]
+
+  -f, --sub-file-name TEXT  Name of sub-file to print metadata for. This file
+                            was a separate ND2 file before conversion to HDF5.
+
+  --help                    Show this message and exit.
+```
 
 ### browse-nd2
 
@@ -106,6 +128,9 @@ Usage: trenchcoat browse-hdf5 [OPTIONS]
   camera_biases_file, flatfield_corrections_file are paths to HDF5 files
   containing channel-specific correction values.
 
+  Add option to "compute" an image based on properties within segmented
+  regions.
+
 Options:
   -i, --images-file TEXT          Input HDF5 file with images.  [default:
                                   HDF5/data.h5; required]
@@ -118,6 +143,15 @@ Options:
 
   -C, --corrections-file TEXT     Input HDF5 file with camera bias and/or
                                   flatfield corrections for each channel.
+
+  -V, --viewer-params TEXT        YAML file with image viewer params &
+                                  information for displaying column data.
+
+  -d, --data-table-file TEXT      Path to HDF5 file containing cell
+                                  measurements for computed image.
+
+  -t, --data-table-name TEXT      Name of data table within the data table
+                                  file.
 
   --help                          Show this message and exit.
 ```
@@ -195,35 +229,142 @@ Options:
 
 Note that *regions* are optional. Regions is a generic term for *e.g.* trenches. If no regions are specified, then the entire image is analyzed. This is useful for agar pads (which do not have trenches), or possibly for clustering-type trench detection which finds trenches after finding cells (currently unimplemented here).
 
-### print-metadata
+### correct-trench-numbering
 
 ```
-Usage: trenchcoat print-metadata [OPTIONS]
+Usage: trenchcoat correct-trench-numbering [OPTIONS]
 
-  Print the HDF5 metadata to the terminal. If no sub-file is specified, then
-  print a list of all sub-files.
+  Take into account when a trench lies near the edge of an image by re-
+  numbering all the trenches as needed.
 
 Options:
-  -i, --in-file TEXT        Input HDF5 file with metadata.  [default:
-                            HDF5/metadata.h5; required]
+  -i, --in-file TEXT              Input HDF5 file with metadata.  [default:
+                                  HDF5/data.h5; required]
 
-  -f, --sub-file-name TEXT  Name of sub-file to print metadata for. This file
-                            was a separate ND2 file before conversion to HDF5.
+  -R, --regions-file TEXT         HDF5 file containing image regions
+                                  [default: REG/regions_tables.h5]
 
-  --help                    Show this message and exit.
+  -O, --regions-out-file TEXT     Write renumbered trenches & regions.
+                                  [required]
+
+  -M, --measurements-file TEXT    Cell measurements with original trench
+                                  numbering.  [default:
+                                  SEG/TABLES/tables_merged.h5]
+
+  -m, --measurements-out-file TEXT
+                                  Write renumbered trenches paired with cell
+                                  measurements.
+
+  -T, --threshold INTEGER         Threshold for calling a renumbering event
+                                  (pixels).  [default: 10; required]
+
+  --help                          Show this message and exit.
+```
+
+### lineage-tracking
+
+```
+Usage: trenchcoat lineage-tracking [OPTIONS]
+
+  Track lineages using HDF5 tables. Write a new HDF5 table.
+
+Options:
+  -i, --in-file TEXT           Input HDF5 file with cell measurements data and
+                               trench labels.  [default: newsegs.h5; required]
+
+  -o, --out-file TEXT          Output HDF5 file with lineages table.
+                               [default: lineages.h5; required]
+
+  -L, --length-buffer INTEGER  Fudge factor: a change in length less than this
+                               much is not considered to reflect a cell
+                               division.  [default: 5; required]
+
+  -T, --trench-length TEXT     Length of a trench. Used to check whether a
+                               cell is at the trench exit.  [required]
+
+  --help                       Show this message and exit.
+```
+
+### kymographs
+
+```
+Usage: trenchcoat kymographs [OPTIONS]
+
+  Generate kymographs.
+
+Options:
+  -o, --out-dir TEXT           Output for new HDF5 directory for kymographs.
+                               [default: KYMOGRAPHS; required]
+
+  -i, --in-file TEXT           Input HDF5 file with images.  [default:
+                               HDF5/data.h5; required]
+
+  -n, --num-cpu INTEGER RANGE  Number of CPUs to use. [default: all CPUs]
+  -R, --regions-file TEXT      HDF5 file containing image regions. [default:
+                               analyze entire image, no regions]
+
+  --help                       Show this message and exit.
+```
+
+### browse-kymographs
+
+```
+Usage: trenchcoat browse-kymographs [OPTIONS]
+
+  Use Napari to browse kymographs. The regions file must be post-processed
+  for correcting stage drift, and merging cell information with trench
+  information. Corrections are unimplemented.
+
+Options:
+  -i, --images-file TEXT          Input HDF5 file with images.  [default:
+                                  HDF5/data.h5; required]
+
+  -m, --masks-file TEXT           Input HDF5 file with masks.
+  -r, --regions-file TEXT         Input HDF5 file with regions (trenches must
+                                  be re-labeled for left/right drift).
+                                  [required]
+
+  -L, --lineages-file TEXT        Input HDF5 file with cell measurements, re-
+                                  labeled trenches and cell lineages.
+
+  -S, --napari-settings-file TEXT
+                                  Napari settings file (YAML).  [default:
+                                  napari_settings.yaml; required]
+
+  -C, --corrections-file TEXT     Input HDF5 file with camera bias and/or
+                                  flatfield corrections for each channel.
+
+  -V, --viewer-params TEXT        YAML file with image viewer params &
+                                  information for displaying column data.
+
+  -d, --data-table-file TEXT      Path to HDF5 file containing cell
+                                  measurements for computed image.
+
+  -t, --data-table-name TEXT      Name of data table within the data table
+                                  file.
+
+  --help                          Show this message and exit.
 ```
 
 
 
-### Unimplemented features:
+### Unimplemented or work-in-progress features:
 
-#### kymographs
+#### lineage tracking: splitting merged cells
 
-Generate kymographs using detected trenches. Depending on how trenches were detected, this could require correcting for drift between time frames.
+If two neighboring cells are erroneously merged, then the lineage tracking is disrupted. This is a non-trivial problem.
 
-#### browse-kymographs
+#### different trench detection algorithms
 
-Display kymographs using Napari.
+Add ability to pass in one of several different algorithms.
+
+#### parameter exploration using a GUI
+
+Work in progress. The API changed recently, and a lot of work remains to make the interface more user friendly and work with more algorithms.
+
+#### stage drift correction for trench detection
+
+Work in progress. Will try to use cross-correlation between images to either further correct the stage drift, or as an independent calculation.
 
 #### trench-measurements
 
@@ -594,7 +735,7 @@ Note that the name of the segmentation ("mSCFP3") needn't match the name of the 
 
 - Note that this example does not use loops to process individual regions, because comparison operators are automatically applied across arrays of arbitrary dimensionality. More complex examples are to be found in ``algorithms.py``.
 
-### The modified nd2reader library
+### <a id="nd2reader">The modified nd2reader library</a>
 
 The original nd2library [contains](https://github.com/jimrybarski/nd2reader/blob/master/nd2reader/driver/v3.py) the following comment:
 
@@ -658,10 +799,10 @@ def get_image_stack(self, frame_number, field_of_view, z_level, height, width):
     # This produces an array with channels as the first of 3 indices, which is inefficient for F-ordering.
     reshaped = np.reshape(image_group_data[image_data_start:], (number_of_true_channels, width, height), order='F')
 
-    # Fotran ordering works best when the last index is the slowest-changing
+    # Fortran ordering works best when the last index is the slowest-changing
     # For image stacks, this typically means that 2D slices are stored in the 1st 2 dims,
     # and therefore a whole slice is in the 3rd dimension.
-    # NOTE because the data are Fotran-ordered, they will appear Transposed
+    # NOTE because the data are Fortran-ordered, they will appear Transposed
     # when viewing with matplotlib pyplot. However, it's more appropriate to Transpose later,
     # and to leave the data intact now.
     image_stack = np.empty((width, height, number_of_true_channels), dtype=reshaped.dtype, order='F')

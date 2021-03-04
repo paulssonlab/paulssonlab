@@ -1,6 +1,7 @@
-import numpy
+#!/usr/bin/env python
 import tables
 import pandas
+import numpy
 from dataframe_conversion import write_dataframe_to_hdf5
 
 """
@@ -48,191 +49,6 @@ TODO:
   This could be particularly hairy if the merger happens between distinct lineages (and not
   just cells within a lineage).
 """
-
-
-def make_kymograph_from_centroids(table, seg_channel, is_top_row, trench_length):
-    """
-    1. Input dataframe slice corresponding to a single trench with a given File, FOV & trench number,
-       a segmentation channel, and whether the row of trenches is top or bottom.
-       Output a "kymograph" stored as a list of lists,
-       and top_row (top_row == True) or bottom_row (top_row == False):
-    a. Each sub-list represents the cells at each subsequent time frame.
-    b. Its contents are the cells, ordered from the feeding channel to the end of the trench:
-       re-order (label) them by comparing centroids (safe),
-       or possibly assuming that their labeling was in this order (risky).
-    c. A "cell" is stored in said list as the connected component region's label (integer).
-    """
-    kymograph = []
-
-    # Get unique frame numbers from the table, in sorted order
-    # NOTE this code assumes no gaps (indexing by lists), and in sorted frame order
-    # TODO how to check for gaps? What to do if there are gaps?
-    # One fix is to index with a dictionary.
-    # Or, could we:
-    # - pre-allocate an array given by the max frame number?
-    # - use enumerate & explicit indexing instead of append
-    # - or, still use append, but if there's a gap, append a None value,
-    #   and then add code later to handle the Nones as needed.
-
-    unique_frames = sorted(table["info_frame"].unique())
-
-    # Iterate by time frame
-    for f in unique_frames:
-        # Grab the rows which belong to this frame by slicing the dataframe
-        # Copy so that we can apply the sort
-        cells_this_frame = table[table["info_frame"] == f].copy()
-
-        # Sort the sliced dataframe by centroid row
-        # NOTE: Ascending will be False (top) or True (bottom), depending on top or bottom row of trenches.
-        # NOTE: we use the "col" because the arrays are F-ordered.
-        # A more typical C-ordered image would use the "row" to sort.
-        cells_this_frame.sort_values(
-            by=["centroid_col"], inplace=True, ascending=is_top_row
-        )
-
-        # Iterate in this new order and append the labels to a new list
-        cell_order = []
-        for c in cells_this_frame.itertuples():
-            label = c.info_label
-            length = c.axis_length_major
-
-            # A bool to state whether a cell touches the trench opening
-            # Useful for not erroneously calling cell divisions when a cell is exiting the trench
-            if is_top_row:
-                not_cell_edge = c.bounding_box_max_col != trench_length
-            else:
-                not_cell_edge = c.bounding_box_min_col != 0
-
-            this_cell = {
-                "label": label,
-                "cell_length": length,
-                "not_cell_edge": not_cell_edge,
-            }
-
-            cell_order.append(this_cell)
-
-        # And append this list to the kymograph
-        kymograph.append(cell_order)
-
-    return kymograph
-
-
-def run_kymograph_to_lineages(
-    kymograph, file, fov, seg_channel, lineage_row, trench_row, trench, length_buffer
-):
-    """
-    Input labeled kymograph for a given FOV / trench, and the row for appending to the table.
-    Write labeled cell lineage information to a table.
-    This algorithm makes assumptions: see above.
-    Allow length_buffer pixel margin of error +/- cell length b/w time frames,
-    for determining whether or not a division took place.
-    TODO allow the user to change other parameters?
-    """
-    # In the zeroth time frame, define cells as lineage progenitors.
-    # For each, run the lineage algorithm on the remaining kymograph time frame entries.
-    lineage = 0
-
-    # Start at frame zero
-    for cell in kymograph[0]:
-        stack = []
-
-        # Initialize the stack with this first cell (# 1).
-        # Think of it as a "job" to be performed later.
-        job = {
-            "frame": 0,
-            "lineage": lineage,
-            "progeny_id": 1,
-            "label": cell["label"],
-            "cell_length": cell["cell_length"],
-            "not_cell_edge": cell["not_cell_edge"],
-        }
-
-        stack.append(job)
-
-        # While it's not empty
-        while stack:
-            previous_cell = stack.pop()
-
-            # First, write it to the table
-            write_cell_to_lineage_table(
-                previous_cell, lineage_row, file, fov, seg_channel, trench_row, trench
-            )
-
-            # Now look towards the next time frame
-            this_progeny_id = previous_cell["progeny_id"]
-            next_frame = previous_cell["frame"] + 1
-
-            # Are there more frames to process?
-            # Are there any cells in the next frame?
-            if (next_frame < len(kymograph)) and (kymograph[next_frame]):
-                # Load the next frame from the kymograph
-                next_frame_group = kymograph[next_frame]
-
-                # Get the top cell: contains a label and a major axis length
-                top_cell = next_frame_group.pop(0)
-
-                # Is the top cell shorter than the cell in the previous frame? -> There was a cell division
-                # BUT if a cell borders the edge, then a change in size cannot be differentiated from
-                # division or sliding out of the trench.
-                # FIXME the check doesn't seem to work?
-                if (
-                    top_cell["cell_length"] + length_buffer
-                    < previous_cell["cell_length"]
-                ) and (job["not_cell_edge"]):
-
-                    # If the cell is ~ 2x larger than that in the previous frame, then
-                    # there might be a cell merging issue (segmentation problem).
-                    # NOTE this didn't work. Clearly there are some mergers, but no warnings are printed.
-                    if top_cell["cell_length"] > 2 * previous_cell["cell_length"]:
-                        print("Warning: possible cell merger detected.")
-
-                    # Is there also a next (sister) cell, from this division? Add it to the stack first.
-                    # It's added first, because the stack is FILO.
-                    if next_frame_group:
-                        # Contains a label and a major axis length
-                        next_cell = next_frame_group.pop(0)
-
-                        job = {
-                            "frame": next_frame,
-                            "lineage": lineage,
-                            "progeny_id": this_progeny_id * 2 + 1,
-                            "label": next_cell["label"],
-                            "cell_length": next_cell["cell_length"],
-                            "not_cell_edge": cell["not_cell_edge"],
-                        }
-
-                        stack.append(job)
-
-                    # Now add the top cell to the stack
-                    job = {
-                        "frame": next_frame,
-                        "lineage": lineage,
-                        "progeny_id": this_progeny_id * 2,
-                        "label": top_cell["label"],
-                        "cell_length": top_cell["cell_length"],
-                        "not_cell_edge": cell["not_cell_edge"],
-                    }
-
-                    stack.append(job)
-
-                # Top cell is not shorter -> there was not a cell division
-                # So don't change the progeny_id
-                else:
-                    job = {
-                        "frame": next_frame,
-                        "lineage": lineage,
-                        "progeny_id": this_progeny_id,
-                        "label": top_cell["label"],
-                        "cell_length": top_cell["cell_length"],
-                        "not_cell_edge": cell["not_cell_edge"],
-                    }
-
-                    stack.append(job)
-
-            # No cells: do nothing!
-
-        # End while loop: stack is empty, can move on to the next lineage, with a new stack and any remaining cells left in the kymograph.
-        lineage += 1
 
 
 def write_cell_to_lineage_table(
@@ -502,140 +318,301 @@ def get_matching_labels_global(
         return None
 
 
-### Main
+def make_kymograph_from_centroids(table, is_top_row, trench_length):
+    """
+    1. Input dataframe slice corresponding to a single trench with a given File, FOV & trench number,
+       a segmentation channel, and whether the row of trenches is top or bottom.
+       Output a "kymograph" stored as a list of lists,
+       and top_row (top_row == True) or bottom_row (top_row == False):
+    a. Each sub-list represents the cells at each subsequent time frame.
+    b. Its contents are the cells, ordered from the feeding channel to the end of the trench:
+       re-order (label) them by comparing centroids (safe),
+       or possibly assuming that their labeling was in this order (risky).
+    c. A "cell" is stored in said list as the connected component region's label (integer).
+    """
+    kymograph = []
+    total_cells = 0
+
+    # Get unique frame numbers from the table, in sorted order
+    # NOTE this code assumes no gaps (indexing by lists), and in sorted frame order
+    # TODO how to check for gaps? What to do if there are gaps?
+    # One fix is to index with a dictionary.
+    # Or, could we:
+    # - pre-allocate an array given by the max frame number?
+    # - use enumerate & explicit indexing instead of append
+    # - or, still use append, but if there's a gap, append a None value,
+    #   and then add code later to handle the Nones as needed.
+
+    unique_frames = sorted(table["info_frame"].unique())
+
+    # Iterate by time frame
+    for f in unique_frames:
+        # Grab the rows which belong to this frame by slicing the dataframe
+        # Copy so that we can apply the sort
+        cells_this_frame = table[table["info_frame"] == f].copy()
+
+        # Sort the sliced dataframe by centroid row
+        # NOTE: Ascending will be False (top) or True (bottom), depending on top or bottom row of trenches.
+        # NOTE: we use the "col" because the arrays are F-ordered.
+        # A more typical C-ordered image would use the "row" to sort.
+        cells_this_frame.sort_values(
+            by=["centroid_col"], inplace=True, ascending=is_top_row
+        )
+
+        # Iterate in this new order and append the labels to a new list
+        cell_order = []
+        for c in cells_this_frame.itertuples():
+            label = c.info_label
+            length = c.axis_length_major
+
+            # A bool to state whether a cell touches the trench opening
+            # Useful for not erroneously calling cell divisions when a cell is exiting the trench
+            if is_top_row:
+                not_cell_edge = c.bounding_box_max_col != trench_length
+            else:
+                not_cell_edge = c.bounding_box_min_col != 0
+
+            this_cell = {
+                "label": label,
+                "cell_length": length,
+                "not_cell_edge": not_cell_edge,
+            }
+
+            cell_order.append(this_cell)
+            total_cells += 1
+
+        # And append this list to the kymograph
+        kymograph.append(cell_order)
+
+    return kymograph, total_cells
 
 
-def main_lineages_function(infile, outfile, length_buffer, seg_channel):
+def run_kymograph_to_lineages(kymograph, total_cells, length_buffer):
+    """
+    Input labeled kymograph for a given FOV / trench, and the row for appending to the table.
+    Write labeled cell lineage information to a table.
+    This algorithm makes assumptions: see above.
+    Allow length_buffer pixel margin of error +/- cell length b/w time frames,
+    for determining whether or not a division took place.
+    TODO allow the user to change other parameters?
+    """
+    # This is a dict of numpy arrays.
+    # It will be converted to a dataframe & returned at the end.
+    # NOTE if we are using groupby, do we have to specify all of these fields,
+    # or are they automatically returned as the Index of the series?
+    # We don't actually have access to them!
+    result = {
+        "info_frame": numpy.empty(total_cells, dtype=numpy.uint16),
+        "info_label": numpy.empty(total_cells, dtype=numpy.uint16),
+        "lineage": numpy.empty(total_cells, dtype=numpy.uint16),
+        "progeny_id": numpy.empty(total_cells, dtype=numpy.uint16),
+    }
+
+    # In the zeroth time frame, define cells as lineage progenitors.
+    # For each, run the lineage algorithm on the remaining kymograph time frame entries.
+    lineage = 0
+    current_cell_count = 0
+    # Start at frame zero
+    for cell in kymograph[0]:
+        stack = []
+
+        # Initialize the stack with this first cell (# 1).
+        # Think of it as a "job" to be performed later.
+        job = {
+            "frame": 0,
+            "lineage": lineage,
+            "progeny_id": 1,
+            "label": cell["label"],
+            "cell_length": cell["cell_length"],
+            "not_cell_edge": cell["not_cell_edge"],
+        }
+
+        stack.append(job)
+
+        # While it's not empty
+        while stack:
+            previous_cell = stack.pop()
+
+            # Write the resulting cell to the dict, which will be
+            # returned as a dataframe.
+            result["info_frame"][current_cell_count] = previous_cell["frame"]
+            result["info_label"][current_cell_count] = previous_cell["label"]
+            result["lineage"][current_cell_count] = previous_cell["lineage"]
+            result["progeny_id"][current_cell_count] = previous_cell["progeny_id"]
+            current_cell_count += 1
+
+            # Now look towards the next time frame
+            this_progeny_id = previous_cell["progeny_id"]
+            next_frame = previous_cell["frame"] + 1
+
+            # Are there more frames to process?
+            # Are there any cells in the next frame?
+            if (next_frame < len(kymograph)) and (kymograph[next_frame]):
+                # Load the next frame from the kymograph
+                next_frame_group = kymograph[next_frame]
+
+                # Get the top cell: contains a label and a major axis length
+                top_cell = next_frame_group.pop(0)
+
+                # Is the top cell shorter than the cell in the previous frame? -> There was a cell division
+                # BUT if a cell borders the edge, then a change in size cannot be differentiated from
+                # division or sliding out of the trench.
+                # FIXME the check doesn't seem to work?
+                if (
+                    top_cell["cell_length"] + length_buffer
+                    < previous_cell["cell_length"]
+                ) and (job["not_cell_edge"]):
+
+                    # If the cell is ~ 2x larger than that in the previous frame, then
+                    # there might be a cell merging issue (segmentation problem).
+                    # NOTE this didn't work. Clearly there are some mergers, but no warnings are printed.
+                    if top_cell["cell_length"] > 2 * previous_cell["cell_length"]:
+                        print("Warning: possible cell merger detected.")
+
+                    # Is there also a next (sister) cell, from this division? Add it to the stack first.
+                    # It's added first, because the stack is FILO.
+                    if next_frame_group:
+                        # Contains a label and a major axis length
+                        next_cell = next_frame_group.pop(0)
+
+                        job = {
+                            "frame": next_frame,
+                            "lineage": lineage,
+                            "progeny_id": this_progeny_id * 2 + 1,
+                            "label": next_cell["label"],
+                            "cell_length": next_cell["cell_length"],
+                            "not_cell_edge": cell["not_cell_edge"],
+                        }
+
+                        stack.append(job)
+
+                    # Now add the top cell to the stack
+                    job = {
+                        "frame": next_frame,
+                        "lineage": lineage,
+                        "progeny_id": this_progeny_id * 2,
+                        "label": top_cell["label"],
+                        "cell_length": top_cell["cell_length"],
+                        "not_cell_edge": cell["not_cell_edge"],
+                    }
+
+                    stack.append(job)
+
+                # Top cell is not shorter -> there was not a cell division
+                # So don't change the progeny_id
+                else:
+                    job = {
+                        "frame": next_frame,
+                        "lineage": lineage,
+                        "progeny_id": this_progeny_id,
+                        "label": top_cell["label"],
+                        "cell_length": top_cell["cell_length"],
+                        "not_cell_edge": cell["not_cell_edge"],
+                    }
+
+                    stack.append(job)
+
+            # No cells: do nothing!
+
+        # End while loop: stack is empty, can move on to the next lineage, with a new stack and any remaining cells left in the kymograph.
+        lineage += 1
+
+    # Finished, so convert the dict of arrays to a dataframe.
+    result = pandas.DataFrame.from_dict(result)
+    return result
+
+
+# TODO it might be possible to walk through the dataframe using
+# groupby and apply or map etc., something like:
+def run_lineages(df, trench_length, length_buffer, row_number):
+    # This is an entire column of row numbers. They are all the same.
+    # Convert to a single number.
+    row_number = row_number.unique()[0]
+
+    # Check the number of the row: even or odd, top or bottom
+    is_top_row = (row_number % 2) == 0
+
+    (kymograph, total_cells) = make_kymograph_from_centroids(
+        df, is_top_row, trench_length
+    )
+
+    # This returns a dataframe
+    result = run_kymograph_to_lineages(kymograph, total_cells, length_buffer)
+    return result
+
+
+###
+def main_lineages_function(infile, outfile, length_buffer, trench_length):
     """
     infile contains cell measurements table
+
     outfile contains a new table with the lineage information
+
     length_buffer for calling cell divisions, in pixels
-    seg channel used to identify & label the cells TODO make this a list and process multiple seg channels?
+
+    trench_length for flagging cells as touching the trench opening,
+    in which case we disable calling cell divisions.
     """
     # TODO/FIXME infer trench length from the regions or somewhere else
-    trench_length = 152
+    # trench_length = 152
 
     # Open the measurements table as a Pandas dataframe
     # NOTE this code assumes that the data were processed
     # after re-numbering the trenches to account for stage drift over time.
-    # (see: renumber_trenches.py)
-    # df = pandas.read_hdf(infile, "/cells_in_labeled_trenches")
+    # (see: renumber_trenches.py), producing a column called
+    # corrected_trench_label.
     h5_in = tables.open_file(infile, "r")
-    # NOTE could also get the unique set of file names etc. from the metadata
-    # in the original HDF5 file. This would avoid having to load the whole
-    # data table into memory.
-    table = h5_in.get_node("/cells_in_labeled_trenches")
-    filename_itemsize = table.description.info_file.itemsize
-    segchannel_itemsize = table.description.info_seg_channel.itemsize
-    df = pandas.DataFrame(table.read())
+
+    # NOTE This version of the code opts to load the entire
+    # table into memory. Potential advatages include implicit
+    # iteration with possible vectorization, and simpler
+    # datatable merging & writing at the end.
+    # Possible disadvantage is if the table doesn't fit into memory.
+    # In that case, it would be necessary to iterate through chunks
+    # using read_where() and to write dataframe chunks,
+    # then to concatenate them all at the end.
+    df = pandas.DataFrame(h5_in.get_node("/cell_measurements").read())
     h5_in.close()
 
-    # If there were multiple segmentation channels, just keep the one
-    # TODO: here and elsewhere, use tables read_where() to more quickly weed out
-    # the unwanted rows, potentially reducing the memory footprint.
-    # Must compare against the bytes version of the string
-    df = df[df["info_seg_channel"] == bytes(seg_channel, "utf-8")]
-
-    # Define the table row type for writing lineage information
-    Lineage = make_lineage_table_type(filename_itemsize, segchannel_itemsize)
-
-    # Create the lineage information table
-    h5_out = tables.open_file(outfile, "w")
-    lineage_table = h5_out.create_table(
-        "/",
-        "lineages",
-        Lineage,
-        "Lineage_information",
-        createparents=True,
-        filters=tables.Filters(complevel=1, complib="zlib"),
-    )
-
-    # For appending entries
-    lineage_row = lineage_table.row
-
-    ## TODO it might be possible to walk through the dataframe using
-    ## groupby and apply or map etc., something like:
-    # def run_lin(df):
-    # kymograph = make_kymograph_from_centroids(this_trench, seg_channel, is_top_row, trench_length)
-
-    # run_kymograph_to_lineages(kymograph, file, fov, seg_channel, lineage_row, row, trench, length_buffer)
-    ## df.groupby(["info_file", "info_fov", "info_row_number", "corrected_trench_label"]).apply(lambda x: run_kymo_func(x))
-    ## def run_kymo_func(dataframe_slice): # call make_kymograph_from_centroids and run_kymograph_to_lineages
-    # df.loc[:, ("lineage", "progeny_id") = \
-    # df.groupby(["info_file", "info_fov", "info_row_number", "corrected_trench_label"]) \
-    # .apply(lambda x: run_lin(x))
-    # This would require a lot of changes.
-
-    # Note that the df isn't modified in the code, it just writes a new HDF5 file.
-    # Alternatively, could add a new column to the original df, with the lineage_id and progeny_id,
-    # however I have questions about the memory footprint vs. using PyTables.
-    # Similarly, we are forced to load the whole table into memory above.
-    # TODO Is there no way to selectively query portions of an on-disk HDF5 table written by Pandas?
-    files = df["info_file"].unique()
-    for file in files:
-        this_file = df[(df["info_file"] == file)]
-        fovs = this_file["info_fov"].unique()
-        for fov in fovs:
-            this_fov = this_file[(this_file["info_fov"] == fov)]
-            trench_rows = this_fov["info_row_number"].unique()
-            for row in trench_rows:
-                this_row = this_fov[(this_fov["info_row_number"] == row)]
-                trenches = this_row["corrected_trench_label"].unique()
-                # If top row, set True, else False
-                # This assumes an alternating even/odd numbering scheme.
-                is_top_row = row % 2 == 0
-                for trench in trenches:
-                    this_trench = this_row[this_row["corrected_trench_label"] == trench]
-
-                    # Returns a list of lists for storing & popping cells in the same trench, but over time.
-                    # Kymograph now contains cell labels & lengths over time
-                    kymograph = make_kymograph_from_centroids(
-                        this_trench, seg_channel, is_top_row, trench_length
-                    )
-
-                    # Process the kymograph to calculate lineages & write them to a table
-                    # NOTE "lineage_row" is the "row" in the data table where we write the results to HDF5.
-                    # "row" is the number of the row of cells in the mother machine (0, 1, etc. for top, bottom...).
-                    run_kymograph_to_lineages(
-                        kymograph,
-                        file,
-                        fov,
-                        seg_channel,
-                        lineage_row,
-                        row,
-                        trench,
-                        length_buffer,
-                    )
-
-    # Done writing lineage information
-    # This table now contains all the information which can be used to map lineages back onto the kymograph.
-    lineage_table.flush()
-    h5_out.close()
-
-    # Now, open the lineages table & create a new table merged with the cell measurements.
-    # Write this to disk as well.
-    h5_lineages = tables.open_file(outfile, "r")
-    df_lineages = pandas.DataFrame(h5_lineages.get_node("/lineages").read())
-
-    # Perform the merger
-    merge_on = [
+    # Run lineage tracking & add the results as 2 new columns:
+    # 1. lineage 2. progeny_id
+    # Pass in the row number too so that we can check if it is top (even) or bottom (odd)
+    # Return a new dataframe with a multi-index.
+    grouping = [
         "info_file",
         "info_fov",
+        "info_z_level",
         "info_row_number",
         "corrected_trench_label",
+        "info_seg_channel",
+    ]
+
+    result = df.groupby(grouping).apply(
+        lambda group: run_lineages(
+            group, trench_length, length_buffer, group.info_row_number
+        )
+    )
+
+    # Remove the multi-index.
+    result = result.reset_index()
+    # A new column called "level_6" is created from the within-group numbering.
+    # We don't care about the numbering within groups, so drop it.
+    result = result.drop(["level_6"], axis=1)
+
+    # Merge into the original dataframe using file, fov, frame, z_level, seg_channel, info_label?
+    on = [
+        "info_file",
+        "info_fov",
         "info_frame",
+        "info_z_level",
+        "info_row_number",
+        "corrected_trench_label",
         "info_seg_channel",
         "info_label",
     ]
-    merged = pandas.merge(df, df_lineages, on=merge_on)
 
-    # Convert the columns to bytes ~ for whatever reason, this is required,
-    # otherwise they are generic "objects" in the dataframe
-    merged["info_file"] = merged["info_file"].astype(numpy.bytes_)
-    merged["info_seg_channel"] = merged["info_seg_channel"].astype(numpy.bytes_)
-
-    # TODO pass in another out file, OR pass in a directory and create custom outfiles?
-    write_dataframe_to_hdf5(merged, "cells_and_lineages.h5", "cells_and_lineages")
-
-    # Done
-    h5_lineages.close()
+    df_merge = pandas.merge(df, result, on=on)
+    # TODO is there a way for pandas to never convert bytes columns into string objects in the first place?
+    df_merge["info_file"] = result["info_file"].astype(numpy.bytes_)
+    df_merge["info_seg_channel"] = result["info_seg_channel"].astype(numpy.bytes_)
+    write_dataframe_to_hdf5(df_merge, outfile, "cell_measurements")

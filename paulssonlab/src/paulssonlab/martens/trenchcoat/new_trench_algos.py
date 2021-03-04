@@ -1,66 +1,57 @@
+#!/usr/bin/env python3
 import tables
 import numpy
 from scipy.signal import find_peaks, savgol_filter
+import os
+import pathlib
 
-from skimage.filters import unsharp_mask
+# from skimage.filters import unsharp_mask
 
 # FIXME something is wrong with padding ~ I think the negative padding has been double negatived??
 
 # TODO:
-# Option to pad the tops & bottoms of trenches a bit ~ add wiggle room in the y dimension
-#
 # There is clearly an offset between the YFP & MCHERRY channels.
 #
 # When is the best time to apply the sorts of corrections?
 #
 # How to determine a correction in brightfield? Will this effect be visible?
-#
-# Also add a way to pad the widths. This is different from picking where
-# the widths are compared.
-#
-# Is there a way to re-use the boxes, rather than re-generating them every time?
-# (Since the dimensions are always the same).
 
 # NOTE: it seems like curvature along the x dimension in an FOV
 # is enough to warp the image such that the apparent spacing between
 # adjacent trenches actually isn't constant.
 # Is there a good way to generate a set of boxes,
-# place it using the overall optimization, and then tweak each box by nuding it a bit?
+# place it using the overall optimization, and then tweak each box by nudging it a bit?
 # For example, could check +/- 1 or 2 pixels left or right and see if its edges can be further minimized.
 
 
-def find_trench_rows(img, boxes, tr_width, tr_height, tr_spacing):
+def launch(file, frames, pool, metadata, params, in_file, out_dir, pbar):
     """
-    These functions were originally intended to also find the trenches themselves.
-    However, it is also possible to use them to find trench rows.
-    Still, it's necessary to present some sort of trench geometry.
-    TODO is it possible to further simplify this function?
-    Could we just apply some sort of measure of variance within broad rectangular regions?
-    NOTE this function is currently not used.
+    This function is directly called by Trenchcoat's trench_detect routine.
+    It's up to the trench algo for how to iterate etc., but we provide
+    a process pool, detection params dict,
     """
-    # This seems to help enhance the edges around trenches
-    # TODO is it actually helpful enough to warrant including?
-    # What should the parameters be?
-    # img = unsharp_mask(img.astype(numpy.uint16), preserve_range=True)
-
-    # Exhaustively compute the "matches" between all valid y offsets,
-    # and 1 trench width of possible x offsets.
-    (sums, ranges_y, ranges_x) = sum_trench_edge_offsets(
-        img, boxes, tr_width, tr_height, tr_spacing
+    # Generate a set of rectangles which represent trenches
+    # but which do not yet have known x,y starting points
+    # which best match one or more of the trench rows.
+    # Re-use the same boxes for all iterations!
+    p = params["parameters"]
+    boxes = generate_boxes(
+        p["trenches"]["tr_width"],
+        p["trenches"]["tr_height"],
+        p["trenches"]["tr_spacing"],
+        metadata["width"],
     )
 
-    # Calculate the x offsets which are most different for every y offset.
-    # Peaks in this "space" are expected to occur where trenches,
-    # which alternate between bright & dark regions, are to be found.
-    g_diffs = greatest_diffs(sums, ranges_y, ranges_x)
-    y_offsets = get_row_peaks(g_diffs)
+    # For the progress bar
+    def update_pbar(*a):
+        pbar.update()
 
-    rows = numpy.empty(shape=(len(y_offsets), 4), dtype=numpy.uint16)
-
-    for i, y in enumerate(y_offsets):
-        rows[i] = [0, y, img.shape[0], y + tr_height]
-
-    return rows
+    for fov in metadata["fields_of_view"]:
+        for frame in frames:
+            for z in metadata["z_levels"]:
+                args = [in_file, out_dir, file, fov, frame, z, params, boxes]
+                pool.apply_async(run_trench_analysis, args, callback=update_pbar)
+                # run_trench_analysis(*args) # DEBUG
 
 
 def generate_boxes(tr_width, tr_height, tr_spacing, img_width):
@@ -83,6 +74,150 @@ def generate_boxes(tr_width, tr_height, tr_spacing, img_width):
         iter_num += 1
 
     return numpy.array(xs)
+
+
+def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params, boxes):
+    """
+    Run basic trench analysis on an HDF5 file: detect trenches for each time
+    frame, or just using the first time frame. Then, measure trench properties
+    in all time frames.
+
+    Store detected trenches in a PyTables array.
+
+    Each array entry (row) has 4 values (min_row, min_col, max_row, max_col), and there is 1 row per region (trench).
+    Regions must be rectangular, and must have the same dimension (for stacking purposes).
+    """
+    # 1. Load the image, optionally crop it
+    img = load_image_for_regions_analysis(
+        in_file, filename, fov, frame, z_level, params
+    )
+
+    # 2. Create an HDF5 file for writing trench row & trench regions info.
+    dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
+    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+    out_file_path = os.path.join(dir_path, "Z_{}_regions.h5".format(z_level))
+    regions_file = tables.open_file(out_file_path, mode="w")
+
+    # 3. Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
+    # This method detects both the rows & trenches in a single step
+    # FIXME no correction for cropping; and the results are NOT written to disk!
+    # To do so, need to retroactively parse out the row coords from the trenches.
+    p = params["parameters"]
+    (trenches, y_offsets) = find_trenches(img, boxes, **p["trenches"])
+
+    # Take the y_offsets and create bounding boxes for the rows of trenches
+    rows = []
+    for y in y_offsets:
+        bbox = [0, y, img.shape[0], y + p["trenches"]["tr_height"]]
+        rows.append(bbox)
+
+    # Write all row coords to disk as a single array
+    regions_file.create_array("/", "row_coords", obj=rows)
+
+    # Write out the trench coordinates using a variable-length array in HDF5
+    results = regions_file.create_vlarray(
+        "/",
+        "trench_coords",
+        atom=tables.UInt16Atom(shape=(4)),
+        expectedrows=len(trenches),
+    )
+
+    # Iterate the rows
+    for r in trenches:
+        results.append(r)
+
+    # Done!
+    regions_file.close()
+
+
+def load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, params):
+    """
+    Open the image to be used for features detection, & optionally apply cropping.
+    """
+    h5file = tables.open_file(in_file, mode="r")
+    node_path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+        filename, fov, frame, z_level, params["channel"]
+    )
+
+    # NOTE image was written in F-order. When reading from disk, image appears transposed.
+    # For best performance, it makes sense to not re-transpose the image,
+    # but instead to accept this new reference frame & interpret left/right/top/bottom,
+    # and axis 0,1 appropriately.
+
+    if "crop" in params:
+        try:
+            img = h5file.get_node(node_path)[
+                params["crop"]["top"] : params["crop"]["bottom"],
+                params["crop"]["left"] : params["crop"]["right"],
+            ]
+        except:
+            # TODO Error!
+            print(
+                "Error loading cropped image. Invalid node? Missing crop params? Check channel name?"
+            )
+            pass
+    else:
+        # Load the whole image
+        # TODO is there a way to get it to read into an empty numpy array with F-ordering?
+        # Otherwise, we either have to rotate the image, or flip all of the co-ordinates.
+        img = h5file.get_node(node_path).read()
+
+        # And define the missing crop params, so that they are always defined (for convenience)
+        # FIXME width & height? 0 & 1, or 1 & 0?
+        params["crop"] = {
+            "top": 0,
+            "bottom": img.shape[0],
+            "left": 0,
+            "right": img.shape[1],
+        }
+
+    h5file.close()
+
+    return img
+
+
+def find_trenches(
+    img,
+    boxes,
+    tr_width,
+    tr_height,
+    tr_spacing,
+    pad_left,
+    pad_right,
+    pad_top,
+    pad_bottom,
+):
+    """
+    Find the optimal place(s) in the image where trenches
+    with the given dimensions (width, height, spacing) fit.
+
+    Return 2 things:
+    1. the padded trenches as a Python list of numpy arrays,
+    2. the min y-coordinates for the region(s) containing said trenches.
+    """
+    # Exhaustively compute the "matches" between all valid y offsets,
+    # and 2 trench width of possible x offsets.
+    (sums, ranges_y, ranges_x) = sum_trench_edge_offsets(
+        img, boxes, tr_width, tr_height, tr_spacing
+    )
+
+    # For every y range, calculate the greatest difference in column sums along y,
+    # comparing each x.
+    # Peaks in this "space" are expected to occur where trenches,
+    # which alternate between bright & dark regions, are to be found.
+    g_diffs = greatest_diffs(sums, ranges_y, ranges_x)
+    y_offsets = get_row_peaks(g_diffs)
+
+    # Find the x offset
+    rows_of_trenches = find_best_x_offset(y_offsets, sums, boxes)
+
+    # Apply padding & filter out trenches which are out of bounds
+    padded = pad_and_remove_out_of_bounds_trenches(
+        img, rows_of_trenches, pad_left, pad_right, pad_top, pad_bottom
+    )
+
+    return (padded, y_offsets)
 
 
 def sum_trench_edge_offsets(img, boxes, tr_width, tr_height, tr_spacing, axis=1):
@@ -298,44 +433,33 @@ def pad_and_remove_out_of_bounds_trenches(
     return result
 
 
-def find_trenches(
-    img,
-    boxes,
-    tr_width,
-    tr_height,
-    tr_spacing,
-    pad_left,
-    pad_right,
-    pad_top,
-    pad_bottom,
-):
-    """
-    Find the optimal place(s) in the image where trenches
-    with the given dimensions (width, height, spacing) fit.
+# def find_trench_rows(img, boxes, tr_width, tr_height, tr_spacing):
+# """
+# These functions were originally intended to also find the trenches themselves.
+# However, it is also possible to use them to find trench rows.
+# Still, it's necessary to present some sort of trench geometry.
+# TODO is it possible to further simplify this function?
+# Could we just apply some sort of measure of variance within broad rectangular regions?
+# NOTE this function is currently not used.
+# """
+## This seems to help enhance the edges around trenches
+## TODO is it actually helpful enough to warrant including?
+## What should the parameters be?
+##img = unsharp_mask(img.astype(numpy.uint16), preserve_range=True)
 
-    Return 2 things:
-    1. the padded trenches as a Python list of numpy arrays,
-    2. the min y-coordinates for the region(s) containing said trenches.
-    """
-    # Exhaustively compute the "matches" between all valid y offsets,
-    # and 2 trench width of possible x offsets.
-    (sums, ranges_y, ranges_x) = sum_trench_edge_offsets(
-        img, boxes, tr_width, tr_height, tr_spacing
-    )
+## Exhaustively compute the "matches" between all valid y offsets,
+## and 1 trench width of possible x offsets.
+# (sums, ranges_y, ranges_x) = sum_trench_edge_offsets(img, boxes, tr_width, tr_height, tr_spacing)
 
-    # For every y range, calculate the greatest difference in column sums along y,
-    # comparing each x.
-    # Peaks in this "space" are expected to occur where trenches,
-    # which alternate between bright & dark regions, are to be found.
-    g_diffs = greatest_diffs(sums, ranges_y, ranges_x)
-    y_offsets = get_row_peaks(g_diffs)
+## Calculate the x offsets which are most different for every y offset.
+## Peaks in this "space" are expected to occur where trenches,
+## which alternate between bright & dark regions, are to be found.
+# g_diffs = greatest_diffs(sums, ranges_y, ranges_x)
+# y_offsets = get_row_peaks(g_diffs)
 
-    # Find the x offset
-    rows_of_trenches = find_best_x_offset(y_offsets, sums, boxes)
+# rows = numpy.empty(shape=(len(y_offsets), 4), dtype=numpy.uint16)
 
-    # Apply padding & filter out trenches which are out of bounds
-    padded = pad_and_remove_out_of_bounds_trenches(
-        img, rows_of_trenches, pad_left, pad_right, pad_top, pad_bottom
-    )
+# for i, y in enumerate(y_offsets):
+# rows[i] = [0, y, img.shape[0], y + tr_height]
 
-    return (padded, y_offsets)
+# return rows

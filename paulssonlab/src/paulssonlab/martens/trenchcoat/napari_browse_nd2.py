@@ -41,9 +41,6 @@ def main_nd2_browser_function(in_dir, napari_settings_file):
     height = metadata_attributes_equal(nd2_dict, "height")
     width = metadata_attributes_equal(nd2_dict, "width")
 
-    # FIXME is there a bug in the order of the channels in the ND2 file vs in the napari_settings.yaml file?
-    # Proper behavior should be to not have the order in the settings file matter!
-
     # 3. Init napari
     with napari.gui_qt():
         viewer = napari.Viewer()
@@ -117,9 +114,8 @@ def main_nd2_browser_function(in_dir, napari_settings_file):
                                 order="F",
                             )
 
-                        # FIXME the order of enumeration *must* match the order that the channels are in the file,
-                        # which means that the order of channels in the channel_names array must also be that order!
-                        for i, c in enumerate(channels):
+                        # We enumerate reader.channels so that the index i matches the channel c.
+                        for i, c in enumerate(reader.channels):
                             z_array[c].append(
                                 dask.array.from_delayed(
                                     stack[..., i],

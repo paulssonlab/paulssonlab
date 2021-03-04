@@ -5,7 +5,6 @@ import numpy
 import xmltodict
 import xml.etree.ElementTree as ElementTree
 import re
-from pprint import pprint
 
 
 def get_metadata(n):
@@ -133,14 +132,18 @@ def xml_to_h5_metadata_ascii(elem, parent_node, h5file, types_xml):
         else:
             # NOTE: converted to ascii
             # To decode, use decode('unicode-escape')
-            new_node = h5file.create_array(
-                parent_node,
-                child.tag,
-                obj=numpy.array(
-                    child.attrib["value"].encode("ascii", "backslashreplace"),
-                    dtype=types_xml[child.attrib["runtype"]],
-                ),
-            )
+            data = child.attrib["value"].encode("ascii", "backslashreplace")
+            dtype = types_xml[child.attrib["runtype"]]
+
+            try:
+                arr = numpy.array(data, dtype=dtype)
+                new_node = h5file.create_array(parent_node, child.tag, obj=arr)
+            except:
+                print(
+                    "Could not convert {}->{}, type {}->{}".format(
+                        child.attrib["value"], data, child.attrib["runtype"], dtype
+                    )
+                )
 
 
 def copy_metadata(hdf5_dir, in_file, frames, fields_of_view):
@@ -205,7 +208,9 @@ def copy_raw_metadata(h5file, reader):
     Copy the "raw" metadata, which are accessible but with more effort.
     """
     types_xml = {
-        "CLxStringW": numpy.unicode,
+        # NOTE numpy.unicode worked on my PC, but not on the SLURM cluster.
+        # numpy.bytes_ seems to be more robust?
+        "CLxStringW": numpy.bytes_,
         "lx_int32": numpy.int32,
         "lx_uint32": numpy.uint32,
         "double": numpy.float64,
@@ -265,6 +270,38 @@ def copy_raw_metadata(h5file, reader):
     tree = ElementTree.fromstring(xml)
     root_node = h5file.create_group("/raw_metadata", "custom_data", createparents=True)
     xml_to_h5_metadata_ascii(tree, root_node, h5file, types_xml)
+
+
+def get_files_list(in_file):
+    """
+    Input an opened HDF5 file with metadata stored by ND2 file.
+    Return all available files (by name) stored within the HDF5 hierarchy,
+    each corresponding to a separate ND2 file.
+    """
+    h5_in = tables.open_file(in_file, "r")
+    n = h5_in.get_node("/Metadata")()
+    all_files = [i._v_name for i in h5_in.list_nodes(n)]
+    h5_in.close()
+
+    return all_files
+
+
+def get_attribute_list(h5_in, attribute):
+    """
+    Input an opened HDF5 file with metadata stored by ND2 file
+    Look up a metadata attribute info for each "File,"" return a dict: file -> attribute value.
+    """
+    n = h5_in.get_node("/Metadata")()
+    all_files = h5_in.list_nodes(n)
+    result = {}
+
+    for file_node in all_files:
+        n = h5_in.get_node(file_node, "/{}".format(attribute))
+        v = n.read()
+        name = file_node._v_name
+        result[name] = v
+
+    return result
 
 
 def copy_fov_metadata(h5file, frames, fields_of_view, reader):
@@ -401,20 +438,46 @@ def metadata_channels_equal(metadata_nodes):
 
 def main_print_metadata_function(in_file, sub_file_name):
     """
-    Print the HDF5 metadata to the terminal. If no sub-file is specified, then print a list of all sub-files.
-    This is useful, for example, if one wants to quickly see the names & order of the channels,
-    or the image dimensions, etc.
+    Print the ND2 or HDF5 metadata to the terminal. If no sub-file is specified,
+    then print a list of all sub-files. This is useful, for example, if one
+    wants to quickly see the names & order of the channels, or the image dimensions, etc.
     """
-    h5file = tables.open_file(in_file, mode="r")
+    root, extension = os.path.splitext(in_file)
 
-    # The user specified a sub-file
-    if sub_file_name:
-        node = h5file.get_node("/{}".format(sub_file_name))()
-        metadata = get_metadata(node)
-        pprint(metadata)
-    # The user did not specify a sub-file
+    if extension.upper() == ".ND2":
+        reader = nd2reader.Nd2(in_file)
+        print("channels: ", reader.channels)
+        print("fields_of_view: ", reader.fields_of_view)
+        print("frames: ", reader.frames)
+        print("height: ", reader.height)
+        print("pixel_microns: ", reader.pixel_microns)
+        print("unix timestamp: ", reader.date.timestamp())
+        print("width: ", reader.width)
+        print("z_levels: ", reader.z_levels)
+
+    elif extension.upper() == ".H5":
+        h5file = tables.open_file(in_file, mode="r")
+        parent = h5file.get_node("/Metadata")()
+
+        # The user specified a sub-file
+        if sub_file_name:
+            try:
+                node = h5file.get_node(parent, "/{}".format(sub_file_name))()
+                metadata = get_metadata(node)
+
+                for k in sorted(metadata.keys()):
+                    print("{}: {}".format(k, metadata[k]))
+            except:
+                print("Error reading file node {}.".format(sub_file_name))
+
+        # The user did not specify a sub-file
+        else:
+            print(
+                "Please specify a converted ND2 file within the HDF5 hierarchy, using -f:"
+            )
+            for n in h5file.iter_nodes(parent):
+                print(n._v_name)
+
+        h5file.close()
     else:
-        for n in h5file.iter_nodes("/"):
-            print(n._v_name)
-
-    h5file.close()
+        print("Invalid file extension. Options are ND2 or H5.")
