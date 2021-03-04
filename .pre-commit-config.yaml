@@ -19,7 +19,7 @@ repos:
     -   id: end-of-file-fixer
     -   id: check-merge-conflict
 -   repo: https://github.com/shenker/pre-commit-hooks.git
-    rev: 15861fc14c569db8c258b46f0a9e288aaf410d78
+    rev: 87cc13a9113b48feb5f26bb9be17376e19d8b00b
     hooks:
     -   id: fix-environment-yamls
     -   id: tag-directories
