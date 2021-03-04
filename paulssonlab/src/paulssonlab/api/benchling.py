@@ -164,7 +164,14 @@ def ensure_folder(root_folder, path, cache=None):
 
 
 def seqrecord_to_benchling(
-    session, folder_id, name, seq, long_annotations=True, custom_fields=None, sep=" / "
+    session,
+    folder_id,
+    name,
+    seq,
+    long_annotations=True,
+    custom_fields=None,
+    sep=" / ",
+    add_hash=True,
 ):
     molecule_type = seq.annotations.get("molecule_type")
     if molecule_type and molecule_type != "ds-DNA":
@@ -285,5 +292,6 @@ def seqrecord_to_benchling(
         is_circular=is_circular,
         custom_fields=_custom_fields,
     )
-    dna.custom_fields["_hash"] = {"value": hash_dnasequence(dna.dump())}
+    if add_hash:
+        dna.custom_fields["_hash"] = {"value": hash_dnasequence(dna.dump())}
     return dna
