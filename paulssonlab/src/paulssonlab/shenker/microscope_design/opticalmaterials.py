@@ -260,9 +260,11 @@ def parse_rii_catalog(filename):
                     print(f"error, skipping {yml_filename}")
                     continue
                 material["yml"] = page["data"]
-                material["BOOK"] = book["BOOK"]
-                material["PAGE"] = page["PAGE"]
-                material["name"] = page["name"]
+                # stringifying probably unnecessary, except for PAGE
+                # which is sometimes parsed as an integer
+                material["BOOK"] = str(book["BOOK"])
+                material["PAGE"] = str(page["PAGE"])
+                material["name"] = str(page["name"])
                 material["div"] = div
                 material = _parse_rii_material(material)
                 catalog[(material["BOOK"], material["PAGE"])] = material
