@@ -2,19 +2,19 @@
 /.nbcleanse
 .envname
 
-# config files
-/paulssonlab/src/paulssonlab/cloning/config.toml
-/paulssonlab/src/paulssonlab/shenker/cloning/config.toml
-/paulssonlab/src/paulssonlab/shenker/cloning/credentials.json
-
-# downloaded data
-/paulssonlab/src/paulssonlab/shenker/snakenbake/ttf-bitstream-vera-1.10
-/paulssonlab/src/paulssonlab/shenker/cloning/data
-
 # data files
+.snakemake
 *.fasta
 *.fastq
+*.fast5
+*.gb
+*.gbk
 *.ab1
+*.sam
+*.sai
+*.bam
+*.bai
+*.bt2
 *.csv
 *.tsv
 *.dat
@@ -29,10 +29,10 @@
 *.jpg
 *.jpeg
 *.pdf
-*.log
 *.tar
 *.gz
 *.bz2
+*.log
 
 # GDS files
 *.gds
