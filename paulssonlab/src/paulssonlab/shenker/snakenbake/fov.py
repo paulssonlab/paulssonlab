@@ -133,7 +133,7 @@ def draw_grid_overlay(
             fov_rect = fov_rect.rotate(
                 np.deg2rad(grid_metadata_fov["angle_tol"]), rotation_center
             )
-        fov_cell = Cell(f"FOV-{fov_name}-{get_uuid()}")
+        fov_cell = Cell(f"FOV-{fov_name}")
         fov_cell.add(fov_rect)
         y = 0
         offsets = grid_metadata_fov["offsets"]

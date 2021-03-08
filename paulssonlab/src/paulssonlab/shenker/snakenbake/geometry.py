@@ -1,12 +1,19 @@
 import numpy as np
 import gdspy
-from gdspy import Cell, Polygon, boolean, Rectangle
+from gdspy import Polygon, boolean, Rectangle
 from functools import partial
+from paulssonlab.shenker.snakenbake.util import get_uuid
 
 MAX_POINTS = 2000  # LayoutEditor uses 8191
 ROUND_TOLERANCE = 0.3
 
-Cell = partial(Cell, exclude_from_current=True)
+
+def Cell(name):
+    if name != "main":
+        name = f"{name}-{get_uuid()}"
+    return gdspy.Cell(name, exclude_from_current=True)
+
+
 Round = partial(gdspy.Round, tolerance=ROUND_TOLERANCE, max_points=MAX_POINTS)
 boolean = partial(boolean, max_points=MAX_POINTS)
 

@@ -118,7 +118,6 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
     return split
 
 
-# @memoize
 def manifold_snake(
     dims=DEFAULT_DIMS,
     split=None,
@@ -545,7 +544,6 @@ def manifold_snake(
     return snake_cell, metadata
 
 
-# @memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
@@ -798,7 +796,6 @@ def snake(
     return snake_cell, metadata
 
 
-# @memoize
 def _snake_feeding_channel(
     lane_fc_dims,
     effective_trench_length,
@@ -900,7 +897,7 @@ def _snake_feeding_channel(
     return snake_fc_cell, lane_ys
 
 
-@memoize  # TODO!!!
+@memoize
 def _barcode(
     ary,
     mark_size,
@@ -952,7 +949,6 @@ def _barcode(
     return cell
 
 
-# @memoize
 def _snake_trenches(
     trench_width,
     trench_spacing,
@@ -1534,7 +1530,6 @@ def wafer(
     return main_cell
 
 
-# @memoize # TODO!!!
 def chip(
     name,
     design_func=snake,
@@ -1584,7 +1579,6 @@ def chip(
     return chip_cell
 
 
-# @memoize
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     """Generates a rectangular outline marking the edges of a chip.
 
