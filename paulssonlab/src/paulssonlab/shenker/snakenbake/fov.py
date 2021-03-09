@@ -21,7 +21,7 @@ def get_fov_coverage(
 ):
     trench_sets_per_fov_target = trench_sets_per_fov
     trench_sets_per_fov = 1
-    start_by_skipping = skip_first
+    start_by_skipping = skip_first is True
     y = trench_length
     unit_cell_height = None
     while True:
@@ -67,12 +67,23 @@ def _rectangle_rotation_angle_root_finder(fov_dim, margin):
         return res.root
 
 
-def get_grid_metadata(fov_dims, metadata, skip_first=False):
+def get_grid_metadata(fov_dims, metadata, skip_first=None):
     grid_metadata = {}
     for fov_name, fov_dim in fov_dims.items():
         trench_sets_per_fov, offset, filled_height = get_fov_coverage(
             fov_dim, **metadata, skip_first=skip_first
         )
+        if skip_first is None:
+            trench_sets_per_fov2, offset2, filled_height2 = get_fov_coverage(
+                fov_dim, **metadata, skip_first=skip_first
+            )
+            # if skip_first=None, pick True/False depending on which gives more trench_sets_per_fov
+            if trench_sets_per_fov2 > trench_sets_per_fov:
+                trench_sets_per_fov, offset, filled_height = (
+                    trench_sets_per_fov2,
+                    offset2,
+                    filled_height2,
+                )
         if trench_sets_per_fov % 2 != 0:
             # TODO: there should be a more elegant way of getting this without a second call
             _, offset2, filled_height2 = get_fov_coverage(
