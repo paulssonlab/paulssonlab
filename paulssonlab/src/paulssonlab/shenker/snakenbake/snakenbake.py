@@ -1008,10 +1008,15 @@ def _snake_trenches(
             )
         )
     elif registration_marks:
+        mark_halfwidth = (2 * mark_size + mark_spacing) / 2
         tick_cell.add(
-            qr_target(
-                mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
+            # TODO: include just the inner part of the QR target
+            Rectangle(
+                (-mark_halfwidth, -mark_halfwidth), (mark_halfwidth, mark_halfwidth)
             )
+            # qr_target(
+            #     mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
+            # )
         )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
