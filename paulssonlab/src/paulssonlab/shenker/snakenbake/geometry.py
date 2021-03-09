@@ -65,7 +65,6 @@ def qr_target(outer_thickness, margin, inner_width, layer=None):
     outer = Rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
     hole = Rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
     outer = boolean(outer, hole, "not", layer=layer)
-    # return outer
     inner = Rectangle(
         (-half_inner_width, -half_inner_width),
         (half_inner_width, half_inner_width),
