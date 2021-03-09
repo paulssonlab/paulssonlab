@@ -148,6 +148,7 @@ def manifold_snake(
     port_wayfinder_width=100,
     port_wayfinder_orientations=("right", "top", "bottom"),
     registration_marks=False,
+    registration_mark_barcodes=False,
     barcode_num_bits=11,
     barcode_rows=4,
     barcode_columns=4,
@@ -496,6 +497,7 @@ def manifold_snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            registration_mark_barcodes=registration_mark_barcodes,
             barcode_num_bits=barcode_num_bits,
             barcode_rows=barcode_rows,
             barcode_columns=barcode_columns,
@@ -565,6 +567,7 @@ def snake(
     port_wayfinder_length=200,
     port_wayfinder_width=100,
     registration_marks=False,
+    registration_mark_barcodes=False,
     barcode_num_bits=11,
     barcode_rows=4,
     barcode_columns=4,
@@ -775,6 +778,7 @@ def snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            registration_mark_barcodes=registration_mark_barcodes,
             barcode_num_bits=barcode_num_bits,
             barcode_rows=barcode_rows,
             barcode_columns=barcode_columns,
@@ -957,6 +961,7 @@ def _snake_trenches(
     trench_fc_overlap,
     feeding_channel_width,
     registration_marks,
+    registration_mark_barcodes,
     mark_size,
     mark_spacing,
     barcode_num_bits,
@@ -974,7 +979,7 @@ def _snake_trenches(
     name,
     layer=TRENCH_LAYER,
 ):
-    if ticks and registration_marks:
+    if ticks and (registration_marks or registration_mark_barcodes):
         raise ValueError("cannot draw both ticks and registration marks")
     lane_gap_offset_y = feeding_channel_width / 2 + trench_length + trench_gap / 2
     mark_pitch = mark_size + mark_spacing
@@ -1010,7 +1015,7 @@ def _snake_trenches(
         )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
-    if registration_marks:
+    if registration_mark_barcodes:
         lane_ys_diff = np.diff(lane_ys)
         uniform_lane_ys = np.all(lane_ys_diff == lane_ys_diff[0])
         if chip_id is not None:
@@ -1102,7 +1107,7 @@ def _snake_trenches(
                 x_reflection=True,
             )
         )
-        if ticks or registration_marks:
+        if ticks or registration_marks or registration_mark_barcodes:
             snake_trenches_cell.add(
                 CellArray(
                     tick_cell,
@@ -1112,7 +1117,7 @@ def _snake_trenches(
                     (trench_xs[0], y + lane_gap_offset_y),
                 )
             )
-            if registration_marks:
+            if registration_mark_barcodes:
                 bits = hamming.encode(
                     bitarray.util.int2ba(lane_idx, length=barcode_num_bits)
                 )
