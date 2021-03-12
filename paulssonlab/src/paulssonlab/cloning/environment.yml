@@ -13,8 +13,8 @@ dependencies:
   - cytoolz
   - google-api-python-client
   - ipywidgets
-  - jupyterlab
-  - jupyterlab_code_formatter
+  - jupyterlab=2.2.9
+  - jupyterlab_code_formatter=1.3.8
   - mafft
   - nbformat
   - nodejs
@@ -29,8 +29,9 @@ dependencies:
       - requests-html
       - pygsheets
       - pyppeteer
-      - docformatter
   - pre-commit
+  - pysftp
   - pytoml
   - requests
+  - snakemake-minimal
   - tqdm
