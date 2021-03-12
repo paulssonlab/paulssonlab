@@ -1,7 +1,7 @@
 default_stages: [commit]
 repos:
 -   repo: https://github.com/myint/docformatter.git
-    rev: v1.3.1
+    rev: v1.4
     hooks:
     -   id: docformatter
 -   repo: https://github.com/psf/black
@@ -9,7 +9,7 @@ repos:
     hooks:
     -   id: black
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
+    rev: v3.4.0
     hooks:
     -   id: check-added-large-files
         exclude: '\.ipynb$'
@@ -19,9 +19,9 @@ repos:
     -   id: end-of-file-fixer
     -   id: check-merge-conflict
 -   repo: https://github.com/shenker/pre-commit-hooks.git
-    rev: 2cf20ad811e1f6e9d3c2d914282fd260025847d8
+    rev: 87cc13a9113b48feb5f26bb9be17376e19d8b00b
     hooks:
     -   id: fix-environment-yamls
-    -   id: tag-directory
+    -   id: tag-directories
         args: ['--prefix', 'paulssonlab/src/paulssonlab/projects',
                '--prefix', 'paulssonlab/src/paulssonlab']

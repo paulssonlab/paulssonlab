@@ -5,15 +5,13 @@ def _re_search(enzyme, seq, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import get_seq
 
+    seq = str(get_seq(seq))
     compsite = re.compile(
         enzyme.compsite.pattern, enzyme.compsite.flags | re.IGNORECASE
     )
     if circular:
         seq = seq + seq[: enzyme.size - 1]
-    re_sites = [
-        (i.start(), i.group(1) is not None)
-        for i in re.finditer(compsite, str(get_seq(seq)))
-    ]
+    re_sites = [(i.start(), i.group(1) is not None) for i in re.finditer(compsite, seq)]
     return re_sites
 
 
@@ -60,11 +58,11 @@ def _re_digest(seq, cuts):
     for cut5, cut3, cut_upstream in cuts:
         frags, new_offset = seq.cut(cut5 - offset, cut3 - offset)
         if len(frags) == 1:
-            frags[0].upstream_inward_cutter = not cut_upstream
-            frags[0].downstream_inward_cutter = cut_upstream
+            frags[0].upstream_inward_cut = cut_upstream
+            frags[0].downstream_inward_cut = not cut_upstream
         elif len(frags) == 2:
-            frags[0].downstream_inward_cutter = cut_upstream
-            frags[1].upstream_inward_cutter = not cut_upstream
+            frags[0].downstream_inward_cut = not cut_upstream
+            frags[1].upstream_inward_cut = cut_upstream
         else:
             raise NotImplementedError
         seqs.extend(frags[:-1])
@@ -74,18 +72,11 @@ def _re_digest(seq, cuts):
     return seqs
 
 
-def re_digest(seq, enzyme, circular=None, allow_single=True):
+def re_digest(seq, enzyme, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import DsSeqRecord
 
-    if hasattr(seq, "circular"):
-        if circular is None:
-            circular = seq.circular
-        else:
-            seq = DsSeqRecord(seq)  # make a copy
-            seq.circular = circular
-    else:
-        seq = DsSeqRecord(seq)  # make a copy
-        seq.circular = circular
+    if not isinstance(seq, DsSeqRecord):
+        seq = DsSeqRecord(seq, circular=circular)
     cuts = re_search(seq, enzyme, circular=circular)
     return _re_digest(seq, cuts)

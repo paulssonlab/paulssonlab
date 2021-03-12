@@ -6,7 +6,8 @@ import string
 import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
-from paulssonlab.cloning.sequence import smoosh_sequences
+from paulssonlab.cloning.sequence import smoosh_sequences, DsSeqRecord
+from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     list_drive,
@@ -19,15 +20,38 @@ from paulssonlab.api.util import PROGRESS_BAR
 
 ID_REGEX = r"([A-Za-z]*)\s*(\d+(?:\.\d+)?)[a-zA-Z]*"
 
-MARKER_ABBREVIATIONS = {
-    "ampicillin": "Ampicillin/Carbenicillin (50 µg/mL)",
-    "carbenicillin": "Ampicillin/Carbenicillin (50 µg/mL)",
-    "kanamycin": "Kanamycin (50 µg/mL)",
-    "chloramphenicol": "Chloramphenicol (25 µg/mL)",
-    "tetracycline": "Tetracycline (10 µg/mL)",
-    "spectinomycin": "Spectinomycin (50 µg/mL)",
-    "gentamicin": "Gentamicin (20 µg/ml)",
+# these are not currently used, but can be used for formatted outputs
+# these numbers are taken from Addgene: https://www.addgene.org/mol-bio-reference/
+# (see also https://blog.addgene.org/plasmids-101-everything-you-need-to-know-about-antibiotic-resistance-genes)
+MARKER_DEFAULT_CONCENTRATIONS = {
+    "amp": "Ampicillin/Carbenicillin (100 µg/mL)",
+    "kan": "Kanamycin (50 µg/mL)",
+    "chlor": "Chloramphenicol (25 µg/mL)",
+    "tet": "Tetracycline (10 µg/mL)",
+    "spec": "Spectinomycin (50 µg/mL)",
 }
+
+MARKER_ABBREVIATIONS = {
+    "ampicillin": "amp",
+    "carbenicillin": "amp",
+    "kanamycin": "kan",
+    "chloramphenicol": "chlor",
+    "tetracycline": "tet",
+    "spectinomycin": "spec",
+}
+
+
+def format_abx_marker(s):
+    marker = s.lower()
+    # we remove commas, because we use commas to indicate multiple markers
+    marker = marker.replace(",", "")
+    # we match ug/ instead of ug in case an abx name contains “ug”
+    marker = re.sub(r"ug\s*/\s*", "μg/", marker, flags=re.IGNORECASE)
+    # capitalization of mL
+    marker = marker.replace("ml", "mL")
+    for name, abbrev in MARKER_ABBREVIATIONS.items():
+        marker = re.sub(name, abbrev, marker, flags=re.IGNORECASE)
+    return marker
 
 
 def get_next_empty_row(worksheet, skip_columns=0):
@@ -42,6 +66,8 @@ def get_next_empty_row(worksheet, skip_columns=0):
 
 
 def _get_next_empty_row(worksheet, skip_columns=0):
+    # TODO: we can probably remove these kwargs to get_as_df
+    # since pygsheets 2.0.4 fixed the bug with trailing empty cells
     df = worksheet.get_as_df(has_header=False, empty_value=None)
     df = df[1:]
     has_datavalidation = columns_with_validation(
@@ -131,7 +157,7 @@ def import_addgene(
     parts=False,
     strain_overrides=None,
     plasmid_overrides=None,
-    strain_defaults={"Marker*": "Unknown"},
+    strain_defaults={"Marker": "Unknown"},
     plasmid_defaults=None,
     callback=None,
     trim=True,
@@ -160,25 +186,25 @@ def import_addgene(
         for entry_type in ("strain", "plasmid"):
             if entry_type not in entry:
                 continue
-            source = entry[entry_type]["Source*"]
+            source = entry[entry_type]["Source"]
             if source:
                 components = source.split()
                 if re.match(r"^https?://|www\.", components[0]):
                     source = f'=HYPERLINK("{components[0]}","{source}")'
-                    entry[entry_type]["Source*"] = source
+                    entry[entry_type]["Source"] = source
         strain_id = f"{strain_prefix}{strain_number}"
         plasmid_id = f"{plasmid_prefix}{plasmid_number}"
         strain = entry.get("strain")
         if strain:
             strains.append(strain)
-            strain["ID*"] = strain_id
+            strain["ID"] = strain_id
             strain_number += 1
             if "plasmid" in entry:
-                strain["Plasmid(s)*"] = plasmid_id
+                strain["Plasmids"] = plasmid_id
         plasmid = entry.get("plasmid")
         if plasmid:
             plasmids.append(plasmid)
-            plasmid["ID*"] = plasmid_id
+            plasmid["ID"] = plasmid_id
             plasmid_number += 1
             plasmid_map = entry.get("plasmid_map")
             if plasmid_map:
@@ -239,7 +265,7 @@ def _import_addgene_data(
     if isinstance(urls, (str, int)):
         urls = [urls]
     data = []
-    if progress_bar is not None and len(urls) > 1:
+    if progress_bar is not None and len(urls) >= 2:
         urls = progress_bar(urls)
     for url in urls:
         addgene = get_addgene(
@@ -283,9 +309,9 @@ def _format_addgene_for_spreadsheet(
                 continue
             kit_source = f" (from kit {data['url']})"
             if "strain" in entry:
-                entry["strain"]["Source*"] += kit_source
+                entry["strain"]["Source"] += kit_source
             if "plasmid" in entry:
-                entry["plasmid"]["Source*"] += kit_source
+                entry["plasmid"]["Source"] += kit_source
             entries.append(entry)
         return entries
     elif data["item"] in ("Plasmid", "Bacterial Strain"):
@@ -293,19 +319,18 @@ def _format_addgene_for_spreadsheet(
         # put host strain in strain
         # store vector backbone in (???)
         background = data["growth strain(s)"]
-        marker = data["bacterial resistance(s)"].replace("μg/ml", "μg/mL")
-        marker = MARKER_ABBREVIATIONS.get(marker.lower(), marker)
+        marker = format_abx_marker(data["bacterial resistance(s)"])
         source = data["url"]
         reference = data["how_to_cite"].get("references")
         strain = {
             "Names": data["name"],
-            "Species*": "E. coli",
-            #'Genotype*': '',
-            "Background*": background,
-            "Parent*": background,
-            "Marker*": marker,
-            #'DNA Transformed': '',
-            "Source*": source,
+            "Species": "E. coli",
+            # "Genotype": "",
+            "Background": background,
+            "Parent": background,
+            "Marker": marker,
+            # "DNA Transformed": "",
+            "Source": source,
             "Reference": reference,
         }
         other_notes = []
@@ -354,11 +379,11 @@ def _format_addgene_for_spreadsheet(
                     origin = re.sub(r" (?:ori|origin)$", "", origin)
             plasmid = {
                 "Names": data["name"],
-                "Size (bp)": size,
-                "Origin*": origin,
-                "Marker*": marker,
+                "Size": size,
+                "Origin": origin,
+                "Marker": marker,
                 "Other Notes": other_notes,
-                "Source*": source,
+                "Source": source,
                 "Reference": reference,
             }
             if data.get("purpose"):
@@ -391,9 +416,9 @@ def insert_parts(part_sheet, parts, first_row):
 
 def _prepare_parts(part_sheet, parts, first_row):
     cols = part_sheet.get_row(1)
-    overhang1_col = string.ascii_uppercase[cols.index("Upstream overhang*")]
-    overhang2_col = string.ascii_uppercase[cols.index("Downstream overhang*")]
-    seq_col = string.ascii_uppercase[cols.index("Sequence*")]
+    overhang1_col = string.ascii_uppercase[cols.index("Upstream overhang")]
+    overhang2_col = string.ascii_uppercase[cols.index("Downstream overhang")]
+    seq_col = string.ascii_uppercase[cols.index("Sequence")]
     for enzyme_name in ("BsaI", "BsmBI", "AarI", "BbsI"):
         enzyme = getattr(Restriction, enzyme_name)
         site1 = enzyme.site
@@ -403,7 +428,7 @@ def _prepare_parts(part_sheet, parts, first_row):
             part[enzyme_name] = has_enzyme
     for row, part in enumerate(parts, first_row):
         part_type = f"=ArrayFormula(INDEX('Part types'!A:A, MATCH(${overhang1_col}{row}&\" \"&${overhang2_col}{row},{{'Part types'!B:B&\" \"&'Part types'!C:C}},0)))"
-        part["Type*"] = part_type
+        part["Type"] = part_type
         correct_overhangs = f'=IF(AND(LEFT(${seq_col}{row},LEN(${overhang1_col}{row}))=${overhang1_col}{row},RIGHT(${seq_col}{row},LEN(${overhang2_col}{row}))=${overhang2_col}{row}),"","no")'
         part["Correct overhangs?"] = correct_overhangs
     return parts
@@ -433,3 +458,44 @@ def add_flanks(seq, flanks):
     for flank_5prime, flank_3prime in flanks:
         seq = flank_5prime + seq + flank_3prime
     return seq
+
+
+def part_entry_to_seq(entry):
+    seq = entry["Sequence"]
+    upstream_overhang_seq = entry["Upstream overhang"]
+    downstream_overhang_seq = entry["Downstream overhang"]
+    if upstream_overhang_seq.lower() != seq[: len(upstream_overhang_seq)].lower():
+        raise ValueError("upstream overhang does not match part sequence")
+    if (
+        downstream_overhang_seq.lower()
+        != seq[len(seq) - len(downstream_overhang_seq) :].lower()
+    ):
+        raise ValueError("downstream overhang does not match part sequence")
+    # TODO: this assumes a particular overhang convention for golden gate/type IIS restriction enzymes
+    upstream_overhang = len(upstream_overhang_seq)
+    downstream_overhang = -len(downstream_overhang_seq)
+    return DsSeqRecord(
+        seq,
+        upstream_overhang=upstream_overhang,
+        downstream_overhang=downstream_overhang,
+    )
+
+
+def re_digest_part(seq, enzyme):
+    frags = re_digest(seq, enzyme)
+    inward_cut_frags = [
+        f
+        for f in frags
+        if f.upstream_inward_cut is not False and f.downstream_inward_cut is not False
+    ]
+    if len(inward_cut_frags) == 0:
+        raise ValueError("no fragments with inward cuts were generated")
+    elif len(inward_cut_frags) > 1:
+        raise ValueError(
+            f"{len(inward_cut_frags)} fragments with inward cuts were generated, expecting one"
+        )
+    return inward_cut_frags[0]
+
+
+def is_bases(s):
+    return re.match(r"^[atcgrymkswbdhvn]+$", s, re.IGNORECASE) is not None

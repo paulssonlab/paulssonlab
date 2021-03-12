@@ -1,12 +1,20 @@
 import numpy as np
-from gdspy import Cell, Round, Polygon, boolean, Rectangle
+import gdspy
+from gdspy import Polygon, boolean, Rectangle
 from functools import partial
+from paulssonlab.shenker.snakenbake.util import get_uuid
 
-MAX_POINTS = 4094  # 8191 # same as LayoutEditor
-ROUND_POINTS = 100
+MAX_POINTS = 2000  # LayoutEditor uses 8191
+ROUND_TOLERANCE = 0.3
 
-Cell = partial(Cell, exclude_from_current=True)
-Round = partial(Round, number_of_points=ROUND_POINTS, max_points=MAX_POINTS)
+
+def Cell(name):
+    if name != "main":
+        name = f"{name}-{get_uuid()}"
+    return gdspy.Cell(name, exclude_from_current=True)
+
+
+Round = partial(gdspy.Round, tolerance=ROUND_TOLERANCE, max_points=MAX_POINTS)
 boolean = partial(boolean, max_points=MAX_POINTS)
 
 
@@ -57,7 +65,6 @@ def qr_target(outer_thickness, margin, inner_width, layer=None):
     outer = Rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
     hole = Rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
     outer = boolean(outer, hole, "not", layer=layer)
-    # return outer
     inner = Rectangle(
         (-half_inner_width, -half_inner_width),
         (half_inner_width, half_inner_width),

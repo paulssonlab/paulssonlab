@@ -2,6 +2,8 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
 from numbers import Integral
+from cytoolz import partial
+from itertools import product
 from collections import defaultdict, OrderedDict
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
@@ -10,29 +12,59 @@ MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
 
 
-def _ligate_goldengate(seq1, seq2):
-    pass
+def _assemble_goldengate(
+    seq1, seq2, junction_annotation="GG overhang", keep_junction_annotations=True
+):
+    if seq1.can_ligate(seq2):
+        junction_length = abs(seq1.downstream_overhang)
+        if keep_junction_annotations:
+            product = seq1 + seq2
+        else:
+            product = seq1.slice(
+                None, None, annotation_stop=len(seq1) - junction_length
+            ) + seq2.slice(None, None, annotation_start=junction_length)
+        return product, junction_length
+    else:
+        return None, -1
 
 
-def _ligate_gibson(seq1, seq2):
-    pass
-
-
-LIGATION_METHODS = {"goldengate": _ligate_goldengate, "gibson": _ligate_gibson}
+def _assemble_gibson(
+    seq1,
+    seq2,
+    max_overlap=200,
+    junction_annotation="Gibson homology",
+    keep_junction_annotations=True,
+):
+    # TODO: we ignore overhangs and assume the full sequence is double-stranded
+    # this is probably not too unreasonable for gibson
+    junction_length = find_homologous_ends(
+        seq1.seq_lower(), seq2.seq_lower(), max_overlap=max_overlap
+    )
+    if junction_length is not None:
+        if keep_junction_annotations:
+            product = seq1.fill_in("downstream") + seq2.fill_in("upstream").slice(
+                junction_length, None, annotation_start=0
+            )
+        else:
+            product = seq1.fill_in("downstream").slice(
+                None, None, annotation_stop=len(seq1) - junction_length
+            ) + seq2.fill_in("upstream").slice(junction_length, None)
+        return product, junction_length
+    else:
+        return None, -1
 
 
 class DsSeqRecord(SeqRecord):
-    _upstream_overhang = 0
-    _downstream_overhang = 0
+    assembly_methods = {"goldengate": _assemble_goldengate, "gibson": _assemble_gibson}
 
     def __init__(
         self,
         seq,
-        circular=False,
-        upstream_overhang=0,
-        downstream_overhang=0,
-        upstream_inward_cutter=None,
-        downstream_inward_cutter=None,
+        circular=None,
+        upstream_overhang=None,
+        downstream_overhang=None,
+        upstream_inward_cut=None,
+        downstream_inward_cut=None,
         id=None,
         name=None,
         description=None,
@@ -40,6 +72,8 @@ class DsSeqRecord(SeqRecord):
         annotations=None,
         letter_annotations=None,
     ):
+        self._upstream_overhang = 0
+        self._downstream_overhang = 0
         if isinstance(seq, (DsSeqRecord, SeqRecord)):
             id = id or seq.id
             name = name or seq.name
@@ -47,28 +81,33 @@ class DsSeqRecord(SeqRecord):
             features = features or seq.features.copy()
             annotations = annotations or seq.annotations.copy()
             letter_annotations = letter_annotations or seq.letter_annotations.copy()
-            seq = seq.seq
             if isinstance(seq, DsSeqRecord):
-                circular = circular or seq.circular
-                upstream_overhang = upstream_overhang or seq.upstream_overhang
-                downstream_overhang = downstream_overhang or seq.downstream_overhang
-                upstream_inward_cutter = (
-                    upstream_inward_cutter or seq.upstream_inward_cutter
+                circular = circular if circular is not None else seq.circular
+                upstream_overhang = (
+                    upstream_overhang
+                    if upstream_overhang is not None
+                    else seq.upstream_overhang
                 )
-                downstream_inward_cutter = (
-                    downstream_inward_cutter or seq.downstream_inward_cutter
+                downstream_overhang = (
+                    downstream_overhang
+                    if downstream_overhang is not None
+                    else seq.downstream_overhang
                 )
+                upstream_inward_cut = (
+                    upstream_inward_cut
+                    if upstream_inward_cut is not None
+                    else seq.upstream_inward_cut
+                )
+                downstream_inward_cut = (
+                    downstream_inward_cut
+                    if downstream_inward_cut is not None
+                    else seq.downstream_inward_cut
+                )
+            # need to grab the actual sequence
+            seq = seq.seq
         id = id or "<unknown id>"
         name = name or "<unknown name>"
         description = description or "<unknown description>"
-        self.circular = circular
-        if circular:
-            upstream_overhang = 0
-            downstream_overhang = 0
-        self.upstream_overhang = upstream_overhang or 0
-        self.downstream_overhang = downstream_overhang or 0
-        self.upstream_inward_cutter = upstream_inward_cutter
-        self.downstream_inward_cutter = downstream_inward_cutter
         super().__init__(
             seq,
             id=id,
@@ -78,6 +117,26 @@ class DsSeqRecord(SeqRecord):
             annotations=annotations,
             letter_annotations=letter_annotations,
         )
+        self.annotations.setdefault("molecule_type", "ds-DNA")  # default to ds-DNA
+        if circular is not None:
+            self.circular = circular
+        elif "topology" not in self.annotations:
+            self.circular = False  # default to linear
+        if self.circular:
+            upstream_overhang = 0
+            downstream_overhang = 0
+        self.upstream_overhang = upstream_overhang or 0
+        self.downstream_overhang = downstream_overhang or 0
+        self.upstream_inward_cut = upstream_inward_cut
+        self.downstream_inward_cut = downstream_inward_cut
+
+    @property
+    def circular(self):
+        return self.annotations["topology"] == "circular"
+
+    @circular.setter
+    def circular(self, value):
+        self.annotations["topology"] = "circular" if value else "linear"
 
     def _check_overhang(self, overhang1, overhang2):
         if sign(overhang1) == sign(overhang2) != 0:
@@ -112,13 +171,11 @@ class DsSeqRecord(SeqRecord):
 
     @property
     def upstream_overhang_seq(self):
-        return str(self.seq[: abs(self.upstream_overhang)]).lower()
+        return self.seq_lower()[: abs(self.upstream_overhang)]
 
     @property
     def downstream_overhang_seq(self):
-        return str(
-            self.seq[len(self) - abs(self.downstream_overhang) : len(self)]
-        ).lower()
+        return self.seq_lower()[len(self) - abs(self.downstream_overhang) : len(self)]
 
     def can_ligate(self, other):
         return (
@@ -126,42 +183,120 @@ class DsSeqRecord(SeqRecord):
             and self.downstream_overhang_seq == other.upstream_overhang_seq
         )
 
-    def ligate(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
-        # TAKE seq or seqs as input, join with best and return rest of pool?
-        score1, ligated1 = self._ligate(seq, method=method, **kwargs)
-        if try_reverse_complement:
-            score2, ligated2 = self._ligate(
-                reverse_complement(seq), method=method, **kwargs
+    def can_circularize(self):
+        if self.circular:
+            return True
+        return self.can_ligate(self)
+
+    def circularize(self):
+        if self.circular:
+            return self
+        if not self.can_circularize():
+            raise ValueError(
+                f"attempting to circularize by ligating incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {self.upstream_overhang_seq} ({format_sign(self.upstream_overhang)})"
             )
-            # negative score means sequences cannot be ligated (e.g., incompatible sticky stops)
-            if max(score1, score2) < 0:
-                raise ValueError("attempting to ligate incompatible sequences")
-            if score1 >= score2:
-                return ligated1
-            else:
-                return ligated2
-        # TODO: raise error if cannot ligate
+        seq = self[: len(self) - abs(self.downstream_overhang)]
+        seq.upstream_overhang = 0
+        seq.upstream_inward_cut = None
+        seq.circular = True
+        return seq
 
-    def _ligate(self, seq, method="goldengate", **kwargs):
-        pass
-        # return score
-
-    def annotate(self, label, overhangs=True):
-        pass
-
-    def reverse_complement(self):
-        rc = self.__class__(super().reverse_complement())
-        rc.upstream_overhang, rc.downstream_overhang = (
-            -self.downstream_overhang,
-            -self.upstream_overhang,
+    def assemble(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
+        if not isinstance(seq, self.__class__):
+            seq = self.__class__(seq)
+        if try_reverse_complement:
+            possible_assemblies = product(
+                (self, self.reverse_complement()), (seq, reverse_complement(seq))
+            )
+        else:
+            possible_assemblies = []
+        results = [
+            l[0]._assemble(l[1], method=method, **kwargs) for l in possible_assemblies
+        ]
+        results = sorted(
+            [r for r in results if r[1] > 0], key=lambda x: x[1], reverse=True
         )
-        return rc
+        # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
+        if not len(results):
+            raise ValueError("attempting to assemble incompatible sequences")
+        return results[0][0]
+
+    def _assemble(self, seq, method="goldengate", **kwargs):
+        return self.assembly_methods[method](self, seq, **kwargs)
+
+    def annotate(self, label, type="misc_feature", overhangs=True):
+        if overhangs:
+            start = 0
+            stop = len(self)
+        else:
+            start = abs(self.upstream_overhang)
+            stop = len(self) - abs(self.downstream_overhang)
+        feature = SeqFeature(FeatureLocation(start, stop), type=type)
+        feature.qualifiers["label"] = [label]
+        return self.__class__(self, features=[feature, *self.features])
+
+    def annotate_overhangs(self, type="misc_feature"):
+        features = []
+        if self.upstream_overhang:
+            upstream_feature = SeqFeature(
+                FeatureLocation(
+                    0, abs(self.upstream_overhang), strand=self.upstream_strand
+                ),
+                type=type,
+            )
+            upstream_feature.qualifiers["label"] = ["overhang"]
+            features.append(upstream_feature)
+        if self.downstream_overhang:
+            downstream_feature = SeqFeature(
+                FeatureLocation(
+                    len(self) - abs(self.downstream_overhang),
+                    len(self),
+                    strand=self.downstream_strand,
+                ),
+                type=type,
+            )
+            downstream_feature.qualifiers["label"] = ["overhang"]
+            features.append(downstream_feature)
+        return self.__class__(self, features=[*features, *self.features])
+
+    def reverse_complement(self, **kwargs):
+        kwargs = {
+            **dict(
+                id=True, name=True, description=True, annotations=True, dbxrefs=True
+            ),
+            **kwargs,
+        }
+        return self.__class__(
+            super().reverse_complement(**kwargs),
+            upstream_overhang=-self.downstream_overhang,
+            downstream_overhang=-self.upstream_overhang,
+            upstream_inward_cut=self.downstream_inward_cut,
+            downstream_inward_cut=self.upstream_inward_cut,
+        )
+
+    def lower(self):
+        new = self.__class__(self)
+        new.seq = new.seq.lower()
+        return new
+
+    def seq_lower(self):
+        return str(self.seq).lower()
 
     def reindex(self, loc):
         if not self.circular:
             raise ValueError("cannot reindex a non-circular sequence")
         new = self[loc:] + self[:loc]
         new.circular = True
+        return new
+
+    def fill_in(self, ends="both"):
+        new = self.__class__(self)
+        if ends in ("both", "upstream"):
+            new.upstream_overhang = 0
+            new.upstream_inward_cut = None
+        if ends in ("both", "downstream"):
+            new.downstream_overhang = 0
+            new.downstream_inward_cut = None
         return new
 
     def cut(self, cut5, cut3):
@@ -177,7 +312,9 @@ class DsSeqRecord(SeqRecord):
             if wraparound_length < max_loc - min_loc:
                 min_loc, max_loc = max_loc, min_loc
                 overhang = -sign(cut5 - cut3) * wraparound_length
-            new = self.reindex(min_loc) + self[min_loc:max_loc]
+            # we do self[min_loc:] + self[:min_loc] instead of self.reindex(min_loc)
+            # because the latter returns a circular sequence
+            new = self[min_loc:] + self[:min_loc] + self[min_loc:max_loc]
             new.upstream_overhang = -overhang
             new.downstream_overhang = overhang
             return [new], min_loc
@@ -206,7 +343,7 @@ class DsSeqRecord(SeqRecord):
             first.downstream_overhang = overhang
             return [first, second], min_loc
 
-    def slice(self, start, stop, annotation_start=None, annotation_stop=None):
+    def slice(self, start, stop, annotation_start=True, annotation_stop=True):
         if start is None:
             start = 0
         if stop is None:
@@ -224,7 +361,11 @@ class DsSeqRecord(SeqRecord):
             slice2 = self.slice(None, stop, annotation_stop=annotation_stop)
             new_seq = slice1 + slice2
         else:
+            # SeqRecord.__getitem__ does not preserve annotations or features
             new_seq = SeqRecord.__getitem__(self, slice(start, stop))
+            new_seq.annotations = self.annotations
+            # because circular is stored in annotations, need to set this after setting annotations
+            new_seq.circular = False
             new_seq.upstream_overhang = max(
                 abs(self.upstream_overhang) - start, 0
             ) * sign(self.upstream_overhang)
@@ -232,9 +373,9 @@ class DsSeqRecord(SeqRecord):
                 abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
             if start == 0:
-                new_seq.upstream_inward_cutter = self.upstream_inward_cutter
+                new_seq.upstream_inward_cut = self.upstream_inward_cut
             if stop == len(self):
-                new_seq.downstream_inward_cutter = self.downstream_inward_cutter
+                new_seq.downstream_inward_cut = self.downstream_inward_cut
             # copy features
             features = []
             for feature in self.features:
@@ -265,7 +406,7 @@ class DsSeqRecord(SeqRecord):
                 raise ValueError("step != 1 not allowed")
             return self.slice(start, stop)
         else:
-            raise ValueError("invalid index")
+            raise ValueError(f"invalid index: {index}")
 
     def __add__(self, other):
         if self.circular:
@@ -274,7 +415,7 @@ class DsSeqRecord(SeqRecord):
             raise ValueError("cannot append a circular sequence")
         if not self.can_ligate(other):
             raise ValueError(
-                f"attempting to join incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
+                f"attempting to ligate incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
             )
         # trim overhang
         other = other[abs(self.downstream_overhang) :]
@@ -282,8 +423,8 @@ class DsSeqRecord(SeqRecord):
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
             downstream_overhang=other.downstream_overhang,
-            upstream_inward_cutter=self.upstream_inward_cutter,
-            downstream_inward_cutter=other.downstream_inward_cutter,
+            upstream_inward_cut=self.upstream_inward_cut,
+            downstream_inward_cut=other.downstream_inward_cut,
         )
         length = len(self)
         new.features = _join_features(self.features, other.features, length)
@@ -305,7 +446,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
-            f" upstream_inward_cutter={self.upstream_inward_cutter}, downstream_inward_cutter={self.downstream_inward_cutter},"
+            f" upstream_inward_cut={self.upstream_inward_cut}, downstream_inward_cut={self.downstream_inward_cut},"
             f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )
@@ -313,9 +454,9 @@ class DsSeqRecord(SeqRecord):
     def __str__(self):
         seq = str(self.seq)
         if hasattr(self.seq, "complement"):
-            seq_rc = str(self.seq.complement())
+            seq_compl = str(self.seq.complement())
         else:
-            seq_rc = seq
+            seq_compl = seq
         if len(seq) > 80:
             upstream_length = max(
                 abs(self.upstream_overhang) + SEQUENCE_OVERHANG_STR_BUFFER,
@@ -326,17 +467,19 @@ class DsSeqRecord(SeqRecord):
                 MAX_SEQUENCE_STR_LENGTH,
             )
             seq = seq[:upstream_length] + "..." + seq[-downstream_length:]
-            seq_rc = seq_rc[:upstream_length] + "..." + seq_rc[-downstream_length:]
+            seq_compl = (
+                seq_compl[:upstream_length] + "..." + seq_compl[-downstream_length:]
+            )
         lines = []
         for strand in (-1, 1):
             if strand == 1:
-                formatted_seq = seq_rc
+                formatted_seq = seq_compl
             else:
                 formatted_seq = seq
             if sign(self.upstream_overhang) == strand:
                 length = abs(self.upstream_overhang)
                 formatted_seq = " " * length + formatted_seq[length:]
-            elif sign(self.downstream_overhang) == strand:
+            if sign(self.downstream_overhang) == strand:
                 length = abs(self.downstream_overhang)
                 formatted_seq = formatted_seq[:-length] + " " * length
             if self.circular:
@@ -355,26 +498,48 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
-def ligate(seqs, method="goldengate"):
-    # handle seq/seqrecord/dsseqrecord seqs by promoting all to dsseqrecords
-    pass
+def assemble(seqs, circularize=True, **kwargs):
+    # cast all sequences to DsSeqRecord if needed
+    seqs = [DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs]
+    if not len(seqs):
+        return DsSeqRecord(Seq(""))
+    product = seqs[0]
+    for seq in seqs[1:]:
+        product = product.assemble(seq, **kwargs)
+    if circularize:
+        try:
+            product = product.circularize()
+        except:
+            pass
+    return product
 
 
 def join_seqs(seqs):
+    if any(isinstance(seq, DsSeqRecord) for seq in seqs):
+        cls = DsSeqRecord
+    elif any(hasattr(seq, "feature") for seq in seqs):
+        cls = SeqRecord
+    else:
+        cls = Seq
     to_concat = []
     features = []
     offset = 0
     for seq in seqs:
-        to_concat.appstop(get_seq(seq))
+        to_concat.append(get_seq(seq))
         if hasattr(seq, "features"):
             for feature in seq.features:
-                features.appstop(feature._shift(offset))
+                features.append(feature._shift(offset))
         offset += len(seq)
     concatenated_seq = sum(to_concat, Seq(""))
-    return SeqRecord(concatenated_seq, features=features)
+    seq = cls(concatenated_seq)
+    if features:
+        seq.features = features
+    return seq
 
 
 def reverse_complement(seq):
+    if seq is None:
+        raise ValueError("cannot reverse complement None")
     if hasattr(seq, "features"):
         return seq.reverse_complement(
             id=True, name=True, description=True, annotations=True, dbxrefs=True
@@ -433,22 +598,30 @@ def _join_features(a, b, length):
 
 
 def _slice_seqrecord_feature(
-    feature, start, stop, annotation_start=None, annotation_stop=None
+    feature, start, stop, annotation_start=True, annotation_stop=True
 ):
-    if annotation_start is None:
+    # annotation_start/stop=True means cut annotations along sequence slice boundaries
+    # =False causes unintuitive behavior, so set to None instead
+    if annotation_start is True:
         annotation_start = start
-    if annotation_stop is None:
+    elif annotation_start is False:
+        annotation_start = None
+    if annotation_stop is True:
         annotation_stop = stop
-    if annotation_stop <= int(feature.location.start) or annotation_start >= int(
-        feature.location.end
+    elif annotation_stop is False:
+        annotation_stop = None
+    if (
+        annotation_stop is not None and annotation_stop <= int(feature.location.start)
+    ) or (
+        annotation_start is not None and annotation_start >= int(feature.location.end)
     ):
         return None
     new_feature = feature._shift(-start)  # copy feature and shift
     start_loc = new_feature.location.start
     stop_loc = new_feature.location.end
-    if annotation_start > int(feature.location.start):
-        start_loc = ExactPosition(start - annotation_start)
-    if annotation_stop < int(feature.location.end):
+    if annotation_start is not None and annotation_start > int(feature.location.start):
+        start_loc = ExactPosition(annotation_start - start)
+    if annotation_stop is not None and annotation_stop < int(feature.location.end):
         stop_loc = ExactPosition(annotation_stop - start)
     new_feature.location = FeatureLocation(
         start_loc, stop_loc, strand=new_feature.location.strand
@@ -506,16 +679,162 @@ def get_seq(seq):
         return seq
 
 
-def smoosh_sequences(a, b):
+def find_homologous_ends(a, b, max_overlap=None):
+    _max_overlap = min(len(a), len(b))
+    if max_length is not None:
+        max_overlap = min(_max_overlap, max_length)
+    else:
+        max_overlap = _max_overlap
+    for overlap in reversed(range(1, max_overlap + 1)):
+        a_tail = a[-overlap:]
+        b_head = b[:overlap]
+        if a_tail == b_head:
+            return overlap
+    return None
+
+
+def smoosh_sequences(a, b, max_overlap=None):
     """Returns the shortest sequence beginning with `a` and stoping with `b`.
 
     For example, this will eliminate a common substring on the junction
     between the two sequences.
     """
-    min_length = min(len(a), len(b))
-    for i in range(min_length):
-        a_tail = a[-min_length + i :]
-        b_head = b[: min_length - i]
-        if a_tail == b_head:
-            return a + b[min_length - i :]
-    return a + b
+    overlap = find_homologous_ends(a, b, max_overlap=max_overlap)
+    if overlap is not None:
+        return a + b[overlap:]
+    else:
+        return a + b
+
+
+def count_matching(a, b):
+    s = 0
+    for i in range(min(len(a), len(b))):
+        if a[i] == b[i]:
+            s += 1
+    return s
+
+
+def count_contiguous_matching(a, b, right=False):
+    s = 0
+    idxs = range(min(len(a), len(b)))
+    if right:
+        idxs = reversed(idxs)
+    for i in idxs:
+        if a[i] == b[i]:
+            s += 1
+        else:
+            return s
+    return s
+
+
+def iterate_shifts(a, b):
+    for shift in range(1, len(a) + len(b)):
+        a_start = max(shift - len(b), 0)
+        a_stop = min(shift, len(a))
+        b_start = a_start + len(b) - shift
+        b_stop = a_stop + len(b) - shift
+        a_overlap = a[a_start:a_stop]
+        b_overlap = b[b_start:b_stop]
+        yield shift, a_start, a_stop, b_start, b_stop
+
+
+def find_primer_binding_site(
+    template,
+    primer,
+    circular=None,
+    try_reverse_complement=True,
+    scoring_func=partial(count_contiguous_matching, right=True),
+    min_score=6,
+):
+    if hasattr(template, "circular") and circular is None:
+        circular = template.circular
+    # TODO: circular
+    orig_primer = primer
+    # orig_template = template
+    if try_reverse_complement:
+        strands = (1, -1)
+    else:
+        strands = (1,)
+    sites = []
+    for strand in strands:
+        if strand == -1:
+            primer = reverse_complement(orig_primer)
+        else:
+            primer = orig_primer
+        for (
+            shift,
+            template_start,
+            template_stop,
+            primer_start,
+            primer_stop,
+        ) in iterate_shifts(template, primer):
+            template_overlap = template[template_start:template_stop]
+            primer_overlap = primer[primer_start:primer_stop]
+            score = scoring_func(template_overlap, primer_overlap)
+            if score >= min_score:
+                sites.append((strand, shift, score))
+    return sites
+
+
+def pcr(template, primer1, primer2, circular=None, min_score=6):
+    # cast input sequences to DsSeqRecords if needed
+    seqs = [template, primer1, primer2]
+    for idx in range(len(seqs)):
+        if isinstance(seqs[idx], str):
+            seqs[idx] = Seq(seqs[idx])
+        if not isinstance(seqs[idx], DsSeqRecord):
+            seqs[idx] = DsSeqRecord(seqs[idx])
+    template, primer1, primer2 = seqs
+    both_sites = []
+    for primer in (primer1, primer2):
+        sites = find_primer_binding_site(
+            template,
+            primer,
+            circular=circular,
+            try_reverse_complement=True,
+            min_score=min_score,
+        )
+        if len(sites) != 1:
+            raise ValueError(
+                f"expecting a unique primer binding site, instead found {len(sites)}"
+            )
+        both_sites.append(sites[0])
+    if both_sites[0][0] == -1:
+        both_sites = both_sites[::-1]
+    sense1, loc1, len1 = both_sites[0]
+    sense2, loc2, len2 = both_sites[1]
+    if sense1 != -sense2:
+        raise ValueError("expecting a forward/reverse primer pair")
+    start = loc1
+    stop = len(template) - loc2
+    amplicon = template[start:stop]
+    product = primer1 + amplicon + primer2
+    return product
+
+
+def anneal(a, b, min_score=6):
+    b = reverse_complement(b)
+    loc = None
+    best_score = -1
+    for shift, a_start, a_stop, b_start, b_stop in iterate_shifts(a, b):
+        a_overlap = a[a_start:a_stop]
+        b_overlap = b[b_start:b_stop]
+        score = len(a_overlap)
+        if a_overlap == b_overlap and score > best_score:
+            loc = len(b) - shift
+            best_score = score
+            if b_start > 0:
+                seq = b[:b_stop] + a[a_stop:]
+                upstream_overhang = -b_start
+                downstream_overhang = len(a) - a_stop
+            else:
+                seq = a[:a_stop] + b[b_stop:]
+                upstream_overhang = a_start
+                downstream_overhang = -(len(b) - b_stop)
+    if loc is None or best_score < min_score:
+        raise ValueError(f"could not anneal sequences {a!r} and {b!r}")
+    return DsSeqRecord(
+        seq,
+        upstream_overhang=upstream_overhang,
+        downstream_overhang=downstream_overhang,
+    )

@@ -3,8 +3,6 @@ import numpy as np
 import gdspy as g
 from gdspy import CellReference, CellArray, Rectangle
 from geometry import (
-    MAX_POINTS,
-    ROUND_POINTS,
     Cell,
     Round,
     cross,
@@ -120,7 +118,6 @@ def _compute_lane_split(split, max_lanes, gap_lanes=0):
     return split
 
 
-# @memoize
 def manifold_snake(
     dims=DEFAULT_DIMS,
     split=None,
@@ -151,6 +148,7 @@ def manifold_snake(
     port_wayfinder_width=100,
     port_wayfinder_orientations=("right", "top", "bottom"),
     registration_marks=False,
+    registration_mark_barcodes=False,
     barcode_num_bits=11,
     barcode_rows=4,
     barcode_columns=4,
@@ -263,6 +261,7 @@ def manifold_snake(
     remainder = len(split) % num_manifolds
     if remainder > 0:
         manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
+    manifold_split = np.array(manifold_split)
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
     # define trench parameters
     trench_xs = np.arange(
@@ -304,7 +303,7 @@ def manifold_snake(
     # manifolds
     if manifold_round_radius:
         rounded_corner = Cell(f"Snake-round-{name}")
-        rounded_curve = g.Curve(0, 0)
+        rounded_curve = g.Curve(0, 0, tolerance=0.2)
         rounded_curve.v(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
         rounded_corner.add(
@@ -498,6 +497,7 @@ def manifold_snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            registration_mark_barcodes=registration_mark_barcodes,
             barcode_num_bits=barcode_num_bits,
             barcode_rows=barcode_rows,
             barcode_columns=barcode_columns,
@@ -546,7 +546,6 @@ def manifold_snake(
     return snake_cell, metadata
 
 
-# @memoize
 def snake(
     dims=DEFAULT_DIMS,
     split=1,
@@ -568,6 +567,7 @@ def snake(
     port_wayfinder_length=200,
     port_wayfinder_width=100,
     registration_marks=False,
+    registration_mark_barcodes=False,
     barcode_num_bits=11,
     barcode_rows=4,
     barcode_columns=4,
@@ -778,6 +778,7 @@ def snake(
             trench_fc_overlap=trench_fc_overlap,
             feeding_channel_width=feeding_channel_width,
             registration_marks=registration_marks,
+            registration_mark_barcodes=registration_mark_barcodes,
             barcode_num_bits=barcode_num_bits,
             barcode_rows=barcode_rows,
             barcode_columns=barcode_columns,
@@ -799,7 +800,6 @@ def snake(
     return snake_cell, metadata
 
 
-# @memoize
 def _snake_feeding_channel(
     lane_fc_dims,
     effective_trench_length,
@@ -901,7 +901,7 @@ def _snake_feeding_channel(
     return snake_fc_cell, lane_ys
 
 
-@memoize  # TODO!!!
+@memoize
 def _barcode(
     ary,
     mark_size,
@@ -953,7 +953,6 @@ def _barcode(
     return cell
 
 
-# @memoize
 def _snake_trenches(
     trench_width,
     trench_spacing,
@@ -962,6 +961,7 @@ def _snake_trenches(
     trench_fc_overlap,
     feeding_channel_width,
     registration_marks,
+    registration_mark_barcodes,
     mark_size,
     mark_spacing,
     barcode_num_bits,
@@ -979,7 +979,7 @@ def _snake_trenches(
     name,
     layer=TRENCH_LAYER,
 ):
-    if ticks and registration_marks:
+    if ticks and (registration_marks or registration_mark_barcodes):
         raise ValueError("cannot draw both ticks and registration marks")
     lane_gap_offset_y = feeding_channel_width / 2 + trench_length + trench_gap / 2
     mark_pitch = mark_size + mark_spacing
@@ -1008,14 +1008,19 @@ def _snake_trenches(
             )
         )
     elif registration_marks:
+        mark_halfwidth = (2 * mark_size + mark_spacing) / 2
         tick_cell.add(
-            qr_target(
-                mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
+            # TODO: include just the inner part of the QR target
+            Rectangle(
+                (-mark_halfwidth, -mark_halfwidth), (mark_halfwidth, mark_halfwidth)
             )
+            # qr_target(
+            #     mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
+            # )
         )
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
-    if registration_marks:
+    if registration_mark_barcodes:
         lane_ys_diff = np.diff(lane_ys)
         uniform_lane_ys = np.all(lane_ys_diff == lane_ys_diff[0])
         if chip_id is not None:
@@ -1107,7 +1112,7 @@ def _snake_trenches(
                 x_reflection=True,
             )
         )
-        if ticks or registration_marks:
+        if ticks or registration_marks or registration_mark_barcodes:
             snake_trenches_cell.add(
                 CellArray(
                     tick_cell,
@@ -1117,7 +1122,7 @@ def _snake_trenches(
                     (trench_xs[0], y + lane_gap_offset_y),
                 )
             )
-            if registration_marks:
+            if registration_mark_barcodes:
                 bits = hamming.encode(
                     bitarray.util.int2ba(lane_idx, length=barcode_num_bits)
                 )
@@ -1535,7 +1540,6 @@ def wafer(
     return main_cell
 
 
-# @memoize # TODO!!!
 def chip(
     name,
     design_func=snake,
@@ -1585,7 +1589,6 @@ def chip(
     return chip_cell
 
 
-# @memoize
 def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     """Generates a rectangular outline marking the edges of a chip.
 

@@ -17,7 +17,8 @@ dependencies:
   - holoviews
   - hvplot
   - ipywidgets
-  - jupyterlab
+  - jsondiff
+  - jupyterlab>=2.0.0,<3
   - jupyterlab_code_formatter
   - mafft
   - matplotlib

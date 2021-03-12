@@ -1,0 +1,205 @@
+import pandas as pd
+from functools import lru_cache
+import shlex
+from paulssonlab.shenker.sequencing.common import REMOTE_HOST, REMOTE_BASE_DIR
+
+REMOTE_DATA_DIR = f"{REMOTE_BASE_DIR}/!!Jacob Quinn Shenker/200806/200806_arkin_bistable_sequencing"
+
+@lru_cache
+def get_samples():
+    samples = pd.read_csv("data/samples.tsv", sep="\t", names=["sample", "references"], index_col=False)
+    samples = {row.sample.replace(".fastq", ""): row.references.split(",") for row in samples.itertuples()}
+    return samples
+
+# workdir: ""
+
+localrules: all, download_samples, download_reads, have_samples, any2fasta, merge_fasta
+
+rule all:
+    input:
+        "output/.done"
+
+rule download_samples:
+    output:
+        "data/samples.tsv",
+    shell:
+        f"scp \"{REMOTE_HOST}:{shlex.quote(REMOTE_DATA_DIR)}/samples.tsv\" {{output}}"
+
+rule download_reads:
+    output:
+        "data/{sample}.fastq",
+    shell:
+        f"scp \"{REMOTE_HOST}:{shlex.quote(REMOTE_DATA_DIR)}/{{wildcards.sample:q}}.fastq\" {{output}}"
+
+checkpoint have_samples:
+    input:
+        "data/samples.tsv"
+    output:
+        touch("output/.readytorun")
+
+rule any2fasta:
+    input:
+        "references/{reference}.gb"
+    output:
+        temp("references/{reference}.fasta")
+    conda:
+        "envs/any2fasta.yml"
+    shell:
+        "any2fasta -q {input} | seqkit replace -p '(.*)' -r '{wildcards.reference}' > {output}"
+
+def wait_merge_fasta(wildcards):
+    checkpoints.have_samples.get(**wildcards)
+    samples = get_samples()
+    files = expand("references/{reference}.fasta", reference=samples[wildcards.sample])
+    return files
+
+rule merge_fasta:
+    input:
+        wait_merge_fasta
+    output:
+        "output/{sample}/reference.fasta"
+    wildcard_constraints:
+        input=".+"
+    shell:
+        "cat {input} > {output}"
+
+rule bowtie2_build:
+    input:
+        reference="output/{sample}/reference.fasta"
+    output:
+        multiext(
+            "output/{sample}/index",
+            ".1.bt2", ".2.bt2", ".3.bt2", ".4.bt2", ".rev.1.bt2", ".rev.2.bt2",
+        )
+    log:
+        "logs/bowtie2_build/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    params:
+        indexbase=lambda wildcards, output: output[0].replace(".1.bt2", ""),
+        extra=""
+    threads: 8
+    shell:
+        "bowtie2-build --threads {threads} {params.extra} {input.reference} {params.indexbase} &> {log}"
+
+rule bowtie2_interleaved:
+    input:
+        reads="data/{sample}.fastq",
+        index=multiext(
+            "output/{sample}/index",
+            ".1.bt2", ".2.bt2", ".3.bt2", ".4.bt2", ".rev.1.bt2", ".rev.2.bt2",
+        )
+    output:
+        temp("output/{sample}/alignments.bam")
+    log:
+        "logs/bowtie2/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    params:
+        indexbase=lambda wildcards, input: input.index[0].replace(".1.bt2", ""),
+        extra="--end-to-end"
+    threads: 8
+    shell:
+        "(bowtie2 --threads {threads} {params.extra} -x {params.indexbase} --interleaved {input.reads} "
+        "| samtools view -Sbh -o {output} -) 2> {log}"
+
+rule samtools_sort:
+    input:
+        "output/{sample}/alignments.bam"
+    output:
+        "output/{sample}/alignments.sorted.bam"
+    conda:
+        "envs/mapping.yml"
+    shell:
+        "samtools sort -O bam {input} -o {output}"
+
+rule samtools_index:
+    input:
+        "output/{sample}/alignments.sorted.bam"
+    output:
+        "output/{sample}/alignments.sorted.bam.bai"
+    conda:
+        "envs/mapping.yml"
+    shell:
+        "samtools index {input} {output}"
+
+rule call_variants:
+    input:
+        alignments="output/{sample}/alignments.sorted.bam",
+        reference="output/{sample}/reference.fasta"
+    output:
+        "output/{sample}/calls.bcf"
+    log:
+        "logs/call_variants/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    params:
+        mpileup_args="--max-depth 2000 --max-idepth 2000",
+        call_args="--ploidy 1"
+    shell:
+        "(bcftools mpileup -Ou {params.mpileup_args} -f {input.reference} {input.alignments}"
+        " | bcftools call -mv -Ob {params.call_args} -o {output}) 2> {log}"
+
+rule filter_variants:
+    input:
+        "output/{sample}/calls.bcf"
+    output:
+        "output/{sample}/calls.filtered.bcf"
+    log:
+        "logs/filter_variants/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    params:
+        args="-i'%QUAL>20'"
+    shell:
+        "bcftools filter {params.args} -Ob {input} -o {output} 2> {log}"
+
+rule index_variants:
+    input:
+        "output/{sample}/calls.filtered.bcf"
+    output:
+        "output/{sample}/calls.filtered.bcf.csi"
+    conda:
+        "envs/mapping.yml"
+    shell:
+        "bcftools index {input}"
+
+rule get_consensus:
+    input:
+        calls="output/{sample}/calls.filtered.bcf",
+        index="output/{sample}/calls.filtered.bcf.csi",
+        reference="output/{sample}/reference.fasta"
+    output:
+        "output/{sample}/consensus.fasta"
+    log:
+        "logs/get_consensus/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    shell:
+        "cat {input.reference} | bcftools consensus {input.calls} -o {output} 2> {log}"
+
+rule extract_consensus:
+    input:
+        "output/{sample}/consensus.fasta"
+    output:
+        directory("output/{sample}/consensus.fasta.split")
+    log:
+        "logs/extract_consensus/{sample}.log"
+    conda:
+        "envs/mapping.yml"
+    params:
+        outdir=lambda wildcards, input: f"{input}.split"
+    shell:
+        "(cat {input} | seqkit replace -p '^(\\S+).*' -r '{wildcards.sample}_$1'"
+        " | seqkit split - --by-id -f -O {params.outdir}) 2> {log}"
+
+def wait_finish(wildcards):
+    checkpoints.have_samples.get(**wildcards)
+    samples = get_samples()
+    return expand("output/{sample}/consensus.fasta.split", sample=samples.keys())
+
+rule finish:
+    input:
+        wait_finish
+    output:
+        touch("output/.done")

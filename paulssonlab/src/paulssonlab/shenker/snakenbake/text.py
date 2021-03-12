@@ -98,10 +98,6 @@ def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGM
 def cut_out_hole(exterior, interior, layer=0, datatype=0):
     dists = scipy.spatial.distance.cdist(exterior, interior)
     idx_ext, idx_int = np.unravel_index(dists.argmin(), dists.shape)
-    # exterior = np.concatenate((exterior[:idx_ext+1],
-    #                               interior[:idx_int+1:-1],
-    #                               interior[idx_int::-1],
-    #                               exterior[idx_ext:]))
     result = np.concatenate(
         (
             exterior[: idx_ext + 1],
