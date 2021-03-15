@@ -1,0 +1,26 @@
+{% set name = "guppy" %}
+{% set version = "4.4.2" %}
+{% set platform = "linux64" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  url: https://mirror.oxfordnanoportal.com/software/analysis/ont-guppy_{{ version }}_{{ platform }}.tar.gz
+  sha256: d263cc59445d9f84c18d04fca43f6001b335b7b04978a1ee772ca03619344072
+
+build:
+  missing_dso_whitelist:
+    - /lib64/libgcc_s.so.1
+    - /lib64/libpthread.so.0
+    - /lib64/libc.so.6
+    - /lib64/libdl.so.2
+    - "*/libcuda.so.1"
+    - /lib64/librt.so.1
+    - /lib64/libm.so.6
+    - /lib64/libstdc++.so.6
+    - /lib64/ld-linux-x86-64.so.2
+
+about:
+  home: https://community.nanoporetech.com/downloads
