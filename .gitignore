@@ -33,6 +33,8 @@
 *.gz
 *.bz2
 *.log
+*.out
+*.err
 
 # GDS files
 *.gds
