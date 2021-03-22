@@ -681,8 +681,8 @@ def get_seq(seq):
 
 def find_homologous_ends(a, b, max_overlap=None):
     _max_overlap = min(len(a), len(b))
-    if max_length is not None:
-        max_overlap = min(_max_overlap, max_length)
+    if max_overlap is not None:
+        max_overlap = min(_max_overlap, max_overlap)
     else:
         max_overlap = _max_overlap
     for overlap in reversed(range(1, max_overlap + 1)):
