@@ -5,6 +5,7 @@ from numbers import Integral
 from cytoolz import partial
 from itertools import product as it_product
 from collections import defaultdict, OrderedDict
+from copy import deepcopy
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
 
@@ -411,7 +412,9 @@ class DsSeqRecord(SeqRecord):
         else:
             # SeqRecord.__getitem__ does not preserve annotations or features
             new_seq = SeqRecord.__getitem__(self, slice(start, stop))
-            new_seq.annotations = self.annotations
+            # we need to copy here, or changing the annotations
+            # (e.g., circular) of the copy will change those of the original
+            new_seq.annotations = deepcopy(self.annotations)
             # because circular is stored in annotations, need to set this after setting annotations
             new_seq.circular = False
             new_seq.upstream_overhang = max(
@@ -445,7 +448,6 @@ class DsSeqRecord(SeqRecord):
         return new_seq
 
     def __getitem__(self, index):
-        # include truncated annotations? (unlike SeqRecord)
         if isinstance(index, Integral):
             return self.seq[index]
         elif isinstance(index, slice):
