@@ -1,4 +1,5 @@
 import re
+import Bio.Restriction
 
 
 def _re_search(enzyme, seq, circular=None):
@@ -46,6 +47,8 @@ def _re_search_cuts(binding_locs, enzyme):
 def re_search(seq, enzyme, circular=None):
     if hasattr(seq, "circular") and circular is None:
         circular = seq.circular
+    if isinstance(enzyme, str):
+        enzyme = getattr(Bio.Restriction, enzyme)
     binding_locs = _re_search(enzyme, seq, circular=circular)
     cuts = _re_search_cuts(binding_locs, enzyme)
     length = len(seq)
