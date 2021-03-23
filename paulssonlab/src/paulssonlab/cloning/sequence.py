@@ -3,7 +3,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
 from numbers import Integral
 from cytoolz import partial
-from itertools import product
+from itertools import product as it_product
 from collections import defaultdict, OrderedDict
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
@@ -15,9 +15,18 @@ SEQUENCE_OVERHANG_STR_BUFFER = 4
 def _assemble_goldengate(
     seq1, seq2, junction_annotation="GG overhang", keep_junction_annotations=True
 ):
+    if seq2 is None:
+        seq2 = seq1
+        circularizing = True
+    else:
+        circularizing = False
     if seq1.can_ligate(seq2):
         junction_length = abs(seq1.downstream_overhang)
-        if keep_junction_annotations:
+        if circularizing:
+            if junction_length == 0:
+                return None, -1
+            product = seq1.circularize()
+        elif keep_junction_annotations:
             product = seq1 + seq2
         else:
             product = seq1.slice(
@@ -35,13 +44,31 @@ def _assemble_gibson(
     junction_annotation="Gibson homology",
     keep_junction_annotations=True,
 ):
+    if seq2 is None:
+        seq2 = seq1
+        circularizing = True
+        max_overlap = min(
+            len(seq1) - 1, max_overlap
+        )  # prevent junction from being the entire sequence
+    else:
+        circularizing = False
     # TODO: we ignore overhangs and assume the full sequence is double-stranded
     # this is probably not too unreasonable for gibson
     junction_length = find_homologous_ends(
         seq1.seq_lower(), seq2.seq_lower(), max_overlap=max_overlap
     )
+    if junction_length == max_overlap:
+        raise ValueError(
+            "found Gibson junction with max_overlap, the results may be nonsensical"
+        )
     if junction_length is not None:
-        if keep_junction_annotations:
+        if circularizing:
+            product = (
+                seq1.fill_in()
+                .slice(0, len(seq1) - junction_length, annotation_stop=len(seq1))
+                .circularize()
+            )
+        elif keep_junction_annotations:
             product = seq1.fill_in("downstream") + seq2.fill_in("upstream").slice(
                 junction_length, None, annotation_start=0
             )
@@ -201,25 +228,46 @@ class DsSeqRecord(SeqRecord):
         seq.circular = True
         return seq
 
-    def assemble(self, seq, method="goldengate", try_reverse_complement=True, **kwargs):
-        if not isinstance(seq, self.__class__):
-            seq = self.__class__(seq)
-        if try_reverse_complement:
-            possible_assemblies = product(
-                (self, self.reverse_complement()), (seq, reverse_complement(seq))
+    def assemble(
+        self,
+        seq,
+        method="goldengate",
+        try_reverse_complement=True,
+        circularize=True,
+        **kwargs,
+    ):
+        if seq is not None:
+            if not isinstance(seq, self.__class__):
+                seq = self.__class__(seq)
+            if self.circular or seq.circular:
+                raise ValueError("cannot assemble a circular sequence")
+            if try_reverse_complement:
+                possible_assemblies = it_product(
+                    (self, self.reverse_complement()), (seq, reverse_complement(seq))
+                )
+            else:
+                possible_assemblies = []
+            results = [
+                l[0]._assemble(l[1], method=method, **kwargs)
+                for l in possible_assemblies
+            ]
+            results = sorted(
+                [r for r in results if r[1] > 0], key=lambda x: x[1], reverse=True
             )
+            # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
+            if not len(results):
+                raise ValueError("attempting to assemble incompatible sequences")
+            # try circularizing
+            product = results[0][0]
         else:
-            possible_assemblies = []
-        results = [
-            l[0]._assemble(l[1], method=method, **kwargs) for l in possible_assemblies
-        ]
-        results = sorted(
-            [r for r in results if r[1] > 0], key=lambda x: x[1], reverse=True
-        )
-        # negative score means sequences cannot be ligated (e.g., incompatible sticky ends)
-        if not len(results):
-            raise ValueError("attempting to assemble incompatible sequences")
-        return results[0][0]
+            product = self
+        if circularize:
+            # you must explicitly circularize if you want to
+            # ligate blunt ends
+            circularized, score = product._assemble(None, method=method, **kwargs)
+            if score > 0:
+                product = circularized
+        return product
 
     def _assemble(self, seq, method="goldengate", **kwargs):
         return self.assembly_methods[method](self, seq, **kwargs)
@@ -498,19 +546,15 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
-def assemble(seqs, circularize=True, **kwargs):
-    # cast all sequences to DsSeqRecord if needed
-    seqs = [DsSeqRecord(s) if not isinstance(s, DsSeqRecord) else s for s in seqs]
+def assemble(seqs, **kwargs):
+    # we need only cast the first seq to DsSeqRecord because DsSeqRecord.assemble casts its input
     if not len(seqs):
         return DsSeqRecord(Seq(""))
     product = seqs[0]
+    if not isinstance(product, DsSeqRecord):
+        product = DsSeqRecord(product)
     for seq in seqs[1:]:
         product = product.assemble(seq, **kwargs)
-    if circularize:
-        try:
-            product = product.circularize()
-        except:
-            pass
     return product
 
 
