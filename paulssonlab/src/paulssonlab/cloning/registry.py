@@ -22,7 +22,7 @@ from paulssonlab.cloning.workflow import (
 from paulssonlab.api import read_sequence, regex_key
 from paulssonlab.api.benchling import upload_sequence
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
-from paulssonlab.cloning.commands import expr_parser, command_parser
+from paulssonlab.cloning.commands.semantics import eval_expr_list
 from paulssonlab.api.util import PROGRESS_BAR
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
@@ -33,7 +33,6 @@ TYPES_WITHOUT_IDS = ["parts"]
 BENCHLING_SYNC_TYPES = ["parts", "plasmids", "oligos"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
-EXPR_PRIORITY = ["digest", "pcr"]
 
 
 def _name_mapper_for_prefix(old_prefix, new_prefix):
@@ -52,9 +51,7 @@ def apply_expr(func, *args):
 
 class Registry(object):
     def __init__(self, sheets_client, registry_folder, benchling_folder=None):
-        self.sheets = {}
-        self.dfs = {}
-        self.maps = {}
+        self.clear_cache()
         self.sheets_client = sheets_client
         self.registry_folder = registry_folder
         self.benchling_folder = benchling_folder
@@ -68,6 +65,7 @@ class Registry(object):
         self.sheets = {}
         self.dfs = {}
         self.maps = {}
+        self.ids = {}
 
     def refresh(self):
         collection_folders = list_drive(
@@ -269,49 +267,6 @@ class Registry(object):
         entry = {"_seq": seq}
         return entry
 
-    def eval_exprs(self, s):
-        if not s.strip():
-            return None
-        ast = expr_parser.parse(s)
-        expr = None
-        for type_ in EXPR_PRIORITY:
-            priority_expr = [e for e in ast if e["_type"] == type_]
-            if len(priority_expr):
-                expr = priority_expr[0]
-                break
-        if expr is None and len(ast):
-            expr = ast[0]
-        return self.eval_expr(expr)
-
-    def eval_expr(self, expr):
-        if expr is None:
-            return None
-        type_ = expr["_type"]
-        if type_ == "pcr":
-            return apply_expr(
-                pcr,
-                self.eval_expr(expr["template"]),
-                self.eval_expr(expr["primer1"]),
-                self.eval_expr(expr["primer2"]),
-            )
-        elif type_ == "digest":
-            enzyme_name = expr["enzyme"]["name"]
-            if not hasattr(Bio.Restriction, enzyme_name):
-                raise ValueError(f"unknown enzyme '{enzyme_name}'")
-            enzyme = getattr(Bio.Restriction, enzyme_name)
-            return apply_expr(re_digest_part, self.eval_expr(expr["input"]), enzyme)
-        elif type_ == "anneal":
-            return apply_expr(
-                anneal, self.eval_expr(expr["strand1"]), self.eval_expr(expr["strand2"])
-            )
-        elif type_ == "name":
-            return self.get(expr["name"])
-        else:
-            return NotImplementedError
-
-    def command(self, s):
-        pass
-
     def _get(self, df, prefix, type_, name):
         if name not in df.index:
             raise ValueError(f"cannot find {name}")
@@ -322,7 +277,7 @@ class Registry(object):
         if type_ in TYPES_WITH_MAPS:
             entry.update(self._get_map(prefix, name))
         elif type_ == "parts":
-            res = self.eval_exprs(entry["Usage"])
+            res = eval_expr_list(entry["Usage"], self.get)
             seq = res["_seq"]
             if seq is None:
                 seq = part_entry_to_seq(entry)
