@@ -5,6 +5,7 @@ from numbers import Integral
 from cytoolz import partial
 from itertools import product as it_product
 from collections import defaultdict, OrderedDict
+from operator import itemgetter
 from copy import deepcopy
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
@@ -596,6 +597,10 @@ def reverse_complement(seq):
         return Seq(seq).reverse_complement()
 
 
+# we need this alias for find_primer_binding_site
+reverse_complement_ = reverse_complement
+
+
 def _join_features(a, b, length):
     features = []
     to_join = defaultdict(list)
@@ -784,29 +789,34 @@ def iterate_shifts(a, b):
         yield shift, a_start, a_stop, b_start, b_stop
 
 
+# TODO: instead of specifying min_score, allow specifying min_tm
+# TODO: template and primer must have matching case (i.e., DsSeqRecord.seq_lower())
 def find_primer_binding_site(
     template,
     primer,
     circular=None,
-    try_reverse_complement=True,
+    reverse_complement=None,
     scoring_func=partial(count_contiguous_matching, right=True),
-    min_score=6,
+    min_score=10,
 ):
     if hasattr(template, "circular") and circular is None:
         circular = template.circular
-    # TODO: circular
-    orig_primer = primer
-    # orig_template = template
-    if try_reverse_complement:
+    # TODO: circular!!!!!!!!!!
+    orig_template = template
+    if reverse_complement is None:
         strands = (1, -1)
-    else:
+    elif reverse_complement is True:
+        strands = (-1,)
+    elif reverse_complement is False:
         strands = (1,)
+    else:
+        raise ValueError("expecting reverse_complement to be one of: True, False, None")
     sites = []
     for strand in strands:
         if strand == -1:
-            primer = reverse_complement(orig_primer)
+            template = reverse_complement_(orig_template)
         else:
-            primer = orig_primer
+            template = orig_template
         for (
             shift,
             template_start,
@@ -818,11 +828,13 @@ def find_primer_binding_site(
             primer_overlap = primer[primer_start:primer_stop]
             score = scoring_func(template_overlap, primer_overlap)
             if score >= min_score:
+                if strand == -1:
+                    shift = len(template) - shift
                 sites.append((strand, shift, score))
-    return sites
+    return sorted(sites, key=itemgetter(1))
 
 
-def pcr(template, primer1, primer2, circular=None, min_score=6):
+def pcr(template, primer1, primer2, circular=None, min_score=10):
     # cast input sequences to DsSeqRecords if needed
     seqs = [template, primer1, primer2]
     for idx in range(len(seqs)):
@@ -831,30 +843,42 @@ def pcr(template, primer1, primer2, circular=None, min_score=6):
         if not isinstance(seqs[idx], DsSeqRecord):
             seqs[idx] = DsSeqRecord(seqs[idx])
     template, primer1, primer2 = seqs
+    template_seq = template.seq_lower()
+    primer1_seq = primer1.seq_lower()
+    primer2_seq = primer2.seq_lower()
     both_sites = []
-    for primer in (primer1, primer2):
-        sites = find_primer_binding_site(
-            template,
-            primer,
-            circular=circular,
-            try_reverse_complement=True,
-            min_score=min_score,
+    sites1 = find_primer_binding_site(
+        template_seq,
+        primer1_seq,
+        circular=circular,
+        reverse_complement=None,
+        min_score=min_score,
+    )
+    if len(sites1) != 1:
+        raise ValueError(
+            f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
-        if len(sites) != 1:
-            raise ValueError(
-                f"expecting a unique primer binding site, instead found {len(sites)}"
-            )
-        both_sites.append(sites[0])
-    if both_sites[0][0] == -1:
-        both_sites = both_sites[::-1]
-    sense1, loc1, len1 = both_sites[0]
-    sense2, loc2, len2 = both_sites[1]
+    sites2 = find_primer_binding_site(
+        template_seq,
+        primer2_seq,
+        circular=circular,
+        reverse_complement=(sites1[0][0] == 1),
+        min_score=min_score,
+    )
+    if len(sites2) != 1:
+        raise ValueError(
+            f"expecting a unique primer2 binding site, instead found {len(sites2)}"
+        )
+    if sites1[0] == -1:
+        sites1, sites2 = sites2, sites1
+    sense1, loc1, len1 = sites1[0]
+    sense2, loc2, len2 = sites2[0]
     if sense1 != -sense2:
         raise ValueError("expecting a forward/reverse primer pair")
-    start = loc1
-    stop = len(template) - loc2
-    amplicon = template[start:stop]
-    product = primer1 + amplicon + primer2
+    amplicon = template.slice(
+        loc1, loc2, annotation_start=loc1 - len1, annotation_stop=loc2 + len2
+    )
+    product = primer1 + amplicon + reverse_complement(primer2)
     return product
 
 
