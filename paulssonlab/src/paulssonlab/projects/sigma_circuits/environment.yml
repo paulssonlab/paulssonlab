@@ -1,0 +1,35 @@
+name: sigma_circuits
+channels:
+  - pyviz
+  - bokeh
+  - conda-forge
+  - defaults
+dependencies:
+  - astropy
+  - black
+  - bokeh
+  - cachetools
+  - click
+  - cytoolz
+  - dask
+  - dask-image
+  - dask-jobqueue
+  - datashader
+  - distributed
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - nd2reader
+  - nodejs
+  - numpy
+  - pandas
+  - panel
+  - python>=3.8.8
+  - scikit-image
+  - scikit-learn
+  - scipy
+  - seaborn
+  - zarr
