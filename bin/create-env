@@ -12,7 +12,7 @@ if [ ! -f "$envyml" ]; then
     exit 1
 fi
 check-long-running-process || exit $?
-conda env create -n "$envname" -f "$envyml"
+ensure_mamba env create -n "$envname" -f "$envyml"
 status=$?
 if [ $status != 0 ] ; then
     echo "❌  ${bold}Could not create environment '${envname}', aborting.${normal}"

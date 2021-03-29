@@ -35,6 +35,7 @@
 *.log
 *.out
 *.err
+dask-worker-space
 
 # GDS files
 *.gds

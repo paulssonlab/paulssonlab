@@ -1,31 +1,35 @@
-name: matriarch
+name: sigma_circuits
 channels:
   - pyviz
+  - bokeh
   - conda-forge
   - defaults
 dependencies:
+  - astropy
+  - black
   - bokeh
   - cachetools
   - click
+  - cytoolz
   - dask
+  - dask-image
   - dask-jobqueue
   - datashader
-  - filelock
+  - distributed
   - holoviews
-  - ipython
+  - hvplot
   - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - nd2reader
-  - numba
-  - numcodecs
+  - nodejs
   - numpy
-  - numpy-indexed
   - pandas
-  - peakutils
-  - pyarrow
-  - qgrid
+  - panel
+  - python>=3.8.8
   - scikit-image
   - scikit-learn
   - scipy
-  - tornado
+  - seaborn
   - zarr

@@ -42,7 +42,7 @@ EOF
     * )
         echo "${bold}If you need these in the future, you can always run${normal}"
         echo
-        echo "    conda install -y -c pyviz jupyterlab holoviews hvplot bokeh matplotlib nodejs numpy pandas"
+        echo "    mamba install -y -c pyviz jupyterlab holoviews hvplot bokeh matplotlib nodejs numpy pandas"
         echo "    export-env"
         echo "    prepare-env"
         echo

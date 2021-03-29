@@ -6,46 +6,10 @@ if [ ! -f "$envyml" ]; then
     echo "❌  Environment file ${envyml} not found, aborting."
     exit 1
 fi
-check-long-running-process || exit $?
 pth_contents="${root}/paulssonlab/src"
 pth_file="$(python -c 'import site; print(site.getsitepackages()[0])')/paulssonlab.pth"
 echo "📦  ${bold}Adding paulssonlab package to PYTHONPATH: ${normal}writing \"${pth_contents}\" to $pth_file"
 echo "$pth_contents" > "$pth_file"
 if ! grep -q "jupyterlab" "$envyml"; then
     exit
-fi
-labextensions=""
-if grep -q "jupyterlab_code_formatter" "$envyml"; then
-    jupyter serverextension enable --py jupyterlab_code_formatter
-    labextensions="${labextensions} @ryantam626/jupyterlab_code_formatter"
-fi
-if grep -q "dask\|ipywidgets\|bokeh" "$envyml"; then
-    labextensions="${labextensions} @jupyter-widgets/jupyterlab-manager"
-fi
-if grep -q "bokeh" "$envyml"; then
-    labextensions="${labextensions} @bokeh/jupyter_bokeh"
-fi
-if grep -q "holoviews" "$envyml"; then
-    labextensions="${labextensions} @pyviz/jupyterlab_pyviz"
-fi
-if [ -n "$labextensions" ]; then
-    echo "🧪  ${bold}Installing JupyterLab extensions:${normal}${labextensions}"
-    jupyter labextension install${labextensions}
-    status=$?
-    if [ $status != 0 ] ; then
-        echo "❌  jupyter labextension install ${bold}failed.${normal}"
-        echo "${bold}If it is complaining about a missing nodejs, run${normal}"
-        echo
-        echo "    conda install -y nodejs"
-        echo "    export-env"
-        echo "    prepare-env"
-        echo
-        if [[ $HOSTNAME =~ .*\.o2\.rc\.hms\.harvard\.edu ]]; then
-            echo "${bold}Since you are running on O2, an alternative possibility is that are running out of memory.${normal}"
-            echo "In that case, end your interactive job and start one with at least 4GB of RAM by running"
-            echo "    irun4"
-            echo
-        fi
-        exit $status
-    fi
 fi
