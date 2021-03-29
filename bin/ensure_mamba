@@ -2,7 +2,7 @@
 bold="$(tput bold)"
 normal="$(tput sgr0)"
 if ! hash mamba 2> /dev/null ; then
-    echo "🐍  ${bold}Installing mamba.${normal}"
+    echo "🐍  ${bold}Installing mamba${normal}"
     echo "    ${bold}You are highly encouraged to use mamba instead of conda${normal},"
     echo "    as it is much faster and seems to offer more accurate dependency resolution."
     echo "    All you need to do is prefix your command with 'mamba'"
