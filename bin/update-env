@@ -7,6 +7,5 @@ if [ ! -f "$envyml" ]; then
     exit 1
 fi
 check-long-running-process || exit $?
-conda update --all -y
-conda env update --prune -f "$envyml"
+ensure_mamba env update --prune -f "$envyml"
 prepare-env "$envyml"
