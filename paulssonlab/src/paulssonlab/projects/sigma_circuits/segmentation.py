@@ -8,7 +8,8 @@ import dask.array as da
 import skimage
 import skimage.segmentation
 import scipy.ndimage as ndi
-from cytoolz import compose, partial
+from cytoolz import compose, partial, excepts
+from operator import itemgetter
 from numbers import Integral
 from .matriarch_stub import (
     get_nd2_reader,
@@ -179,7 +180,7 @@ def segment(
     del img_flattened
     if diagnostics is not None:
         diagnostics["img_k1"] = RevImage(img_k1)
-    # TODO: frangi breaks if input is float32, why??
+    # TODO: frangi breaks if input is float32, why?? (2021-03-29: this is still true)
     img_k1_frangi = skimage.filters.frangi(
         skimage.img_as_float64(img_k1), sigmas=frangi_sigmas
     ).astype(np.float32)
@@ -222,20 +223,48 @@ def segment(
     return watershed_labels
 
 
+def measure(func, labels, signal_frames, regionprops=None):
+    if labels is None or any(frame is None for frame in signal_frames.values()):
+        return None
+    signals = {
+        channel: aggregate(func, labels[np.newaxis, ...], frame[np.newaxis, ...])
+        for channel, frame in signal_frames.items()
+    }
+    # use (there's some redundant computation here, should refactor aggregate to allow re-running multiple times with same labels different data)
+    index = next(iter(signals.values()))[0]
+    signals = {channel: measurements[1] for channel, measurements in signals.items()}
+    df = pd.DataFrame(signals, index=index)
+    df.index.name = "label"
+    if regionprops:
+        regionprops_ = get_regionprops(labels, labels, regionprops)
+        df = df.join(regionprops_)
+    return df
+
+
 def process(
     filename,
-    signal_channel="GFP-PENTA",
+    measure_func=np.mean,
+    signal_channels=["RFP-PENTA", "GFP-PENTA"],
     segmentation_channel="RFP-PENTA",
-    properties=["label", "area", "centroid", "mean_intensity"],
+    regionprops=["label", "area", "centroid"],
     segmentation_func=segment,
     time_slice=slice(None),
     position_slice=slice(None),
     delayed=True,
+    ignore_exceptions=True,
 ):
     if delayed is True:
         delayed = dask.delayed(pure=True)
     elif delayed is False:
         delayed = lambda func, **kwargs: func
+    if ignore_exceptions:
+        excepts_get_nd2_frame = excepts(Exception, get_nd2_frame)
+        excepts_segmentation_func = excepts(Exception, segmentation_func)
+        excepts_measure = excepts(Exception, measure)
+    else:
+        excepts_get_nd2_frame = get_nd2_frame
+        excepts_segmentation_func = segmentation_func
+        excepts_measure = measure
     nd2 = get_nd2_reader(filename)
     num_positions = nd2.sizes.get("v", 1)
     num_timepoints = nd2.sizes.get("t", 1)
@@ -243,19 +272,20 @@ def process(
     for position in np.arange(num_positions)[position_slice]:
         position_data = {}
         for t in np.arange(num_timepoints)[time_slice]:
-            segmentation_frame = delayed(get_nd2_frame)(
+            segmentation_frame = delayed(excepts_get_nd2_frame)(
                 filename, position, segmentation_channel, t
             )
-            labels = delayed(segmentation_func)(segmentation_frame)
-            if signal_channel != segmentation_channel:
-                signal_frame = delayed(get_nd2_frame)(
-                    filename, position, signal_channel, t
-                )
-            else:
-                signal_frame = segmentation_frame
-            regionprops = delayed(get_regionprops)(labels, signal_frame, properties)
-            position_data[t] = regionprops
-        position_df = delayed(pd.concat)(position_data, names=["t"])
-        data[position] = position_df
-    df = delayed(pd.concat)(data, names=["pos"])
-    return df
+            labels = delayed(excepts_segmentation_func)(segmentation_frame)
+            signal_frames = {}
+            for signal_channel in signal_channels:
+                if signal_channel == segmentation_channel:
+                    signal_frames[signal_channel] = segmentation_frame
+                else:
+                    signal_frames[signal_channel] = delayed(excepts_get_nd2_frame)(
+                        filename, position, signal_channel, t
+                    )
+            position_data[t] = delayed(excepts_measure)(
+                measure_func, labels, signal_frames, regionprops=regionprops
+            )
+        data[position] = position_data
+    return data
