@@ -15,6 +15,8 @@ def get_grid(nd2):
     ]
     grid_df = pd.DataFrame(grid, columns=["row", "column"])
     grid_df.index.name = "pos"
+    for col in grid_df.columns:
+        grid_df[col] = grid_df[col].astype("category")
     return grid_df
 
 
