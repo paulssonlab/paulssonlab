@@ -15,6 +15,8 @@ def get_grid(nd2):
     ]
     grid_df = pd.DataFrame(grid, columns=["row", "column"])
     grid_df.index.name = "pos"
+    for col in grid_df.columns:
+        grid_df[col] = grid_df[col].astype("category")
     return grid_df
 
 
@@ -23,8 +25,15 @@ def parse_mux_log(filename):
     with open(filename) as f:
         for line in f:
             m = re.match(r"^(\S+) on (\w+) sent (.*)$", line)
+            if m is None and len(log):
+                log[-1][-1] += line  # append extraneous text to last command
+                continue
             time = datetime.fromisoformat(m.group(1))
             port = m.group(2)
-            command = literal_eval(m.group(3))
-            log.append((time, port, command))
-    return log
+            command = m.group(3)
+            try:
+                command = literal_eval(command)
+            except:
+                pass
+            log.append([time, port, command])
+    return [tuple(l) for l in log]
