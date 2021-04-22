@@ -37,3 +37,4 @@ dependencies:
   - requests
   - tatsu
   - tqdm
+  - viennarna
