@@ -18,7 +18,7 @@ from paulssonlab.api.google import (
 from paulssonlab.api import read_sequence, regex_key
 from paulssonlab.api.util import PROGRESS_BAR
 
-ID_REGEX = r"([A-Za-z]*)\s*(\d+(?:\.\d+)?)[a-zA-Z]*"
+ID_REGEX = r"\s*([A-Za-z]*)\s*((\d+(?:\.\d+)?)[a-zA-Z]*)?"
 
 # these are not currently used, but can be used for formatted outputs
 # these numbers are taken from Addgene: https://www.addgene.org/mol-bio-reference/
@@ -39,6 +39,22 @@ MARKER_ABBREVIATIONS = {
     "tetracycline": "tet",
     "spectinomycin": "spec",
 }
+
+
+def parse_id(s):
+    match = re.match(ID_REGEX, s)
+    if match is None:
+        raise ValueError(f"could not parse collection ID: '{s}'")
+    if not match.group(2):
+        return match.group(1), None
+    prefix = match.group(1)
+    index = int(match.group(3))
+    return prefix, index
+
+
+def format_id(id_):
+    prefix, num = id_
+    return f"{prefix}{num}"
 
 
 def format_abx_marker(s):
@@ -65,29 +81,60 @@ def get_next_empty_row(worksheet, skip_columns=0):
         return last_idx + 2
 
 
-def _get_next_empty_row(worksheet, skip_columns=0):
-    # TODO: we can probably remove these kwargs to get_as_df
-    # since pygsheets 2.0.4 fixed the bug with trailing empty cells
-    df = worksheet.get_as_df(has_header=False, empty_value=None)
-    df = df[1:]
+def empty_column_mask(worksheet):
+    df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
     has_datavalidation = columns_with_validation(
         worksheet.client.sheet.service,
         worksheet.spreadsheet.id,
         worksheet.spreadsheet._sheet_list,
     )
-    mask = has_datavalidation[worksheet.title]
-    mask += [False] * (len(df.columns) - len(mask))
-    nonempty = (
-        ~df.iloc[:, skip_columns:]
-        .iloc[:, ~np.array(mask)[skip_columns:]]
-        .isnull()
-        .all(axis=1)
+    return _empty_column_mask(df, has_datavalidation)
+
+
+def _empty_column_mask(df, has_datavalidation):
+    formula_mask = df.iloc[0].str.startswith("=").values
+    validation_mask = has_datavalidation[worksheet.title]
+    validation_mask += [False] * (len(df.columns) - len(validation_mask))
+    validation_mask = np.array(validation_mask)
+    mask = formula_mask | validation_mask
+    return mask
+
+
+def get_next_empty_row(worksheet, skip_columns=0):
+    df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+    has_datavalidation = columns_with_validation(
+        worksheet.client.sheet.service,
+        worksheet.spreadsheet.id,
+        worksheet.spreadsheet._sheet_list,
     )
+    mask = _empty_column_mask(df, has_datavalidation)
+    return _get_next_empty_row(df, mask, skip_columns=skip_columns)
+
+
+def _get_next_empty_row(df, mask, skip_columns=0):
+    masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
+    masked_values[masked_values == ""] = np.nan
+    nonempty = ~masked_values.isnull().all(axis=1)
     last_idx = nonempty[nonempty].last_valid_index()
-    # convert to Python int because
-    # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-    last_idx = int(last_idx)
-    return last_idx, df
+    if last_idx is not None:
+        # convert to Python int because
+        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+        last_idx = int(last_idx)
+    return last_idx
+
+
+def get_next_collection_id2(worksheet):
+    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
+    prefix = worksheet.spreadsheet.title.split("_")[0]
+    if last_idx is None:
+        num = 0
+    else:
+        num = last_idx + 1
+    # increment twice for:
+    # - add one to convert from zero-indexing to one-indexing
+    # - row 1 is header
+    row = num + 2
+    return (prefix, num + 1), row
 
 
 def get_next_collection_id(worksheet):
