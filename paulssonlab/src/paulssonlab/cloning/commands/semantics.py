@@ -18,12 +18,12 @@ EXPR_PRIORITY = ["digest", "pcr"]
 #     return {"_seq": func(*args)}
 
 
-def eval_expr_list(s, get_func):
+def eval_exprs_by_priority(s, get_func, priorities=EXPR_PRIORITY):
     if not s.strip():
         return None
     ast = expr_list_parser.parse(s)
     expr = None
-    for type_ in EXPR_PRIORITY:
+    for type_ in priorities:
         priority_expr = [e for e in ast if e["_type"] == type_]
         if len(priority_expr):
             expr = priority_expr[0]

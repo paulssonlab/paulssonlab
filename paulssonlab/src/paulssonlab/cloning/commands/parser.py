@@ -1,4 +1,5 @@
 import tatsu
+from frozendict import frozendict
 
 expr_rules = r"""ws = /\s*/ ;
 
@@ -75,111 +76,27 @@ lookup = '$' ~ name ;
 command_parser = tatsu.compile(command_grammar)
 
 
-def unparse_command(cmd, outermost=True):
-    # TODO: handle expr args
-    if not isinstance(cmd, dict):
-        return cmd
-    if not outermost and "dest" in cmd and cmd["dest"] is not None:
-        dest = f":{cmd['dest']}"
+def unparse_expr(expr):
+    if isinstance(expr, (list, tuple)):
+        return ",".join([unparse_expr(e) for e in expr])
+    elif not isinstance(expr, (dict, frozendict)) or "_type" not in expr:
+        return expr
+    type_ = expr["_type"]
+    if type_ == "name":
+        return expr["name"]
+    elif type_ == "pcr":
+        return f"{unparse_expr(expr['template'])}<{unparse_expr(expr['primer1'])},{unparse_expr(expr['primer2'])}>"
+    elif type_ == "digest":
+        return f"{unparse_expr(expr['input'])}/{unparse_expr(expr['enzyme'])}"
+    elif type_ == "anneal":
+        return f"{unparse_expr(expr['strand1'])}={unparse_expr(expr['strand2'])}"
+    elif type_ == "command":
+        if expr.get("dest") is not None:
+            dest = f":{expr['dest']}"
+        else:
+            dest = ""
+        args = ", ".join([unparse_expr(arg) for arg in expr["arguments"]])
+        name = expr["command_name"]
+        return f"@{name}{dest}({args})"
     else:
-        dest = ""
-    args = ", ".join(
-        [unparse_command(arg, outermost=False) for arg in cmd["arguments"]]
-    )
-    name = cmd["command_name"]
-    return f"@{name}{dest}({args})"
-
-
-# class CommandContext:
-#     def __init__(self, registry, context):
-#         self.registry = registry
-#         self.context = context
-#         self.ids = {}
-#         self.start_row = {}
-#         self.rows = {}
-
-#     def get_id(self, id_, type_):
-#         if id_ is None:
-#             return None
-#         prefix, num = workflow.parse_id(id_)
-#         if type_ not in reg.types_for_prefix(prefix):
-#             raise ValueError(
-#                 f"expecting a collection of type '{type_}' for prefix '{prefix}'"
-#             )
-#         if num is not None:
-#             return workflow.format_id((prefix, num))
-#         key = (prefix, type_)
-#         id_ = self.ids.get(key)
-#         if id_ is None:
-#             # TODO
-#             # sheet = self.registry.get_sheet((prefix, type_,))
-#             # id_, row = workflow.get_next_collection_id(sheet)
-#             # id_, row = (("prefix" + prefix, 0), 1)
-#             id_, row = self.registry.get_next_id((prefix, type_))
-#             self.start_row[key] = row
-#         else:
-#             id_ = (id_[0], id_[1] + 1)
-#         self.ids[key] = id_
-#         return workflow.format_id(id_)
-
-#     def insert(self, prefix, type_, row):
-#         key = (prefix, type_)
-#         if key not in self.rows:
-#             self.rows[key] = []
-#         self.rows[key].append(row)
-#         return row
-
-#     def execute(self):
-#         for key, rows in self.rows.items():
-#             sheet = registry.get_sheet(key)
-#             api.google.sheets.insert_sheet_rows(sheet, self.start_row[key], rows)
-#         old_rows = self.rows
-#         self.rows = {}
-#         return old_rows
-
-
-# class CommandSemantics(object):
-#     def __init__(self, commands, ctx):
-#         self.commands = commands
-#         self.ctx = ctx
-
-#     def outermost_command(self, ast):
-#         if hasattr(ast, "dest") and ast.dest:
-#             raise ValueError(
-#                 f"cannot specify destination ('{ast.dest}') in outermost command"
-#             )
-#         else:
-#             ast["dest"] = self.ctx.context
-#         return self.command(ast)
-
-#     def command(self, ast):
-#         if ast.command_name not in self.commands:
-#             raise tatsu.semantics.SemanticError(
-#                 "command must be one of: {}".format(
-#                     ", ".join([f"@{k}" for k in self.commands.keys()])
-#                 )
-#             )
-#         command = self.commands[ast.command_name]
-#         if hasattr(ast, "dest"):
-#             dest = ast.dest
-#         else:
-#             dest = None
-#         args = ast.arguments
-#         res = command(args, dest=dest, ctx=self.ctx)
-#         cmd = dict(ast)
-#         cmd["arguments"] = [
-#             arg["_command"] if isinstance(arg, dict) and "_command" in arg else arg
-#             for arg in cmd["arguments"]
-#         ]
-#         if "_dest" in res and res["_dest"] is not None:
-#             cmd["dest"] = res["_dest"]
-#         return {"_command": cmd, **res}
-
-#     def int_(self, ast):
-#         return int(s)
-
-#     def float_(self, ast):
-#         return float(s)
-
-#     def name(self, ast):
-#         return {**self.ctx.registry.get(ast.name), "_command": ast.name}
+        raise ValueError(f"unknown expression type: {type_}")
