@@ -475,7 +475,7 @@ def part_entry_to_seq(entry):
     upstream_overhang = len(upstream_overhang_seq)
     downstream_overhang = -len(downstream_overhang_seq)
     return DsSeqRecord(
-        seq,
+        Seq(seq),
         upstream_overhang=upstream_overhang,
         downstream_overhang=downstream_overhang,
     )
