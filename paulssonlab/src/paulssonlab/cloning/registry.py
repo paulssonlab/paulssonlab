@@ -1,4 +1,5 @@
 import re
+from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
 from paulssonlab.api.google import (
@@ -22,7 +23,7 @@ from paulssonlab.cloning.workflow import (
 from paulssonlab.api import read_sequence, regex_key
 from paulssonlab.api.benchling import upload_sequence
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
-from paulssonlab.cloning.commands.semantics import eval_expr_list
+from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
 from paulssonlab.api.util import PROGRESS_BAR
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
@@ -196,14 +197,37 @@ class Registry(object):
             self.sheets[id_] = sheet
         return sheet
 
+    # def get_sheet_by_id(self, id_):
+    #         sheet = self.sheets.get(id_)
+    #         if sheet is None:
+    #             if len(id_) not in (2, 3):
+    #                 raise ValueError(
+    #                     "expecting id tuple of form (prefix, type) or (prefix, type, sheet_index/sheet_title)"
+    #                 )
+    #             prefix_type = id_[:2]
+    #             if len(id_) == 3:
+    #                 sheet_id = id_[2]
+    #             else:
+    #                 sheet_id = None
+    #             if sheet_id is None:
+    #                 sheet_id = 0
+    #             if isinstance(sheet_id, Integral):
+    #                 sheet_id_type = "index"
+    #             else:
+    #                 sheet_id_type = "title"
+    #             sheet = self.sheets_client.open_by_key(prefix_type).worksheet(
+    #                 sheet_id_type, sheet_id
+    #             )
+    #             self.sheets[id_] = sheet
+    #         return sheet
+
+    def get_sheet(self, key):
+        return self.get_sheet_by_id(self.registry[key])
+
     def get_df_by_id(self, id_):
         df = self.dfs.get(id_)
         if df is None:
-            # include_tailing_empty=True is necessary to prevent an error if the last column of data is empty
-            # TODO: this may no longer be true in pygsheets 2.0.4
-            df = self.get_sheet_by_id(id_).get_as_df(
-                index_column=1, include_tailing_empty=True
-            )
+            df = self.get_sheet_by_id(id_).get_as_df(index_column=1)
             self.dfs[id_] = df
         return df
 
@@ -233,6 +257,75 @@ class Registry(object):
 
     def get_df(self, key):
         return self.get_df_by_id(self.registry[key])
+
+    def get_next_empty_row(worksheet, skip_columns=0):
+        last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
+        if last_idx is None:
+            return 2
+        else:
+            # increment twice for:
+            # - add one to convert from zero-indexing to one-indexing
+            # - row 1 is header
+            return last_idx + 2
+
+    def get_empty_column_mask(key):
+        if key in self.column_masks:
+            return self.column_masks[key]
+        else:
+            worksheet = self.get_sheet(key)
+            mask = empty_column_mask(worksheet)
+            self.column_masks[key] = mask
+            return mask
+
+    def _get_next_empty_row(worksheet, skip_columns=0):
+        df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+        formula_mask = df.iloc[0].str.startswith("=").values
+        has_datavalidation = columns_with_validation(
+            worksheet.client.sheet.service,
+            worksheet.spreadsheet.id,
+            worksheet.spreadsheet._sheet_list,
+        )
+        validation_mask = has_datavalidation[worksheet.title]
+        validation_mask += [False] * (len(df.columns) - len(validation_mask))
+        validation_mask = np.array(validation_mask)
+        mask = formula_mask | validation_mask
+        masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
+        masked_values[masked_values == ""] = np.nan
+        nonempty = ~masked_values.isnull().all(axis=1)
+        last_idx = nonempty[nonempty].last_valid_index()
+        if last_idx is not None:
+            # convert to Python int because
+            # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+            last_idx = int(last_idx)
+        return last_idx, df
+
+    def get_next_collection_id(worksheet):
+        last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
+        prefix = worksheet.spreadsheet.title.split("_")[0]
+        if last_idx is None:
+            num = 0
+        else:
+            num = last_idx + 1
+        # increment twice for:
+        # - add one to convert from zero-indexing to one-indexing
+        # - row 1 is header
+        row = num + 2
+        return (prefix, num + 1), row
+
+    def get_next_id(self, key):
+        if key in self.ids:
+            id_ = self.ids[key]
+            (prefix, num), row = id_
+            self.ids[key] = ((prefix, num + 1), row + 1)
+            return id_
+        sheet = self.get_sheet(key)
+
+    def types_for_prefix(self, prefix):
+        types = []
+        for reg_prefix, type_ in self.registry.keys():
+            if prefix == reg_prefix:
+                types.append(type_)
+        return types
 
     def get_map_list(self, prefix):
         if prefix in self.maps:
@@ -277,8 +370,11 @@ class Registry(object):
         if type_ in TYPES_WITH_MAPS:
             entry.update(self._get_map(prefix, name))
         elif type_ == "parts":
-            res = eval_expr_list(entry["Usage"], self.get)
-            seq = res["_seq"]
+            res = eval_exprs_by_priority(entry["Usage"], self.get)
+            if res is None:
+                seq = None
+            else:
+                seq = res.get("_seq")
             if seq is None:
                 seq = part_entry_to_seq(entry)
             seq.id = seq.name = seq.description = name
