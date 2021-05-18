@@ -70,104 +70,104 @@ def format_abx_marker(s):
     return marker
 
 
-def get_next_empty_row(worksheet, skip_columns=0):
-    last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
-    if last_idx is None:
-        return 2
-    else:
-        # increment twice for:
-        # - add one to convert from zero-indexing to one-indexing
-        # - row 1 is header
-        return last_idx + 2
+# def get_next_empty_row(worksheet, skip_columns=0):
+#     last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
+#     if last_idx is None:
+#         return 2
+#     else:
+#         # increment twice for:
+#         # - add one to convert from zero-indexing to one-indexing
+#         # - row 1 is header
+#         return last_idx + 2
 
 
-def empty_column_mask(worksheet):
-    df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
-    has_datavalidation = columns_with_validation(
-        worksheet.client.sheet.service,
-        worksheet.spreadsheet.id,
-        worksheet.spreadsheet._sheet_list,
-    )
-    return _empty_column_mask(df, has_datavalidation)
+# def empty_column_mask(worksheet):
+#     df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+#     has_datavalidation = columns_with_validation(
+#         worksheet.client.sheet.service,
+#         worksheet.spreadsheet.id,
+#         worksheet.spreadsheet._sheet_list,
+#     )
+#     return _empty_column_mask(df, has_datavalidation)
 
 
-def _empty_column_mask(df, has_datavalidation):
-    formula_mask = df.iloc[0].str.startswith("=").values
-    validation_mask = has_datavalidation[worksheet.title]
-    validation_mask += [False] * (len(df.columns) - len(validation_mask))
-    validation_mask = np.array(validation_mask)
-    mask = formula_mask | validation_mask
-    return mask
+# def _empty_column_mask(df, has_datavalidation):
+#     formula_mask = df.iloc[0].str.startswith("=").values
+#     validation_mask = has_datavalidation[worksheet.title]
+#     validation_mask += [False] * (len(df.columns) - len(validation_mask))
+#     validation_mask = np.array(validation_mask)
+#     mask = formula_mask | validation_mask
+#     return mask
 
 
-def get_next_empty_row(worksheet, skip_columns=0):
-    df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
-    has_datavalidation = columns_with_validation(
-        worksheet.client.sheet.service,
-        worksheet.spreadsheet.id,
-        worksheet.spreadsheet._sheet_list,
-    )
-    mask = _empty_column_mask(df, has_datavalidation)
-    return _get_next_empty_row(df, mask, skip_columns=skip_columns)
+# def get_next_empty_row(worksheet, skip_columns=0):
+#     df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+#     has_datavalidation = columns_with_validation(
+#         worksheet.client.sheet.service,
+#         worksheet.spreadsheet.id,
+#         worksheet.spreadsheet._sheet_list,
+#     )
+#     mask = _empty_column_mask(df, has_datavalidation)
+#     return _get_next_empty_row(df, mask, skip_columns=skip_columns)
 
 
-def _get_next_empty_row(df, mask, skip_columns=0):
-    masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
-    masked_values[masked_values == ""] = np.nan
-    nonempty = ~masked_values.isnull().all(axis=1)
-    last_idx = nonempty[nonempty].last_valid_index()
-    if last_idx is not None:
-        # convert to Python int because
-        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-        last_idx = int(last_idx)
-    return last_idx
+# def _get_next_empty_row(df, mask, skip_columns=0):
+#     masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
+#     masked_values[masked_values == ""] = np.nan
+#     nonempty = ~masked_values.isnull().all(axis=1)
+#     last_idx = nonempty[nonempty].last_valid_index()
+#     if last_idx is not None:
+#         # convert to Python int because
+#         # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+#         last_idx = int(last_idx)
+#     return last_idx
 
 
-def get_next_collection_id2(worksheet):
-    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-    prefix = worksheet.spreadsheet.title.split("_")[0]
-    if last_idx is None:
-        num = 0
-    else:
-        num = last_idx + 1
-    # increment twice for:
-    # - add one to convert from zero-indexing to one-indexing
-    # - row 1 is header
-    row = num + 2
-    return (prefix, num + 1), row
+# def get_next_collection_id2(worksheet):
+#     last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
+#     prefix = worksheet.spreadsheet.title.split("_")[0]
+#     if last_idx is None:
+#         num = 0
+#     else:
+#         num = last_idx + 1
+#     # increment twice for:
+#     # - add one to convert from zero-indexing to one-indexing
+#     # - row 1 is header
+#     row = num + 2
+#     return (prefix, num + 1), row
 
 
-def get_next_collection_id(worksheet):
-    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-    if last_idx is None:
-        # sheet is empty, initialize at prefix 1
-        prefix = worksheet.spreadsheet.title.split("_")[0]
-        return (prefix, 1), 2
-    # ID for last non-empty row
-    last_id = df.iloc[last_idx - 1, 0]
-    prefix, number = re.match(ID_REGEX, str(last_id)).groups()
-    number_parts = number.split(".")
-    if len(number_parts) == 2 and number_parts[0] == "0":
-        # increment decimal if whole-part of the number is 0
-        prefix += "0."
-        index = int(number_parts[1])
-    else:
-        index = int(number_parts[0])
-    # increment twice for:
-    # - add one to convert from zero-indexing to one-indexing
-    # - row 1 is header
-    row = last_idx + 2
-    return (prefix, index + 1), row
+# def get_next_collection_id(worksheet):
+#     last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
+#     if last_idx is None:
+#         # sheet is empty, initialize at prefix 1
+#         prefix = worksheet.spreadsheet.title.split("_")[0]
+#         return (prefix, 1), 2
+#     # ID for last non-empty row
+#     last_id = df.iloc[last_idx - 1, 0]
+#     prefix, number = re.match(ID_REGEX, str(last_id)).groups()
+#     number_parts = number.split(".")
+#     if len(number_parts) == 2 and number_parts[0] == "0":
+#         # increment decimal if whole-part of the number is 0
+#         prefix += "0."
+#         index = int(number_parts[1])
+#     else:
+#         index = int(number_parts[0])
+#     # increment twice for:
+#     # - add one to convert from zero-indexing to one-indexing
+#     # - row 1 is header
+#     row = last_idx + 2
+#     return (prefix, index + 1), row
 
 
-def trim_unassigned_ids(worksheet):
-    _, row = get_next_collection_id(worksheet)
-    _trim_unassigned_ids(worksheet, row)
+# def trim_unassigned_ids(worksheet):
+#     _, row = get_next_collection_id(worksheet)
+#     _trim_unassigned_ids(worksheet, row)
 
 
-def _trim_unassigned_ids(worksheet, row):
-    values = [[""] * (worksheet.rows - row)]
-    worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
+# def _trim_unassigned_ids(worksheet, row):
+#     values = [[""] * (worksheet.rows - row)]
+#     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
 
 
 def rename_ids(sheet, old_prefix, new_prefix, skiprows=1, column=1):
