@@ -15,8 +15,9 @@ from paulssonlab.api.google import (
     columns_with_validation,
     insert_sheet_rows,
 )
-from paulssonlab.api import read_sequence, regex_key
+from paulssonlab.api import regex_key
 from paulssonlab.api.util import PROGRESS_BAR
+from paulssonlab.cloning.io import read_sequence
 
 ID_REGEX = r"\s*([A-Za-z]*)\s*((\d+(?:\.\d+)?)[a-zA-Z]*)?"
 
@@ -70,71 +71,18 @@ def format_abx_marker(s):
     return marker
 
 
-# def get_next_empty_row(worksheet, skip_columns=0):
-#     last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
-#     if last_idx is None:
-#         return 2
-#     else:
-#         # increment twice for:
-#         # - add one to convert from zero-indexing to one-indexing
-#         # - row 1 is header
-#         return last_idx + 2
-
-
-# def empty_column_mask(worksheet):
-#     df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
-#     has_datavalidation = columns_with_validation(
-#         worksheet.client.sheet.service,
-#         worksheet.spreadsheet.id,
-#         worksheet.spreadsheet._sheet_list,
-#     )
-#     return _empty_column_mask(df, has_datavalidation)
-
-
-# def _empty_column_mask(df, has_datavalidation):
-#     formula_mask = df.iloc[0].str.startswith("=").values
-#     validation_mask = has_datavalidation[worksheet.title]
-#     validation_mask += [False] * (len(df.columns) - len(validation_mask))
-#     validation_mask = np.array(validation_mask)
-#     mask = formula_mask | validation_mask
-#     return mask
-
-
-# def get_next_empty_row(worksheet, skip_columns=0):
-#     df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
-#     has_datavalidation = columns_with_validation(
-#         worksheet.client.sheet.service,
-#         worksheet.spreadsheet.id,
-#         worksheet.spreadsheet._sheet_list,
-#     )
-#     mask = _empty_column_mask(df, has_datavalidation)
-#     return _get_next_empty_row(df, mask, skip_columns=skip_columns)
-
-
-# def _get_next_empty_row(df, mask, skip_columns=0):
-#     masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
-#     masked_values[masked_values == ""] = np.nan
-#     nonempty = ~masked_values.isnull().all(axis=1)
-#     last_idx = nonempty[nonempty].last_valid_index()
-#     if last_idx is not None:
-#         # convert to Python int because
-#         # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-#         last_idx = int(last_idx)
-#     return last_idx
-
-
-# def get_next_collection_id2(worksheet):
-#     last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-#     prefix = worksheet.spreadsheet.title.split("_")[0]
-#     if last_idx is None:
-#         num = 0
-#     else:
-#         num = last_idx + 1
-#     # increment twice for:
-#     # - add one to convert from zero-indexing to one-indexing
-#     # - row 1 is header
-#     row = num + 2
-#     return (prefix, num + 1), row
+def get_next_collection_id2(worksheet):
+    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
+    prefix = worksheet.spreadsheet.title.split("_")[0]
+    if last_idx is None:
+        num = 0
+    else:
+        num = last_idx + 1
+    # increment twice for:
+    # - add one to convert from zero-indexing to one-indexing
+    # - row 1 is header
+    row = num + 2
+    return (prefix, num + 1), row
 
 
 # def get_next_collection_id(worksheet):
@@ -481,18 +429,18 @@ def _prepare_parts(part_sheet, parts, first_row):
     return parts
 
 
-def get_drive_seq(drive_service, root, name):
-    return next(get_drive_seqs(drive_service, root, [name]))
+# def get_drive_seq(drive_service, root, name):
+#     return next(get_drive_seqs(drive_service, root, [name]))
 
 
-def get_drive_seqs(drive_service, root, names):
-    seq_files = list_drive(drive_service, root=root)
-    for name in names:
-        seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
-        seq = read_sequence(
-            drive_service.files().get_media(fileId=seq_file).execute().decode("utf8")
-        )
-        yield seq
+# def get_drive_seqs(drive_service, root, names):
+#     seq_files = list_drive(drive_service, root=root)
+#     for name in names:
+#         seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
+#         seq = read_sequence(
+#             drive_service.files().get_media(fileId=seq_file).execute().decode("utf8")
+#         )
+#         yield seq
 
 
 def add_overhangs(seq, overhangs):

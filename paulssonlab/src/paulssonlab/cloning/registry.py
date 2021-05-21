@@ -2,6 +2,7 @@ import re
 from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
+import pygsheets
 from paulssonlab.api.google import (
     get_drive_by_path,
     ensure_drive_folder,
@@ -20,10 +21,11 @@ from paulssonlab.cloning.workflow import (
     re_digest_part,
     is_bases,
 )
-from paulssonlab.api import read_sequence, regex_key
+from paulssonlab.api import regex_key
 from paulssonlab.api.benchling import upload_sequence
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
 from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
+from paulssonlab.cloning.io import read_sequence
 from paulssonlab.api.util import PROGRESS_BAR
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
@@ -52,8 +54,19 @@ class GDriveClient(object):
 
     def clear_cache(self):
         self._remote = None
+        self._columns = None
 
-    def __setitem__(key, value):
+    def keys(self):
+        raise NotImplementedError
+
+    def items(self):
+        for key in self.keys():
+            yield key, self[key]
+
+    def __getitem__(self, key):
+        raise NotImplementedError
+
+    def __setitem__(self, key, value):
         self.local[key] = value
 
     def update(self, other):
@@ -81,7 +94,7 @@ class SheetClient(GDriveClient):
     @property
     def spreadsheet(self):
         if self._spreadsheet is None:
-            self._spreadsheet = self.client.open_by_key(gdrive_id)
+            self._spreadsheet = self.client.open_by_key(self.gdrive_id)
         return self._spreadsheet
 
     @property
@@ -96,28 +109,59 @@ class SheetClient(GDriveClient):
         return self._worksheet
 
     @property
-    def columns(self):
-        if self._columns is None:
+    def remote(self):
+        if self._remote is None:
             self._download()
-        return self._columns
+        return self._remote
 
-    def __getitem__(key):
+    def _download(self):
+        # index_column is 1-indexed (0 disables index)
+        self._remote = self.worksheet.get_as_df(
+            index_column=1, value_render=pygsheets.ValueRenderOption.FORMULA
+        )
+
+    @property
+    def columns(self):
+        return self.remote.columns
+
+    def next_id(self):
+        pass
+
+    def keys(self):
+        return self.local.keys() | set(self.remote.index)
+
+    def __getitem__(self, key):
         if key in self.local:
             return self.local[key]
         else:
-            return self.remote[key]
+            return self.remote.loc[key].to_dict()
 
-    def __setitem__(self, key, value):
-        pass
+    def _validate(self, row):
+        unknown_columns = row.keys() - set(self.columns)
+        if unknown_columns:
+            raise ValueError(f"unknown columns: {unknown_columns}")
 
-    def upsert(self, key_columns, value):
-        key_values = tuple(value[col] for col in key_columns)
+    def __setitem__(self, key, row):
+        self._validate(row)
+        self.local[key] = row
+
+    def append(self, row):
+        id_ = self.next_id()
+        self[id_] = row
+        return id_
+
+    def upsert(self, key_columns, row):
+        key_values = tuple(row[col] for col in key_columns)
         key = None
         for location in ("local", "remote"):
             store = getattr(self, location)
+            if location == "remote":
+                rows = df.iterrows()
+            else:
+                rows = store.items()
             matches = [
                 key
-                for key, row in store.items()
+                for key, row in rows
                 if tuple(row[col] for col in key_columns) == key_values
             ]
             if len(matches) >= 2:
@@ -126,42 +170,40 @@ class SheetClient(GDriveClient):
                 )
             elif len(matches) == 1:
                 key = matches[0]
-                store[key] = {**store[key], **value}
+                self[key] = {**store[key], **row}
                 return key
         key = self.next_id()
-        self.local[key] = value
+        self.local[key] = row
         return key
 
-    @property
-    def remote(self):
-        if self._remote is None:
-            self._download()
-        return self._remote
+    def save(self, clobber_existing=True, append_only=True, formula=True):
+        """
+        Parameters
+        ----------
+        clobber_existing : bool, optional
+            If a local row shares a key with an existing remote row, remote row values will be
+            preserved when local row is missing column keys unless clobber_existing is True.
+        append_only : bool, optional
+            Ensures that when set to False.
+        formula : bool, optional
+            If True, any formula values from the first non-header row will be copied (with their
+            row number changed) to any new rows.
 
-    def _download(self):
-        self._remote = {}
-        df = self.worksheet.get_as_df()
-        # columns
-        # row nums
-        self._columns = df.columns.to_list()
-        for idx, row in df.iterrows():
-            id_ = row["ID"]
-            # TODO: save row index (idx)?
-            self._remote[id_] = row.to_dict()
-
-    def next_id(self):
-        pass
-
-    def append(self, value):
-        id_ = self.next_id()
-        self[id_] = value
-        return id_
-
-    def save(self, overwrite=True, ignore_missing_columns=True):
-        # ignore_missing_columns
-        # True: leave columns missing from dict as is on sheet
-        # False: dict missing columns are set to empty
-        pass
+        """
+        # TODO: pygsheets currently does not support batch updating values
+        # preprocess HHH
+        # split local into updates and append
+        rows_to_update = {}
+        rows_to_append = {}
+        for key, row in self.local.items():
+            if key in self.remote.index:
+                rows_to_update[key] = row
+            else:
+                rows_to_append[key] = row
+        self._update_rows()
+        self._append_rows(rows_to_append)
+        # sort rows_to_append
+        # trim
 
 
 class ItemProxy(object):
@@ -200,26 +242,28 @@ class FileClient(GDriveClient):
     def _download_file_list(self):
         self._remote = list_drive(self.client, root=self.gdrive_id)
 
+    def _download_bytes(self, file):
+        bytes_ = self.client.files().get_media(fileId=file["id"]).execute()
+        file["bytes"] = bytes_
+        return bytes_
+        # if file["kind"] == "drive#folder":
+        #     files = list_drive(self.client, root=file["id"])
+        #     # folder_content = {name: self._get_file(f) for name, f in files.items()}
+        #     return folder_content
+        # else:
+        #     content = (
+        #         self.client.files()
+        #         .get_media(fileId=file["id"])
+        #         .execute()
+        #     )
+        # try:
+        #     content = read_sequence(content, filename=file["name"])
+        # except:
+        #     pass
+        # return content
 
-def _download_bytes(self, file):
-    bytes_ = self.client.files().get_media(fileId=file["id"]).execute()
-    file["bytes"] = bytes_
-    return bytes_
-    # if file["kind"] == "drive#folder":
-    #     files = list_drive(self.client, root=file["id"])
-    #     # folder_content = {name: self._get_file(f) for name, f in files.items()}
-    #     return folder_content
-    # else:
-    #     content = (
-    #         self.client.files()
-    #         .get_media(fileId=file["id"])
-    #         .execute()
-    #     )
-    # try:
-    #     content = read_sequence(content, filename=file["name"])
-    # except:
-    #     pass
-    # return content
+    def keys(self):
+        return self.local.keys() | self.remote.keys()
 
     def key(self, key):
         return self._find(key)[0]
@@ -319,77 +363,77 @@ def _download_bytes(self, file):
         #     if content is not None:
         #         pass
 
-    # upload
-    # None value in local means delete
-    # delete name\..* before uploading name.gb
-    # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
-    # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
+        # upload
+        # None value in local means delete
+        # delete name\..* before uploading name.gb
+        # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
+        # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
 
-    # def clear_cache(self):
-    #     self._remote = None
-    # self._files = None
-    # self.remote = {}
+        # def clear_cache(self):
+        #     self._remote = None
+        # self._files = None
+        # self.remote = {}
 
-    # @property
-    # def files(self):
-    #     if self._files is None:
-    #         self._files = list_drive(self.client, root=self.gdrive_id)
-    #     return self._files
+        # @property
+        # def files(self):
+        #     if self._files is None:
+        #         self._files = list_drive(self.client, root=self.gdrive_id)
+        #     return self._files
 
-    # def __getitem__(self, key):
-    #     if key in self.local:
-    #         return self.local[key]
-    #     elif key in self.remote:
-    #         return self.remote[key]
-    #     else:
-    #         file = self._find_file(key)
-    #         if file is None:
-    #             raise ValueError(f"key '{key}' not found")
-    #         content = self._fetch_file(file)
-    #         self.remote[key] = content
-    #         return content
+        # def __getitem__(self, key):
+        #     if key in self.local:
+        #         return self.local[key]
+        #     elif key in self.remote:
+        #         return self.remote[key]
+        #     else:
+        #         file = self._find_file(key)
+        #         if file is None:
+        #             raise ValueError(f"key '{key}' not found")
+        #         content = self._fetch_file(file)
+        #         self.remote[key] = content
+        #         return content
 
-    # def _find_file(self, key):
-    #     return regex_key(self.files, f"{key}($|\\.)", check_duplicates=True)
+        # def _find_file(self, key):
+        #     return regex_key(self.files, f"{key}($|\\.)", check_duplicates=True)
 
-    # def _fetch_file(self, file):
-    #     if file["kind"] == "drive#folder":
-    #         files = list_drive(self.client, root=file["id"])
-    #         folder_content = {name: self._get_file(f) for name, f in files.items()}
-    #         return folder_content
-    #     else:
-    #         content = (
-    #             self.client.files()
-    #             .get_media(fileId=file["id"])
-    #             .execute()
-    #             .decode("utf8")
-    #         )
-    #         try:
-    #             content = read_sequence(content, filename=file["name"])
-    #         except:
-    #             pass
-    #         return content
+        # def _fetch_file(self, file):
+        #     if file["kind"] == "drive#folder":
+        #         files = list_drive(self.client, root=file["id"])
+        #         folder_content = {name: self._get_file(f) for name, f in files.items()}
+        #         return folder_content
+        #     else:
+        #         content = (
+        #             self.client.files()
+        #             .get_media(fileId=file["id"])
+        #             .execute()
+        #             .decode("utf8")
+        #         )
+        #         try:
+        #             content = read_sequence(content, filename=file["name"])
+        #         except:
+        #             pass
+        #         return content
 
-    # def update(self, other):
-    #     for key, value in other.items():
-    #         self[key] = value
+        # def update(self, other):
+        #     for key, value in other.items():
+        #         self[key] = value
 
-    # def save(self, overwrite=True):
-    #     for key, content in self.local.items():
-    #         try:
-    #             existing_file = self._find_file(key)
-    #         except:
-    #             existing_file = None
-    #         if overwrite and existing_file is not None:
-    #             pass
-    #             # delete file
-    #         if content is not None:
-    #             pass
-    # upload
-    # None value in local means delete
-    # delete name\..* before uploading name.gb
-    # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
-    # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
+        # def save(self, overwrite=True):
+        #     for key, content in self.local.items():
+        #         try:
+        #             existing_file = self._find_file(key)
+        #         except:
+        #             existing_file = None
+        #         if overwrite and existing_file is not None:
+        #             pass
+        #             # delete file
+        #         if content is not None:
+        #             pass
+        # upload
+        # None value in local means delete
+        # delete name\..* before uploading name.gb
+        # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
+        # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
 
 
 TYPE_TO_CLIENT = {"maps": FileClient, "sequencing": FileClient, "_default": SheetClient}

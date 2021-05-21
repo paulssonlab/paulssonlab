@@ -1,3 +1,4 @@
+import numpy as np
 import re
 import pygsheets
 
@@ -40,6 +41,94 @@ def columns_with_validation(service, spreadsheet_id, worksheets=None):
         else:
             has_datavalidation[sheet_name] = []
     return has_datavalidation
+
+
+def nonempty_column_mask(worksheet, return_dataframe=False):
+    df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+    has_datavalidation = columns_with_validation(
+        worksheet.client.sheet.service,
+        worksheet.spreadsheet.id,
+        worksheet.spreadsheet._sheet_list,
+    )
+    mask = _nonempty_column_mask(df, has_datavalidation[worksheet.title])
+    if return_dataframe:
+        return mask, df
+    else:
+        return mask
+
+
+def _formula_mask(df):
+    return df.columns.str.startswith("=")
+
+
+def _validation_mask(df, has_datavalidation):
+    validation_mask = has_datavalidation
+    validation_mask += [False] * (len(df.columns) - len(validation_mask))
+    validation_mask = np.array(validation_mask)
+    return validation_mask
+
+
+def _nonempty_column_mask(df, has_datavalidation):
+    formula_mask = _formula_mask(df)
+    validation_mask = _validation_mask(df, has_datavalidation)
+    mask = formula_mask | validation_mask
+    return mask
+
+
+###########
+
+
+# def _get_next_empty_row(worksheet, skip_columns=0):
+#     # TODO: we can probably remove these kwargs to get_as_df
+#     # since pygsheets 2.0.4 fixed the bug with trailing empty cells
+#     df = worksheet.get_as_df(has_header=False, empty_value=None)
+#     df = df[1:]
+#     has_datavalidation = columns_with_validation(
+#         worksheet.client.sheet.service,
+#         worksheet.spreadsheet.id,
+#         worksheet.spreadsheet._sheet_list,
+#     )
+#     mask = has_datavalidation[worksheet.title]
+#     mask += [False] * (len(df.columns) - len(mask))
+#     nonempty = (
+#         ~df.iloc[:, skip_columns:]
+#         .iloc[:, ~np.array(mask)[skip_columns:]]
+#         .isnull()
+#         .all(axis=1)
+#     )
+#     last_idx = nonempty[nonempty].last_valid_index()
+#     # convert to Python int because
+#     # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+#     last_idx = int(last_idx)
+#     return last_idx, df
+
+
+# def get_next_empty_row(worksheet, skip_columns=0):
+#     last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
+#     if last_idx is None:
+#         return 2
+#     else:
+#         # increment twice for:
+#         # - add one to convert from zero-indexing to one-indexing
+#         # - row 1 is header
+#         return last_idx + 2
+
+
+def get_next_empty_row(worksheet, skip_columns=0):
+    mask, df = nonempty_column_mask(worksheet, return_dataframe=True)
+    return _get_next_empty_row(df, mask, skip_columns=skip_columns)
+
+
+def _get_next_empty_row(df, mask, skip_columns=0):
+    masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
+    masked_values[masked_values == ""] = np.nan
+    nonempty = ~masked_values.isnull().all(axis=1)
+    last_idx = nonempty[nonempty].last_valid_index()
+    if last_idx is not None:
+        # convert to Python int because
+        # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
+        last_idx = int(last_idx)
+    return last_idx
 
 
 def insert_sheet_rows(sheet, row, entries, ignore_missing_columns=False):
