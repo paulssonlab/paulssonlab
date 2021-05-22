@@ -19,7 +19,7 @@ from paulssonlab.api import regex_key
 from paulssonlab.api.util import PROGRESS_BAR
 from paulssonlab.cloning.io import read_sequence
 
-ID_REGEX = r"\s*([A-Za-z]*)\s*((\d+(?:\.\d+)?)[a-zA-Z]*)?"
+ID_REGEX = r"\s*([A-Za-z]*)\s*(\d+)(?:[.a-zA-Z]|\s+|$)\S*\s*$"
 
 # these are not currently used, but can be used for formatted outputs
 # these numbers are taken from Addgene: https://www.addgene.org/mol-bio-reference/
@@ -45,16 +45,13 @@ MARKER_ABBREVIATIONS = {
 def parse_id(s):
     match = re.match(ID_REGEX, s)
     if match is None:
-        raise ValueError(f"could not parse collection ID: '{s}'")
-    if not match.group(2):
-        return match.group(1), None
+        raise ValueError(f"could not parse ID: '{s}'")
     prefix = match.group(1)
-    index = int(match.group(3))
+    index = int(match.group(2))
     return prefix, index
 
 
-def format_id(id_):
-    prefix, num = id_
+def format_id(prefix, num):
     return f"{prefix}{num}"
 
 
@@ -69,43 +66,6 @@ def format_abx_marker(s):
     for name, abbrev in MARKER_ABBREVIATIONS.items():
         marker = re.sub(name, abbrev, marker, flags=re.IGNORECASE)
     return marker
-
-
-def get_next_collection_id2(worksheet):
-    last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-    prefix = worksheet.spreadsheet.title.split("_")[0]
-    if last_idx is None:
-        num = 0
-    else:
-        num = last_idx + 1
-    # increment twice for:
-    # - add one to convert from zero-indexing to one-indexing
-    # - row 1 is header
-    row = num + 2
-    return (prefix, num + 1), row
-
-
-# def get_next_collection_id(worksheet):
-#     last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-#     if last_idx is None:
-#         # sheet is empty, initialize at prefix 1
-#         prefix = worksheet.spreadsheet.title.split("_")[0]
-#         return (prefix, 1), 2
-#     # ID for last non-empty row
-#     last_id = df.iloc[last_idx - 1, 0]
-#     prefix, number = re.match(ID_REGEX, str(last_id)).groups()
-#     number_parts = number.split(".")
-#     if len(number_parts) == 2 and number_parts[0] == "0":
-#         # increment decimal if whole-part of the number is 0
-#         prefix += "0."
-#         index = int(number_parts[1])
-#     else:
-#         index = int(number_parts[0])
-#     # increment twice for:
-#     # - add one to convert from zero-indexing to one-indexing
-#     # - row 1 is header
-#     row = last_idx + 2
-#     return (prefix, index + 1), row
 
 
 # def trim_unassigned_ids(worksheet):

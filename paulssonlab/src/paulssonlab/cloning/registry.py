@@ -15,8 +15,8 @@ from paulssonlab.api.google import (
     SHEETS_MIMETYPE,
 )
 from paulssonlab.cloning.workflow import (
+    parse_id,
     rename_ids,
-    ID_REGEX,
     part_entry_to_seq,
     re_digest_part,
     is_bases,
@@ -46,8 +46,8 @@ def _name_mapper_for_prefix(old_prefix, new_prefix):
 
 
 class GDriveClient(object):
-    def __init__(self, key):
-        self.key = key
+    def __init__(self, registry_key):
+        self.registry_key = registry_key
         self._remote = None
         self.local = {}
         self.clear_cache()
@@ -75,12 +75,12 @@ class GDriveClient(object):
 
 
 class SheetClient(GDriveClient):
-    def __init__(self, key, registry):
-        super().__init__(key)
-        self.gdrive_id = registry.gdrive_ids[key[:2]]
-        if len(key) == 3:
-            self.worksheet_title = key[2]
-        elif len(key) not in (2, 3):
+    def __init__(self, registry_key, registry):
+        super().__init__(registry_key)
+        self.gdrive_id = registry.gdrive_ids[registry_key[:2]]
+        if len(registry_key) == 3:
+            self.worksheet_title = registry_key[2]
+        elif len(registry_key) not in (2, 3):
             raise ValueError(
                 "expected key of form (prefix, type) or (prefix, type, worksheet_title)"
             )
@@ -115,22 +115,42 @@ class SheetClient(GDriveClient):
         return self._remote
 
     def _download(self):
-        # index_column is 1-indexed (0 disables index)
-        self._remote = self.worksheet.get_as_df(
-            index_column=1, value_render=pygsheets.ValueRenderOption.FORMULA
-        )
+        df = self.worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
+        # ensure proper ID formatting
+        df.iloc[:, 0] = df.iloc[:, 0].str.replace(r"\s+", "", regex=True)
+        df.set_index(df.columns[0], inplace=True)
+        self._remote = df
 
     @property
     def columns(self):
         return self.remote.columns
 
+    def _last_id(self):
+        ids = sorted(
+            [
+                parse_id(id_)
+                for id_ in self.keys()
+                if id_.startswith(self.registry_key[0])
+            ]
+        )
+        if ids:
+            last_id = ids[-1]
+        else:
+            last_id = (self.registry_key[0], 0)
+        return last_id
+
     def next_id(self):
-        pass
+        last_id = self._last_id()
+        return f"{last_id[0]}{last_id[1] + 1}"
 
     def keys(self):
-        return self.local.keys() | set(self.remote.index)
+        # don't include rows with empty IDs
+        return self.local.keys() | set(self.remote.index) - set([""])
 
     def __getitem__(self, key):
+        # don't allow accesing rows with empty IDs
+        if key.strip() == "":
+            raise KeyError(key)
         if key in self.local:
             return self.local[key]
         else:
@@ -176,7 +196,7 @@ class SheetClient(GDriveClient):
         self.local[key] = row
         return key
 
-    def save(self, clobber_existing=True, append_only=True, formula=True):
+    def save(self, clobber_existing=True, append_only=True, formulae=True):
         """
         Parameters
         ----------
@@ -185,7 +205,7 @@ class SheetClient(GDriveClient):
             preserved when local row is missing column keys unless clobber_existing is True.
         append_only : bool, optional
             Ensures that when set to False.
-        formula : bool, optional
+        formulae : bool, optional
             If True, any formula values from the first non-header row will be copied (with their
             row number changed) to any new rows.
 
@@ -224,9 +244,9 @@ class ItemProxy(object):
 
 
 class FileClient(GDriveClient):
-    def __init__(self, key, registry):
-        super().__init__(key)
-        self.gdrive_id = registry.gdrive_ids[key[:2]]
+    def __init__(self, registry_key, registry):
+        super().__init__(registry_key)
+        self.gdrive_id = registry.gdrive_ids[registry_key[:2]]
         self.client = registry.drive_service
         self.raw = ItemProxy(self, "raw")
         self.bytes = ItemProxy(self, "bytes")
