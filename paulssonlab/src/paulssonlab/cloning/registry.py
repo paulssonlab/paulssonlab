@@ -157,11 +157,15 @@ class SheetClient(GDriveClient):
             return self.remote.loc[key].to_dict()
 
     def _validate(self, row):
+        if self.columns[0] in row:
+            raise ValueError(f"cannot specify ID column: '{self.columns[0]}'")
         unknown_columns = row.keys() - set(self.columns)
         if unknown_columns:
             raise ValueError(f"unknown columns: {unknown_columns}")
 
     def __setitem__(self, key, row):
+        # ensure ID is parsable
+        parse_id(key)
         self._validate(row)
         self.local[key] = row
 
@@ -214,16 +218,25 @@ class SheetClient(GDriveClient):
         # preprocess HHH
         # split local into updates and append
         rows_to_update = {}
-        rows_to_append = {}
-        for key, row in self.local.items():
+        rows_to_append = []
+        id_column = self.columns[0]
+        for key in sorted(self.local.keys(), key=parse_id):
+            row = self.local[key]
+            row_with_id = {**row, id_column: key}
             if key in self.remote.index:
-                rows_to_update[key] = row
+                rows_to_update[key] = row_with_id
             else:
-                rows_to_append[key] = row
-        self._update_rows()
+                rows_to_append.append(row_with_id)
+        self._update_rows(rows_to_update)
         self._append_rows(rows_to_append)
         # sort rows_to_append
         # trim
+
+    def _update_rows(self, rows):
+        pass
+
+    def _append_rows(self, rows):
+        pass
 
 
 class ItemProxy(object):

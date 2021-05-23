@@ -51,10 +51,6 @@ def parse_id(s):
     return prefix, index
 
 
-def format_id(prefix, num):
-    return f"{prefix}{num}"
-
-
 def format_abx_marker(s):
     marker = s.lower()
     # we remove commas, because we use commas to indicate multiple markers
