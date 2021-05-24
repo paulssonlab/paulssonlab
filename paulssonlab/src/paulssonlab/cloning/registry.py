@@ -1,9 +1,12 @@
+import pandas as pd
 import re
 from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
 import pygsheets
 from paulssonlab.api.google import (
+    insert_sheet_rows,
+    update_sheet_rows,
     get_drive_by_path,
     ensure_drive_folder,
     make_drive_folder,
@@ -48,13 +51,6 @@ def _name_mapper_for_prefix(old_prefix, new_prefix):
 class GDriveClient(object):
     def __init__(self, registry_key):
         self.registry_key = registry_key
-        self._remote = None
-        self.local = {}
-        self.clear_cache()
-
-    def clear_cache(self):
-        self._remote = None
-        self._columns = None
 
     def keys(self):
         raise NotImplementedError
@@ -75,9 +71,10 @@ class GDriveClient(object):
 
 
 class SheetClient(GDriveClient):
-    def __init__(self, registry_key, registry):
+    def __init__(self, registry_key, registry, id_column=0):
         super().__init__(registry_key)
         self.gdrive_id = registry.gdrive_ids[registry_key[:2]]
+        self.id_column = id_column
         if len(registry_key) == 3:
             self.worksheet_title = registry_key[2]
         elif len(registry_key) not in (2, 3):
@@ -90,6 +87,12 @@ class SheetClient(GDriveClient):
         self._spreadsheet = None
         self._worksheet = None
         self._columns = None
+        self.clear_cache()
+
+    def clear_cache(self):
+        self.local = {}
+        self._remote = None
+        self._remote_index = None
 
     @property
     def spreadsheet(self):
@@ -114,12 +117,20 @@ class SheetClient(GDriveClient):
             self._download()
         return self._remote
 
+    @property
+    def remote_index(self):
+        if self._remote_index is None:
+            self._download()
+        return self._remote_index
+
     def _download(self):
         df = self.worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
         # ensure proper ID formatting
-        df.iloc[:, 0] = df.iloc[:, 0].str.replace(r"\s+", "", regex=True)
-        df.set_index(df.columns[0], inplace=True)
+        df.iloc[:, self.id_column] = df.iloc[:, self.id_column].str.replace(
+            r"\s+", "", regex=True
+        )
         self._remote = df
+        self._remote_index = pd.Index(df.iloc[:, self.id_column])
 
     @property
     def columns(self):
@@ -145,20 +156,23 @@ class SheetClient(GDriveClient):
 
     def keys(self):
         # don't include rows with empty IDs
-        return self.local.keys() | set(self.remote.index) - set([""])
+        return self.local.keys() | set(self.remote_index) - set([""])
 
     def __getitem__(self, key):
         # don't allow accesing rows with empty IDs
         if key.strip() == "":
             raise KeyError(key)
         if key in self.local:
-            return self.local[key]
+            row = self.local[key]
         else:
-            return self.remote.loc[key].to_dict()
+            row = self.remote.iloc[self.remote_index.get_loc(key)].to_dict()
+        return {**row, self.columns[self.id_column]: key}
 
     def _validate(self, row):
-        if self.columns[0] in row:
-            raise ValueError(f"cannot specify ID column: '{self.columns[0]}'")
+        if self.columns[self.id_column] in row:
+            raise ValueError(
+                f"cannot specify ID column: '{self.columns[self.id_column]}'"
+            )
         unknown_columns = row.keys() - set(self.columns)
         if unknown_columns:
             raise ValueError(f"unknown columns: {unknown_columns}")
@@ -214,29 +228,40 @@ class SheetClient(GDriveClient):
             row number changed) to any new rows.
 
         """
-        # TODO: pygsheets currently does not support batch updating values
-        # preprocess HHH
-        # split local into updates and append
         rows_to_update = {}
         rows_to_append = []
-        id_column = self.columns[0]
+        id_column = self.columns[self.id_column]
         for key in sorted(self.local.keys(), key=parse_id):
             row = self.local[key]
             row_with_id = {**row, id_column: key}
-            if key in self.remote.index:
+            if key in self.remote_index:
                 rows_to_update[key] = row_with_id
             else:
                 rows_to_append.append(row_with_id)
         self._update_rows(rows_to_update)
         self._append_rows(rows_to_append)
-        # sort rows_to_append
-        # trim
+        # TODO: we could update self.remote here, but for now let's do the safer thing,
+        # which is to fetch everything again from the server
+        self.clear_cache()
 
     def _update_rows(self, rows):
-        pass
+        rows = [(self.remote_index.get_loc(key), row) for key, row in rows.items()]
+        updates = [
+            (
+                pygsheets.DataRange(
+                    (idx, 1), (idx, len(self.columns)), worksheet=self.worksheet
+                ),
+                [[row.get(col, "") for col in self.columns]],
+            )
+            for idx, row in rows
+        ]
+        update_sheet_rows(self.client.sheet.service, updates)
 
     def _append_rows(self, rows):
-        pass
+        # increment index once for column header, once for 1-indexing
+        insert_sheet_rows(
+            self.worksheet, len(self.remote) + 2, rows, columns=self.columns
+        )
 
 
 class ItemProxy(object):
@@ -264,7 +289,10 @@ class FileClient(GDriveClient):
         self.raw = ItemProxy(self, "raw")
         self.bytes = ItemProxy(self, "bytes")
         self.content = ItemProxy(self, "content")
-        # self.clear_cache()
+        self.clear_cache()
+
+    def clear_cache(self):
+        self._remote = None
 
     @property
     def remote(self):

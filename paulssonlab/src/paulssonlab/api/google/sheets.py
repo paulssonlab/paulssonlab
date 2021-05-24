@@ -131,13 +131,37 @@ def _get_next_empty_row(df, mask, skip_columns=0):
     return last_idx
 
 
-def insert_sheet_rows(sheet, row, entries, ignore_missing_columns=False):
-    columns = sheet.get_row(1)
+def update_sheet_rows(service, updates, value_input_option="RAW"):
+    if not updates:
+        return
+    body = {
+        "value_input_option": value_input_option,
+        "data": [
+            {"range": datarange.range, "values": values}
+            for datarange, values in updates
+        ],
+    }
+    spreadsheet_ids = list(
+        set(datarange.worksheet.spreadsheet.id for datarange, _ in updates)
+    )
+    if len(spreadsheet_ids) > 1:
+        raise ValueError("all dataranges must refer to the same spreadsheet")
+    request = (
+        service.spreadsheets()
+        .values()
+        .batchUpdate(spreadsheetId=spreadsheet_ids[0], body=body)
+    )
+    request.execute()
+
+
+def insert_sheet_rows(sheet, row, entries, ignore_missing_columns=False, columns=None):
+    if columns is None:
+        columns = sheet.get_row(1)
     seen_columns = set()
     values = []
     for entry in entries:
         seen_columns.update(entry.keys())
-        values.append([entry.get(col) for col in columns])
+        values.append([entry.get(col, "") for col in columns])
     unused_columns = seen_columns - set(columns)
     if len(unused_columns) and not ignore_missing_columns:
         raise ValueError(
