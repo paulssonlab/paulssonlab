@@ -326,35 +326,72 @@ class FileClient(GDriveClient):
     def keys(self):
         return self.local.keys() | self.remote.keys()
 
-    def key(self, key):
+    def find_key(self, key):
         return self._find(key)[0]
 
+    def find_file(self, key):
+        return self._find(key)[1]
+
+    def _get_path(self, store, key):
+        if not len(key):
+            return store
+        for k in key:
+            if k not in store:
+                return None
+            store = store[key[i]]
+        return store
+
     def _find(self, key):
-        for store in (self.local, self.remote):
+        if not isinstance(key, tuple):
+            key = (key,)
+        for store, is_remote in ((self.local, False), (self.remote, True)):
+            store = self._get_path(store, key[:-1])
+            if store is None:
+                continue
+            # if isinstance(key, tuple):
+            #     if len(key) == 0:
+            #         raise KeyError(key)
+            #     for i in range(len(key) - 1):
+            #         if key[i] not in store:
+            #             if is_remote:
+            #                 raise KeyError(key[: i + 1])
+            #             else:
+            #                 # not in local, might be in remote
+            #                 continue
+            #         store = store[key[i]]
             try:
-                return regex_key(
-                    store, f"{key}($|\\.)", check_duplicates=True, return_key=True
+                file = regex_key(
+                    store, f"{key[-1]}($|\\.)", check_duplicates=True, return_key=True
                 )
+                return file, is_remote
             except:
-                pass
+                continue
         raise KeyError(key)
 
     def _get_bytes(self, file):
+        # if file["mimeType"] ==
         if "bytes" not in file:
             if "content" not in file:
-                self._download_bytes(file)
+                raise ValueError(
+                    f"found neither 'bytes' nor 'content' in file: '{file}'"
+                )
             else:
                 file["bytes"] = object_to_bytes(file["content"])
         return file["bytes"]
 
     def _get_content(self, file):
+        # if file["mimeType"] == FOLDER_MIMETYPE:
+        #     return HHH
         if "content" not in file:
             self._download_bytes(file)
             file["content"] = bytes_to_object(file["bytes"])
         return file["content"]
 
     def __getitem__(self, key):
-        return self._get_content(self._find(key)[1])
+        file, is_remote = self.find_file(key)
+        if is_remote:
+            self._download_bytes(file)
+        return self._get_content(file)
 
     def __setitem__(self, key, value):
         extension = object_to_extension(value)
@@ -362,10 +399,16 @@ class FileClient(GDriveClient):
         self.content[full_key] = value
 
     def _raw_getitem(self, key):
-        if key in self.local:
-            return self.local[key]
-        else:
-            return self.remote[key]
+        return _raw_getitem_loc(key)[0]
+
+    def _raw_getitem_loc(self, key):
+        if not isinstance(key, tuple):
+            key = (key,)
+        for store, is_remote in ((self.local, False), (self.remote, True)):
+            store = self._get_path(store, key)
+            if store is not None:
+                return store, is_remote
+        raise KeyError(key)
 
     def _raw_setitem(self, key, value):
         self.local[key] = value
@@ -376,7 +419,10 @@ class FileClient(GDriveClient):
         # - no other keys
 
     def _bytes_getitem(self, key):
-        return self._get_bytes(self.raw[key])
+        file, is_remote = self._raw_getitem_loc(key)
+        if is_remote:
+            self._download_bytes(file)
+        return self._get_bytes(file)
         # value = self._find(key)[1]
         # if "bytes" in value:
         #     return value["bytes"]
@@ -395,7 +441,10 @@ class FileClient(GDriveClient):
         file["mimetype"] = filename_to_mimetype(key)
 
     def _content_getitem(self, key):
-        return self._get_content(self.raw[key])
+        file, is_remote = self._raw_getitem_loc(key)
+        if is_remote:
+            self._download_bytes(file)
+        return self._get_content(file)
 
     def _content_setitem(self, key, value):
         file = self.local.setdefault(key, {})
@@ -403,7 +452,7 @@ class FileClient(GDriveClient):
         file["content"] = value
         file["mimetype"] = object_to_mimetype(value)
 
-    def set_from_file(self, path):
+    def set_from_file(self, key, path):
         pass
         # basename
 
