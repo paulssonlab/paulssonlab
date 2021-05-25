@@ -56,7 +56,7 @@ def list_drive(
         qs.append(query)
     q = " and ".join([f"({subq})" for subq in qs])
     files_service = service.files()
-    fields = ["kind", "id", "name", "mimeType", *fields]
+    fields = ["id", "name", "mimeType", *fields]
     fields = "files({})".format(",".join(fields))
     req = files_service.list(q=q, pageSize=page_size, fields=fields)
     files = []
