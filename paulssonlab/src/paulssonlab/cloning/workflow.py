@@ -17,7 +17,7 @@ from paulssonlab.api.google import (
 )
 from paulssonlab.api import regex_key
 from paulssonlab.api.util import PROGRESS_BAR
-from paulssonlab.cloning.io import read_sequence
+from paulssonlab.cloning.io import bytes_to_value, filename_to_mimetype
 
 ID_REGEX = r"\s*([A-Za-z]*)\s*(\d+)(?:[.a-zA-Z]|\s+|$)\S*\s*$"
 
@@ -64,6 +64,7 @@ def format_abx_marker(s):
     return marker
 
 
+# TODO: see below in import_addgene
 # def trim_unassigned_ids(worksheet):
 #     _, row = get_next_collection_id(worksheet)
 #     _trim_unassigned_ids(worksheet, row)
@@ -181,27 +182,28 @@ def import_addgene(
     return dict(strains=strains, plasmids=plasmids, plasmid_maps=plasmid_maps)
 
 
-def upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=True):
-    files = list_drive(service, root=plasmid_maps_folder)
-    for filename, plasmid_map in plasmid_maps.items():
-        if filename in files:
-            if not overwrite:
-                raise ValueError(
-                    f"enable overwrite or remove existing plasmid map: {filename}"
-                )
-            file_id = files[filename]["id"]
-        else:
-            file_id = None
-        file_id = upload_drive(
-            service,
-            content=plasmid_map["content"],
-            name=filename,
-            file_id=file_id,
-            mimetype=plasmid_map["mimetype"],
-            parent=plasmid_maps_folder,
-        )
-        plasmid_map["id"] = file_id
-    return plasmid_maps
+# TODO
+# def upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=True):
+#     files = list_drive(service, root=plasmid_maps_folder)
+#     for filename, plasmid_map in plasmid_maps.items():
+#         if filename in files:
+#             if not overwrite:
+#                 raise ValueError(
+#                     f"enable overwrite or remove existing plasmid map: {filename}"
+#                 )
+#             file_id = files[filename]["id"]
+#         else:
+#             file_id = None
+#         file_id = upload_drive(
+#             service,
+#             content=plasmid_map["content"],
+#             name=filename,
+#             file_id=file_id,
+#             mimetype=plasmid_map["mimetype"],
+#             parent=plasmid_maps_folder,
+#         )
+#         plasmid_map["id"] = file_id
+#     return plasmid_maps
 
 
 def _import_addgene_data(
@@ -318,7 +320,7 @@ def _format_addgene_for_spreadsheet(
                 origin = data.get("copy number") or "Unknown"
             else:
                 res = requests.get(seq_url)
-                plasmid_map = read_sequence(res.content.decode("utf8"))
+                plasmid_map = bytes_to_value(res.content, filename_to_mimetype(seq_url))
                 size = len(plasmid_map.seq)
                 ori_feature = next(
                     f for f in plasmid_map.features if f.type == "rep_origin"

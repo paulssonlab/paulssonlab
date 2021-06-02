@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 import re
 from numbers import Integral
 from Bio.Seq import Seq
@@ -28,7 +29,13 @@ from paulssonlab.api import regex_key
 from paulssonlab.api.benchling import upload_sequence
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
 from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
-from paulssonlab.cloning.io import read_sequence
+from paulssonlab.cloning.io import (
+    value_to_bytes,
+    bytes_to_value,
+    value_to_mimetype,
+    filename_to_mimetype,
+    value_to_extension,
+)
 from paulssonlab.api.util import PROGRESS_BAR
 
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
@@ -55,8 +62,14 @@ class GDriveClient(object):
     def keys(self):
         raise NotImplementedError
 
+    def __del__(self, key):
+        self[key] = None
+
+    def __iter__(self):
+        return iter(self.keys())
+
     def items(self):
-        for key in self.keys():
+        for key in self:
             yield key, self[key]
 
     def __getitem__(self, key):
@@ -156,7 +169,17 @@ class SheetClient(GDriveClient):
 
     def keys(self):
         # don't include rows with empty IDs
-        return self.local.keys() | set(self.remote_index) - set([""])
+        return self.local.keys() | set(self.remote_index) - set([""]) - set(
+            k for k in self.local.keys() if self.local[k] is None
+        )
+
+    def __contains__(self, key):
+        if key.strip() == "":
+            return False
+        if key in self.local:
+            return self.local[key] is not None
+        else:
+            return key in self.remote_index
 
     def __getitem__(self, key):
         # don't allow accesing rows with empty IDs
@@ -164,6 +187,8 @@ class SheetClient(GDriveClient):
             raise KeyError(key)
         if key in self.local:
             row = self.local[key]
+            if row is None:
+                raise KeyError(key)
         else:
             row = self.remote.iloc[self.remote_index.get_loc(key)].to_dict()
         return {**row, self.columns[self.id_column]: key}
@@ -269,16 +294,28 @@ class ItemProxy(object):
         self._obj = obj
         self._name = name
 
+    def __contains__(self, key):
+        return getattr(self._obj, f"_{self._name}_contains")(key)
+
+    def __del__(self, key):
+        return getattr(self._obj, f"_{self._name}_del")(key)
+
+    def __iter__(self):
+        return getattr(self._obj, f"_{self._name}_iter")()
+
+    def items(self):
+        return getattr(self._obj, f"_{self._name}_items")()
+
     def __getitem__(self, key):
-        return getattr(self._obj, f"_{self._name}_getitem")(self._obj, key)
+        return getattr(self._obj, f"_{self._name}_getitem")(key)
 
     def __setitem__(self, key, value):
-        return getattr(self._obj, f"_{self._name}_setitem")(self._obj, key, value)
+        return getattr(self._obj, f"_{self._name}_setitem")(key, value)
 
     def update(self, other):
         setitem = getattr(self._obj, f"_{self._name}_setitem")
         for key, value in other.items():
-            self[key] = value
+            setitem(key, value)
 
 
 class FileClient(GDriveClient):
@@ -292,81 +329,44 @@ class FileClient(GDriveClient):
         self.clear_cache()
 
     def clear_cache(self):
+        self.local = {}
         self._remote = None
+        self._remote_folders = None
 
     @property
     def remote(self):
         if self._remote is None:
-            self._download_file_list()
+            self._download()
         return self._remote
 
-    def _download_file_list(self):
-        self._remote = list_drive(self.client, root=self.gdrive_id)
+    @property
+    def remote_folders(self):
+        if self._remote_folders is None:
+            self._download()
+        return self._remote_folders
+
+    def _download(self):
+        self._remote = {}
+        self._remote_folders = {}
+        self._list_folder((), self.gdrive_id)
+
+    def _list_folder(self, key, root):
+        files = list_drive(self.client, root=root)
+        for name, file in files.items():
+            new_key = key + (name,)
+            if file["mimeType"] == FOLDER_MIMETYPE:
+                self._remote_folders[new_key] = file["id"]
+                self._list_folder(new_key, file["id"])
+            else:
+                self._remote[new_key] = file
 
     def _download_bytes(self, file):
-        bytes_ = self.client.files().get_media(fileId=file["id"]).execute()
-        file["bytes"] = bytes_
-        return bytes_
-        # if file["kind"] == "drive#folder":
-        #     files = list_drive(self.client, root=file["id"])
-        #     # folder_content = {name: self._get_file(f) for name, f in files.items()}
-        #     return folder_content
-        # else:
-        #     content = (
-        #         self.client.files()
-        #         .get_media(fileId=file["id"])
-        #         .execute()
-        #     )
-        # try:
-        #     content = read_sequence(content, filename=file["name"])
-        # except:
-        #     pass
-        # return content
-
-    def keys(self):
-        return self.local.keys() | self.remote.keys()
-
-    def find_key(self, key):
-        return self._find(key)[0]
-
-    def find_file(self, key):
-        return self._find(key)[1]
-
-    def _get_path(self, store, key):
-        if not len(key):
-            return store
-        for k in key:
-            if k not in store:
-                return None
-            store = store[key[i]]
-        return store
-
-    def _find(self, key):
-        if not isinstance(key, tuple):
-            key = (key,)
-        for store, is_remote in ((self.local, False), (self.remote, True)):
-            store = self._get_path(store, key[:-1])
-            if store is None:
-                continue
-            # if isinstance(key, tuple):
-            #     if len(key) == 0:
-            #         raise KeyError(key)
-            #     for i in range(len(key) - 1):
-            #         if key[i] not in store:
-            #             if is_remote:
-            #                 raise KeyError(key[: i + 1])
-            #             else:
-            #                 # not in local, might be in remote
-            #                 continue
-            #         store = store[key[i]]
-            try:
-                file = regex_key(
-                    store, f"{key[-1]}($|\\.)", check_duplicates=True, return_key=True
-                )
-                return file, is_remote
-            except:
-                continue
-        raise KeyError(key)
+        if "content" not in file and "bytes" not in file:
+            bytes_ = self.client.files().get_media(fileId=file["id"]).execute()
+            file["bytes"] = bytes_
+            return bytes_
+        else:
+            return None
 
     def _get_bytes(self, file):
         # if file["mimeType"] ==
@@ -376,69 +376,204 @@ class FileClient(GDriveClient):
                     f"found neither 'bytes' nor 'content' in file: '{file}'"
                 )
             else:
-                file["bytes"] = object_to_bytes(file["content"])
+                file["bytes"] = value_to_bytes(file["content"])
         return file["bytes"]
 
     def _get_content(self, file):
-        # if file["mimeType"] == FOLDER_MIMETYPE:
-        #     return HHH
         if "content" not in file:
-            self._download_bytes(file)
-            file["content"] = bytes_to_object(file["bytes"])
+            if "bytes" not in file or "mimeType" not in file:
+                raise ValueError(
+                    f"found neither 'bytes'/'mimeType' nor 'content' in file: '{file}'"
+                )
+            else:
+                file["content"] = bytes_to_value(file["bytes"], file["mimeType"])
         return file["content"]
 
+    def find(self, key):
+        return self._find_loc(key)[0]
+
+    def _find_loc(self, key):
+        key = self._validate_key(key)
+        for store, is_remote in ((self.local, False), (self.remote, True)):
+            filtered_keys = [k[-1] for k in store.keys() if k[:-1] == key[:-1]]
+            try:
+                matching_key = regex_key(
+                    filtered_keys, f"{key[-1]}($|\\.[^\\.]+$)", check_duplicates=True
+                )
+                full_key = (*key[:-1], matching_key)
+                return full_key, is_remote
+            except:
+                continue
+        raise KeyError(key)
+
+    def _get_loc(self, key):
+        full_key, is_remote = self._find_loc(key)
+        if not is_remote:
+            return self.local[full_key], is_remote
+        else:
+            return self.remote[full_key], is_remote
+
+    def __contains__(self, key):
+        try:
+            self._find_loc(key)
+            return True
+        except:
+            return False
+
+    def _keys_loc(self):
+        keys_to_delete = set(k for k, v in self.local.items() if v is None)
+        local_keys = set((k, False) for k in self.local.keys())
+        remote_keys = set((k, True) for k in self.remote.keys())
+        keys = local_keys | remote_keys
+        keys = [(k, is_remote) for k, is_remote in keys if k not in keys_to_delete]
+        keys = set(sorted(keys, key=lambda k: k[0]))
+        return keys
+
+    def keys(self):
+        return set(k[0] for k in self._keys_loc())
+
+    def _items_loc(self):
+        for key, is_remote in self._keys_loc():
+            if is_remote:
+                store = self.remote
+            else:
+                store = self.local
+            yield key, store[key], is_remote
+
+    def items(self):
+        yield from self._content_items()
+
     def __getitem__(self, key):
-        file, is_remote = self.find_file(key)
+        file, is_remote = self._get_loc(key)
         if is_remote:
             self._download_bytes(file)
         return self._get_content(file)
 
-    def __setitem__(self, key, value):
-        extension = object_to_extension(value)
-        full_key = f"{key}.{extension}"
-        self.content[full_key] = value
-
-    def _raw_getitem(self, key):
-        return _raw_getitem_loc(key)[0]
-
-    def _raw_getitem_loc(self, key):
+    def _validate_key(self, key):
         if not isinstance(key, tuple):
             key = (key,)
-        for store, is_remote in ((self.local, False), (self.remote, True)):
-            store = self._get_path(store, key)
-            if store is not None:
-                return store, is_remote
-        raise KeyError(key)
+        if key == ():
+            raise KeyError(key)
+        return key
+
+    def __setitem__(self, key, value):
+        key = self._validate_key(key)
+        if isinstance(value, dict):
+            for k, v in value.items():
+                self[key + (k,)] = v
+            return
+        try:
+            existing_key, is_remote = self._find_loc(key)
+        except:
+            existing_key = None
+        extension = value_to_extension(value)
+        if extension:
+            full_key = (*key[:-1], f"{key[-1]}.{extension}")
+        else:
+            full_key = key
+        if value is None:
+            self.content[existing_key] = None
+        else:
+            if existing_key is not None and existing_key != full_key:
+                # need to delete existing_key first
+                self.content[existing_key] = None
+            self.content[full_key] = value
+
+    def _raw_contains(self, key):
+        if not isinstance(key, tuple):
+            key = (key,)
+        if key in self.local:
+            return self.local[key] is not None
+        else:
+            return key in self.remote
+
+    def _raw_del(self, key):
+        self._raw_setitem(key, None)
+
+    def _raw_iter(self):
+        yield from self
+
+    def _raw_items(self):
+        for key, value, _ in self._items_loc():
+            yield key, value
+
+    def _raw_getitem(self, key):
+        return self._raw_getitem_loc(key)[0]
+
+    def _raw_getitem_loc(self, key):
+        key = self._validate_key(key)
+        if key in self.local:
+            value = self.local[key]
+            if value is None:
+                raise KeyError(key)
+            return value, False
+        else:
+            return self.remote[key], True
 
     def _raw_setitem(self, key, value):
+        key = self._validate_key(key)
+        if value is not None:
+            if not isinstance(value, dict):
+                raise ValueError(f"got {value.__class__}, expecting dict")
+            if "mimeType" not in value:
+                raise ValueError(f"mimeType is required")
+            if not ("content" in value or "bytes" in value):
+                raise ValueError(f"at least one of content/bytes is required")
+            extra_keys = value.keys() - set(["mimeType", "bytes", "content"])
+            if extra_keys:
+                raise ValueError(f"got unexpected keys: {extra_keys}")
+        base_key = (*key[:-1], os.path.splitext(key[-1])[0])
+        try:
+            full_key, is_remote = self._find_loc(base_key)
+            if full_key != key:
+                raise ValueError(
+                    f"attempting to set key {key} that conflicts with existing key {full_key} (remote={is_remote})"
+                )
+        except:
+            pass
         self.local[key] = value
-        # TODO: validate value is dict, contains
-        # - at least one of content/bytes
-        # - mimetype
-        # - silently delete id?
-        # - no other keys
+
+    _bytes_contains = _raw_contains
+    _bytes_del = _raw_del
+    _bytes_iter = _raw_iter
+
+    def _bytes_items(self):
+        for key, value, is_remote in self._items_loc():
+            if is_remote:
+                self._download_bytes(value)
+            yield key, self._get_bytes(value)
 
     def _bytes_getitem(self, key):
         file, is_remote = self._raw_getitem_loc(key)
         if is_remote:
             self._download_bytes(file)
         return self._get_bytes(file)
-        # value = self._find(key)[1]
-        # if "bytes" in value:
-        #     return value["bytes"]
-        # elif "content" in value:
-        #     return to_bytes(value["content"])
-        # else:
-        # must download if remote?
-        # to_bytes()
 
     def _bytes_setitem(self, key, value):
-        file = self.local.setdefault(key, {})
-        file.pop("content", None)
-        file["bytes"] = value
-        if not isinstance(value, bytes):
-            raise ValueError("expecting object of type bytes")
-        file["mimetype"] = filename_to_mimetype(key)
+        key = self._validate(key)
+        if isinstance(value, dict):
+            for k, v in value.items():
+                self._bytes_setitem(key + (k,), v)
+            return
+        if value is None:
+            self.local[key] = None
+        else:
+            if not isinstance(value, bytes):
+                raise ValueError("expecting value of type bytes")
+            file = self.local.setdefault(key, {})
+            file.pop("content", None)
+            file["bytes"] = value
+            file["mimeType"] = filename_to_mimetype(key[-1])
+
+    _content_contains = _raw_contains
+    _content_del = _raw_del
+    _content_iter = _raw_iter
+
+    def _content_items(self):
+        for key, value, is_remote in self._items_loc():
+            if is_remote:
+                self._download_bytes(value)
+            yield key, self._get_content(value)
 
     def _content_getitem(self, key):
         file, is_remote = self._raw_getitem_loc(key)
@@ -447,103 +582,53 @@ class FileClient(GDriveClient):
         return self._get_content(file)
 
     def _content_setitem(self, key, value):
-        file = self.local.setdefault(key, {})
-        file.pop("bytes", None)
-        file["content"] = value
-        file["mimetype"] = object_to_mimetype(value)
+        key = self._validate_key(key)
+        if isinstance(value, dict):
+            for k, v in value.items():
+                self._content_setitem(key + (k,), v)
+            return
+        if value is None:
+            self.local[key] = None
+        else:
+            file = self.local.setdefault(key, {})
+            file.pop("bytes", None)
+            file["content"] = value
+            file["mimeType"] = value_to_mimetype(value)
 
     def set_from_file(self, key, path):
-        pass
-        # basename
+        key = self._validate_key(key)
+        mimetype = filename_to_mimetype(path)
+        with open(path, "rb") as f:
+            bytes_ = f.read()
+        extension = os.path.splitext(path)[1][1:].lower()
+        key = (*key[:-1], f"{key[-1]}.{extension}")
+        self.raw[key] = {"bytes": bytes_, "mimeType": mimetype}
+        return key
 
     def update(self, other):
         for key, value in other.items():
             self[key] = value
 
-    def save(self, overwrite=True):
+    def save(self, overwrite=True, trash="_Trash"):
+        folders = set()
+        keys_to_delete = set()
+        for k, v in self.local.items():
+            if v is None:
+                if k in self.remote:
+                    keys_to_delete.add(k)
+            else:
+                folders.update(k[:i] for i in range(1, len(k)))
+        # keys_to_delete = set(
+        #     k for k, v in self.local.items() if v is None and k in self.remote
+        # )
+        # final_keys = (self.remote.keys() | self.local.keys()) - keys_to_delete
+        # print(1, final_keys, keys_to_delete)
+        # DELETE files = None in local
+        # DELETE files with parent folder = None
+        # MAKE FOLDERS for all parent keys for all local keys
+        # DELETE ALL remaining folders
+        # UPLOAD LOCAL DATA
         pass
-        # for key, content in self.local.items():
-        #     try:
-        #         existing_file = self._find_file(key)
-        #     except:
-        #         existing_file = None
-        #     if overwrite and existing_file is not None:
-        #         pass
-        #         # delete file
-        #     if content is not None:
-        #         pass
-
-        # upload
-        # None value in local means delete
-        # delete name\..* before uploading name.gb
-        # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
-        # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
-
-        # def clear_cache(self):
-        #     self._remote = None
-        # self._files = None
-        # self.remote = {}
-
-        # @property
-        # def files(self):
-        #     if self._files is None:
-        #         self._files = list_drive(self.client, root=self.gdrive_id)
-        #     return self._files
-
-        # def __getitem__(self, key):
-        #     if key in self.local:
-        #         return self.local[key]
-        #     elif key in self.remote:
-        #         return self.remote[key]
-        #     else:
-        #         file = self._find_file(key)
-        #         if file is None:
-        #             raise ValueError(f"key '{key}' not found")
-        #         content = self._fetch_file(file)
-        #         self.remote[key] = content
-        #         return content
-
-        # def _find_file(self, key):
-        #     return regex_key(self.files, f"{key}($|\\.)", check_duplicates=True)
-
-        # def _fetch_file(self, file):
-        #     if file["kind"] == "drive#folder":
-        #         files = list_drive(self.client, root=file["id"])
-        #         folder_content = {name: self._get_file(f) for name, f in files.items()}
-        #         return folder_content
-        #     else:
-        #         content = (
-        #             self.client.files()
-        #             .get_media(fileId=file["id"])
-        #             .execute()
-        #             .decode("utf8")
-        #         )
-        #         try:
-        #             content = read_sequence(content, filename=file["name"])
-        #         except:
-        #             pass
-        #         return content
-
-        # def update(self, other):
-        #     for key, value in other.items():
-        #         self[key] = value
-
-        # def save(self, overwrite=True):
-        #     for key, content in self.local.items():
-        #         try:
-        #             existing_file = self._find_file(key)
-        #         except:
-        #             existing_file = None
-        #         if overwrite and existing_file is not None:
-        #             pass
-        #             # delete file
-        #         if content is not None:
-        #             pass
-        # upload
-        # None value in local means delete
-        # delete name\..* before uploading name.gb
-        # add .gb (k?) extension for DsSeqRecord/SeqRecord, .fasta for Seq (?)
-        # TODO: pass through raw content/mimetype/etc.? wrap as GDriveFile/dict for folder?
 
 
 TYPE_TO_CLIENT = {"maps": FileClient, "sequencing": FileClient, "_default": SheetClient}

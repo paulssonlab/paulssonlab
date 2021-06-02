@@ -28,16 +28,13 @@ def base_url(url):
     return re.match("^(?:https?://)?(.*[^/]+)/?$", url).group(1).lower()
 
 
-def regex_key(x, pattern, check_duplicates=True, return_key=False):
+def regex_key(x, pattern, check_duplicates=True):
     pattern = re.compile(pattern)  # ensure it is compiled
     no_match = object()
     match = no_match
-    for k, v in x.items():
+    for k in x:
         if pattern.match(k):
-            if return_key:
-                returned_value = (k, v)
-            else:
-                returned_value = v
+            returned_value = k
             if check_duplicates:
                 if match == no_match:
                     match = returned_value
