@@ -12,6 +12,7 @@ dependencies:
   - click
   - clustalo
   - cytoolz
+  - frozendict
   - google-api-python-client
   - holoviews
   - hvplot
@@ -42,4 +43,5 @@ dependencies:
   - seaborn
   - tatsu
   - tqdm
+  - viennarna
   - xlrd

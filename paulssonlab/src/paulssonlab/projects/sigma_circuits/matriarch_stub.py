@@ -10,7 +10,7 @@ import skimage.filters
 import skimage.feature
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 import scipy.ndimage as ndi
-from cytoolz import reduce, compose, partial
+from cytoolz import reduce, compose, partial, get_in
 import cachetools
 from numbers import Integral
 import warnings
@@ -33,11 +33,40 @@ def tree():
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
-def _get_nd2_reader(filename, fix_z_levels=True, **kwargs):
+def _get_nd2_reader(filename, fix_z_levels=True, fix_positions=True, **kwargs):
     nd2 = nd2reader.ND2Reader(filename, **kwargs)
     # TODO: this is made unnecessary by https://github.com/rbnvrw/nd2reader/commit/995d920e5f52900540c7e4b1efb690fd468c21e0
     if fix_z_levels:
         nd2.metadata["z_levels"] = []
+    if fix_positions:
+        image_metadata = nd2._parser._raw_metadata.image_metadata
+        num_pos = get_in(
+            (b"SLxExperiment", b"ppNextLevelEx", b"", b"uLoopPars", b"uiCount"),
+            image_metadata,
+        )
+        assert num_pos == len(
+            get_in(
+                (b"SLxExperiment", b"ppNextLevelEx", b"", b"uLoopPars", b"Points", b""),
+                image_metadata,
+            )
+        )
+        if "v" in nd2.sizes and nd2.sizes["v"] != 1 and nd2.sizes["v"] != num_pos:
+            raise ValueError(
+                "got mismatch between ND2Reader positions {old_v} and inferred number of positions {new_v}".format(
+                    old_v=nd2.sizes["v"]
+                ),
+                new_v=num_pos,
+            )
+        nd2.sizes["v"] = num_pos
+        nd2.metadata["fields_of_view"] = list(range(nd2.sizes["v"]))
+        # TODO: not sure if there should be a +1 here. we miss the last timepoint otherwise
+        # but have not tested on an acquisition that was stopped half-way through the last timepoint
+        nd2.sizes["t"] = (
+            nd2._parser._raw_metadata.image_attributes[b"SLxImageAttributes"][
+                b"uiSequenceCount"
+            ]
+            + 1
+        ) // nd2.sizes["v"]
     return nd2
 
 
