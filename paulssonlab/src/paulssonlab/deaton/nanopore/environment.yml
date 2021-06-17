@@ -6,6 +6,9 @@ channels:
 dependencies:
   - biopython
   - black
+  - dask
+  - dask-jobqueue
+  - distributed
   - graphaligner
   - jupyterlab
   - matplotlib

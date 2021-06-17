@@ -63,7 +63,7 @@ class kymograph_interactive(kymograph_multifov):
     def import_hdf5_interactive(self):
         import_hdf5 = interactive(self.import_hdf5_files, {"manual":True}, all_channels=fixed(self.channels),\
                                   seg_channel=Dropdown(options=self.channels, value=self.channels[0]),\
-                                  filter_channels=SelectMultiple(options=self.channels),\
+                                  filter_channel=Dropdown(options=self.channels+[None]),\
                                   invert=Dropdown(options=[True,False],\
                                   value=False), fov_list=SelectMultiple(options=self.fov_list),t_subsample_step=IntSlider(value=10,\
                                   min=0, max=200, step=1));
@@ -143,8 +143,8 @@ class kymograph_interactive(kymograph_multifov):
         plt.show()
 
     def preview_y_crop(self,y_percentiles_smoothed_list, imported_array_list,y_min_edge_dist, padding_y,\
-                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,use_median_drift,\
-                       images_per_row):
+                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,\
+                       alternate_over_rows,use_median_drift,images_per_row):
 
         self.final_params['Minimum Trench Length'] = y_min_edge_dist
         self.final_params['Y Padding'] = padding_y
@@ -153,6 +153,7 @@ class kymograph_interactive(kymograph_multifov):
         self.final_params['Expected Number of Rows (Manual Orientation Detection)'] = expected_num_rows
         self.final_params['Alternate Orientation'] = alternate_orientation
         self.final_params['Top Orientation when Row Drifts Out (Manual Orientation Detection)'] = orientation_on_fail
+        self.final_params['Alternate Orientation Over Rows?'] = alternate_over_rows
         self.final_params['Use Median Drift?'] = use_median_drift
 
         y_percentile_threshold = self.final_params['Y Percentile Threshold']
@@ -163,7 +164,7 @@ class kymograph_interactive(kymograph_multifov):
         end_above_lists = [item[2] for item in get_trench_edges_y_output]
 
         get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations,trench_edges_y_lists,start_above_lists,end_above_lists,\
-                                                          alternate_orientation,expected_num_rows,orientation_detection,orientation_on_fail,y_min_edge_dist)
+                                                          alternate_orientation,expected_num_rows,orientation_detection,orientation_on_fail,alternate_over_rows,y_min_edge_dist)
 
         orientations_list = [item[0] for item in get_manual_orientations_output]
         drop_first_row_list = [item[1] for item in get_manual_orientations_output]
@@ -196,7 +197,8 @@ class kymograph_interactive(kymograph_multifov):
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
                 alternate_orientation=Dropdown(options=[True,False],value=True,description='Alternate Orientation?:',disabled=False),\
                orientation_detection=Dropdown(options=[0, 1],value=0,description='Orientation:',disabled=False),\
-                orientation_on_fail=Dropdown(options=[0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
+                orientation_on_fail=Dropdown(options=[0, 1, None],value=0,description='Orientation when < expected rows:',disabled=False),\
+                alternate_over_rows=Dropdown(options=[True,False],value=False,description='Alternate Orientation Over Rows?:',disabled=False),\
                 use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False),\
                     images_per_row=IntSlider(value=3, min=1, max=10, step=1))
 
@@ -305,8 +307,11 @@ class kymograph_interactive(kymograph_multifov):
         fig = plt.figure()
         ax = fig.gca()
 
-        nrows = 2*len(fov_list)
-        ncols = 2
+        num_fovs = len(all_midpoints_list)
+        num_rows = max([len(item) for item in all_midpoints_list])
+
+        nrows = num_fovs
+        ncols = num_rows
 
         idx = 0
         for i,top_bottom_list in enumerate(all_midpoints_list):
@@ -347,9 +352,11 @@ class kymograph_interactive(kymograph_multifov):
             trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05),\
             use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False))
 
-    def plot_kymographs(self,cropped_in_x_list,fov_list,num_rows=2):
+    def plot_kymographs(self,cropped_in_x_list,fov_list):
         plt.figure()
         idx = 0
+
+        num_rows = max([len(item) for item in cropped_in_x_list])
         ncol = num_rows
         nrow = len(fov_list)*num_rows
 
@@ -380,7 +387,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def process_results(self):
         self.final_params["All Channels"] = self.all_channels
-        self.final_params["Filter Channels"] = self.filter_channels
+        self.final_params["Filter Channel"] = self.filter_channel
         self.final_params["Invert"] = self.invert
 
         for key,value in self.final_params.items():
@@ -421,13 +428,17 @@ class focus_filter:
         subsampled_df = df.sample(frac=frac, replace=False).compute()[:n_samples]
         return subsampled_df
 
-    def plot_histograms(self,n_samples=10000):
+    def plot_histograms(self,n_samples=10000,focus_range=None,intensity_range=None):
         subsampled_df = self.subsample_df(self.df,n_samples)
         focus_vals = subsampled_df[self.channel + " Focus Score"]
         self.focus_max = np.max(focus_vals)
 
         fig, ax = plt.subplots(1, 1)
-        ax.hist(focus_vals,bins=50)
+        if focus_range != None:
+            ax.hist(focus_vals,bins=50,range=focus_range)
+        else:
+            max_v = np.percentile(focus_vals,99)
+            ax.hist(focus_vals,bins=50,range=(0,max_v))
         ax.set_title("Focus Score Distribution",fontsize=20)
         ax.set_xlabel("Focus Score",fontsize=15)
         fig.set_size_inches(9, 6)
@@ -437,7 +448,11 @@ class focus_filter:
         self.intensity_max = np.max(intensity_vals)
 
         fig, ax = plt.subplots(1, 1)
-        ax.hist(intensity_vals,bins=50)
+        if intensity_range != None:
+            ax.hist(intensity_vals,bins=50,range=intensity_range)
+        else:
+            max_v = np.percentile(intensity_vals,99)
+            ax.hist(intensity_vals,bins=50,range=(0,max_v))
         ax.set_title("Mean Intensity Distribution",fontsize=20)
         ax.set_xlabel("Mean Intensity",fontsize=15)
         fig.set_size_inches(9, 6)

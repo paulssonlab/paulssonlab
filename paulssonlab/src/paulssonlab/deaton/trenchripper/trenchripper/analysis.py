@@ -1,25 +1,34 @@
 # fmt: off
 from .utils import pandas_hdf5_handler
 from .trcluster import dask_controller
+
 import h5py
+import os
+
 import skimage as sk
 import pandas as pd
 import numpy as np
-import os
+import dask.dataframe as dd
+import dask.delayed as delayed
+
+from distributed.client import futures_of
+from time import sleep
 
 from matplotlib import pyplot as plt
-
-## Note that this is still fairly not scalable; convert to out of memory dataframe manipulations later if necessary
+## HERE
 
 class regionprops_extractor:
-    def __init__(self,headpath,segmentationdir,intensity_channel_list=None,props=['centroid','area','mean_intensity']):
+    def __init__(self,headpath,segmentationdir,intensity_channel_list=None,include_background=False,props=['centroid','area','mean_intensity'],unpack_dict={'centroid':["centroid_y","centroid_x"]}):
         self.headpath = headpath
         self.intensity_channel_list = intensity_channel_list
+        self.intensity_channel_dict = {channel:i for i,channel in enumerate(intensity_channel_list)}
+        self.include_background = include_background
         self.kymographpath = headpath + "/kymograph"
         self.segmentationpath = headpath + "/" + segmentationdir
         self.metapath = self.kymographpath + "/metadata"
-        self.analysispath = headpath + "/analysis.pkl"
+        self.analysispath = headpath + "/analysis"
         self.props = props
+        self.unpack_dict = unpack_dict
 
     def get_file_regionprops(self,file_idx):
         segmentation_file = self.segmentationpath + "/segmentation_" + str(file_idx) + ".hdf5"
@@ -36,85 +45,129 @@ class regionprops_extractor:
         for k in range(seg_arr.shape[0]):
             for t in range(seg_arr.shape[1]):
                 labels = sk.measure.label(seg_arr[k,t])
+                ## Measure regionprops of background pixels; will always be marked as the first object
+                if self.include_background:
+                    labels += 1
                 if self.intensity_channel_list is not None:
                     for i,intensity_channel in enumerate(self.intensity_channel_list):
                         rps = sk.measure.regionprops(labels, kymo_arr_list[i][k,t])
-                        props_list = [[file_idx, k, t, obj, intensity_channel]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
+                        props_list = []
+                        for obj,rp in enumerate(rps):
+                            props_entry = [file_idx, k, t, obj, intensity_channel]
+                            for prop_key in self.props:
+                                if prop_key in self.unpack_dict.keys():
+                                    prop_split = self.unpack_dict[prop_key]
+                                    prop_output = rp[prop_key]
+                                    props_entry += [prop_output[i] for i in range(len(prop_split))]
+                                else:
+                                    props_entry += [rp[prop_key]]
+                            props_list.append(props_entry)
                         all_props_list+=props_list
+
+#                         for prop_key in self.props:
+#                             props_list.append([file_idx, k, t, obj, intensity_channel])
+#                         props_list = [[file_idx, k, t, obj, intensity_channel]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
+#                         all_props_list+=props_list
                 else:
                     rps = sk.measure.regionprops(labels)
-                    props_list = [[file_idx, k, t, obj]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
+                    props_list = []
+                    for obj,rp in enumerate(rps):
+                        props_entry = [file_idx, k, t, obj]
+                        for prop_key in self.props:
+                            if prop_key in self.unpack_dict.keys():
+                                prop_split = self.unpack_dict[prop_key]
+                                prop_output = rp[prop_key]
+                                props_entry += [prop_output[i] for i in range(len(prop_split))]
+                            else:
+                                props_entry += [rp[prop_key]]
+                        props_list.append(props_entry)
                     all_props_list+=props_list
 
+
+
+
+#                     props_list = [[file_idx, k, t, obj]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
+#                     all_props_list+=props_list
+
+        property_columns = [self.unpack_dict[prop] if prop in self.unpack_dict.keys() else [prop] for prop in self.props]
+        property_columns = [item for sublist in property_columns for item in sublist]
+
         if self.intensity_channel_list is not None:
-            column_list = ['File Index','File Trench Index','timepoints','Objectid','Intensity Channel'] + self.props
+            column_list = ['File Index','File Trench Index','timepoints','Objectid','Intensity Channel'] + property_columns
             df_out = pd.DataFrame(all_props_list, columns=column_list).reset_index()
         else:
-            column_list = ['File Index','File Trench Index','timepoints','Objectid'] + self.props
+            column_list = ['File Index','File Trench Index','timepoints','Objectid'] + property_columns
             df_out = pd.DataFrame(all_props_list, columns=column_list).reset_index()
 
-        df_out = df_out.set_index(['File Index','File Trench Index','timepoints','Objectid'], drop=True, append=False, inplace=False)
-        temp_df_path = self.kymographpath + "/temp_df_" + str(file_idx) + ".pkl"
-        df_out.to_pickle(temp_df_path)
-        return file_idx
+        file_idx = df_out.apply(lambda x: int(f"{x['File Index']:04}{x['File Trench Index']:04}{x['timepoints']:04}{x['Objectid']:02}{self.intensity_channel_dict[x['Intensity Channel']]:02}"), axis=1)
+
+        df_out["File Parquet Index"] = [item for item in file_idx]
+        df_out = df_out.set_index("File Parquet Index").sort_index()
+        del df_out["index"]
+
+        return df_out
 
     def analyze_all_files(self,dask_cont):
-        kymo_meta = pd.read_parquet(self.metapath)
-        file_list = kymo_meta["File Index"].unique().tolist()
-        num_file_jobs = len(file_list)
+        df = dd.read_parquet(self.metapath)
+        file_list = df["File Index"].unique().compute().tolist()
+#         kymo_meta = dd.read_parquet(self.metapath)
+#         file_list = kymo_meta["File Index"].unique().tolist()
 
-        random_priorities = np.random.uniform(size=(num_file_jobs,))
-        for k,file_idx in enumerate(file_list):
-            priority = random_priorities[k]
-            future = dask_cont.daskclient.submit(self.get_file_regionprops,file_idx,retries=1,priority=priority)
-            dask_cont.futures["File Index: " + str(file_idx)] = future
+        delayed_list = []
+        for file_idx in file_list:
+            df_delayed = delayed(self.get_file_regionprops)(file_idx)
+            delayed_list.append(df_delayed.persist())
 
-    def compile_data(self,dask_cont):
-        kymo_meta = pd.read_parquet(self.metapath)
-        file_list = kymo_meta["File Index"].unique().tolist()
-        num_file_jobs = len(file_list)
-        file_idx_list = dask_cont.daskclient.gather([dask_cont.futures["File Index: " + str(file_idx)] for file_idx in file_list],errors="skip")
+        ## filtering out non-failed dataframes ##
+        all_delayed_futures = []
+        for item in delayed_list:
+            all_delayed_futures += futures_of(item)
+        while any(future.status == "pending" for future in all_delayed_futures):
+            sleep(0.1)
 
-        ttl_indices = len(file_idx_list)
+        good_delayed = []
+        for item in delayed_list:
+            if all([future.status == "finished" for future in futures_of(item)]):
+                good_delayed.append(item)
 
-        df_out = []
-        for file_idx in file_idx_list:
-            temp_df_path = self.kymographpath + "/temp_df_" + str(file_idx) + ".pkl"
-            temp_df = pd.read_pickle(temp_df_path)
-            df_out.append(temp_df)
-            os.remove(temp_df_path)
-        df_out = pd.concat(df_out)
+        ## compiling output dataframe ##
+        df_out = dd.from_delayed(good_delayed).persist()
+        df_out["File Parquet Index"] = df_out.index
+        df_out = df_out.set_index("File Parquet Index", drop=True, sorted=False)
+        df_out = df_out.repartition(partition_size="25MB").persist()
 
-        kymo_meta = kymo_meta.reset_index(inplace=False)
-        kymo_meta = kymo_meta.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
-        kymo_meta = kymo_meta.sort_index()
+        kymo_df = dd.read_parquet(self.metapath)
+        kymo_df["File Merge Index"] = kymo_df["File Parquet Index"]
+        kymo_df = kymo_df.set_index("File Merge Index", sorted=True)
+        kymo_df = kymo_df.drop(["File Index","File Trench Index","timepoints","File Parquet Index"], axis=1)
 
-        df_out = df_out.reset_index(inplace=False)
-        df_out = df_out.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
-        df_out = df_out.sort_index()
+        df_out["File Merge Index"] = df_out.apply(lambda x: int(f'{x["File Index"]:04}{x["File Trench Index"]:04}{x["timepoints"]:04}'), axis=1)
+        df_out = df_out.reset_index(drop=False)
+        df_out = df_out.set_index("File Merge Index", sorted=True)
 
-        mergeddf = df_out.join(kymo_meta)
-        mergeddf = mergeddf.reset_index(inplace=False)
-        mergeddf = mergeddf.set_index(["File Index","File Trench Index","timepoints","Intensity Channel","Objectid"], drop=True, append=False, inplace=False)
-        del mergeddf["index"]
-        mergeddf = mergeddf.sort_index()
+        df_out = df_out.join(kymo_df)
+        df_out = df_out.set_index("File Parquet Index",sorted=True)
 
-        mergeddf.to_pickle(self.analysispath)
+        dd.to_parquet(
+            df_out,
+            self.analysispath,
+            engine="fastparquet",
+            compression="gzip",
+            write_metadata_file=True,
+        )
 
-    def export_all_data(self,n_workers=20,memory='4GB'):
+    def export_all_data(self,n_workers=20,memory='8GB'):
 
         dask_cont = dask_controller(walltime='01:00:00',local=False,n_workers=n_workers,memory=memory,working_directory=self.headpath+"/dask")
         dask_cont.startdask()
-#         dask_cont.daskcluster.start_workers()
         dask_cont.displaydashboard()
         dask_cont.futures = {}
 
         try:
             self.analyze_all_files(dask_cont)
-            self.compile_data(dask_cont)
-            dask_cont.shutdown()
+            dask_cont.shutdown(delete_files=False)
         except:
-            dask_cont.shutdown()
+            dask_cont.shutdown(delete_files=False)
             raise
 
 class kymograph_viewer:
@@ -154,3 +207,76 @@ class kymograph_viewer:
     def inspect_trench(self,file_idx,trench_idx,x_size=20,y_size=6):
         kymodat,segdat = self.get_kymograph_data(file_idx,trench_idx)
         self.plot_kymograph_data(kymodat,segdat,x_size=x_size,y_size=y_size)
+
+def get_image_measurements(
+    kymographpath, channels, file_idx, output_name, img_fn, *args, **kwargs
+):
+
+    df = dd.read_parquet(kymographpath + "/metadata")
+    df = df.set_index("File Parquet Index",sorted=True)
+
+    start_idx = int(str(file_idx) + "00000000")
+    end_idx = int(str(file_idx) + "99999999")
+
+    working_dfs = []
+
+    proc_file_path = kymographpath + "/kymograph_" + str(file_idx) + ".hdf5"
+    with h5py.File(proc_file_path, "r") as infile:
+        working_filedf = df.loc[start_idx:end_idx].compute()
+        trench_idx_list = working_filedf["File Trench Index"].unique().tolist()
+        for trench_idx in trench_idx_list:
+            trench_df = working_filedf[working_filedf["File Trench Index"] == trench_idx]
+            for channel in channels:
+                kymo_arr = infile[channel][trench_idx]
+                fn_out = [
+                img_fn(kymo_arr[i], *args, **kwargs)
+                    for i in range(kymo_arr.shape[0])
+                ]
+                trench_df[channel + " " + output_name] = fn_out
+            working_dfs.append(trench_df)
+
+
+    out_df = pd.concat(working_dfs)
+    return out_df
+
+
+def get_all_image_measurements(
+    headpath, output_path, channels, output_name, img_fn, *args, **kwargs
+):
+    kymographpath = headpath + "/kymograph"
+    df = dd.read_parquet(kymographpath + "/metadata")
+
+    file_list = df["File Index"].unique().compute().tolist()
+
+    delayed_list = []
+    for file_idx in file_list:
+        df_delayed = delayed(get_image_measurements)(
+            kymographpath, channels, file_idx, output_name, img_fn, *args, **kwargs
+        )
+        delayed_list.append(df_delayed.persist())
+
+    ## filtering out non-failed dataframes ##
+    all_delayed_futures = []
+    for item in delayed_list:
+        all_delayed_futures += futures_of(item)
+    while any(future.status == "pending" for future in all_delayed_futures):
+        sleep(0.1)
+
+    good_delayed = []
+    for item in delayed_list:
+        if all([future.status == "finished" for future in futures_of(item)]):
+            good_delayed.append(item)
+
+    ## compiling output dataframe ##
+    df_out = dd.from_delayed(good_delayed).persist()
+    df_out["FOV Parquet Index"] = df_out.index
+    df_out = df_out.set_index("FOV Parquet Index", drop=True, sorted=False)
+    df_out = df_out.repartition(partition_size="25MB").persist()
+
+    dd.to_parquet(
+        df_out,
+        output_path,
+        engine="fastparquet",
+        compression="gzip",
+        write_metadata_file=True,
+    )

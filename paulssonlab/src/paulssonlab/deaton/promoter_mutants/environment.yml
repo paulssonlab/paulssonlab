@@ -1,21 +1,21 @@
-name: marlin_libraries
+name: promoter_mutants
 channels:
+  - pyviz
   - conda-forge
-  - bioconda
   - defaults
 dependencies:
-  - biopython
   - black
+  - bokeh
+  - holoviews
+  - hvplot
+  - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - minimap2
   - nodejs
   - numpy
-  - openssl=1.0
   - pandas
   - pip
+  - pip:
+      - StochPy
   - pre-commit
-  - samtools
-  - scikit-learn
-  - seaborn

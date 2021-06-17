@@ -10,3 +10,4 @@ from .analysis import *
 from .tracking import *
 from .kymograph_template_match import *
 from .phase_tracking import *
+from .marlin import *

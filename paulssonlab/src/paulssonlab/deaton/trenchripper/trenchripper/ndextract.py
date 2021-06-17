@@ -211,12 +211,25 @@ class nd_metadata_handler:
         raw_metadata = nd2file.parser._raw_metadata
         imaging_settings = {}
         for key,meta in raw_metadata.image_metadata_sequence[b'SLxPictureMetadata'][b'sPicturePlanes'][b'sSampleSetting'].items():
+            out_dict = {}
             camera_settings = meta[b'pCameraSetting']
-            camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
             channel_name = camera_settings[b'Metadata'][b'Channels'][b'Channel_0'][b'Name'].decode('utf-8')
-            obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
-            spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
-            imaging_settings[channel_name] = {'camera_name':camera_name,'obj_settings':obj_settings,**spec_settings}
+            try:
+                camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
+                out_dict['camera_name'] = camera_name
+            except:
+                print("No camera name detected!")
+            try:
+                obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
+                out_dict['obj_settings'] = obj_settings
+            except:
+                print("No objective setting detected!")
+            try:
+                spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
+                out_dict.update({**spec_settings})
+            except:
+                print("No spec settings detected!")
+            imaging_settings[channel_name] = out_dict
         return imaging_settings
 
     def make_fov_df(self,nd2file, exp_metadata): #only records values for single timepoints, does not seperate between channels....
@@ -283,7 +296,8 @@ def get_tiff_tags(filepath):
     return tiff_tags
 
 class tiff_extractor:
-    def __init__(self,tiffpath,headpath,channels,tpts_per_file=100,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"]): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
+    def __init__(self,tiffpath,headpath,channels,tpts_per_file=100,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"],\
+                constant_key=None): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
         """Utility to convert individual tiff files to hdf5 archives.
 
         Attributes:
@@ -302,17 +316,21 @@ class tiff_extractor:
         self.tpts_per_file = tpts_per_file
         self.parsestr = parsestr
         self.zero_base_keys = zero_base_keys
+        self.constant_key = constant_key
 
         self.organism = ''
         self.microscope = ''
         self.notes = ''
 
-    def get_metadata(self,tiffpath,channels,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"]):
+    def get_metadata(self,tiffpath,channels,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"],constant_key=None):
         parser = compile(parsestr)
         parse_keys = [item.split("}")[0].split(":")[0] for item in parsestr.split("{")[1:]] + ["image_paths"]
 
         exp_metadata = {}
         fov_metadata = {key:[] for key in parse_keys}
+        if constant_key is not None:
+            for key in constant_key.keys():
+                fov_metadata[key] = []
 
         tiff_files = []
         for root, _, files in os.walk(tiffpath):
@@ -321,7 +339,11 @@ class tiff_extractor:
         tags = get_tiff_tags(tiff_files[0])
         exp_metadata["height"] = tags['ImageLength']
         exp_metadata["width"] = tags['ImageWidth']
-        exp_metadata['pixel_microns'] = tags['65326']
+        try:
+            exp_metadata['pixel_microns'] = tags['65326']
+        except:
+            exp_metadata['pixel_microns'] = 1
+            print("Pixel microns not detected. Global position annotations will be invalid.")
         exp_metadata["channels"] = channels
 
         for f in tiff_files:
@@ -332,6 +354,9 @@ class tiff_extractor:
                 fov_frame_dict = match.named
                 for key, value in fov_frame_dict.items():
                     fov_metadata[key].append(value)
+                if constant_key is not None:
+                    for key in constant_key.keys():
+                        fov_metadata[key].append(constant_key[key])
                 fov_metadata["image_paths"].append(f)
 
         for zero_base_key in zero_base_keys:
@@ -382,7 +407,7 @@ class tiff_extractor:
 
     def writemetadata(self,t_range=None,fov_list=None):
 
-        exp_metadata,fov_metadata = self.get_metadata(self.tiffpath,self.channels,parsestr=self.parsestr,zero_base_keys=self.zero_base_keys)
+        exp_metadata,fov_metadata = self.get_metadata(self.tiffpath,self.channels,parsestr=self.parsestr,zero_base_keys=self.zero_base_keys,constant_key=self.constant_key)
 
         if t_range != None:
             exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]
