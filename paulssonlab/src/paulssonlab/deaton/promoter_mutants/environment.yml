@@ -3,9 +3,13 @@ channels:
   - pyviz
   - conda-forge
   - defaults
+  - bioconda
 dependencies:
+  - beautifulsoup4
   - black
   - bokeh
+  - cython
+  - emcee
   - holoviews
   - hvplot
   - ipywidgets
@@ -17,5 +21,9 @@ dependencies:
   - pandas
   - pip
   - pip:
-      - StochPy
+      - bioscrape
   - pre-commit
+  - pytest
+  - python-libsbml
+  - scipy
+  - sympy
