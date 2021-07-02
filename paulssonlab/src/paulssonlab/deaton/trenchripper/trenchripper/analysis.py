@@ -209,11 +209,11 @@ class kymograph_viewer:
         self.plot_kymograph_data(kymodat,segdat,x_size=x_size,y_size=y_size)
 
 def get_image_measurements(
-    kymographpath, channels, file_idx, output_name, img_fn, *args, **kwargs
+    kymographpath, n_partitions, divisions, channels, file_idx, output_name, img_fn, *args, **kwargs
 ):
 
     df = dd.read_parquet(kymographpath + "/metadata")
-    df = df.set_index("File Parquet Index",sorted=True)
+    df = df.set_index("File Parquet Index",sorted=True,npartitions=n_partitions,divisions=divisions)
 
     start_idx = int(str(file_idx) + "00000000")
     end_idx = int(str(file_idx) + "99999999")
@@ -222,7 +222,7 @@ def get_image_measurements(
 
     proc_file_path = kymographpath + "/kymograph_" + str(file_idx) + ".hdf5"
     with h5py.File(proc_file_path, "r") as infile:
-        working_filedf = df.loc[start_idx:end_idx].compute()
+        working_filedf = df.loc[start_idx:end_idx].compute(scheduler='threads')
         trench_idx_list = working_filedf["File Trench Index"].unique().tolist()
         for trench_idx in trench_idx_list:
             trench_df = working_filedf[working_filedf["File Trench Index"] == trench_idx]
@@ -240,32 +240,45 @@ def get_image_measurements(
     return out_df
 
 
-def get_all_image_measurements(
-    headpath, output_path, channels, output_name, img_fn, *args, **kwargs
-):
+def get_all_image_measurements(dask_controller, headpath, output_path, channels, output_name, img_fn, *args, **kwargs):
     kymographpath = headpath + "/kymograph"
     df = dd.read_parquet(kymographpath + "/metadata")
+    df = df.set_index("File Parquet Index",sorted=True)
+    n_partitions,divisions = (df.npartitions,df.divisions)
 
     file_list = df["File Index"].unique().compute().tolist()
 
-    delayed_list = []
+    df_futures = []
     for file_idx in file_list:
-        df_delayed = delayed(get_image_measurements)(
-            kymographpath, channels, file_idx, output_name, img_fn, *args, **kwargs
-        )
-        delayed_list.append(df_delayed.persist())
+        df_future = dask_controller.daskclient.submit(get_image_measurements,kymographpath,n_partitions,divisions,channels,file_idx,output_name,img_fn,*args,retries=0,**kwargs)
 
-    ## filtering out non-failed dataframes ##
-    all_delayed_futures = []
-    for item in delayed_list:
-        all_delayed_futures += futures_of(item)
-    while any(future.status == "pending" for future in all_delayed_futures):
+#         df_delayed = delayed(get_image_measurements)(
+#             kymographpath, channels, file_idx, output_name, img_fn, *args, **kwargs
+#         )
+#         delayed_list.append(df_delayed.persist())
+        df_futures.append(df_future)
+
+    while any(future.status == 'pending' for future in df_futures):
         sleep(0.1)
 
-    good_delayed = []
-    for item in delayed_list:
-        if all([future.status == "finished" for future in futures_of(item)]):
-            good_delayed.append(item)
+    good_futures = []
+    for future in df_futures:
+        if future.status == 'finished':
+            good_futures.append(future)
+
+    good_delayed = [delayed(good_future.result)() for good_future in good_futures]
+
+#     ## filtering out non-failed dataframes ##
+#     all_delayed_futures = []
+#     for item in delayed_list:
+#         all_delayed_futures += futures_of(item)
+#     while any(future.status == "pending" for future in all_delayed_futures):
+#         sleep(0.1)
+
+#     good_delayed = []
+#     for item in delayed_list:
+#         if all([future.status == "finished" for future in futures_of(item)]):
+#             good_delayed.append(item)
 
     ## compiling output dataframe ##
     df_out = dd.from_delayed(good_delayed).persist()

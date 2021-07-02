@@ -26,4 +26,5 @@ dependencies:
   - pytest
   - python-libsbml
   - scipy
+  - seaborn
   - sympy
