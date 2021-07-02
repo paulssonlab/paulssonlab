@@ -564,6 +564,7 @@ class fish_analysis():
         display(channel_tab)
 
     def get_barcode_df(self,epsilon=0.1):
+        print("Getting Barcode df...")
         self.kymograph_metadata = dd.read_parquet(self.percentilepath)
         trench_group = self.kymograph_metadata.groupby(["trenchid"])
         barcodes = trench_group.apply(lambda x: np.array(list(itertools.chain.from_iterable([x[channel].tolist()\
@@ -586,6 +587,7 @@ class fish_analysis():
         self.barcode_df = barcode_df.reset_index(drop=False)
 
     def get_nanopore_df(self):
+        print("Getting Nanopore df...")
         nanopore_df = pd.read_csv(self.nanoporedfpath,delimiter="\t",index_col=0)
 
         nanopore_lookup = {}
@@ -596,6 +598,7 @@ class fish_analysis():
         del nanopore_lookup
 
     def get_merged_df(self):
+        print("Merging...")
         mergeddf = []
 
         if self.hamming_thr == 0:
@@ -609,11 +612,9 @@ class fish_analysis():
 
         else:
             nanopore_idx = np.array([np.array(list(item)).astype(bool) for item in self.nanopore_lookup_df.index.tolist()]).astype(bool)
-            nanopore_idx = da.from_array(nanopore_idx,chunks=(20000,30))
-
+            nanopore_idx = da.from_array(nanopore_idx,chunks=(10000,30))
             queries = np.array([np.array(list(item)).astype(bool) for item in self.barcode_df["Barcode"].tolist()]).astype(bool)
-            queries = da.from_array(queries,chunks=(20000,30))
-
+            queries = da.from_array(queries,chunks=(10000,30))
             match = (nanopore_idx.astype("uint8")@queries.T.astype("uint8"))+\
             ((~nanopore_idx).astype("uint8")@(~queries).T.astype("uint8"))
             hamming_dist = self.barcode_len-match
@@ -621,10 +622,8 @@ class fish_analysis():
             closest_match = da.argmin(hamming_dist,axis=0)
             closest_match[~closest_match_thr] = -1
             closest_match = closest_match.compute()
-
             filtered_lookup = {query_idx:target_idx for query_idx,target_idx in enumerate(closest_match) \
                                if target_idx != -1}
-
             mergeddf = []
             for i,row in self.barcode_df.iterrows():
                 try:

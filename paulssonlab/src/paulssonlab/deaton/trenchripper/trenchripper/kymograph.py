@@ -22,6 +22,7 @@ import dask.delayed as delayed
 from skimage import filters
 from .trcluster import hdf5lock
 from .utils import multifov,pandas_hdf5_handler,writedir
+from .daskutils import add_list_to_column
 from tifffile import imread
 
 # def get_focus_score(img_arr):
@@ -1206,7 +1207,6 @@ class kymograph_cluster:
 
         ### get coords ###
         df_futures = []
-#         delayed_list = []
         for k,fov_idx in enumerate(fov_list):
             working_fovdf = fovdf.loc[fov_idx]
             working_files = working_fovdf["File Index"].unique().tolist()
@@ -1219,20 +1219,10 @@ class kymograph_cluster:
 
             df_future = dask_controller.daskclient.submit(self.save_coords,fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future,retries=0)
             df_futures.append(df_future)
-#             df_delayed = delayed(self.save_coords)(fov_idx,x_crop_futures,in_bounds_future,drift_orientation_and_initend_future)
-#             delayed_list.append(df_delayed)
 
-        ## filtering out non-failed dataframes ##
-#         all_delayed_futures = []
-#         for item in delayed_list:
-#             all_delayed_futures+=futures_of(item)
         while any(future.status == 'pending' for future in df_futures):
             sleep(0.1)
 
-#         good_delayed = []
-#         for item in delayed_list:
-#             if all([future.status == 'finished' for future in futures_of(item)]):
-#                 good_delayed.append(item)
         good_futures = []
         for future in df_futures:
             if future.status == 'finished':
@@ -1291,21 +1281,21 @@ class kymograph_cluster:
         del df["key"]
         return df
 
-    def add_list_to_column(self,df,list_to_add,column_name):
-        df = df.repartition(partition_size="25MB").persist()
-        df["index"] = 1
-        idx = df["index"].cumsum()
-        df["index"] = idx
+#     def add_list_to_column(self,df,list_to_add,column_name):
+#         df = df.repartition(partition_size="25MB").persist()
+#         df["index"] = 1
+#         idx = df["index"].cumsum()
+#         df["index"] = idx
 
-        list_to_add = pd.DataFrame(list_to_add)
-        list_to_add["index"] = idx
-        df = df.join(list_to_add.set_index('index'),how="left",on="index")
+#         list_to_add = pd.DataFrame(list_to_add)
+#         list_to_add["index"] = idx
+#         df = df.join(list_to_add.set_index('index'),how="left",on="index")
 
-        df = df.drop(["index"],axis=1)
+#         df = df.drop(["index"],axis=1)
 
-        df.columns = df.columns.tolist()[:-1] + [column_name]
+#         df.columns = df.columns.tolist()[:-1] + [column_name]
 
-        return df
+#         return df
 
     def filter_trenchids(self,channel,df,focus_threshold = 0.,intensity_threshold=0.,perc_above = 0.):
         num_above = np.round(len(df["timepoints"].unique())*perc_above).astype(int)
@@ -1327,14 +1317,14 @@ class kymograph_cluster:
         new_trenches = [element for list_ in new_trenches for element in list_]
         df = df.drop(["trenchid","trench"],axis=1)
 
-        df = self.add_list_to_column(df,new_trenches,"trench")
+        df = add_list_to_column(df,new_trenches,"trench")
         cols = df.columns.tolist()
         reordered_columns = cols[:2] + cols[-1:] + cols[2:-1]
         df = df[reordered_columns]
 
         fov_idx = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}{x["timepoints"]:04}'), axis=1).compute().tolist()
 
-        df = self.add_list_to_column(df,fov_idx,"FOV Parquet Index")
+        df = add_list_to_column(df,fov_idx,"FOV Parquet Index")
         df = df.set_index("FOV Parquet Index")
         return df
 
@@ -1425,8 +1415,8 @@ class kymograph_cluster:
         file_indices.index = outputdf.index
         file_trenchid.index = outputdf.index
 
-        outputdf = self.add_list_to_column(outputdf,file_indices[0].tolist(),"File Index")
-        outputdf = self.add_list_to_column(outputdf,file_trenchid[0].tolist(),"File Trench Index")
+        outputdf = add_list_to_column(outputdf,file_indices[0].tolist(),"File Index")
+        outputdf = add_list_to_column(outputdf,file_trenchid[0].tolist(),"File Trench Index")
 
         parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):04}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1, meta=int)
         outputdf["File Parquet Index"] = parq_file_idx
@@ -1451,9 +1441,15 @@ class kymograph_cluster:
         outputdf = self.reindex_trenches(outputdf)
         outputdf = self.add_trenchids(outputdf)
 
+        ## NEW INDEX
+        print("New Trench Index")
+        data_parquet["Trenchid Timepoint Index"] = data_parquet.apply(lambda x: int(f'{x["trenchid"]:08}{x["timepoints"]:04}'), axis=1, meta=int)
+        data_parquet["Trenchid Timepoint Index"] = data_parquet["Trenchid Timepoint Index"].astype(int)
+        ## END
+
         shutil.rmtree(self.kymographpath + "/trenchiddf")
 
-        dd.to_parquet(outputdf, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True)
+        dd.to_parquet(outputdf, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True,overwrite=True)
 
     def kymo_report(self):
         df = dd.read_parquet(self.kymographpath + "/metadata/").persist()
