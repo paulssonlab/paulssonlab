@@ -27,6 +27,7 @@ class marlin_extractor:
         self,
         hdf5inputpath,
         headpath,
+        pixel_microns=0.2125, ##hack assuming ti5 20x
         tpts_per_file=100,
         parsestr="fov={fov:d}_config={channel}_t={timepoints:d}.hdf5",
         metaparsestr="metadata_t={timepoint:d}.hdf5",
@@ -50,6 +51,8 @@ class marlin_extractor:
         self.parsestr = parsestr
         self.metaparsestr = metaparsestr
         self.zero_base_keys = zero_base_keys
+
+        self.pixel_microns = pixel_microns
 
         self.organism = ""
         self.microscope = ""
@@ -115,7 +118,7 @@ class marlin_extractor:
         exp_metadata["num_fovs"] = len(set(fov_metadata["fov"]))
         exp_metadata["frames"] = list(set(fov_metadata["timepoints"]))
         exp_metadata["num_frames"] = len(exp_metadata["frames"])
-        exp_metadata["pixel_microns"] = 0.16136255757596  ##hack assuming ti5 40x
+        exp_metadata["pixel_microns"] = self.pixel_microns
         fov_metadata = pd.DataFrame(fov_metadata)
         fov_metadata = fov_metadata.set_index(["fov", "timepoints"]).sort_index()
 
