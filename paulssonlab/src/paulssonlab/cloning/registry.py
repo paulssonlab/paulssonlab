@@ -24,6 +24,7 @@ from paulssonlab.cloning.workflow import (
     part_entry_to_seq,
     re_digest_part,
     is_bases,
+    ID_REGEX,
 )
 from paulssonlab.api import regex_key
 from paulssonlab.api.benchling import upload_sequence
@@ -62,7 +63,7 @@ class GDriveClient(object):
     def keys(self):
         raise NotImplementedError
 
-    def __del__(self, key):
+    def __delitem__(self, key):
         self[key] = None
 
     def __iter__(self):
@@ -297,8 +298,8 @@ class ItemProxy(object):
     def __contains__(self, key):
         return getattr(self._obj, f"_{self._name}_contains")(key)
 
-    def __del__(self, key):
-        return getattr(self._obj, f"_{self._name}_del")(key)
+    def __delitem__(self, key):
+        return getattr(self._obj, f"_{self._name}_delitem")(key)
 
     def __iter__(self):
         return getattr(self._obj, f"_{self._name}_iter")()
@@ -402,7 +403,7 @@ class FileClient(GDriveClient):
                 )
                 full_key = (*key[:-1], matching_key)
                 return full_key, is_remote
-            except:
+            except ValueError:
                 continue
         raise KeyError(key)
 
@@ -417,7 +418,7 @@ class FileClient(GDriveClient):
         try:
             self._find_loc(key)
             return True
-        except:
+        except KeyError:
             return False
 
     def _keys_loc(self):
@@ -464,7 +465,7 @@ class FileClient(GDriveClient):
             return
         try:
             existing_key, is_remote = self._find_loc(key)
-        except:
+        except KeyError:
             existing_key = None
         extension = value_to_extension(value)
         if extension:
@@ -487,7 +488,7 @@ class FileClient(GDriveClient):
         else:
             return key in self.remote
 
-    def _raw_del(self, key):
+    def _raw_delitem(self, key):
         self._raw_setitem(key, None)
 
     def _raw_iter(self):
@@ -529,12 +530,12 @@ class FileClient(GDriveClient):
                 raise ValueError(
                     f"attempting to set key {key} that conflicts with existing key {full_key} (remote={is_remote})"
                 )
-        except:
+        except KeyError:
             pass
         self.local[key] = value
 
     _bytes_contains = _raw_contains
-    _bytes_del = _raw_del
+    _bytes_delitem = _raw_delitem
     _bytes_iter = _raw_iter
 
     def _bytes_items(self):
@@ -566,7 +567,7 @@ class FileClient(GDriveClient):
             file["mimeType"] = filename_to_mimetype(key[-1])
 
     _content_contains = _raw_contains
-    _content_del = _raw_del
+    _content_delitem = _raw_delitem
     _content_iter = _raw_iter
 
     def _content_items(self):
@@ -685,16 +686,18 @@ class Registry(object):
                 gdrive_ids[key] = file["id"]
         return gdrive_ids
 
-    @property
-    def registry(self):
-        return self.gdrive_ids.keys()
-
     def __iter__(self):
-        yield from self.registry
+        yield from self.keys()
+
+    def keys(self):
+        return self.gdrive_ids.keys()
 
     def items(self):
         for key in self:
             yield key, self[key]
+
+    def __contains__(self, key):
+        return key in self.keys()
 
     def __getitem__(self, key):
         if key in self.clients:
@@ -1002,6 +1005,70 @@ class Registry(object):
     # def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
     #     df, prefix, type_ = self.get_df_by_name(name, types=types)
     #     return self._get(df, prefix, type_, name)
+
+    def get_with_prefix(self, name, prefix, type_):
+        # print(">", name, prefix, type_)
+        if type_ == "parts":
+            client = None
+            for key in self.keys():
+                if key[1] != "parts":
+                    continue
+                if name in self[key]:
+                    prefix = key[0]
+                    client = self[key]
+                    break
+            if client is None:
+                raise ValueError(f"could not find part '{name}'")
+        else:
+            key = (prefix, type_)
+            if key not in self:
+                raise ValueError(f"prefix '{prefix}' does not have a '{type_}'")
+            client = self[key]
+            if name not in client:
+                raise ValueError(f"could not find '{name}'")
+        entry = client[name]
+        entry["_id"] = name
+        entry["_type"] = type_
+        entry["_prefix"] = prefix
+        if type_ in TYPES_WITH_MAPS:
+            try:
+                map_client = self[(prefix, "maps")]
+            except:
+                raise ValueError(f"no maps folder for prefix '{prefix}'")
+            if name not in map_client:
+                raise ValueError(f"could not find map for '{name}'")
+            entry["_seq"] = map_client[name]
+        elif type_ == "parts":
+            res = eval_exprs_by_priority(entry["Usage"], self.get)
+            if res is None:
+                seq = None
+            else:
+                seq = res.get("_seq")
+            if seq is None:
+                seq = part_entry_to_seq(entry)
+            seq.id = seq.name = seq.description = name
+            seq = seq.annotate(name)
+            entry["_seq"] = seq
+        elif "Sequence" in entry:
+            # oligos are sometimes ds-DNA and sometimes ss-DNA
+            # so make everything into a DsSeqRecord
+            # this also enables nice convenience functions like .annotate()
+            entry["_seq"] = DsSeqRecord(Seq(entry["Sequence"]))
+        return entry
+
+    def get(self, name, types=("plasmids", "strains", "oligos", "parts")):
+        match = re.match(ID_REGEX, name)
+        if match:
+            prefix = match.group(1)
+        else:
+            prefix = None
+            types = ("parts",)
+        for type_ in types:
+            try:
+                return self.get_with_prefix(name, prefix, type_)
+            except ValueError:
+                pass
+        raise ValueError(f"could not find '{name}'")
 
     def sync_benchling(
         self, overwrite=None, return_data=False, progress_bar=PROGRESS_BAR

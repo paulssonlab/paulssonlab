@@ -42,8 +42,10 @@ def _assemble_goldengate(
 def _assemble_gibson(
     seq1,
     seq2,
+    min_overlap=15,
     max_overlap=200,
     junction_annotation="Gibson homology",
+    junction_annotation_type="misc_feature",
     keep_junction_annotations=True,
 ):
     if seq2 is None:
@@ -78,6 +80,18 @@ def _assemble_gibson(
             product = seq1.fill_in("downstream").slice(
                 None, None, annotation_stop=len(seq1) - junction_length
             ) + seq2.fill_in("upstream").slice(junction_length, None)
+        if junction_length < min_overlap:
+            # instead of returning junction_length and thresholding in assemble,
+            # we threshold in this function so that any thresholding kwargs can be handled
+            # in a method-dependent way
+            return product, -1
+        if junction_annotation is not None:
+            feature = SeqFeature(
+                FeatureLocation(len(seq1) - junction_length, len(seq1)),
+                type=junction_annotation_type,
+            )
+            feature.qualifiers["label"] = [junction_annotation]
+            product.features.append(feature)
         return product, junction_length
     else:
         return None, -1
@@ -107,9 +121,9 @@ class DsSeqRecord(SeqRecord):
             id = id or seq.id
             name = name or seq.name
             description = description or seq.description
-            features = features or seq.features.copy()
-            annotations = annotations or seq.annotations.copy()
-            letter_annotations = letter_annotations or seq.letter_annotations.copy()
+            features = features or deepcopy(seq.features)
+            annotations = annotations or deepcopy(seq.annotations)
+            letter_annotations = letter_annotations or deepcopy(seq.letter_annotations)
             if isinstance(seq, DsSeqRecord):
                 circular = circular if circular is not None else seq.circular
                 upstream_overhang = (
@@ -283,7 +297,7 @@ class DsSeqRecord(SeqRecord):
             stop = len(self) - abs(self.downstream_overhang)
         feature = SeqFeature(FeatureLocation(start, stop), type=type)
         feature.qualifiers["label"] = [label]
-        return self.__class__(self, features=[feature, *self.features])
+        return self.__class__(self, features=[*self.features, feature])
 
     def annotate_overhangs(self, type="misc_feature"):
         features = []
@@ -471,7 +485,13 @@ class DsSeqRecord(SeqRecord):
                 f"attempting to ligate incompatible overhangs: {self.downstream_overhang_seq} ({format_sign(self.downstream_overhang)}) with {other.upstream_overhang_seq} ({format_sign(other.upstream_overhang)})"
             )
         # trim overhang
-        other = other[abs(self.downstream_overhang) :]
+        # other[abs(self.downstream_overhang) :] would truncate annotations
+        other = other.slice(
+            abs(self.downstream_overhang),
+            None,
+            annotation_start=None,
+            annotation_stop=None,
+        )
         new = self.__class__(
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
@@ -499,6 +519,13 @@ class DsSeqRecord(SeqRecord):
         if isinstance(other, Seq):
             other = self.__class__(other)
         return other.__add__(self)
+
+    def __eq__(self, other):
+        # TODO
+        return self.seq.lower() == other.seq.lower()
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __repr__(self):
         return (
@@ -659,7 +686,7 @@ def _slice_seqrecord_feature(
     feature, start, stop, annotation_start=True, annotation_stop=True
 ):
     # annotation_start/stop=True means cut annotations along sequence slice boundaries
-    # =False causes unintuitive behavior, so set to None instead
+    # =False causes unintuitive behavior, so set to None instead to never truncate annotations
     if annotation_start is True:
         annotation_start = start
     elif annotation_start is False:
