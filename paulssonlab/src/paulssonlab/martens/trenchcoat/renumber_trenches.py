@@ -64,6 +64,7 @@ def adjust_trench_number(df, threshold):
             # conversion to f64. Options are:
             # 1. converting back to int afterwards, or
             # 2. using a groupby method, which might preserve data types.
+            # 3. store the result in a numpy array, and then add the numpy array as a new column at the end?
             if diff < threshold:
                 df.loc[this_fr.index, ("corrected_trench_label")] = this_fr[
                     "info_trench_number"
@@ -379,6 +380,9 @@ def cross_corr_offsets(file, fov, z_level, channel, df, in_file):
 
 
 def start_cross_corr(in_file, channel):
+    """
+    Use the cross-correlation computed between pairs of images to determine the amount of shift.
+    """
     files = get_files_list(in_file)
 
     h5_in = tables.open_file(in_file, "r")
@@ -406,6 +410,7 @@ def start_cross_corr(in_file, channel):
             fovs = df_fov_metadata["info_fov"].unique()
 
             for fov in fovs:
+                print("FOV {}".format(fov))
                 df_this_fov = df_fov_metadata[df_fov_metadata["info_fov"] == fov]
                 z_levels = file_to_z[file]
 
@@ -452,6 +457,7 @@ def main_renumbering_function(
     # Method 1
     # Use images to calculate offsets
     if method == "image":
+        print("Using image cross correlations to calculate drift.")
         df_offsets = start_cross_corr(in_file, channel)
         # DEBUG
         df_offsets.to_hdf("image_result.h5", "data")
@@ -467,9 +473,10 @@ def main_renumbering_function(
     # Method 2
     # Load the FOV information
     elif method == "stage":
+        print("Using stage information to calculate drift.")
         xyz_data = load_xyz_data(in_file)
         # DEBUG
-        xyz_data.to_hdf("stage_result.h5", "data")
+        # xyz_data.to_hdf("stage_result.h5", "data")
 
         # Merge the trench regions coordinates table with the timestamps / xyz table
         regions = pandas.merge(
