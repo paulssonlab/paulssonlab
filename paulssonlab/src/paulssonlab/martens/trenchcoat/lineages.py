@@ -83,7 +83,7 @@ def make_lineage_table_type(filename_itemsize, segchannel_itemsize):
         "corrected_trench_label": tables.UInt16Col(),
         "info_seg_channel": tables.StringCol(segchannel_itemsize),
         "lineage": tables.UInt16Col(),
-        "progeny_id": tables.UInt16Col(),
+        "progeny_id": tables.UInt64Col(),
         "info_label": tables.UInt16Col(),
     }
 
@@ -320,21 +320,36 @@ def get_matching_labels_global(
 
 def make_kymograph_from_centroids(table, is_top_row, trench_length):
     """
-    1. Input dataframe slice corresponding to a single trench with a given File, FOV & trench number,
-       a segmentation channel, and whether the row of trenches is top or bottom.
-       Output a "kymograph" stored as a list of lists,
-       and top_row (top_row == True) or bottom_row (top_row == False):
-    a. Each sub-list represents the cells at each subsequent time frame.
-    b. Its contents are the cells, ordered from the feeding channel to the end of the trench:
-       re-order (label) them by comparing centroids (safe),
-       or possibly assuming that their labeling was in this order (risky).
-    c. A "cell" is stored in said list as the connected component region's label (integer).
+    Input:
+        a. Dataframe slice corresponding to a single trench with a given
+            - File
+            - FOV
+            - Trench number
+            - Segmentation channel
+        b. Whether the row of trenches is top or bottom
+        c. The length of the trenches (to not count cell divisions for cells leaving tne trench)
+
+    Output a "kymograph" stored as a list of lists:
+        a. Each sub-list represents the cells at each subsequent time frame.
+        b. Its contents are the cells, ordered from the feeding channel to the end of the trench:
+           Two choices:
+               - Always re-order (re-label) them by comparing centroids (safe)
+               - or assume that cells were labeled in the correct order (risky)
+            We choose to apply the sorting, using is_top_row as a guide.
+        c. A "cell" is stored in said list as:
+            - the connected component region's label (integer value).
+            - the cell length
+            - whether or not the cell overlaps the tench opening (the "edge")
+
+    Also return the total number of cells.
     """
     kymograph = []
     total_cells = 0
 
     # Get unique frame numbers from the table, in sorted order
     # NOTE this code assumes no gaps (indexing by lists), and in sorted frame order
+    # Gaps could arise, for example, for trenches at the edge of an FOV, which can fall out due to stage drift,
+    # or if a frame went missing for any other reason.
     # TODO how to check for gaps? What to do if there are gaps?
     # One fix is to index with a dictionary.
     # Or, could we:
@@ -353,8 +368,8 @@ def make_kymograph_from_centroids(table, is_top_row, trench_length):
 
         # Sort the sliced dataframe by centroid row
         # NOTE: Ascending will be False (top) or True (bottom), depending on top or bottom row of trenches.
-        # NOTE: we use the "col" because the arrays are F-ordered.
-        # A more typical C-ordered image would use the "row" to sort.
+        # NOTE: we use the "centroid_col" because the arrays are F-ordered.
+        # A more typical C-ordered image would use the "centroid_row" to sort.
         cells_this_frame.sort_values(
             by=["centroid_col"], inplace=True, ascending=is_top_row
         )
@@ -389,11 +404,37 @@ def make_kymograph_from_centroids(table, is_top_row, trench_length):
 
 def run_kymograph_to_lineages(kymograph, total_cells, length_buffer):
     """
-    Input labeled kymograph for a given FOV / trench, and the row for appending to the table.
-    Write labeled cell lineage information to a table.
+    Input
+        - labeled kymograph for a given FOV / trench
+        - total number of cells (used to initialize numpy arrays)
+        - length buffer (in pixels) for calling cell divisions
+          (allow small decreases in size to not be flagged as a division)
+
+    Return a Pandas dataframe:
+        - info_frame
+        - info_label
+        - lineage
+        - progeny_id
+
+    This dataframe can then be merged back with the pre-existing information (File, FOV, Z_level, etc.),
+    thereby adding lineage & progeny_id columns (the lineage information).
+
+    Each cell at frame 0 is said to be the progenitor of its own lineage.
+    Every lineage gives rise to progeny.
+    Progeny are assigned unique identifiers according to a binary tree system (n: 2n, 2n+1) (1: 2,3; 2: 4,5; 3: 6,7 etc.)
+
     This algorithm makes assumptions: see above.
-    Allow length_buffer pixel margin of error +/- cell length b/w time frames,
-    for determining whether or not a division took place.
+
+    It works by greedily handling cells which are related to the deepest cell, given the above assumptions.
+    Priority is handled by carefully managing the order in which cells are appended to & popped from the queue.
+    We call each cell to be processed a "job," which conveniently is just a dict (hashmap), and the queue is a "stack" (a list).
+    When a cell is popped from the stack, then its data are immediately added to result, which is a dict of numpy arrays.
+    Then, its progeny are added to the queue.
+
+    Each lineage is handled with its own queue.
+
+    Finally, the results dict is converted to a Pandas dataframe.
+
     TODO allow the user to change other parameters?
     """
     # This is a dict of numpy arrays.
@@ -405,7 +446,7 @@ def run_kymograph_to_lineages(kymograph, total_cells, length_buffer):
         "info_frame": numpy.empty(total_cells, dtype=numpy.uint16),
         "info_label": numpy.empty(total_cells, dtype=numpy.uint16),
         "lineage": numpy.empty(total_cells, dtype=numpy.uint16),
-        "progeny_id": numpy.empty(total_cells, dtype=numpy.uint16),
+        "progeny_id": numpy.empty(total_cells, dtype=numpy.uint64),
     }
 
     # In the zeroth time frame, define cells as lineage progenitors.
@@ -527,11 +568,18 @@ def run_kymograph_to_lineages(kymograph, total_cells, length_buffer):
 def run_lineages(df, trench_length, length_buffer, row_number):
     # This is an entire column of row numbers. They are all the same.
     # Convert to a single number.
+    # FIXME can I just use .loc  to get the zeroth element, without calling unique()?
     row_number = row_number.unique()[0]
 
     # Check the number of the row: even or odd, top or bottom
+    # NOTE this assumes that there are only 2 rows!!
+    # For other configurations, there would need to be a different way of specifying whether
+    # the trench opening is at the bottom (as in a top row), or at the top (as in a bottom row).
+    # Howvever, a boolean value could still be passed along.
+    # The location of the trench opening is crucial for determinining the direction of cell division.
     is_top_row = (row_number % 2) == 0
 
+    # Creates a "kymograph" (list of lists)
     (kymograph, total_cells) = make_kymograph_from_centroids(
         df, is_top_row, trench_length
     )
@@ -599,7 +647,7 @@ def main_lineages_function(infile, outfile, length_buffer, trench_length):
     # We don't care about the numbering within groups, so drop it.
     result = result.drop(["level_6"], axis=1)
 
-    # Merge into the original dataframe using file, fov, frame, z_level, seg_channel, info_label?
+    # Merge into the original dataframe using file, fov, frame, z_level, row_number, corrected_trench_label, seg_channel, info_label
     on = [
         "info_file",
         "info_fov",

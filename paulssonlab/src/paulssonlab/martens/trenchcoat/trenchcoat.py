@@ -7,6 +7,7 @@ from metadata import main_print_metadata_function
 from corrections import main_corrections_function
 from segmentation import main_segmentation_function
 from trench_detect import main_detection_function
+from write_kymographs import main_kymographs_function
 from renumber_trenches import main_renumbering_function
 from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
@@ -174,7 +175,6 @@ def browse_hdf5(
     "masks_file",
     required=False,
     type=str,
-    default="SEG/",
     help="Input HDF5 file with masks.",
 )
 @click.option(
@@ -228,6 +228,15 @@ def browse_hdf5(
     type=str,
     help="Path to HDF5 file containing cell measurements for computed image.",
 )
+@click.option(
+    "-P",
+    "--precomputed",
+    "precomputed",
+    required=True,
+    default=False,
+    type=bool,
+    help="Specify whether kymographs of intensity images & masks were pre-computed.",
+)
 def browse_kymographs(
     images_file,
     masks_file,
@@ -237,11 +246,12 @@ def browse_kymographs(
     lineages_file,
     viewer_params_file,
     data_table_file,
+    precomputed,
 ):
     """
     Use Napari to browse kymographs.
     The regions file must be post-processed for correcting stage drift,
-    and merging cell information with trench information.
+    and for merging cell information with trench information.
     Corrections are unimplemented.
     """
     main_kymograph_browser_function(
@@ -253,6 +263,7 @@ def browse_kymographs(
         lineages_file=lineages_file,
         viewer_params_file=viewer_params_file,
         data_table_file=data_table_file,
+        precomputed=precomputed,  # Are the intensity images, masks pre-computed?
     )
 
 
@@ -717,6 +728,66 @@ def lineage_tracking(in_file, out_file, length_buffer, trench_length):
         outfile=out_file,
         length_buffer=length_buffer,
         trench_length=trench_length,
+    )
+
+
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--images-file",
+    "images_file",
+    required=True,
+    default="HDF5/data.h5",
+    type=str,
+    help="Input HDF5 file with intensity images. Also required for converting masks, because it contains essential metadata.",
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--masks-file",
+    "masks_file",
+    required=False,
+    default="SEG/masks.h5",
+    type=str,
+    help="Input HDF5 file with segmentation masks.",
+    show_default=True,
+)
+@click.option(
+    "-R",
+    "--regions-file",
+    "regions_file",
+    required=True,
+    default="corrected_regions.h5",
+    type=str,
+    help='HDF5 file with regions coordinates table. Assumes that stage drift has been accounted for and that trenches have been renumbered ("corrected_trench_label").',
+    show_default=True,
+)
+@click.option(
+    "-o",
+    "--out-dir",
+    "out_dir",
+    required=True,
+    type=str,
+    help="Directory to write HDF5 file with kymographs.",
+)
+@click.option(
+    "-n",
+    "--num-cpu",
+    "num_cpu",
+    required=False,
+    default=None,
+    type=click.IntRange(1, None, clamp=True),
+    help="Number of CPUs to use.  [default: all CPUs]",
+    show_default=False,
+)
+def write_kymographs(images_file, masks_file, regions_file, out_dir, num_cpu):
+    """Pre-render intensity image kymographs & write to disk."""
+    main_kymographs_function(
+        images_file=images_file,
+        masks_file=masks_file,
+        regions_file=regions_file,
+        out_dir=out_dir,
+        num_cpu=num_cpu,
     )
 
 

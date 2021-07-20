@@ -531,6 +531,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
 
     # Segmentation parameters, in YAML
     # TODO: verify that the channels specified in the params match the available channels in the files?
+    # TODO: if an algorithm doesn't require any parameters, what do we do?
     params = read_params_file(params_file)
 
     # HDF5 file with images & metadata
@@ -549,11 +550,12 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     with Pool(processes=num_cpu) as pool:
         # Make a dict of algorithms
         algo_to_func = {
+            "whole_trench": algorithms.measure_whole_trench,
             "threshold": algorithms.run_single_threshold,
-            #'dual_threshold'    : algorithms.run_dual_thresholding,
             "niblack": algorithms.run_niblack_segmentation,
             "fluor_phase": algorithms.run_fluor_phase_segmentation,
             "fluor_sharpen": algo_sharp.run_fluor_sharp_segmentation
+            #'dual_threshold'    : algorithms.run_dual_thresholding,
             #'niblack_phase_gpu' : algorithms.run_segmentation_GPU
         }
 
@@ -658,7 +660,8 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
 
     print("Done computing masks & measuring properties.")
 
-    # Link all the individual masks & properties files into respective H5 file, to make it easier to iterate them
+    # Link all the individual masks & properties files into respective H5 file,
+    # to make it easier to iterate them.
     print("Linking masks...")
     link_files(out_dir_masks, "masks")
     link_files(out_dir_tables, "tables")
@@ -668,6 +671,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     in_file = os.path.join(out_dir, "TABLES/tables.h5")
     out_file = os.path.join(out_dir, "TABLES/tables_merged.h5")
 
+    # regions_file is either a str, or None
     if regions_file:
         merge_tables(in_file, out_file, channels, params.keys(), file_names, True)
     else:

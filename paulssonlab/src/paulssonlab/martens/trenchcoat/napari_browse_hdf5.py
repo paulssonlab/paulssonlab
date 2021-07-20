@@ -743,116 +743,118 @@ def main_hdf5_browser_function(
     If specified, can also browse labeled regions, corresponding to either trenches or segmented cells.
     Use a YAML file to specify the Napari settings.
     """
+    # Initialilize the viewer
+    viewer = napari.Viewer()
 
-    with napari.gui_qt():
-        viewer = napari.Viewer()
+    # Load the image layer params for napari
+    # TODO params for masks layers? regions layers?
+    layer_params = read_params_file(napari_settings_file)
 
-        # Load the image layer params for napari
-        # TODO params for masks layers? regions layers?
-        layer_params = read_params_file(napari_settings_file)
+    # File with images & metadata
+    h5file = tables.open_file(images_file, "r")
 
-        # File with images & metadata
-        h5file = tables.open_file(images_file, "r")
+    # Get the largest extents across all the nd2 files within the h5 file,
+    # so that the dask array is made with the proper min, max dimensions for each dimension.
+    attributes = ["fields_of_view", "frames", "z_levels"]
+    extents = {}
+    for a in attributes:
+        (smallest, largest) = get_largest_extents_hdf5(h5file, a)
+        if smallest == largest:
+            extents[a] = [smallest]
+        else:
+            extents[a] = [i for i in range(smallest, largest + 1)]
 
-        # Get the largest extents across all the nd2 files within the h5 file,
-        # so that the dask array is made with the proper min, max dimensions for each dimension.
-        attributes = ["fields_of_view", "frames", "z_levels"]
-        extents = {}
-        for a in attributes:
-            (smallest, largest) = get_largest_extents_hdf5(h5file, a)
-            if smallest == largest:
-                extents[a] = [smallest]
-            else:
-                extents[a] = [i for i in range(smallest, largest + 1)]
+    # Get the height & width, while checking that they are identical across all nd2 files
+    height = metadata_attributes_equal(h5file, "height")
+    width = metadata_attributes_equal(h5file, "width")
 
-        # Get the height & width, while checking that they are identical across all nd2 files
-        height = metadata_attributes_equal(h5file, "height")
-        width = metadata_attributes_equal(h5file, "width")
+    # Define the channels
+    channels = metadata_array_equal(h5file, "channels")
+    channels = [c.decode("utf-8") for c in channels]
 
-        # Define the channels
-        channels = metadata_array_equal(h5file, "channels")
-        channels = [c.decode("utf-8") for c in channels]
+    # Iterate the H5 file images & lazily load them into a dask array
+    file_nodes = [x._v_name for x in h5file.list_nodes("/Images")]
 
-        # Iterate the H5 file images & lazily load them into a dask array
-        file_nodes = [x._v_name for x in h5file.list_nodes("/Images")]
+    h5file.close()
 
-        h5file.close()
+    # Image layers
+    add_image_layers(
+        images_file,
+        file_nodes,
+        width,
+        height,
+        extents["fields_of_view"],
+        extents["frames"],
+        extents["z_levels"],
+        viewer,
+        channels,
+        layer_params,
+        corrections_file,
+    )
 
-        # Image layers
-        add_image_layers(
-            images_file,
+    # Regions (trench) layer
+    # TODO call this multiple times, if there are multiple trench rows?
+    # (With each trench row getting its own layer)
+    # Requires querying the table & determining the number of unique trench rows.
+    if regions_file:
+        add_regions_layer(
+            regions_file,
             file_nodes,
-            width,
-            height,
             extents["fields_of_view"],
             extents["frames"],
             extents["z_levels"],
             viewer,
-            channels,
-            layer_params,
-            corrections_file,
+            width,
+            height,
         )
 
-        # Regions (trench) layer
-        # TODO call this multiple times, if there are multiple trench rows?
-        # (With each trench row getting its own layer)
-        # Requires querying the table & determining the number of unique trench rows.
-        if regions_file:
-            add_regions_layer(
-                regions_file,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                viewer,
-                width,
-                height,
-            )
+    # Masks layers
+    if masks_file:
+        masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
+        h5file_masks = tables.open_file(masks_file_path, "r")
 
-        # Masks layers
-        if masks_file:
-            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
-            h5file_masks = tables.open_file(masks_file_path, "r")
+        # Load the segmentation channels from the masks h5file
+        seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
+        seg_params_str = seg_params_node.read().tostring().decode("utf-8")
+        seg_params_dict = read_params_string(seg_params_str)
+        seg_channels = [k for k in seg_params_dict.keys()]
 
-            # Load the segmentation channels from the masks h5file
-            seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
-            seg_params_str = seg_params_node.read().tostring().decode("utf-8")
-            seg_params_dict = read_params_string(seg_params_str)
-            seg_channels = [k for k in seg_params_dict.keys()]
+        h5file_masks.close()
 
-            h5file_masks.close()
+        add_masks_layer(
+            masks_file_path,
+            regions_file,
+            file_nodes,
+            extents["fields_of_view"],
+            extents["frames"],
+            extents["z_levels"],
+            seg_channels,
+            width,
+            height,
+            viewer,
+        )
 
-            add_masks_layer(
-                masks_file_path,
-                regions_file,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                seg_channels,
-                width,
-                height,
-                viewer,
-            )
+    # Would it make more sense to pre-compute the columns? Basically
+    # make it a column display, and just pass in the name of the column.
+    # Input a set of images, but also run a calculation on them before displaying.
+    if viewer_params_file and data_table_file and masks_file:
+        viewer_params = read_params_file(viewer_params_file)
+        masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
 
-        # Would it make more sense to pre-compute the columns? Basically
-        # make it a column display, and just pass in the name of the column.
-        # Input a set of images, but also run a calculation on them before displaying.
-        if viewer_params_file and data_table_file and masks_file:
-            viewer_params = read_params_file(viewer_params_file)
-            masks_file_path = os.path.join(masks_file, "MASKS/masks.h5")
+        add_computed_image_layers(
+            masks_file_path,
+            regions_file,
+            file_nodes,
+            extents["fields_of_view"],
+            extents["frames"],
+            extents["z_levels"],
+            seg_channels,
+            width,
+            height,
+            viewer,
+            viewer_params,
+            data_table_file,
+        )
 
-            add_computed_image_layers(
-                masks_file_path,
-                regions_file,
-                file_nodes,
-                extents["fields_of_view"],
-                extents["frames"],
-                extents["z_levels"],
-                seg_channels,
-                width,
-                height,
-                viewer,
-                viewer_params,
-                data_table_file,
-            )
+    # Launch the viewer
+    napari.run()
