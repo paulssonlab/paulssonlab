@@ -1,4 +1,4 @@
-name: circuitsim
+name: circuit_sim
 channels:
   - pyviz
   - conda-forge

@@ -219,26 +219,16 @@ begin
 end
 
 # ╔═╡ e565eefb-115b-41dc-ac5b-5b72e8ab993d
-# rn = @reaction_network begin
-# 	μ, ∅ --> S
-# 	ν, ∅ --> R
-# 	k, S --> S + G
-# 	γ, S --> ∅
-# 	γ, R --> ∅
-# 	γ, G --> ∅
-# 	η, S + R --> ∅
-# 	hillr(S, α, K, n), S --> 2S
-# end μ ν k γ η α K n
 rn = @reaction_network begin
 	μ, ∅ --> S
 	ν, ∅ --> R
-	#k, S --> S + G
+	k, S --> S + G
 	γ, S --> ∅
 	γ, R --> ∅
-	#γ, G --> ∅
+	γ, G --> ∅
 	η, S + R --> ∅
-	#hillr(S, α, K, n), S --> 2S
-end μ ν γ η #μ k γ α K n
+	hillr(S, α, K, n), S --> 2S
+end μ ν k γ η α K n
 
 # ╔═╡ 3aba3645-72fe-4f62-be6b-fcde666f352e
 begin
@@ -246,22 +236,14 @@ begin
 	latexify(odesys)
 end
 
-# ╔═╡ be7d4fd8-004b-420d-87c3-b9135b0a3949
-[:S => 10, :R => 10, :G => 0]
-
-# ╔═╡ 7e931d11-256c-43a6-9de0-2f6f2b1c68e7
-paramsmap(odesys)
-
 # ╔═╡ acc1c643-fe73-4072-9896-641316150ad4
 begin
 	#pmap     = [:μ => 5, :ν => 10, :k => 5, :γ => 1, :η => 100, :α => 20, :K => 3, :n => 4]
 	#u0map = [:S => 10, :R => 10, :G => 0]
 	#u0map = map((x,y) -> Pair(x,y), species(rs), u0)
 	#pmap  = map((x,y) -> Pair(x,y), params(rs), p)
-	##p 	  = [5., 10., 5., 1., 100., 20., 3., 4.]
-	##u0    = [10.0, 10.0, 0.0]
-	p 	  = [5., 1., 1., 10.]
-	u0    = [1.0, 1.0]
+	p 	  = [5., 10., 5., 1., 2., 20., 3., 4.]
+	u0    = [10.0, 10.0, 0.0]
 	tspan = (0.0, 5.)
 	Δt 	  = 0.01
 	prob1 = ODEProblem(odesys, u0, tspan, p)
@@ -291,9 +273,16 @@ begin
 		σ ~ truncated(Normal(1., 10), 0.1, Inf)
 	    μ ~ truncated(Normal(5., 10), 0.1, Inf)
 		ν ~ truncated(Normal(5., 10), 0.1, Inf)
-		γ ~ truncated(Normal(1., 5), 0.1, Inf)
+		#γ ~ truncated(Normal(1., 5), 0.1, Inf)
 		η ~ truncated(Normal(1., 20), 0.1, Inf)
-		params = [μ, ν, γ, η]
+		#params = [μ, ν, γ, η]
+		k = 5.
+		γ = 1.
+		η = 100.
+		α = 20.
+		K = 3.
+		n = 4.
+		params = [μ, ν, k, γ, η, α, K, n]
 	    prob = remake(prob0, p=params)
 		solution = solve(prob, Tsit5(), saveat=ts)
 	    #predicted::Vector{Vector{T}} = solution.u
@@ -334,10 +323,10 @@ end
 
 # ╔═╡ 2e9633c6-0fdc-4985-aa39-0d71533ee899
 begin
-	init_params = [1., 1., 1., 1., 1.]
+	init_params = [0.1, 5., 5., 1.]
 
 	# This next command runs 3 independent chains without using multithreading.
-	chain = mapreduce(c -> sample(model, NUTS(1000, .65), 1000, init_params=init_params, progress=true), chainscat, 1:3)
+	chain = mapreduce(c -> sample(model, NUTS(100, .65), 200, init_params=init_params), chainscat, 1:3)
 end
 
 # ╔═╡ b690cb35-d99f-499e-bb0b-6340d94562e5
@@ -385,8 +374,6 @@ end
 # ╠═26c8214c-13e6-4520-a2bc-13da053961cc
 # ╠═e565eefb-115b-41dc-ac5b-5b72e8ab993d
 # ╠═3aba3645-72fe-4f62-be6b-fcde666f352e
-# ╠═be7d4fd8-004b-420d-87c3-b9135b0a3949
-# ╠═7e931d11-256c-43a6-9de0-2f6f2b1c68e7
 # ╠═acc1c643-fe73-4072-9896-641316150ad4
 # ╠═75be9104-8023-41b5-8b53-8f37929765ec
 # ╠═f95497db-7bcb-479b-9ef7-ed20ad87ddd9
