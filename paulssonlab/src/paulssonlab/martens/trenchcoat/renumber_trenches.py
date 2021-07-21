@@ -25,8 +25,16 @@ def adjust_trench_number(df, threshold):
     (e.g. using the drift recorded by the stage), and how close together the trenches are.
     Assumes that the shift is a most 1 trench width's worth. Unclear if or how well
     this would extend to larger drifts.
+
+    NOTE what about if there were gradual drift in one direction?
+    Then, we would want to compare each frame to exactly the frame before.
+    Or maybe we would want to use the stage information to sort the frames, from
+    left to right?
     """
     # For each file / fov / frame / z / row, obtain the absolute minimum min_row value.
+    # The min_row value designates the leftmost set of pixels of the trench bounding box.
+    # The smallest min_row is therefore the leftmost set of pixels of the leftmost trench.
+    # The reason it's min_row, and not min_col, is because of the F-ordering convention.
     smallest_min_rows = df.groupby(
         ["info_file", "info_fov", "info_z_level", "info_row_number"]
     )["min_row"].min()
@@ -43,7 +51,7 @@ def adjust_trench_number(df, threshold):
             & (df["info_row_number"] == i.info_row_number)
         ]
 
-        # In principle, using unique() allows for gaps in the frame numbering.
+        # In principle, using unique() allows for gaps in the frame numbering (untested!).
         all_frames = this_df["info_frame"].unique()
         for fr in all_frames:
             this_fr = this_df[this_df["info_frame"] == fr]
