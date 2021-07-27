@@ -12,6 +12,7 @@ from skimage.registration import phase_cross_correlation
 """
 TODO:
 - Unit conversion from microns to pixels?
+- Is there any record of the threshold that was used?
 """
 
 

@@ -24,11 +24,70 @@ import pathlib
 # For example, could check +/- 1 or 2 pixels left or right and see if its edges can be further minimized.
 
 
-def launch(file, frames, pool, metadata, params, in_file, out_dir, pbar):
+def write_these_results(table_rowcoords, table_trenchcoords, result):
+    """
+    Given a single set of detections, write them to a shared on-disk table.
+    Two tables:
+    1. rows
+    2. trenches
+    """
+    # Write the row coords to a table
+    for i, row in enumerate(result["rows"]):
+        table_rowcoords["info_file"] = result["file"]
+        table_rowcoords["info_fov"] = result["fov"]
+        table_rowcoords["info_frame"] = result["frame"]
+        table_rowcoords["info_z_level"] = result["z_level"]
+        table_rowcoords["info_row_number"] = i
+
+        # NOTE wanted to write a single column with 4 bbox values,
+        # but that doesn't work with Pandas :(
+        # table_rowcoords["bounding_box"] = row
+        table_rowcoords["min_row"] = row[0]
+        table_rowcoords["min_col"] = row[1]
+        table_rowcoords["max_row"] = row[2]
+        table_rowcoords["max_col"] = row[3]
+
+        table_rowcoords.append()
+
+    # Write the trench coords from within each row
+    # Each row
+    for i in range(len(result["rows"])):
+        # Each trench in each row
+        for j, trench in enumerate(result["trenches"][i]):
+            table_trenchcoords["info_file"] = result["file"]
+            table_trenchcoords["info_fov"] = result["fov"]
+            table_trenchcoords["info_frame"] = result["frame"]
+            table_trenchcoords["info_z_level"] = result["z_level"]
+            table_trenchcoords["info_row_number"] = i
+            table_trenchcoords["info_trench_number"] = j
+
+            # Doesn't work with pandas
+            # table_trenchcoords["bounding_box"] = trench
+            table_trenchcoords["min_row"] = trench[0]
+            table_trenchcoords["min_col"] = trench[1]
+            table_trenchcoords["max_row"] = trench[2]
+            table_trenchcoords["max_col"] = trench[3]
+
+            table_trenchcoords.append()
+
+
+def launch(
+    filename,
+    frames,
+    pool,
+    metadata,
+    params,
+    in_file,
+    table_rowcoords,
+    table_trenchcoords,
+    pbar,
+):
     """
     This function is directly called by Trenchcoat's trench_detect routine.
     It's up to the trench algo for how to iterate etc., but we provide
-    a process pool, detection params dict,
+    a process pool, detection params dict, the in_file, out_dir, and a progress bar.
+
+    Also pass in the tables for writing row coordinates & trench coordinates.
     """
     # Generate a set of rectangles which represent trenches
     # but which do not yet have known x,y starting points
@@ -42,16 +101,34 @@ def launch(file, frames, pool, metadata, params, in_file, out_dir, pbar):
         metadata["width"],
     )
 
-    # For the progress bar
-    def update_pbar(*a):
+    # Callback from the apply_async method, runs *immediately* upon receiving a result.
+    # TODO is it possible to skip this mini-function & go straight to write_these_results() ?
+    def write_tables(*a):
+        ### Immediately handle the results
+        # *a is a tuple. Get the zeroth element, which has the results dict.
+        result = a[0]
+
+        # Write to disk
+        write_these_results(table_rowcoords, table_trenchcoords, result)
+
+        # Finally, update the progress bar
         pbar.update()
 
+    # For printing error messages
+    def error_callback(*e):
+        print(e)
+
+    # Remember: because each file could have different properties,
+    # they are iterated *prior* to calling the trench detection algorithm.
     for fov in metadata["fields_of_view"]:
         for frame in frames:
             for z in metadata["z_levels"]:
-                args = [in_file, out_dir, file, fov, frame, z, params, boxes]
-                pool.apply_async(run_trench_analysis, args, callback=update_pbar)
-                # run_trench_analysis(*args) # DEBUG
+                results = pool.apply_async(
+                    func=run_trench_analysis,
+                    args=[in_file, filename, fov, frame, z, params, boxes],
+                    callback=write_tables,
+                    error_callback=error_callback,
+                )
 
 
 def generate_boxes(tr_width, tr_height, tr_spacing, img_width):
@@ -76,7 +153,7 @@ def generate_boxes(tr_width, tr_height, tr_spacing, img_width):
     return numpy.array(xs)
 
 
-def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params, boxes):
+def run_trench_analysis(in_file, filename, fov, frame, z_level, params, boxes):
     """
     Run basic trench analysis on an HDF5 file: detect trenches for each time
     frame, or just using the first time frame. Then, measure trench properties
@@ -86,49 +163,110 @@ def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params,
 
     Each array entry (row) has 4 values (min_row, min_col, max_row, max_col), and there is 1 row per region (trench).
     Regions must be rectangular, and must have the same dimension (for stacking purposes).
+
+    Output is a Queue which will store results from one or more processes.
+    Rather than returning a result, results are "put" into the queue.
     """
     # 1. Load the image, optionally crop it
     img = load_image_for_regions_analysis(
         in_file, filename, fov, frame, z_level, params
     )
 
-    # 2. Create an HDF5 file for writing trench row & trench regions info.
-    dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+    ## 2. Create an HDF5 file for writing trench row & trench regions info.
+    # dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
+    # pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-    out_file_path = os.path.join(dir_path, "Z_{}_regions.h5".format(z_level))
-    regions_file = tables.open_file(out_file_path, mode="w")
+    # out_file_path = os.path.join(dir_path, "Z_{}_regions.h5".format(z_level))
+    # regions_file  = tables.open_file(out_file_path, mode="w")
 
     # 3. Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
     # This method detects both the rows & trenches in a single step
     # FIXME no correction for cropping; and the results are NOT written to disk!
     # To do so, need to retroactively parse out the row coords from the trenches.
+    # Returns trenches: a numpy array with uint16 dtype.
     p = params["parameters"]
     (trenches, y_offsets) = find_trenches(img, boxes, **p["trenches"])
 
     # Take the y_offsets and create bounding boxes for the rows of trenches
-    rows = []
-    for y in y_offsets:
-        bbox = [0, y, img.shape[0], y + p["trenches"]["tr_height"]]
-        rows.append(bbox)
+    rows = numpy.empty(shape=(len(y_offsets), 4), dtype=numpy.uint16)
+    for i, y in enumerate(y_offsets):
+        rows[i] = [0, y, img.shape[0], y + p["trenches"]["tr_height"]]
 
     # Write all row coords to disk as a single array
-    regions_file.create_array("/", "row_coords", obj=rows)
+    # regions_file.create_array("/", "row_coords", obj=rows)
 
-    # Write out the trench coordinates using a variable-length array in HDF5
-    results = regions_file.create_vlarray(
-        "/",
-        "trench_coords",
-        atom=tables.UInt16Atom(shape=(4)),
-        expectedrows=len(trenches),
-    )
-
-    # Iterate the rows
-    for r in trenches:
-        results.append(r)
+    # Write out the trench coordinates
+    # Create a new array object for each row of trenches.
+    # for i, row in enumerate(trenches):
+    # regions_file.create_array("/", "trench_coords_row_{}".format(i), obj=row)
 
     # Done!
-    regions_file.close()
+    # regions_file.close()
+
+    # Return a dict with all the information necessary for appending new entries into
+    # the on-disk pytables table.
+    result = {
+        "rows": rows,
+        "trenches": trenches,
+        "file": filename,
+        "fov": fov,
+        "frame": frame,
+        "z_level": z_level,
+    }
+
+    return result
+
+
+# OLD CODE
+# def run_trench_analysis(in_file, out_dir, filename, fov, frame, z_level, params, boxes):
+# """
+# Run basic trench analysis on an HDF5 file: detect trenches for each time
+# frame, or just using the first time frame. Then, measure trench properties
+# in all time frames.
+
+# Store detected trenches in a PyTables array.
+
+# Each array entry (row) has 4 values (min_row, min_col, max_row, max_col), and there is 1 row per region (trench).
+# Regions must be rectangular, and must have the same dimension (for stacking purposes).
+# """
+## 1. Load the image, optionally crop it
+# img = load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, params)
+
+## 2. Create an HDF5 file for writing trench row & trench regions info.
+# dir_path = os.path.join(out_dir, "{}/FOV_{}/Frame_{}/".format(filename, fov, frame))
+# pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+# out_file_path = os.path.join(dir_path, "Z_{}_regions.h5".format(z_level))
+# regions_file  = tables.open_file(out_file_path, mode="w")
+
+## 3. Analyze the image to find trench rows & trenches, write coordinates of the detected rows & trenches to HDF5
+## This method detects both the rows & trenches in a single step
+## FIXME no correction for cropping; and the results are NOT written to disk!
+## To do so, need to retroactively parse out the row coords from the trenches.
+# p = params["parameters"]
+# (trenches, y_offsets) = find_trenches(img, boxes, **p["trenches"])
+
+## Take the y_offsets and create bounding boxes for the rows of trenches
+# rows = []
+# for y in y_offsets:
+# bbox = [0, y, img.shape[0], y + p["trenches"]["tr_height"]]
+# rows.append(bbox)
+
+## Write all row coords to disk as a single array
+# regions_file.create_array("/", "row_coords", obj=rows)
+
+## Write out the trench coordinates using a variable-length array in HDF5
+# results = regions_file.create_vlarray("/",
+# "trench_coords",
+# atom=tables.UInt16Atom(shape=(4)),
+# expectedrows=len(trenches))
+
+## Iterate the rows
+# for r in trenches:
+# results.append(r)
+
+## Done!
+# regions_file.close()
 
 
 def load_image_for_regions_analysis(in_file, filename, fov, frame, z_level, params):

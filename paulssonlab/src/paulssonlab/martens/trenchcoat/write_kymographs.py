@@ -114,33 +114,57 @@ def main_kymographs_function(images_file, masks_file, regions_file, out_dir, num
     def update_pbar(*a):
         pbar.update()
 
-    # with Pool(processes=num_cpu) as pool:
-    # for file in file_nodes:
-    ## Narrow down the regions dataframe to just this file
-    # df_reg_f = df_regions[ df_regions["info_file"] == file]
+    with Pool(processes=num_cpu) as pool:
+        for file in file_nodes:
+            # Narrow down the regions dataframe to just this file
+            df_reg_f = df_regions[df_regions["info_file"] == file]
 
-    # for fov in extents["fields_of_view"]:
-    ## Narrow down the regions dataframe to just this fov
-    # df_reg_fov = df_reg_f[ df_reg_f["info_fov"] == fov]
+            for fov in extents["fields_of_view"]:
+                # Narrow down the regions dataframe to just this fov
+                df_reg_fov = df_reg_f[df_reg_f["info_fov"] == fov]
 
-    # for z_level in extents["z_levels"]:
-    ## Narrow down the regions dataframe to just this z_level
-    # df_reg_z = df_reg_fov[ df_reg_fov["info_z_level"] == z_level]
+                for z_level in extents["z_levels"]:
+                    # Narrow down the regions dataframe to just this z_level
+                    df_reg_z = df_reg_fov[df_reg_fov["info_z_level"] == z_level]
 
-    ## Masks
-    # if masks_file:
-    # args = [masks_file, out_dir, file, fov, z_level, seg_channels, extents["frames"], df_reg_z, kymo_width, tr_width, height]
-    # pool.apply_async(write_masks, args, callback=update_pbar)
-    ##write_masks(*args) # DEBUG
+                    # Masks
+                    if masks_file:
+                        args = [
+                            masks_file,
+                            out_dir,
+                            file,
+                            fov,
+                            z_level,
+                            seg_channels,
+                            extents["frames"],
+                            df_reg_z,
+                            kymo_width,
+                            tr_width,
+                            height,
+                        ]
+                        pool.apply_async(write_masks, args, callback=update_pbar)
+                        # write_masks(*args) # DEBUG
 
-    ## Intensity images
-    # else:
-    # args = [images_file, out_dir, file, fov, z_level, channels, extents["frames"], df_reg_z, kymo_width, tr_width, height]
-    # pool.apply_async(write_this_group, args, callback=update_pbar)
-    ##write_this_group(*args) # DEBUG
+                    # Intensity images
+                    else:
+                        args = [
+                            images_file,
+                            out_dir,
+                            file,
+                            fov,
+                            z_level,
+                            channels,
+                            extents["frames"],
+                            df_reg_z,
+                            kymo_width,
+                            tr_width,
+                            height,
+                        ]
+                        pool.apply_async(write_this_group, args, callback=update_pbar)
+                        # write_this_group(*args) # DEBUG
 
-    # pool.close()
-    # pool.join()
+        pool.close()
+        pool.join()
 
     # Now, link up all the sub-HDF5 files into a parent file.
     link_files(out_dir, masks_file)
