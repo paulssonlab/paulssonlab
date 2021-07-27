@@ -3,7 +3,7 @@ import os
 
 import numpy
 import tables
-from multiprocessing import Pool
+from multiprocessing import Pool, get_context
 from tqdm import tqdm
 
 from params import read_params_file
@@ -75,105 +75,6 @@ def make_trench_coords_type(max_filename_len):
     return type("TrenchCoords", (tables.IsDescription,), column_types)
 
 
-def compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir):
-    """
-    After the trench rows & trenches have been detected, compile the results to an
-    HDF5 table.
-    TODO: if some regions were shared across frames etc., then need to add duplicate
-    entries for those shared regions.
-    """
-    max_filename_len = get_max_length(file_names)
-
-    # Create the H5 file for writing the table to
-    out_file_path = os.path.join(out_dir, "regions_tables.h5")
-    out_h5file = tables.open_file(out_file_path, mode="w")
-
-    # Create the trench rows table
-    RowCoords = make_row_coords_type(max_filename_len)
-    table_rowcoords = out_h5file.create_table(
-        "/",
-        "row_coords",
-        RowCoords,
-        filters=tables.Filters(complevel=1, complib="zlib"),
-    )
-    table_rowcoords_row = table_rowcoords.row
-
-    # Create the trenches table
-    TrenchCoords = make_trench_coords_type(max_filename_len)
-    table_trenchcoords = out_h5file.create_table(
-        "/",
-        "trench_coords",
-        TrenchCoords,
-        filters=tables.Filters(complevel=1, complib="zlib"),
-    )
-    table_trenchcoords_row = table_trenchcoords.row
-
-    # Iterate the same dimensions as before
-    for f in file_names:
-        for fov in metadata[f]["fields_of_view"]:
-            for frame in file_to_frames[f]:
-                for z in metadata[f]["z_levels"]:
-                    # FIXME this doesn't take advantage of any linking system
-                    path_string = "{}/FOV_{}/Frame_{}/Z_{}_regions.h5".format(
-                        f, fov, frame, z
-                    )
-                    in_file_path = os.path.join(out_dir, path_string)
-                    regions_file = tables.open_file(in_file_path, mode="r")
-
-                    # Open the array containing 1 or more row coords
-                    rows = regions_file.get_node("/row_coords").read()
-
-                    # Write the row coords to a table
-                    for i, row in enumerate(rows):
-                        table_rowcoords_row["info_file"] = f
-                        table_rowcoords_row["info_fov"] = fov
-                        table_rowcoords_row["info_frame"] = frame
-                        table_rowcoords_row["info_z_level"] = z
-                        table_rowcoords_row["info_row_number"] = i
-
-                        # NOTE wanted to write a single column with 4 bbox values,
-                        # but that doesn't work with Pandas :(
-                        # table_rowcoords_row["bounding_box"] = row
-                        table_rowcoords_row["min_row"] = row[0]
-                        table_rowcoords_row["min_col"] = row[1]
-                        table_rowcoords_row["max_row"] = row[2]
-                        table_rowcoords_row["max_col"] = row[3]
-
-                        table_rowcoords_row.append()
-
-                    # Open the array containing 1 or more row coords
-                    trenches = regions_file.get_node("/trench_coords").read()
-
-                    # Write the trench coords to a table
-                    # First, go through each row in the vlarray
-                    for i, row in enumerate(trenches):
-                        # Each trench in each row
-                        for j, trench in enumerate(row):
-                            table_trenchcoords_row["info_file"] = f
-                            table_trenchcoords_row["info_fov"] = fov
-                            table_trenchcoords_row["info_frame"] = frame
-                            table_trenchcoords_row["info_z_level"] = z
-                            table_trenchcoords_row["info_row_number"] = i
-                            table_trenchcoords_row["info_trench_number"] = j
-
-                            # Doesn't work with pandas
-                            # table_trenchcoords_row["bounding_box"] = trench
-                            table_trenchcoords_row["min_row"] = trench[0]
-                            table_trenchcoords_row["min_col"] = trench[1]
-                            table_trenchcoords_row["max_row"] = trench[2]
-                            table_trenchcoords_row["max_col"] = trench[3]
-
-                            table_trenchcoords_row.append()
-
-                    regions_file.close()
-
-    # Flush the tables; done writing!
-    table_rowcoords.flush()
-    table_trenchcoords.flush()
-
-    out_h5file.close()
-
-
 def main_detection_function(out_dir, in_file, num_cpu, params_file):
     """
     Main detection function.
@@ -214,6 +115,34 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file):
 
     h5file.close()
 
+    ###
+    max_filename_len = get_max_length(file_names)
+
+    # Create the H5 file for writing the table to
+    out_file_path = os.path.join(out_dir, "regions_tables.h5")
+    out_h5file = tables.open_file(out_file_path, mode="w")
+
+    # Create the trench rows table
+    RowCoords = make_row_coords_type(max_filename_len)
+    table_rowcoords = out_h5file.create_table(
+        "/",
+        "row_coords",
+        RowCoords,
+        filters=tables.Filters(complevel=1, complib="zlib"),
+    )
+    table_rowcoords_row = table_rowcoords.row
+
+    # Create the trenches table
+    TrenchCoords = make_trench_coords_type(max_filename_len)
+    table_trenchcoords = out_h5file.create_table(
+        "/",
+        "trench_coords",
+        TrenchCoords,
+        filters=tables.Filters(complevel=1, complib="zlib"),
+    )
+    table_trenchcoords_row = table_trenchcoords.row
+    ###
+
     # Set up a progress bar
     pbar = tqdm(total=total, desc="Frame #")
 
@@ -224,7 +153,9 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file):
     detection_func = algo_dict[params["algorithm"]]
 
     # Run in parallel. Implementation details are left to the algorithm.
-    with Pool(processes=num_cpu) as pool:
+    # See: https://pythonspeed.com/articles/python-multiprocessing/
+    # for why we use get_context("spawn")
+    with get_context("spawn").Pool() as pool:
         for f in file_names:
             # Make a copy of params, & edit it to convert from microns to pixels
             # Must do this for every "file," because each could have its own px_mu value.
@@ -248,30 +179,26 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file):
             # table creation at the end still works).
             # We provide a multi-processing pool, the HDF5 input file,
             # the frames within this file, all necessary metadata &
-            # parameters, and a progress bar.
-            detection_func(
+            # parameters, a progress bar, and two tables to write results to.
+            results = detection_func(
                 f,
                 file_to_frames[f],
                 pool,
                 metadata[f],
                 params_copy,
                 in_file,
-                out_dir,
+                table_rowcoords_row,
+                table_trenchcoords_row,
                 pbar,
             )
 
+        # Close the pool
         pool.close()
         pool.join()
 
-    # Done!
+        # Flush the tables; done writing!
+        table_rowcoords.flush()
+        table_trenchcoords.flush()
+        out_h5file.close()
 
-    # Done recording detected trench rows & trenches to HDF5-backed arrays.
-    # Go through all of those arrays & compile the information into a table,
-    # for easier searching. Store the table in the same HDF5 file.
-    # All subsequent TrenchCoat steps assume that this table exists.
-    # It's *much* easier to search for trench coordinates using a table!
-    # NOTE this does raise the question of whether there's a way to just
-    # create the table directly in the first place.
-    # Could use the strategy of making small tables first, and then merging
-    # them at the end.
-    compile_trenches_to_table(file_names, metadata, file_to_frames, out_dir)
+    # Done!
