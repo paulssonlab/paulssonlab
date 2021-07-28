@@ -336,7 +336,7 @@ def write_masks(
             cell_properties = skimage.measure.regionprops(mask)
 
             for cell in cell_properties:
-                this_batch = add_properties(
+                add_properties(
                     this_batch,
                     mask,
                     name,
@@ -730,7 +730,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 callback=write_tables,
                                 error_callback=error_callback,
                             )
-                            # DEBUG
+                            ##DEBUG
                             # result = run_segmentation_analysis_regions(*func_args)
                             # write_tables((result))
 
