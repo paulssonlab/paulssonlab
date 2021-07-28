@@ -95,14 +95,15 @@ def add_properties(
 ):
     """
     Add a single cell's properties (from skimage measure) to the dict of lists.
+    Modify the dictionary in-place (don't need to return or re-assign).
     """
     # NOTE skimage is changing their coordinates -- do we still want to transpose??? I think so...
     coords = cell_properties.coords.T
 
     # NOTE: skip background corrections. Leave that for data analysis step.
-    for ch, index in ch_to_index.items():
+    for ch, i in ch_to_index.items():
         results["total_intensity_{}".format(ch)][index] = stack[
-            coords[0], coords[1], trench_number, index
+            coords[0], coords[1], trench_number, i
         ].sum()
 
     # Are there multiple regions?
@@ -119,12 +120,9 @@ def add_properties(
         # row["geometry_Max_Width_Area"] = (stack.shape[0]) * (cell_properties.bbox[3] - cell_properties.bbox[1])
         results["geometry_Max_Width_Area"][index] = not_other_cell.sum()
 
-        for ch, index in ch_to_index.items():
+        for ch, i in ch_to_index.items():
             rect_region = stack[
-                ...,
-                cell_properties.bbox[1] : cell_properties.bbox[3],
-                trench_number,
-                index,
+                ..., cell_properties.bbox[1] : cell_properties.bbox[3], trench_number, i
             ]
             rect_region *= not_other_cell
             results["width_intensity_{}".format(ch)][index] = rect_region.sum()
@@ -157,8 +155,6 @@ def add_properties(
     results["bounding_box_min_col"][index] = cell_properties.bbox[1]
     results["bounding_box_max_row"][index] = cell_properties.bbox[2]
     results["bounding_box_max_col"][index] = cell_properties.bbox[3]
-
-    return results
 
 
 def write_properties_to_table_from_df(cell, table_row, columns):
