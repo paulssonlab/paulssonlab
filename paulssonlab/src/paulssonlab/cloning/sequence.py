@@ -14,6 +14,37 @@ MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
 
 
+def get_seq(seq):
+    if hasattr(seq, "seq"):
+        return seq.seq
+    else:
+        return seq
+
+
+def reverse_complement(seq):
+    if seq is None:
+        raise ValueError("cannot reverse complement None")
+    if hasattr(seq, "features"):
+        return seq.reverse_complement(
+            id=True, name=True, description=True, annotations=True, dbxrefs=True
+        )
+    elif hasattr(seq, "reverse_complement"):
+        return seq.reverse_complement()
+    else:
+        return Seq(seq).reverse_complement()
+
+
+# we need this alias for find_primer_binding_site
+reverse_complement_ = reverse_complement
+
+
+# def replace(seq, old, new):
+#     seq = str(get_seq(seq))  # TODO: handle native seq objects (to preserve features)
+#     return seq.replace(old, new).replace(
+#         sequence.reverse_complement(old), sequence.reverse_complement(new)
+#     )
+
+
 def _assemble_goldengate(
     seq1, seq2, junction_annotation="GG overhang", keep_junction_annotations=True
 ):
@@ -95,6 +126,16 @@ def _assemble_gibson(
         return product, junction_length
     else:
         return None, -1
+
+
+def ensure_dsseqrecords(*seqs):
+    seqs = list(seqs)
+    for idx in range(len(seqs)):
+        if isinstance(seqs[idx], str):
+            seqs[idx] = Seq(seqs[idx])
+        if not isinstance(seqs[idx], DsSeqRecord):
+            seqs[idx] = DsSeqRecord(seqs[idx])
+    return seqs
 
 
 class DsSeqRecord(SeqRecord):
@@ -407,6 +448,12 @@ class DsSeqRecord(SeqRecord):
             first.downstream_overhang = overhang
             return [first, second], min_loc
 
+    def slice_or_reindex(self, start, stop, **kwargs):
+        if start == stop:
+            return self.reindex(start)
+        else:
+            return self.slice(start, stop, **kwargs)
+
     def slice(self, start, stop, annotation_start=True, annotation_stop=True):
         if start is None:
             start = 0
@@ -618,23 +665,6 @@ def join_seqs(seqs):
     return seq
 
 
-def reverse_complement(seq):
-    if seq is None:
-        raise ValueError("cannot reverse complement None")
-    if hasattr(seq, "features"):
-        return seq.reverse_complement(
-            id=True, name=True, description=True, annotations=True, dbxrefs=True
-        )
-    elif hasattr(seq, "reverse_complement"):
-        return seq.reverse_complement()
-    else:
-        return Seq(seq).reverse_complement()
-
-
-# we need this alias for find_primer_binding_site
-reverse_complement_ = reverse_complement
-
-
 def _join_features(a, b, length):
     features = []
     to_join = defaultdict(list)
@@ -757,13 +787,6 @@ def slice_seq(seq, start, stop, annotation_start=None, annotation_stop=None):
     return new_seq
 
 
-def get_seq(seq):
-    if hasattr(seq, "seq"):
-        return seq.seq
-    else:
-        return seq
-
-
 def find_homologous_ends(a, b, max_overlap=None):
     _max_overlap = min(len(a), len(b))
     if max_overlap is not None:
@@ -813,29 +836,59 @@ def count_contiguous_matching(a, b, right=False):
 
 
 def iterate_shifts(a, b):
-    for shift in range(1, len(a) + len(b)):
-        a_start = max(shift - len(b), 0)
-        a_stop = min(shift, len(a))
-        b_start = a_start + len(b) - shift
-        b_stop = a_stop + len(b) - shift
-        a_overlap = a[a_start:a_stop]
-        b_overlap = b[b_start:b_stop]
-        yield shift, a_start, a_stop, b_start, b_stop
+    if a.circular is False and b.circular is False:
+        for shift in range(1, len(a) + len(b)):
+            a_start = max(shift - len(b), 0)
+            a_stop = min(shift, len(a))
+            b_start = a_start + len(b) - shift
+            b_stop = a_stop + len(b) - shift
+            loc = a_stop
+            yield loc, a_start, a_stop, b_start, b_stop
+    elif a.circular is False and b.circular is True:
+        for loc, b_start, b_stop, a_start, a_stop in iterate_shifts(b, a):
+            yield loc, a_start, a_stop, b_start, b_stop
+    elif a.circular is True and b.circular is False:
+        max_shift = max(len(b) - len(a), 0)
+        for shift in range(max_shift + 1):
+            # remember: max_shift=shift=0 if len(b) < len(a)
+            b_start = max_shift - shift
+            b_stop = len(b) - shift
+            for a_start in range(len(a)):
+                a_stop = (b_stop - b_start + a_start) % len(a)
+                loc = a_stop
+                yield loc, a_start, a_stop, b_start, b_stop
+    elif a.circular is True and b.circular is True:
+        raise ValueError("cannot bind a circular sequence to another circular sequence")
 
 
-# TODO: instead of specifying min_score, allow specifying min_tm
-# TODO: template and primer must have matching case (i.e., DsSeqRecord.seq_lower())
 def find_primer_binding_site(
     template,
     primer,
-    circular=None,
     reverse_complement=None,
     scoring_func=partial(count_contiguous_matching, right=True),
     min_score=10,
 ):
-    if hasattr(template, "circular") and circular is None:
-        circular = template.circular
-    # TODO: circular!!!!!!!!!!
+    template, primer = ensure_dsseqrecords(template, primer)
+    return _find_primer_binding_site(
+        template,
+        primer,
+        reverse_complement=reverse_complement,
+        scoring_func=scoring_func,
+        min_score=min_score,
+    )
+
+
+# TODO: instead of specifying min_score, allow specifying min_tm
+# TODO: template and primer must have matching case (i.e., DsSeqRecord.seq_lower())
+def _find_primer_binding_site(
+    template,
+    primer,
+    reverse_complement=None,
+    scoring_func=partial(count_contiguous_matching, right=True),
+    min_score=10,
+    require_3prime_clamp=True,
+    lower=True,
+):
     orig_template = template
     if reverse_complement is None:
         strands = (1, -1)
@@ -852,52 +905,53 @@ def find_primer_binding_site(
         else:
             template = orig_template
         for (
-            shift,
+            loc,
             template_start,
             template_stop,
             primer_start,
             primer_stop,
         ) in iterate_shifts(template, primer):
-            template_overlap = template[template_start:template_stop]
-            primer_overlap = primer[primer_start:primer_stop]
+            if require_3prime_clamp and primer_stop != len(primer):
+                # skip matches that do not overlap at 3' end of primer
+                continue
+            template_overlap = template.slice_or_reindex(template_start, template_stop)
+            primer_overlap = primer.slice_or_reindex(primer_start, primer_stop)
+            if lower:
+                template_overlap = template_overlap.seq_lower()
+                primer_overlap = primer_overlap.seq_lower()
             score = scoring_func(template_overlap, primer_overlap)
             if score >= min_score:
                 if strand == -1:
-                    shift = len(template) - shift
-                sites.append((strand, shift, score))
+                    # when reverse complementing template, need to adjust loc
+                    loc = len(template) - loc
+                print("> ", template_overlap)
+                print(">>", primer_overlap)
+                print(
+                    loc,
+                    "|",
+                    template_start,
+                    template_stop,
+                    primer_start,
+                    primer_stop,
+                    "|",
+                    score,
+                )
+                sites.append((strand, loc, score))
     return sorted(sites, key=itemgetter(1))
 
 
-def pcr(template, primer1, primer2, circular=None, min_score=10):
-    # cast input sequences to DsSeqRecords if needed
-    seqs = [template, primer1, primer2]
-    for idx in range(len(seqs)):
-        if isinstance(seqs[idx], str):
-            seqs[idx] = Seq(seqs[idx])
-        if not isinstance(seqs[idx], DsSeqRecord):
-            seqs[idx] = DsSeqRecord(seqs[idx])
-    template, primer1, primer2 = seqs
-    template_seq = template.seq_lower()
-    primer1_seq = primer1.seq_lower()
-    primer2_seq = primer2.seq_lower()
+def pcr(template, primer1, primer2, min_score=10):
+    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
     both_sites = []
     sites1 = find_primer_binding_site(
-        template_seq,
-        primer1_seq,
-        circular=circular,
-        reverse_complement=None,
-        min_score=min_score,
+        template, primer1, reverse_complement=None, min_score=min_score
     )
     if len(sites1) != 1:
         raise ValueError(
             f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
-    sites2 = find_primer_binding_site(
-        template_seq,
-        primer2_seq,
-        circular=circular,
-        reverse_complement=(sites1[0][0] == 1),
-        min_score=min_score,
+    sites2 = _find_primer_binding_site(
+        template, primer2, reverse_complement=(sites1[0][0] == 1), min_score=min_score
     )
     if len(sites2) != 1:
         raise ValueError(
