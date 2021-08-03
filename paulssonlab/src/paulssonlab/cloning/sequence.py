@@ -867,6 +867,7 @@ def find_primer_binding_site(
     min_score=10,
     require_3prime_clamp=True,
     lower=True,
+    return_sequences=False,
 ):
     template, primer = ensure_dsseqrecords(template, primer)
     return _find_primer_binding_site(
@@ -877,6 +878,7 @@ def find_primer_binding_site(
         min_score=min_score,
         require_3prime_clamp=require_3prime_clamp,
         lower=lower,
+        return_sequences=return_sequences,
     )
 
 
@@ -890,6 +892,7 @@ def _find_primer_binding_site(
     min_score=10,
     require_3prime_clamp=True,
     lower=True,
+    return_sequences=False,
 ):
     if scoring_func is None:
         if require_3prime_clamp is True:
@@ -909,7 +912,7 @@ def _find_primer_binding_site(
         raise ValueError("expecting reverse_complement to be one of: True, False, None")
     sites = []
     for strand in strands:
-        if strand == -1:
+        if strand == 1:
             template = reverse_complement_(orig_template)
         else:
             template = orig_template
@@ -930,10 +933,13 @@ def _find_primer_binding_site(
             score = scoring_func(template_overlap, primer_overlap)
             if score >= min_score:
                 loc = template_stop
-                if strand == -1:
+                if strand == 1:
                     # when reverse complementing template, need to adjust loc
                     loc = len(template) - loc
-                sites.append((strand, loc, score))
+                if return_sequences:
+                    sites.append((strand, loc, score, template_overlap, primer_overlap))
+                else:
+                    sites.append((strand, loc, score))
     return sorted(sites, key=itemgetter(1))
 
 
@@ -948,13 +954,13 @@ def pcr(template, primer1, primer2, min_score=10):
             f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
     sites2 = _find_primer_binding_site(
-        template, primer2, reverse_complement=(sites1[0][0] == 1), min_score=min_score
+        template, primer2, reverse_complement=(sites1[0][0] == -1), min_score=min_score
     )
     if len(sites2) != 1:
         raise ValueError(
             f"expecting a unique primer2 binding site, instead found {len(sites2)}"
         )
-    if sites1[0] == -1:
+    if sites1[0] == 1:
         sites1, sites2 = sites2, sites1
     sense1, loc1, len1 = sites1[0]
     sense2, loc2, len2 = sites2[0]
