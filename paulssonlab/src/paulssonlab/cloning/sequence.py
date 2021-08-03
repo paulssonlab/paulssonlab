@@ -863,8 +863,10 @@ def find_primer_binding_site(
     template,
     primer,
     reverse_complement=None,
-    scoring_func=partial(count_contiguous_matching, right=True),
+    scoring_func=None,
     min_score=10,
+    require_3prime_clamp=True,
+    lower=True,
 ):
     template, primer = ensure_dsseqrecords(template, primer)
     return _find_primer_binding_site(
@@ -873,6 +875,8 @@ def find_primer_binding_site(
         reverse_complement=reverse_complement,
         scoring_func=scoring_func,
         min_score=min_score,
+        require_3prime_clamp=require_3prime_clamp,
+        lower=lower,
     )
 
 
@@ -882,11 +886,18 @@ def _find_primer_binding_site(
     template,
     primer,
     reverse_complement=None,
-    scoring_func=partial(count_contiguous_matching, right=True),
+    scoring_func=None,
     min_score=10,
     require_3prime_clamp=True,
     lower=True,
 ):
+    if scoring_func is None:
+        if require_3prime_clamp is True:
+            # require matching at 3' end
+            scoring_func = partial(count_contiguous_matching, right=True)
+        else:
+            # do not penalize mismatches
+            scoring_func = count_matching
     orig_template = template
     if reverse_complement is None:
         strands = (1, -1)
