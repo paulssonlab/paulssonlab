@@ -842,11 +842,10 @@ def iterate_shifts(a, b):
             a_stop = min(shift, len(a))
             b_start = a_start + len(b) - shift
             b_stop = a_stop + len(b) - shift
-            loc = a_stop
-            yield loc, a_start, a_stop, b_start, b_stop
+            yield a_start, a_stop, b_start, b_stop
     elif a.circular is False and b.circular is True:
-        for loc, b_start, b_stop, a_start, a_stop in iterate_shifts(b, a):
-            yield loc, a_start, a_stop, b_start, b_stop
+        for b_start, b_stop, a_start, a_stop in iterate_shifts(b, a):
+            yield a_start, a_stop, b_start, b_stop
     elif a.circular is True and b.circular is False:
         max_shift = max(len(b) - len(a), 0)
         for shift in range(max_shift + 1):
@@ -855,8 +854,7 @@ def iterate_shifts(a, b):
             b_stop = len(b) - shift
             for a_start in range(len(a)):
                 a_stop = (b_stop - b_start + a_start) % len(a)
-                loc = a_stop
-                yield loc, a_start, a_stop, b_start, b_stop
+                yield a_start, a_stop, b_start, b_stop
     elif a.circular is True and b.circular is True:
         raise ValueError("cannot bind a circular sequence to another circular sequence")
 
@@ -905,7 +903,6 @@ def _find_primer_binding_site(
         else:
             template = orig_template
         for (
-            loc,
             template_start,
             template_stop,
             primer_start,
@@ -921,21 +918,10 @@ def _find_primer_binding_site(
                 primer_overlap = primer_overlap.seq_lower()
             score = scoring_func(template_overlap, primer_overlap)
             if score >= min_score:
+                loc = template_stop
                 if strand == -1:
                     # when reverse complementing template, need to adjust loc
                     loc = len(template) - loc
-                print("> ", template_overlap)
-                print(">>", primer_overlap)
-                print(
-                    loc,
-                    "|",
-                    template_start,
-                    template_stop,
-                    primer_start,
-                    primer_stop,
-                    "|",
-                    score,
-                )
                 sites.append((strand, loc, score))
     return sorted(sites, key=itemgetter(1))
 
@@ -974,10 +960,11 @@ def anneal(a, b, min_score=6):
     b = reverse_complement(b)
     loc = None
     best_score = -1
-    for shift, a_start, a_stop, b_start, b_stop in iterate_shifts(a, b):
+    for a_start, a_stop, b_start, b_stop in iterate_shifts(a, b):
         a_overlap = a[a_start:a_stop]
         b_overlap = b[b_start:b_stop]
         score = len(a_overlap)
+        loc = a_stop
         if a_overlap == b_overlap and score > best_score:
             loc = len(b) - shift
             best_score = score
