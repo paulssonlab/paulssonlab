@@ -1,10 +1,13 @@
 import os
+from threading import Lock
+from paulssonlab.util.threading import synchronized
 import RNA
 
 PARAMETERS = {
     "dna_mathews2004": f"{os.environ['CONDA_PREFIX']}/share/ViennaRNA/dna_mathews2004.par"
 }
 
+viennarna_lock = Lock()
 current_parameter = None
 
 
@@ -18,6 +21,7 @@ def configure_parameters(param_file):
 
 
 # FROM: https://github.com/ViennaRNA/ViennaRNA/issues/64
+@synchronized(viennarna_lock)
 def dna_secondary_structure(seq):
     configure_parameters(PARAMETERS["dna_mathews2004"])
     md = RNA.md()
@@ -28,6 +32,7 @@ def dna_secondary_structure(seq):
     return mfe_monomer, mfe_homodimer
 
 
+@synchronized(viennarna_lock)
 def dna_heterodimer(seq1, seq2):
     configure_parameters(PARAMETERS["dna_mathews2004"])
     md = RNA.md()
