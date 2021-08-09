@@ -369,23 +369,6 @@ def _prepare_parts(part_sheet, parts, first_row):
     return parts
 
 
-def replace_primer_tail(target, primer, new_tail=""):
-    sites = find_primer_binding_site(target, primer, return_sequences=True)
-    print(sites)
-    if len(sites) != 1:
-        raise ValueError(
-            f"expecting a unique primer binding site, instead got {len(sites)}"
-        )
-    sense = sites[0][0]
-    score = sites[0][2]
-    primer_overlap = sites[0][4]
-    primer_binding = primer_overlap[len(primer_overlap) - score :]
-    if sense == -1:
-        new_tail = reverse_complement(new_tail)
-    new_primer = new_tail + primer_binding
-    return new_primer
-
-
 def part_entry_to_seq(entry):
     seq = entry["Sequence"]
     upstream_overhang_seq = entry["Upstream overhang"]

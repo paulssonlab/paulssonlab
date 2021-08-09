@@ -1,4 +1,5 @@
 from typing import NamedTuple, Optional
+from paulssonlab.cloning.sequence import reverse_complement, find_primer_binding_site
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
 
@@ -35,7 +36,9 @@ def evaluate_primer(seq, tm_kwargs=None, ta_kwargs=None):
     tm = thermodynamics.tm(seq, **(tm_kwargs or {}))
     ta = thermodynamics.ta_from_tms(tm, **(ta_kwargs or {}))
     mfe_monomer, mfe_homodimer = dna_secondary_structure(seq)
-    return Primer(seq=seq, tm=tm, ta=ta, mfe_monomer=mfe_monomer, mfe_homodimer)
+    return Primer(
+        seq=seq, tm=tm, ta=ta, mfe_monomer=mfe_monomer, mfe_homodimer=mfe_homodimer
+    )
 
 
 def evaluate_primer_pair(primer1, primer2, tm_kwargs=None, ta_kwargs=None):
@@ -97,3 +100,20 @@ def enumerate_primers(
             )
             primers.append(primer)
     return primers
+
+
+def replace_primer_tail(template, primer, new_tail=""):
+    sites = find_primer_binding_site(template, primer, return_sequences=True)
+    print(">", sites)
+    if len(sites) != 1:
+        raise ValueError(
+            f"expecting a unique primer binding site, instead got {len(sites)}"
+        )
+    sense = sites[0][0]  # TODO: NamedTuple-ize
+    score = sites[0][2]
+    primer_overlap = sites[0][4]
+    primer_binding = primer_overlap[len(primer_overlap) - score :]
+    if sense == -1:
+        new_tail = reverse_complement(new_tail)
+    new_primer = new_tail + primer_binding
+    return new_primer

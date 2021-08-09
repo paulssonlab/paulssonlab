@@ -951,7 +951,8 @@ def _find_primer_binding_site(
     return sorted(sites, key=itemgetter(1))
 
 
-def amplicon_location(primer_forward, primer_reverse):
+def amplicon_location(template, primer1, primer2):
+    # TODO: use in pcr?
     pass
 
 
