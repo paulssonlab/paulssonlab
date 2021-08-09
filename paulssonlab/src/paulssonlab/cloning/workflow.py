@@ -6,7 +6,13 @@ import string
 import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
-from paulssonlab.cloning.sequence import smoosh_sequences, DsSeqRecord
+from paulssonlab.cloning.sequence import (
+    smoosh_sequences,
+    find_homologous_ends,
+    DsSeqRecord,
+    find_primer_binding_site,
+    reverse_complement,
+)
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
@@ -180,30 +186,6 @@ def import_addgene(
         trim_unassigned_ids(strain_sheet)
         trim_unassigned_ids(plasmid_sheet)
     return dict(strains=strains, plasmids=plasmids, plasmid_maps=plasmid_maps)
-
-
-# TODO
-# def upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=True):
-#     files = list_drive(service, root=plasmid_maps_folder)
-#     for filename, plasmid_map in plasmid_maps.items():
-#         if filename in files:
-#             if not overwrite:
-#                 raise ValueError(
-#                     f"enable overwrite or remove existing plasmid map: {filename}"
-#                 )
-#             file_id = files[filename]["id"]
-#         else:
-#             file_id = None
-#         file_id = upload_drive(
-#             service,
-#             content=plasmid_map["content"],
-#             name=filename,
-#             file_id=file_id,
-#             mimetype=plasmid_map["mimetype"],
-#             parent=plasmid_maps_folder,
-#         )
-#         plasmid_map["id"] = file_id
-#     return plasmid_maps
 
 
 def _import_addgene_data(
@@ -387,30 +369,21 @@ def _prepare_parts(part_sheet, parts, first_row):
     return parts
 
 
-# def get_drive_seq(drive_service, root, name):
-#     return next(get_drive_seqs(drive_service, root, [name]))
-
-
-# def get_drive_seqs(drive_service, root, names):
-#     seq_files = list_drive(drive_service, root=root)
-#     for name in names:
-#         seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)["id"]
-#         seq = read_sequence(
-#             drive_service.files().get_media(fileId=seq_file).execute().decode("utf8")
-#         )
-#         yield seq
-
-
-def add_overhangs(seq, overhangs):
-    seq = smoosh_sequences(overhangs[0], seq)
-    seq = smoosh_sequences(seq, overhangs[1])
-    return seq
-
-
-def add_flanks(seq, flanks):
-    for flank_5prime, flank_3prime in flanks:
-        seq = flank_5prime + seq + flank_3prime
-    return seq
+def replace_primer_tail(target, primer, new_tail=""):
+    sites = find_primer_binding_site(target, primer, return_sequences=True)
+    print(sites)
+    if len(sites) != 1:
+        raise ValueError(
+            f"expecting a unique primer binding site, instead got {len(sites)}"
+        )
+    sense = sites[0][0]
+    score = sites[0][2]
+    primer_overlap = sites[0][4]
+    primer_binding = primer_overlap[len(primer_overlap) - score :]
+    if sense == -1:
+        new_tail = reverse_complement(new_tail)
+    new_primer = new_tail + primer_binding
+    return new_primer
 
 
 def part_entry_to_seq(entry):
@@ -452,3 +425,41 @@ def re_digest_part(seq, enzyme):
 
 def is_bases(s):
     return re.match(r"^[atcgrymkswbdhvn]+$", s, re.IGNORECASE) is not None
+
+
+def concatenate_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            upstream = upstream_flank + upstream
+            downstream = downstream + downstream_flank
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    return upstream, downstream
+
+
+def smoosh_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            if lower:
+                upstream_flank = upstream_flank.lower()
+                downstream_flank = downstream_flank.lower()
+            upstream = smoosh_sequences(upstream_flank, upstream)
+            downstream = smoosh_sequences(downstream, downstream_flank)
+    return upstream, downstream
+
+
+def smoosh_and_trim_flanks(seq, flanks, lower=True):
+    if lower:
+        seq = seq.lower()
+    upstream_overlap = find_homologous_ends(flanks[0], seq)
+    downstream_overlap = find_homologous_ends(seq, flanks[1])
+    return (
+        flanks[0][: len(flanks[0]) - upstream_overlap],
+        flanks[1][downstream_overlap:],
+    )

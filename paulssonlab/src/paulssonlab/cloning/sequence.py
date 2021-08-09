@@ -801,7 +801,15 @@ def find_homologous_ends(a, b, max_overlap=None):
     return None
 
 
-def smoosh_sequences(a, b, max_overlap=None):
+def smoosh_sequences(*seqs, max_overlap=None):
+    seq = seqs[0]
+    if len(seqs) >= 2:
+        for seq2 in seqs[1:]:
+            seq = _smoosh_sequences(seq, seq2)
+    return seq
+
+
+def _smoosh_sequences(a, b, max_overlap=None):
     """Returns the shortest sequence beginning with `a` and stoping with `b`.
 
     For example, this will eliminate a common substring on the junction
@@ -941,6 +949,10 @@ def _find_primer_binding_site(
                 else:
                     sites.append((strand, loc, score))
     return sorted(sites, key=itemgetter(1))
+
+
+def amplicon_location(primer_forward, primer_reverse):
+    pass
 
 
 def pcr(template, primer1, primer2, min_score=10):

@@ -1,8 +1,17 @@
 import re
+from typing import NamedTuple
 import Bio.Restriction
 
 
-def _re_search(enzyme, seq, circular=None):
+class CutSite(NamedTuple):
+    cut5: int
+    cut3: int
+    cut_upstream: bool
+    recognition_upstream: int
+    recognition_downstream: int
+
+
+def _re_search(seq, enzyme, circular=None):
     # TODO: hack to avoid circular deps
     from paulssonlab.cloning.sequence import get_seq
 
@@ -12,7 +21,14 @@ def _re_search(enzyme, seq, circular=None):
     )
     if circular:
         seq = seq + seq[: enzyme.size - 1]
-    re_sites = [(i.start(), i.group(1) is not None) for i in re.finditer(compsite, seq)]
+    re_sites = [
+        (
+            i.start(),
+            i.group(1) is not None,
+            len(i.group(1) if i.group(1) is not None else i.group(2)),
+        )
+        for i in re.finditer(compsite, seq)
+    ]
     return re_sites
 
 
@@ -40,7 +56,17 @@ def _re_search_cuts(binding_locs, enzyme):
                     cut3_loc = loc + enzyme.size - cut5
                 else:
                     cut3_loc = None
-            cuts.append((cut5_loc, cut3_loc, cut_upstream))
+            binding_upstream = 0
+            binding_downstream = 0
+            cuts.append(
+                CutSite._make(
+                    cut5_loc,
+                    cut3_loc,
+                    cut_upstream,
+                    binding_upstream,
+                    binding_downstream,
+                )
+            )
     return cuts
 
 
@@ -49,23 +75,22 @@ def re_search(seq, enzyme, circular=None):
         circular = seq.circular
     if isinstance(enzyme, str):
         enzyme = getattr(Bio.Restriction, enzyme)
-    binding_locs = _re_search(enzyme, seq, circular=circular)
+    binding_locs = _re_search(seq, enzyme, circular=circular)
     cuts = _re_search_cuts(binding_locs, enzyme)
-    length = len(seq)
     return cuts
 
 
 def _re_digest(seq, cuts):
     offset = 0
     seqs = []
-    for cut5, cut3, cut_upstream in cuts:
-        frags, new_offset = seq.cut(cut5 - offset, cut3 - offset)
+    for cut in cuts:
+        frags, new_offset = seq.cut(cut.cut5 - offset, cut.cut3 - offset)
         if len(frags) == 1:
-            frags[0].upstream_inward_cut = cut_upstream
-            frags[0].downstream_inward_cut = not cut_upstream
+            frags[0].upstream_inward_cut = cut.cut_upstream
+            frags[0].downstream_inward_cut = not cut.cut_upstream
         elif len(frags) == 2:
-            frags[0].downstream_inward_cut = not cut_upstream
-            frags[1].upstream_inward_cut = cut_upstream
+            frags[0].downstream_inward_cut = not cut.cut_upstream
+            frags[1].upstream_inward_cut = cut.cut_upstream
         else:
             raise NotImplementedError
         seqs.extend(frags[:-1])
