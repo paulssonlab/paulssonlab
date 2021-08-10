@@ -17,6 +17,8 @@ from napari_browse_hdf5 import (
 # TODO spawn sub-tasks in multiple threads?
 # from napari.qt.threading import thread_worker
 
+# FIXME/TODO update loading Napari Settings, Corrections
+
 from lineages import relabel_mask_complete
 import matplotlib.cm
 
@@ -763,7 +765,6 @@ def main_kymograph_browser_function(
     masks_file,
     regions_file,
     napari_settings_file,
-    corrections_file,
     lineages_file,
     viewer_params_file,
     data_table_file,

@@ -159,11 +159,11 @@ def add_properties(
 
 def write_properties_to_table_from_df(cell, table_row, columns):
     """
-    Input a row from a dataframe, and an HDF5 table row element.
+    Input a row from a dataframe, an HDF5 table row element, and a list of column names.
     Write all the values from one to the other.
     """
     for column in columns:
-        table_row[column] = getattr(cell, column)
+        table_row[column] = cell[column]
 
     table_row.append()
 
@@ -357,10 +357,7 @@ def merge_tables(in_file, out_file, channels, seg_channels, file_names, has_regi
 
     h5file_out = tables.open_file(out_file, mode="w")
     big_table = h5file_out.create_table(
-        "/",
-        "cell_measurements",
-        Cell,
-        filters=tables.Filters(complevel=1, complib="zlib"),
+        "/", "measurements", Cell, filters=tables.Filters(complevel=1, complib="zlib")
     )
 
     # NOTE: had to resort to much more complex code, and not a single walk_nodes,

@@ -17,3 +17,5 @@ dependencies:
   - napari
   - pyside2
   - matplotlib
+  # For imwarp registration
+  - numba

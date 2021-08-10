@@ -7,11 +7,22 @@ import pandas
 from params import read_params_string, read_params_file
 import os
 
+# For registration
+from imwarp import imwarp
+from imref import imref2d
+
 """
 NOTE for now, assumes image dtype is float32
 
 TODO clean up the metadata functions, and their names, then stick them in the separate metadata Python file
 Might also need to rework the similar functions used for nd2 browsing?
+
+TODO 3D (z-stacked) layers need to add a scaling, as the Z dimension mightn't be the same as the X/Y.
+X/Y pixel_microns is easy to grab from the metadata.
+Z can be found in "/Metadata/File_beads_010/raw_metadata/image_metadata/SLxExperiment/uLoopPars/dZStep",
+although I don't know how reliable this is.
+The safest might be to always set the scale for X & Y using pixel microns,
+and then try to load that value & use it to set the scale for Z.
 """
 
 
@@ -118,7 +129,11 @@ def query_regions_from_file(file, fov, frame, z_level, regions_file):
     h5file_regions = tables.open_file(regions_file, "r")
     regions_table = h5file_regions.get_node("/", "trench_coords")
 
-    query = "(info_file == file) & (info_fov == fov) & (info_frame == frame) & (info_z_level == z_level)"
+    query = "(info_file == file) & \
+              (info_fov == fov) & \
+              (info_frame == frame) & \
+              (info_z_level == z_level)"
+
     search = regions_table.read_where(query)
     df = pandas.DataFrame(search)
 
@@ -272,29 +287,29 @@ def add_masks_layer(
 
 ### Misc functions
 
+# def load_correction_values(in_file):
+# """
+# Load values from an HDF5 file into a dict. Useful for flatfield corrections & camera biases.
+# """
+# if in_file:
+# dict = {}
 
-def load_values(in_file):
-    """
-    Load values from an HDF5 file into a dict. Useful for flatfield corrections & camera biases.
-    TODO find a better name for this subroutine
-    """
-    if in_file:
-        dict = {}
+# h5 = tables.open_file(in_file, "r")
+# for node in h5.iter_nodes("/"):
+# key = node._v_name
+# dict[key] = node.read()
+# h5.close()
 
-        h5 = tables.open_file(in_file, "r")
-        for node in h5.iter_nodes("/"):
-            key = node._v_name
-            dict[key] = node.read()
-        h5.close()
+# else:
+# dict = None
 
-    else:
-        dict = None
-
-    return dict
+# return dict
 
 
 def whole_labeled_canvas(file, fov, frame, z, width, height, sc, masks_file):
     """
+    Return a labeled canvas, with no regions. This is done by just loading region_0.
+
     FIXME Passing in width & height, even though they aren't needed, because it conforms
     to the generic shape shared by all the other functions. There must be a better way to do this!
     Maybe by using named arguments, or a dict of arguments?
@@ -353,7 +368,6 @@ def masks_to_canvas(file, fov, frame, z, width, height, sc, regions_file, masks_
     node_3 = h5file_masks.get_node(node_2, "/Frame_{}".format(frame))()
     node_4 = h5file_masks.get_node(node_3, "/Z_{}/{}".format(z, sc))
 
-    # FIXME or height, width?
     canvas = numpy.zeros(shape=(width, height), dtype=numpy.uint16)
     for n in h5file_masks.walk_nodes(node_4, classname="CArray"):
         # Parse n's parent & its name to get keys
@@ -518,7 +532,7 @@ def add_image_layers(
     viewer,
     channels,
     layer_params,
-    corrections_file,
+    corrections_dict,
 ):
     """
     Input an HDF5 file with images,
@@ -542,7 +556,7 @@ def add_image_layers(
             height,
             load_img,
             numpy.float32,
-            [numpy.float32, images_file, corrections_file, c],
+            [numpy.float32, images_file, corrections_dict, c],
         )
 
         viewer.add_image(image_stack, **layer_params[c])
@@ -684,43 +698,141 @@ def metadata_array_equal(h5file, attribute):
     return zeroth_attribute
 
 
+def sub_bg_no_underflow(input_image, bg):
+    """
+    Subtract a background value from an image, but prevent underflow by stopping at zero.
+    If input_image is a numpy array, then bg could be a fixed value,
+    or another numpy array with the same dimensions as input_image.
+    Dtype could be either floating point or integer.
+    """
+    return (input_image <= bg) * 0 + (input_image > bg) * (input_image - bg)
+
+
 def load_img(
-    file, fov, frame, z, width, height, dtype, images_file, corrections_file, channel
+    file, fov, frame, z, width, height, dtype, images_file, corrections_dict, channel
 ):
     """
     Attempt to load an image, and if it cannot be found, return a zero'ed array instead.
-    Apply camera bias and flat field corrections.
+    Apply camera bias and flat field corrections to the loaded image.
     """
     try:
-        # Open & parse the corrections file
-        corrections = None
-        if corrections_file:
-            corrections = load_values(corrections_file)
-
-        # If they weren't defined, then define them here
-        # TODO allow specifying the name of the channel?
-        try:
-            camera_bias = corrections["DARK"]
-        # No camera bias correction, so subtract zero.
-        except:
-            camera_bias = 0.0
-
-        try:
-            flatfield_correction = corrections[channel]
-        # No flat-field inhomogeneity correction, so divide by 1.0.
-        except:
-            flatfield_correction = 1.0
-
-        path = "/Images/{}/FOV_{}/Frame_{}/Z_{}".format(file, fov, frame, z)
+        path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(file, fov, frame, z, channel)
         h5 = tables.open_file(images_file, "r")
         node = h5.get_node(path)
-        img = (node._f_get_child(channel).read() - camera_bias) / flatfield_correction
+        img = node.read().astype(dtype)
         h5.close()
+
+        if corrections_dict["camera_noise"] is not None:
+            img = sub_bg_no_underflow(img, corrections_dict["camera_noise"])
+        else:
+            # A default value of 100.0
+            img = sub_bg_no_underflow(img, 100.0)
+
+        # Optional for each channel
+        # If there is nothing, then do nothing!
+        if corrections_dict["flatfield"] is not None:
+            if corrections_dict["flatfield"][channel] is not None:
+                img = numpy.divide(img, corrections_dict["flatfield"][channel])
+
+        # Registration
+        # Use try clause, because a None value will not be in the dict!
+        if corrections_dict["registration"] is not None:
+            registration_mat = corrections_dict["registration"][channel]
+            if registration_mat is not None:
+                print("Warping ", channel, "with matrix ", registration_mat)
+                # FIXME it works on the entire 3D stack,
+                # but we're only loading 1 Z level at a time.
+                # --> How to apply the warping to a single slice?
+                # Do we take the z-level, copy the frame into a zero'ed
+                # arr at its slice level, apply the transform,
+                # and then extract the slice again?
+                img = imwarp(img, registration_mat, R_A=imref2d)
 
         return img.T
 
     except:
         return numpy.zeros((height, width), dtype=dtype)
+
+
+def parse_corrections_settings(corrections_settings):
+    """
+    Input a dict with different possible corrections. Possible corrections include:
+    - Camera noise (closed shutter)
+    - Flatfielding (fluorescent dyes)
+    - Fiducial registration (fluorescent beads)
+
+    If specified, then load each of these into memory, and be able
+    to pass it on through to the image layer loading.
+    """
+    # Initialize with default values, which might later be filled in.
+    corrections_dict = {"camera_noise": None, "flatfield": None, "registration": None}
+
+    # Was a corrections file specified?
+    # If not, then just pass back some Nones
+    try:
+        corr_h5 = tables.open_file(corrections_settings["corrections_file"])
+
+        # Camera noise
+        try:
+            camera_noise = corr_h5.get_node("/CAMERA/camera_noise").read()
+            corrections_dict["camera_noise"] = camera_noise
+        except:
+            corrections_dict["camera_noise"] = None
+
+        # Flat-fielding matrices
+        try:
+            ff_dict = {}
+            for ch_img, ch_corr in corrections_settings[
+                "flatfield_channel_mapping"
+            ].items():
+                # Optional for each channel
+                if ch_corr:
+                    corr_img = corr_h5.get_node("/FLATFIELD/{}".format(ch_corr)).read()
+                    ff_dict[ch_img] = corr_img
+                else:
+                    ff_dict[ch_img] = 1.0
+
+            corrections_dict["flatfield"] = ff_dict
+
+        # Default value of 1.0 (no change)
+        except:
+            corrections_dict["flatfield"] = None
+
+        # Registration calibration (fiducial beads, e.g. TetraSpeck)
+        try:
+            # Input reference_moving_mode_inworld, output array
+            registration_dict = {}
+
+            # Open the HDF5 file with registration matrices
+            registration_h5 = tables.open_file(
+                corrections_settings["registration"]["matrix_file"], "r"
+            )
+
+            for ch, vals in corrections_settings["registration"]["mapping"].items():
+                # None is used for the reference channel in the settings file
+                if vals is not None:
+                    path = "/{}/{}/{}/inworld_{}".format(
+                        vals["reference"], vals["moving"], vals["mode"], vals["inworld"]
+                    )
+                    registration_dict[ch] = registration_h5.get_node(path).read()
+                # None is used for the reference channel in the registrations dict
+                else:
+                    registration_dict[ch] = None
+
+            registration_h5.close()
+            corrections_dict["registration"] = registration_dict
+
+        except:
+            corrections_dict["registration"] = None
+
+        # Done!
+        corr_h5.close()
+
+    except:
+        # Don't do anything
+        pass
+
+    return corrections_dict
 
 
 ### Main function
@@ -730,8 +842,7 @@ def main_hdf5_browser_function(
     images_file,
     masks_file,
     regions_file,
-    corrections_file,
-    napari_settings_file,
+    settings_file,
     viewer_params_file,
     data_table_file,
 ):
@@ -746,9 +857,12 @@ def main_hdf5_browser_function(
     # Initialilize the viewer
     viewer = napari.Viewer()
 
+    # Global settings (YAML)
+    settings = read_params_file(settings_file)
+
     # Load the image layer params for napari
     # TODO params for masks layers? regions layers?
-    layer_params = read_params_file(napari_settings_file)
+    layer_params = settings["napari_settings"]
 
     # File with images & metadata
     h5file = tables.open_file(images_file, "r")
@@ -777,6 +891,15 @@ def main_hdf5_browser_function(
 
     h5file.close()
 
+    # Load correction settings
+    # For camera noise, flatfielding, registration
+    try:
+        corrections_settings = settings["corrections"]
+    except:
+        corrections_settings = None
+
+    corrections_dict = parse_corrections_settings(corrections_settings)
+
     # Image layers
     add_image_layers(
         images_file,
@@ -789,7 +912,7 @@ def main_hdf5_browser_function(
         viewer,
         channels,
         layer_params,
-        corrections_file,
+        corrections_dict,
     )
 
     # Regions (trench) layer

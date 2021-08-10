@@ -86,11 +86,10 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
             for fov in metadata["fields_of_view"]:
                 for frame in metadata["frames"]:
                     for z_level in metadata["z_levels"]:
-                        img_node = h5file.get_node(
-                            "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
-                                n._v_name, fov, frame, z_level, c
-                            )
+                        path = "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
+                            n._v_name, fov, frame, z_level, c
                         )
+                        img_node = h5file.get_node(path)
                         img = img_node.read()
                         stack[..., i] = img
                         i += 1
@@ -126,7 +125,11 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
                 arr -= means[dark_channel]
             else:
                 # No dark channel, so option to subtract a constant value instead
-                arr -= background_values[c]
+                # arr -= background_values[c]
+                bg_value = background_values[c]
+                # Don't allow the values to wrap around
+                # NOTE bg_value could also be an array?
+                arr = (arr <= bg_value) * 0.0 + (arr > bg_value) * (arr - bg_value)
 
             # Divide by the mean value to normalize all values
             # Dividing by the mean, as opposed to the max, reduces the effect of outlier "hot" pixels
