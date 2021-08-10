@@ -23,6 +23,8 @@ The row or trench co-ordinates can then be used as "regions" during segmentation
 
 TODO: come up with a way to pass in which detection algorithm to use.
 Add the ability to specify whether a given unit is in pixels or in microns in the YAML params file.
+
+FIXME did I delete the dir creation step?
 """
 
 
@@ -75,7 +77,7 @@ def make_trench_coords_type(max_filename_len):
     return type("TrenchCoords", (tables.IsDescription,), column_types)
 
 
-def main_detection_function(out_dir, in_file, num_cpu, params_file):
+def main_detection_function(out_file, in_file, num_cpu, params_file):
     """
     Main detection function.
     """
@@ -119,8 +121,7 @@ def main_detection_function(out_dir, in_file, num_cpu, params_file):
     max_filename_len = get_max_length(file_names)
 
     # Create the H5 file for writing the table to
-    out_file_path = os.path.join(out_dir, "regions_tables.h5")
-    out_h5file = tables.open_file(out_file_path, mode="w")
+    out_h5file = tables.open_file(out_file, mode="w")
 
     # Create the trench rows table
     RowCoords = make_row_coords_type(max_filename_len)

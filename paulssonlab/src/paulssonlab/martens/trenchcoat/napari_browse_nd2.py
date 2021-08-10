@@ -14,12 +14,14 @@ Use Napari to browse a directory of ND2 files.
 """
 
 
-def main_nd2_browser_function(in_dir, napari_settings_file):
+def main_nd2_browser_function(in_dir, settings_file):
     """
     Open a directory of ND2 files in Napari, using the parameters specified in the YAML file.
     """
+    trenchcoat_settings = read_params_file(settings_file)
+
     # 1. Load the params, and use the params to determine the list of channel names
-    layer_params = read_params_file(napari_settings_file)
+    layer_params = trenchcoat_settings["napari_settings"]
     channels = layer_params.keys()
 
     # 2. Open up all the nd2 files in a dict., and determine the max. ranges of FOVs, frames, z_levels across all files.

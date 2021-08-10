@@ -619,7 +619,7 @@ def main_lineages_function(infile, outfile, length_buffer, trench_length):
     # In that case, it would be necessary to iterate through chunks
     # using read_where() and to write dataframe chunks,
     # then to concatenate them all at the end.
-    df = pandas.DataFrame(h5_in.get_node("/cell_measurements").read())
+    df = pandas.DataFrame(h5_in.get_node("/measurements").read())
     h5_in.close()
 
     # Run lineage tracking & add the results as 2 new columns:

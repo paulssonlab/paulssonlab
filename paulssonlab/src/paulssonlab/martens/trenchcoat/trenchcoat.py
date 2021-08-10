@@ -57,17 +57,17 @@ def cli():
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="TrenchCoat settings file (YAML).",
     show_default=True,
 )
-def browse_nd2(in_dir, napari_settings_file):
+def browse_nd2(in_dir, settings_file):
     """Use Napari to browse a directory of ND2 files."""
-    main_nd2_browser_function(in_dir=in_dir, napari_settings_file=napari_settings_file)
+    main_nd2_browser_function(in_dir=in_dir, settings_file=settings_file)
 
 
 @cli.command(no_args_is_help=True)
@@ -99,21 +99,13 @@ def browse_nd2(in_dir, napari_settings_file):
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="Trenchcoat settings file (YAML).",
     show_default=True,
-)
-@click.option(
-    "-C",
-    "--corrections-file",
-    "corrections_file",
-    required=False,
-    type=str,
-    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
     "-V",
@@ -135,15 +127,12 @@ def browse_hdf5(
     images_file,
     masks_file,
     regions_file,
-    corrections_file,
-    napari_settings_file,
+    settings_file,
     viewer_params_file,
     data_table_file,
 ):
-    """Use Napari to browse a dataset & to visualize trenches and cell masks.
-
-    camera_biases_file, flatfield_corrections_file are paths to HDF5
-    files containing channel-specific correction values.
+    """
+    Use Napari to browse a dataset & to visualize trenches and cell masks.
 
     Add option to "compute" an image based on properties within segmented regions.
     """
@@ -151,8 +140,7 @@ def browse_hdf5(
         images_file=images_file,
         masks_file=masks_file,
         regions_file=regions_file,
-        corrections_file=corrections_file,
-        napari_settings_file=napari_settings_file,
+        settings_file=settings_file,
         viewer_params_file=viewer_params_file,
         data_table_file=data_table_file,
     )
@@ -183,7 +171,7 @@ def browse_hdf5(
     "regions_file",
     required=True,
     type=str,
-    default="REG/regions_tables.h5",
+    default="regions_table.h5",
     help="Input HDF5 file with regions (trenches must be re-labeled for left/right drift).",
 )
 @click.option(
@@ -196,21 +184,13 @@ def browse_hdf5(
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="TrenchCoat settings file (YAML).",
     show_default=True,
-)
-@click.option(
-    "-C",
-    "--corrections-file",
-    "corrections_file",
-    required=False,
-    type=str,
-    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
     "-V",
@@ -241,8 +221,7 @@ def browse_kymographs(
     images_file,
     masks_file,
     regions_file,
-    napari_settings_file,
-    corrections_file,
+    settings_file,
     lineages_file,
     viewer_params_file,
     data_table_file,
@@ -258,8 +237,7 @@ def browse_kymographs(
         images_file=images_file,
         masks_file=masks_file,
         regions_file=regions_file,
-        napari_settings_file=napari_settings_file,
-        corrections_file=corrections_file,
+        settings_file=settings_file,
         lineages_file=lineages_file,
         viewer_params_file=viewer_params_file,
         data_table_file=data_table_file,
@@ -340,10 +318,10 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
 @cli.command(no_args_is_help=True)
 @click.option(
     "-o",
-    "--out-dir",
-    "out_dir",
+    "--out-file",
+    "out_file",
     required=True,
-    default="REGIONS",
+    default="regions_table.h5",
     type=str,
     help="Output directory.",
     show_default=True,
@@ -378,10 +356,10 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     help="Regions detection parameters file (YAML).",
     show_default=True,
 )
-def trench_detect(out_dir, in_file, num_cpu, params_file):
+def trench_detect(out_file, in_file, num_cpu, params_file):
     """Detect trenches and write their rectangular regions to an HDF5 file."""
     main_detection_function(
-        out_dir=out_dir, in_file=in_file, num_cpu=num_cpu, params_file=params_file
+        out_file=out_file, in_file=in_file, num_cpu=num_cpu, params_file=params_file
     )
 
 
@@ -552,7 +530,7 @@ def corrections(in_file, out_file, dark_channel, bg_file):
     "--in-file",
     "in_file",
     required=True,
-    default="HDF5/metadata.h5",
+    default="HDF5/data.h5",
     type=str,
     help="Input HDF5 or ND2 file with metadata.",
     show_default=True,
@@ -588,7 +566,7 @@ def print_metadata(in_file, sub_file_name):
     "--regions-file",
     "regions_file",
     required=False,
-    default="REG/regions_tables.h5",
+    default="regions_table.h5",
     type=str,
     help="HDF5 file containing image regions",
     show_default=True,
@@ -747,7 +725,6 @@ def lineage_tracking(in_file, out_file, length_buffer, trench_length):
     "--masks-file",
     "masks_file",
     required=False,
-    default="SEG/masks.h5",
     type=str,
     help="Input HDF5 file with segmentation masks.",
     show_default=True,

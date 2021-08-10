@@ -167,9 +167,9 @@ def update_cell_measurements(
     """
     # Load the cell measurements table
     h5_seg = tables.open_file(
-        os.path.join(cell_measurements_file, "TABLES/tables_merged.h5"), "r"
+        os.path.join(cell_measurements_file, "TABLES/tables.h5"), "r"
     )
-    properties_table = h5_seg.get_node("/cell_measurements")
+    properties_table = h5_seg.get_node("/measurements")
     df_cell_props = pandas.DataFrame(properties_table.read())
     h5_seg.close()
 
