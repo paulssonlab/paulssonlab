@@ -7,6 +7,7 @@ from itertools import product as it_product
 from collections import defaultdict, OrderedDict
 from operator import itemgetter
 from copy import deepcopy
+from typing import Union
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
 
@@ -630,6 +631,9 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
+SEQ_TYPE = Union[str, Seq, SeqRecord, DsSeqRecord]
+
+
 def assemble(seqs, **kwargs):
     # we need only cast the first seq to DsSeqRecord because DsSeqRecord.assemble casts its input
     if not len(seqs):
@@ -798,7 +802,7 @@ def find_homologous_ends(a, b, max_overlap=None):
         b_head = b[:overlap]
         if a_tail == b_head:
             return overlap
-    return None
+    return 0
 
 
 def smoosh_sequences(*seqs, max_overlap=None):
