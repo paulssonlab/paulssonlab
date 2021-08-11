@@ -9,7 +9,7 @@ import pandas as pd
 from copy import deepcopy
 
 class multifov():
-    def __init__(self,fov_list):
+    def __init__(self,selected_fov_list):
         """Write later...
 
         Args:
@@ -18,10 +18,10 @@ class multifov():
             all_channels (list): list of strings corresponding to the different image channels
             available in the input hdf5 file, with the channel used for segmenting trenches in
             the first position. NOTE: these names must match those of the input hdf5 file datasets.
-            fov_list (list): List of ints corresponding to fovs of interest.
+            selected_fov_list (list): List of ints corresponding to fovs of interest.
         """
-        self.fov_list = fov_list
-        self.num_fovs = len(fov_list)
+        self.selected_fov_list = selected_fov_list
+        self.num_fovs = len(selected_fov_list)
 
     def map_to_fovs(self,func,*args,**kargs):
         """Handler for performing steps of analysis across multiple fovs.

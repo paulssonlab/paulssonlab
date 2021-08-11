@@ -12,6 +12,7 @@ from skimage.registration import phase_cross_correlation
 """
 TODO:
 - Unit conversion from microns to pixels?
+- Is there any record of the threshold that was used?
 """
 
 
@@ -25,8 +26,16 @@ def adjust_trench_number(df, threshold):
     (e.g. using the drift recorded by the stage), and how close together the trenches are.
     Assumes that the shift is a most 1 trench width's worth. Unclear if or how well
     this would extend to larger drifts.
+
+    NOTE what about if there were gradual drift in one direction?
+    Then, we would want to compare each frame to exactly the frame before.
+    Or maybe we would want to use the stage information to sort the frames, from
+    left to right?
     """
     # For each file / fov / frame / z / row, obtain the absolute minimum min_row value.
+    # The min_row value designates the leftmost set of pixels of the trench bounding box.
+    # The smallest min_row is therefore the leftmost set of pixels of the leftmost trench.
+    # The reason it's min_row, and not min_col, is because of the F-ordering convention.
     smallest_min_rows = df.groupby(
         ["info_file", "info_fov", "info_z_level", "info_row_number"]
     )["min_row"].min()
@@ -43,7 +52,7 @@ def adjust_trench_number(df, threshold):
             & (df["info_row_number"] == i.info_row_number)
         ]
 
-        # In principle, using unique() allows for gaps in the frame numbering.
+        # In principle, using unique() allows for gaps in the frame numbering (untested!).
         all_frames = this_df["info_frame"].unique()
         for fr in all_frames:
             this_fr = this_df[this_df["info_frame"] == fr]
@@ -64,6 +73,7 @@ def adjust_trench_number(df, threshold):
             # conversion to f64. Options are:
             # 1. converting back to int afterwards, or
             # 2. using a groupby method, which might preserve data types.
+            # 3. store the result in a numpy array, and then add the numpy array as a new column at the end?
             if diff < threshold:
                 df.loc[this_fr.index, ("corrected_trench_label")] = this_fr[
                     "info_trench_number"
@@ -157,9 +167,9 @@ def update_cell_measurements(
     """
     # Load the cell measurements table
     h5_seg = tables.open_file(
-        os.path.join(cell_measurements_file, "TABLES/tables_merged.h5"), "r"
+        os.path.join(cell_measurements_file, "TABLES/tables.h5"), "r"
     )
-    properties_table = h5_seg.get_node("/cell_measurements")
+    properties_table = h5_seg.get_node("/measurements")
     df_cell_props = pandas.DataFrame(properties_table.read())
     h5_seg.close()
 
@@ -379,6 +389,9 @@ def cross_corr_offsets(file, fov, z_level, channel, df, in_file):
 
 
 def start_cross_corr(in_file, channel):
+    """
+    Use the cross-correlation computed between pairs of images to determine the amount of shift.
+    """
     files = get_files_list(in_file)
 
     h5_in = tables.open_file(in_file, "r")
@@ -406,6 +419,7 @@ def start_cross_corr(in_file, channel):
             fovs = df_fov_metadata["info_fov"].unique()
 
             for fov in fovs:
+                print("FOV {}".format(fov))
                 df_this_fov = df_fov_metadata[df_fov_metadata["info_fov"] == fov]
                 z_levels = file_to_z[file]
 
@@ -452,6 +466,7 @@ def main_renumbering_function(
     # Method 1
     # Use images to calculate offsets
     if method == "image":
+        print("Using image cross correlations to calculate drift.")
         df_offsets = start_cross_corr(in_file, channel)
         # DEBUG
         df_offsets.to_hdf("image_result.h5", "data")
@@ -467,9 +482,10 @@ def main_renumbering_function(
     # Method 2
     # Load the FOV information
     elif method == "stage":
+        print("Using stage information to calculate drift.")
         xyz_data = load_xyz_data(in_file)
         # DEBUG
-        xyz_data.to_hdf("stage_result.h5", "data")
+        # xyz_data.to_hdf("stage_result.h5", "data")
 
         # Merge the trench regions coordinates table with the timestamps / xyz table
         regions = pandas.merge(

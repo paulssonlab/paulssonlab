@@ -63,23 +63,24 @@ class kymograph_interactive(kymograph_multifov):
     def import_hdf5_interactive(self):
         import_hdf5 = interactive(self.import_hdf5_files, {"manual":True}, all_channels=fixed(self.channels),\
                                   seg_channel=Dropdown(options=self.channels, value=self.channels[0]),\
-                                  filter_channels=SelectMultiple(options=self.channels),\
+                                  filter_channel=Dropdown(options=self.channels+[None]),\
                                   invert=Dropdown(options=[True,False],\
-                                  value=False), fov_list=SelectMultiple(options=self.fov_list),t_subsample_step=IntSlider(value=10,\
+                                  value=False), selected_fov_list=SelectMultiple(options=self.fov_list),t_subsample_step=IntSlider(value=10,\
                                   min=0, max=200, step=1));
         display(import_hdf5)
 
-    def preview_y_precentiles(self,imported_array_list, y_percentile, smoothing_kernel_y_dim_0,\
+    def preview_y_precentiles(self,imported_array_list, y_percentile, y_foreground_percentile, smoothing_kernel_y_dim_0,\
                           y_percentile_threshold):
 
         self.final_params['Y Percentile'] = y_percentile
+        self.final_params['Y Foreground Percentile'] = y_foreground_percentile
         self.final_params['Y Smoothing Kernel'] = smoothing_kernel_y_dim_0
         self.final_params['Y Percentile Threshold'] = y_percentile_threshold
 
         y_percentiles_smoothed_list = self.map_to_fovs(self.get_smoothed_y_percentiles,imported_array_list,\
-                                                       y_percentile,(smoothing_kernel_y_dim_0,1))
+                                                       y_percentile,y_foreground_percentile,(smoothing_kernel_y_dim_0,1))
 
-        self.plot_y_precentiles(y_percentiles_smoothed_list,self.fov_list,y_percentile_threshold)
+        self.plot_y_precentiles(y_percentiles_smoothed_list,self.selected_fov_list,y_percentile_threshold)
 
         self.y_percentiles_smoothed_list = y_percentiles_smoothed_list
 
@@ -88,12 +89,12 @@ class kymograph_interactive(kymograph_multifov):
     def preview_y_precentiles_interactive(self):
         row_detection = interactive(self.preview_y_precentiles, {"manual":True},\
                         imported_array_list=fixed(self.imported_array_list), y_percentile=IntSlider(value=99,\
-                        min=0, max=100, step=1), smoothing_kernel_y_dim_0=IntSlider(value=29, min=1,\
-                        max=200, step=2), y_percentile_threshold=FloatSlider(value=0.2, min=0., max=1., step=0.01))
+                        min=0, max=100, step=1), y_foreground_percentile=IntSlider(value=80,min=0, max=100, step=1),\
+                        smoothing_kernel_y_dim_0=IntSlider(value=29, min=1,max=200, step=2),\
+                        y_percentile_threshold=FloatSlider(value=0.2, min=0., max=1., step=0.01))
         display(row_detection)
 
-
-    def plot_y_precentiles(self,y_percentiles_smoothed_list,fov_list,y_percentile_threshold):
+    def plot_y_precentiles(self,y_percentiles_smoothed_list,selected_fov_list,y_percentile_threshold):
         fig = plt.figure()
 
         ### Subplot dimensions of plot
@@ -107,6 +108,8 @@ class kymograph_interactive(kymograph_multifov):
             ax = fig.add_subplot(root_list_len, root_list_len, idx, projection='3d')
 
             ### Making list of vertices (tuples) for use with PolyCollection
+            y_percentiles_smoothed[0] = 0.
+            y_percentiles_smoothed[-10:] = 0.
             vert_arr = np.array([np.add.accumulate(np.ones(y_percentiles_smoothed.shape,dtype=int),axis=0),y_percentiles_smoothed])
             verts = []
             for t in range(vert_arr.shape[2]):
@@ -132,7 +135,7 @@ class kymograph_interactive(kymograph_multifov):
                 ax.plot(thr_x[i:i+x_len],thr_y[i:i+x_len],thr_z[i:i+x_len],c='r')
 
             ### Plot lebels
-            ax.set_title("FOV: " + str(fov_list[j]))
+            ax.set_title("FOV: " + str(selected_fov_list[j]))
             ax.set_xlabel('y position')
             ax.set_xlim3d(0, vert_arr[0,-1,0])
             ax.set_ylabel('time (s)')
@@ -142,67 +145,145 @@ class kymograph_interactive(kymograph_multifov):
 
         plt.show()
 
-    def preview_y_crop(self,y_percentiles_smoothed_list, imported_array_list,y_min_edge_dist, padding_y,\
-                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,orientation_on_fail,use_median_drift,\
-                       images_per_row):
+    ### NEW
+
+    def preview_y_precentiles_consensus(self,n_fovs,y_consensus_enabled):
+        y_percentile = self.final_params['Y Percentile']
+        y_foreground_percentile = self.final_params['Y Foreground Percentile']
+        smoothing_kernel_y_dim_0 = self.final_params['Y Smoothing Kernel']
+        y_percentile_threshold = self.final_params['Y Percentile Threshold']
+
+        if y_consensus_enabled:
+            print("Y Consensus Enabled")
+            self.consensus_med = self.get_y_consensus_med(y_percentile,y_foreground_percentile,(smoothing_kernel_y_dim_0,1),n_fovs = n_fovs)
+
+            fig = plt.figure(figsize=(16,10))
+            plt.plot(self.consensus_med,linewidth=3)
+            plt.hlines(y_percentile_threshold,0,len(self.consensus_med),color="salmon",linewidth=3)
+            plt.xlabel('y position',fontsize=20)
+            plt.xticks(fontsize=20)
+            plt.ylabel('intensity',fontsize=20)
+            plt.yticks(fontsize=20)
+            plt.show()
+
+        else:
+            print("Y Consensus Disabled")
+            self.consensus_med = None
+
+    def preview_y_precentiles_consensus_interactive(self):
+        row_detection = interactive(self.preview_y_precentiles_consensus, {"manual":True},\
+                        n_fovs=IntSlider(value=50,min=0, max=100, step=5),\
+                        y_consensus_enabled=Dropdown(options=[True,False],value=True,description='Y Consensus Enabled?:',disabled=False))
+        display(row_detection)
+
+    ### END
+
+    def preview_y_crop(self,y_percentiles_smoothed_list, imported_array_list,y_min_edge_dist,midpoint_dist_tolerence,padding_y,\
+                       trench_len_y,expected_num_rows,alternate_orientation,orientation_detection,\
+                       alternate_over_rows,use_median_drift,images_per_row):
 
         self.final_params['Minimum Trench Length'] = y_min_edge_dist
+        self.final_params['Midpoint Distance Tolerance'] = midpoint_dist_tolerence
         self.final_params['Y Padding'] = padding_y
         self.final_params['Trench Length'] = trench_len_y
         self.final_params['Orientation Detection Method'] = orientation_detection
         self.final_params['Expected Number of Rows (Manual Orientation Detection)'] = expected_num_rows
         self.final_params['Alternate Orientation'] = alternate_orientation
-        self.final_params['Top Orientation when Row Drifts Out (Manual Orientation Detection)'] = orientation_on_fail
+        self.final_params['Alternate Orientation Over Rows?'] = alternate_over_rows
         self.final_params['Use Median Drift?'] = use_median_drift
 
         y_percentile_threshold = self.final_params['Y Percentile Threshold']
 
-        get_trench_edges_y_output = self.map_to_fovs(self.get_trench_edges_y,y_percentiles_smoothed_list,y_percentile_threshold)
-        trench_edges_y_lists = [item[0] for item in get_trench_edges_y_output]
-        start_above_lists = [item[1] for item in get_trench_edges_y_output]
-        end_above_lists = [item[2] for item in get_trench_edges_y_output]
+        if self.consensus_med is None:
 
-        get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations,trench_edges_y_lists,start_above_lists,end_above_lists,\
-                                                          alternate_orientation,expected_num_rows,orientation_detection,orientation_on_fail,y_min_edge_dist)
+            self.final_params['Consensus Orientations'] = None
+            self.final_params['Consensus Midpoints'] = None
 
-        orientations_list = [item[0] for item in get_manual_orientations_output]
-        drop_first_row_list = [item[1] for item in get_manual_orientations_output]
-        drop_last_row_list = [item[2] for item in get_manual_orientations_output]
+            get_trench_edges_y_output = self.map_to_fovs(self.get_trench_edges_y,y_percentiles_smoothed_list,y_percentile_threshold)
+            trench_edges_y_lists = [item[0] for item in get_trench_edges_y_output]
+            start_above_lists = [item[1] for item in get_trench_edges_y_output]
+            end_above_lists = [item[2] for item in get_trench_edges_y_output]
 
-        y_ends_lists = self.map_to_fovs(self.get_trench_ends,trench_edges_y_lists,start_above_lists,end_above_lists,orientations_list,drop_first_row_list,drop_last_row_list,y_min_edge_dist)
+            get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations,trench_edges_y_lists,start_above_lists,end_above_lists,\
+                                                              alternate_orientation,expected_num_rows,orientation_detection,alternate_over_rows,y_min_edge_dist)
+
+            orientations_list = [item[0] for item in get_manual_orientations_output]
+            drop_first_row_list = [item[1] for item in get_manual_orientations_output]
+            drop_last_row_list = [item[2] for item in get_manual_orientations_output]
+
+            y_ends_lists = self.map_to_fovs(self.get_trench_ends,trench_edges_y_lists,start_above_lists,end_above_lists,orientations_list,\
+                                            drop_first_row_list,drop_last_row_list,y_min_edge_dist)
+#             y_drift_list = self.map_to_fovs(self.get_y_drift,y_ends_lists)
+#             if use_median_drift:
+#                 median_drift = np.round(np.median(np.array(y_drift_list),axis=0)).astype(int)
+#                 y_drift_list = [copy.copy(median_drift) for item in y_drift_list]
+
+#             keep_in_frame_kernels_output = self.map_to_fovs(self.keep_in_frame_kernels,y_ends_lists,y_drift_list,imported_array_list,orientations_list,padding_y,trench_len_y)
+#             valid_y_ends_list = [item[0] for item in keep_in_frame_kernels_output]
+#             valid_orientations_list = [item[1] for item in keep_in_frame_kernels_output]
+#             cropped_in_y_list = self.map_to_fovs(self.crop_y,imported_array_list,y_drift_list,valid_y_ends_list,valid_orientations_list,padding_y,trench_len_y)
+
+#             self.plot_y_crop(cropped_in_y_list,imported_array_list,self.selected_fov_list,valid_orientations_list,images_per_row)
+
+#             self.cropped_in_y_list = cropped_in_y_list
+
+#             return cropped_in_y_list
+
+        else:
+
+            consensus_orientations,consensus_midpoints = self.get_consensus_orientations(y_percentile_threshold,self.consensus_med,\
+                                                        alternate_orientation,expected_num_rows,orientation_detection,y_min_edge_dist)
+            self.final_params['Consensus Orientations'] = consensus_orientations
+            self.final_params['Consensus Midpoints'] = consensus_midpoints
+            self.final_params['Alternate Orientation Over Rows?'] = False  #OVERRIDE FIX HACK LATER
+
+            get_trench_edges_y_output = self.map_to_fovs(self.get_trench_edges_y,y_percentiles_smoothed_list,y_percentile_threshold)
+            trench_edges_y_lists = [item[0] for item in get_trench_edges_y_output]
+            start_above_lists = [item[1] for item in get_trench_edges_y_output]
+            end_above_lists = [item[2] for item in get_trench_edges_y_output]
+
+            get_manual_orientations_output = self.map_to_fovs(self.get_manual_orientations_withcons,trench_edges_y_lists,start_above_lists,end_above_lists,\
+                                                                              consensus_orientations,consensus_midpoints,y_min_edge_dist,midpoint_dist_tolerence)
+
+            orientations_list = [item[0] for item in get_manual_orientations_output]
+            filtered_consensus_midpoints_list = [item[1] for item in get_manual_orientations_output]
+            y_ends_lists = self.map_to_fovs(self.get_trench_ends_withcons,trench_edges_y_lists,start_above_lists,end_above_lists,\
+                                           orientations_list,filtered_consensus_midpoints_list,y_min_edge_dist,midpoint_dist_tolerence)
+
         y_drift_list = self.map_to_fovs(self.get_y_drift,y_ends_lists)
         if use_median_drift:
             median_drift = np.round(np.median(np.array(y_drift_list),axis=0)).astype(int)
             y_drift_list = [copy.copy(median_drift) for item in y_drift_list]
-
         keep_in_frame_kernels_output = self.map_to_fovs(self.keep_in_frame_kernels,y_ends_lists,y_drift_list,imported_array_list,orientations_list,padding_y,trench_len_y)
-        valid_y_ends_list = [item[0] for item in keep_in_frame_kernels_output]
+        valid_init_y_ends_list = [item[0] for item in keep_in_frame_kernels_output]
         valid_orientations_list = [item[1] for item in keep_in_frame_kernels_output]
-        cropped_in_y_list = self.map_to_fovs(self.crop_y,imported_array_list,y_drift_list,valid_y_ends_list,valid_orientations_list,padding_y,trench_len_y)
+        cropped_in_y_list = self.map_to_fovs(self.crop_y,imported_array_list,y_drift_list,valid_init_y_ends_list,valid_orientations_list,padding_y,trench_len_y)
 
-        self.plot_y_crop(cropped_in_y_list,imported_array_list,self.fov_list,valid_orientations_list,images_per_row)
+        self.plot_y_crop(cropped_in_y_list,imported_array_list,self.selected_fov_list,valid_orientations_list,images_per_row)
 
         self.cropped_in_y_list = cropped_in_y_list
 
         return cropped_in_y_list
+
 
     def preview_y_crop_interactive(self):
 
         y_cropping = interactive(self.preview_y_crop,{"manual":True},y_percentiles_smoothed_list=fixed(self.y_percentiles_smoothed_list),\
                 imported_array_list=fixed(self.imported_array_list),\
                 y_min_edge_dist=IntSlider(value=50, min=5, max=1000, step=5),\
+                midpoint_dist_tolerence=IntSlider(value=50, min=5, max=100, step=5),\
                 padding_y=IntSlider(value=20, min=0, max=500, step=5),\
                 trench_len_y=IntSlider(value=270, min=0, max=1000, step=5),
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
                 alternate_orientation=Dropdown(options=[True,False],value=True,description='Alternate Orientation?:',disabled=False),\
                orientation_detection=Dropdown(options=[0, 1],value=0,description='Orientation:',disabled=False),\
-                orientation_on_fail=Dropdown(options=[0, 1],value=0,description='Orientation when < expected rows:',disabled=False),\
+                alternate_over_rows=Dropdown(options=[True,False],value=False,description='Alternate Orientation Over Rows?:',disabled=False),\
                 use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False),\
                     images_per_row=IntSlider(value=3, min=1, max=10, step=1))
 
         display(y_cropping)
 
-    def plot_y_crop(self,cropped_in_y_list,imported_array_list,fov_list,valid_orientations_list,images_per_row):
+    def plot_y_crop(self,cropped_in_y_list,imported_array_list,selected_fov_list,valid_orientations_list,images_per_row):
 
         time_list = range(1,imported_array_list[0].shape[3]+1)
         time_per_img = len(time_list)
@@ -228,7 +309,7 @@ class kymograph_interactive(kymograph_multifov):
                     idx += 1
                     ax = plt.subplot(nrows,ncols,idx)
                     ax.axis("off")
-                    ax.set_title("row=" + str(j) + ",fov=" + str(fov_list[i]) + ",t=" + str(t))
+                    ax.set_title("row=" + str(j) + ",fov=" + str(selected_fov_list[i]) + ",t=" + str(t))
                     ax.imshow(cropped_in_y[j,0,:,:,k],cmap="Greys_r")
                 if remaining_imgs != 0:
                     for t in range(0,(images_per_row-remaining_imgs)):
@@ -242,7 +323,7 @@ class kymograph_interactive(kymograph_multifov):
         min_threshold = self.final_params['Minimum X Threshold']
 
         all_midpoints_list = self.map_to_fovs(self.get_all_midpoints,self.smoothed_x_percentiles_list,otsu_scaling,min_threshold)
-        self.plot_midpoints(all_midpoints_list,self.fov_list)
+        self.plot_midpoints(all_midpoints_list,self.selected_fov_list)
         x_drift_list = self.map_to_fovs(self.get_x_drift,all_midpoints_list)
 
         self.all_midpoints_list,self.x_drift_list = (all_midpoints_list,x_drift_list)
@@ -265,7 +346,7 @@ class kymograph_interactive(kymograph_multifov):
             for smoothed_x_percentiles in smoothed_x_percentiles_row:
                 x_percentiles_t = smoothed_x_percentiles[:,t]
                 thresholds.append(self.get_midpoints(x_percentiles_t,otsu_scaling,min_threshold)[1])
-        self.plot_x_percentiles(smoothed_x_percentiles_list,self.fov_list, t, thresholds)
+        self.plot_x_percentiles(smoothed_x_percentiles_list,self.selected_fov_list, t, thresholds)
 
         self.smoothed_x_percentiles_list = smoothed_x_percentiles_list
         all_midpoints_list,x_drift_list = self.preview_midpoints(self.smoothed_x_percentiles_list)
@@ -279,7 +360,7 @@ class kymograph_interactive(kymograph_multifov):
 
         display(trench_detection)
 
-    def plot_x_percentiles(self,smoothed_x_percentiles_list,fov_list,t,thresholds):
+    def plot_x_percentiles(self,smoothed_x_percentiles_list,selected_fov_list,t,thresholds):
         fig = plt.figure()
         nrow = len(self.cropped_in_y_list) #fovs
         ncol = (sum([len(item) for item in self.cropped_in_y_list])//nrow)+1
@@ -295,25 +376,28 @@ class kymograph_interactive(kymograph_multifov):
                 current_threshold = thresholds[idx-1]
                 threshold_data = np.repeat(current_threshold,len(data))
                 ax.plot(threshold_data,c='r')
-                ax.set_title("FOV: " + str(fov_list[i]) + " Lane: " + str(j))
+                ax.set_title("FOV: " + str(selected_fov_list[i]) + " Lane: " + str(j))
                 ax.set_xlabel('x position')
                 ax.set_ylabel('intensity')
 
         plt.show()
 
-    def plot_midpoints(self,all_midpoints_list,fov_list):
+    def plot_midpoints(self,all_midpoints_list,selected_fov_list):
         fig = plt.figure()
         ax = fig.gca()
 
-        nrows = 2*len(fov_list)
-        ncols = 2
+        num_fovs = len(all_midpoints_list)
+        num_rows = max([len(item) for item in all_midpoints_list])
+
+        nrows = num_fovs
+        ncols = num_rows
 
         idx = 0
         for i,top_bottom_list in enumerate(all_midpoints_list):
             for j,all_midpoints in enumerate(top_bottom_list):
                 idx+=1
                 ax = plt.subplot(nrows,ncols,idx)
-                ax.set_title("row=" + str(j) + ",fov=" + str(fov_list[i]))
+                ax.set_title("row=" + str(j) + ",fov=" + str(selected_fov_list[i]))
                 data = np.concatenate([np.array([item,np.ones(item.shape,dtype=int)*k]).T for k,item in enumerate(all_midpoints)])
                 ax.scatter(data[:,0],data[:,1],alpha=0.7)
                 ax.set_xlabel('x position')
@@ -338,8 +422,8 @@ class kymograph_interactive(kymograph_multifov):
 
         corrected_midpoints_list = self.map_to_fovs(self.get_corrected_midpoints,all_midpoints_list,x_drift_list,trench_width_x,trench_present_thr)
 
-        self.plot_kymographs(cropped_in_x_list,self.fov_list)
-        self.plot_midpoints(corrected_midpoints_list,self.fov_list)
+        self.plot_kymographs(cropped_in_x_list,self.selected_fov_list)
+        self.plot_midpoints(corrected_midpoints_list,self.selected_fov_list)
 
     def preview_kymographs_interactive(self):
             interact_manual(self.preview_kymographs,cropped_in_y_list=fixed(self.cropped_in_y_list),all_midpoints_list=fixed(self.all_midpoints_list),\
@@ -347,11 +431,13 @@ class kymograph_interactive(kymograph_multifov):
             trench_present_thr=FloatSlider(value=0., min=0., max=1., step=0.05),\
             use_median_drift=Dropdown(options=[True,False],value=False,description='Use Median Drift?:',disabled=False))
 
-    def plot_kymographs(self,cropped_in_x_list,fov_list,num_rows=2):
+    def plot_kymographs(self,cropped_in_x_list,selected_fov_list):
         plt.figure()
         idx = 0
+
+        num_rows = max([len(item) for item in cropped_in_x_list])
         ncol = num_rows
-        nrow = len(fov_list)*num_rows
+        nrow = len(selected_fov_list)*num_rows
 
         for i,row_list in enumerate(cropped_in_x_list):
             for j,channel in enumerate(row_list):
@@ -361,7 +447,7 @@ class kymograph_interactive(kymograph_multifov):
                 ax = plt.subplot(ncol,nrow,idx)
                 ex_kymo = seg_channel[rand_k]
                 self.plot_kymograph(ax,ex_kymo)
-                ax.set_title("row=" + str(j) + ",fov=" + str(fov_list[i]) + ",trench=" + str(rand_k))
+                ax.set_title("row=" + str(j) + ",fov=" + str(selected_fov_list[i]) + ",trench=" + str(rand_k))
 
         plt.tight_layout()
         plt.show()
@@ -380,7 +466,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def process_results(self):
         self.final_params["All Channels"] = self.all_channels
-        self.final_params["Filter Channels"] = self.filter_channels
+        self.final_params["Filter Channel"] = self.filter_channel
         self.final_params["Invert"] = self.invert
 
         for key,value in self.final_params.items():
@@ -421,13 +507,17 @@ class focus_filter:
         subsampled_df = df.sample(frac=frac, replace=False).compute()[:n_samples]
         return subsampled_df
 
-    def plot_histograms(self,n_samples=10000):
+    def plot_histograms(self,n_samples=10000,focus_range=None,intensity_range=None):
         subsampled_df = self.subsample_df(self.df,n_samples)
         focus_vals = subsampled_df[self.channel + " Focus Score"]
         self.focus_max = np.max(focus_vals)
 
         fig, ax = plt.subplots(1, 1)
-        ax.hist(focus_vals,bins=50)
+        if focus_range != None:
+            ax.hist(focus_vals,bins=50,range=focus_range)
+        else:
+            max_v = np.percentile(focus_vals,99)
+            ax.hist(focus_vals,bins=50,range=(0,max_v))
         ax.set_title("Focus Score Distribution",fontsize=20)
         ax.set_xlabel("Focus Score",fontsize=15)
         fig.set_size_inches(9, 6)
@@ -437,7 +527,11 @@ class focus_filter:
         self.intensity_max = np.max(intensity_vals)
 
         fig, ax = plt.subplots(1, 1)
-        ax.hist(intensity_vals,bins=50)
+        if intensity_range != None:
+            ax.hist(intensity_vals,bins=50,range=intensity_range)
+        else:
+            max_v = np.percentile(intensity_vals,99)
+            ax.hist(intensity_vals,bins=50,range=(0,max_v))
         ax.set_title("Mean Intensity Distribution",fontsize=20)
         ax.set_xlabel("Mean Intensity",fontsize=15)
         fig.set_size_inches(9, 6)
