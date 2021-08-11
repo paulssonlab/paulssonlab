@@ -17,4 +17,5 @@ dependencies:
   - pip
   - pre-commit
   - samtools
+  - scikit-learn
   - seaborn

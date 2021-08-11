@@ -1,0 +1,30 @@
+name: promoter_mutants
+channels:
+  - pyviz
+  - conda-forge
+  - defaults
+  - bioconda
+dependencies:
+  - beautifulsoup4
+  - black
+  - bokeh
+  - cython
+  - emcee
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - nodejs
+  - numpy
+  - pandas
+  - pip
+  - pip:
+      - bioscrape
+  - pre-commit
+  - pytest
+  - python-libsbml
+  - scipy
+  - seaborn
+  - sympy

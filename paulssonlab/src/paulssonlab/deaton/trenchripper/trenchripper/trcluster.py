@@ -40,17 +40,18 @@ class dask_controller: #adapted from Charles' code
 #             self.workers = self.daskcluster.start_workers(self.n_workers)
             self.daskclient = Client(self.daskcluster)
 
-    def shutdown(self):
+    def shutdown(self, delete_files=True):
         self.daskclient.restart()
         if not self.local:
             self.daskcluster.close()
-        for item in os.listdir(self.working_directory):
-            if "worker-" in item or "slurm-" in item or ".lock" in item:
-                path = "./" + item
-                if os.path.isfile(path):
-                    os.remove(path)
-                elif os.path.isdir(path):
-                    shutil.rmtree(path)
+        if delete_files:
+            for item in os.listdir(self.working_directory):
+                if "worker-" in item or "slurm-" in item or ".lock" in item:
+                    path = "./" + item
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    elif os.path.isdir(path):
+                        shutil.rmtree(path)
 
     def printprogress(self):
         complete = len([item for item in self.futures if item.status=="finished"])

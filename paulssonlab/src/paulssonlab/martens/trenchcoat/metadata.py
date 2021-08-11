@@ -307,6 +307,7 @@ def get_attribute_list(h5_in, attribute):
 def copy_fov_metadata(h5file, frames, fields_of_view, reader):
     """
     Make a table of X, Y, Z, Timestamp, PFS information for each FOV.
+    TODO is there a way to add in the different Z data? (Must be computed for each Z-frame?)
     """
     # Check whether the user specified lists of frames & fields of view to process
     # (thereby excluding those not in the list)

@@ -7,6 +7,7 @@ from metadata import main_print_metadata_function
 from corrections import main_corrections_function
 from segmentation import main_segmentation_function
 from trench_detect import main_detection_function
+from write_kymographs import main_kymographs_function
 from renumber_trenches import main_renumbering_function
 from napari_browse_nd2 import main_nd2_browser_function
 from napari_browse_hdf5 import main_hdf5_browser_function
@@ -56,17 +57,17 @@ def cli():
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="TrenchCoat settings file (YAML).",
     show_default=True,
 )
-def browse_nd2(in_dir, napari_settings_file):
+def browse_nd2(in_dir, settings_file):
     """Use Napari to browse a directory of ND2 files."""
-    main_nd2_browser_function(in_dir=in_dir, napari_settings_file=napari_settings_file)
+    main_nd2_browser_function(in_dir=in_dir, settings_file=settings_file)
 
 
 @cli.command(no_args_is_help=True)
@@ -98,21 +99,13 @@ def browse_nd2(in_dir, napari_settings_file):
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="Trenchcoat settings file (YAML).",
     show_default=True,
-)
-@click.option(
-    "-C",
-    "--corrections-file",
-    "corrections_file",
-    required=False,
-    type=str,
-    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
     "-V",
@@ -134,15 +127,12 @@ def browse_hdf5(
     images_file,
     masks_file,
     regions_file,
-    corrections_file,
-    napari_settings_file,
+    settings_file,
     viewer_params_file,
     data_table_file,
 ):
-    """Use Napari to browse a dataset & to visualize trenches and cell masks.
-
-    camera_biases_file, flatfield_corrections_file are paths to HDF5
-    files containing channel-specific correction values.
+    """
+    Use Napari to browse a dataset & to visualize trenches and cell masks.
 
     Add option to "compute" an image based on properties within segmented regions.
     """
@@ -150,8 +140,7 @@ def browse_hdf5(
         images_file=images_file,
         masks_file=masks_file,
         regions_file=regions_file,
-        corrections_file=corrections_file,
-        napari_settings_file=napari_settings_file,
+        settings_file=settings_file,
         viewer_params_file=viewer_params_file,
         data_table_file=data_table_file,
     )
@@ -174,7 +163,6 @@ def browse_hdf5(
     "masks_file",
     required=False,
     type=str,
-    default="SEG/",
     help="Input HDF5 file with masks.",
 )
 @click.option(
@@ -183,7 +171,7 @@ def browse_hdf5(
     "regions_file",
     required=True,
     type=str,
-    default="REG/regions_tables.h5",
+    default="regions_table.h5",
     help="Input HDF5 file with regions (trenches must be re-labeled for left/right drift).",
 )
 @click.option(
@@ -196,21 +184,13 @@ def browse_hdf5(
 )
 @click.option(
     "-S",
-    "--napari-settings-file",
-    "napari_settings_file",
+    "--settings-file",
+    "settings_file",
     required=True,
-    default="napari_settings.yaml",
+    default="trenchcoat_settings.yaml",
     type=str,
-    help="Napari settings file (YAML).",
+    help="TrenchCoat settings file (YAML).",
     show_default=True,
-)
-@click.option(
-    "-C",
-    "--corrections-file",
-    "corrections_file",
-    required=False,
-    type=str,
-    help="Input HDF5 file with camera bias and/or flatfield corrections for each channel.",
 )
 @click.option(
     "-V",
@@ -228,31 +208,40 @@ def browse_hdf5(
     type=str,
     help="Path to HDF5 file containing cell measurements for computed image.",
 )
+@click.option(
+    "-P",
+    "--precomputed",
+    "precomputed",
+    required=True,
+    default=False,
+    type=bool,
+    help="Specify whether kymographs of intensity images & masks were pre-computed.",
+)
 def browse_kymographs(
     images_file,
     masks_file,
     regions_file,
-    napari_settings_file,
-    corrections_file,
+    settings_file,
     lineages_file,
     viewer_params_file,
     data_table_file,
+    precomputed,
 ):
     """
     Use Napari to browse kymographs.
     The regions file must be post-processed for correcting stage drift,
-    and merging cell information with trench information.
+    and for merging cell information with trench information.
     Corrections are unimplemented.
     """
     main_kymograph_browser_function(
         images_file=images_file,
         masks_file=masks_file,
         regions_file=regions_file,
-        napari_settings_file=napari_settings_file,
-        corrections_file=corrections_file,
+        settings_file=settings_file,
         lineages_file=lineages_file,
         viewer_params_file=viewer_params_file,
         data_table_file=data_table_file,
+        precomputed=precomputed,  # Are the intensity images, masks pre-computed?
     )
 
 
@@ -329,10 +318,10 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
 @cli.command(no_args_is_help=True)
 @click.option(
     "-o",
-    "--out-dir",
-    "out_dir",
+    "--out-file",
+    "out_file",
     required=True,
-    default="REGIONS",
+    default="regions_table.h5",
     type=str,
     help="Output directory.",
     show_default=True,
@@ -367,10 +356,10 @@ def convert(out_dir, in_dir, num_cpu, frames, fovs):
     help="Regions detection parameters file (YAML).",
     show_default=True,
 )
-def trench_detect(out_dir, in_file, num_cpu, params_file):
+def trench_detect(out_file, in_file, num_cpu, params_file):
     """Detect trenches and write their rectangular regions to an HDF5 file."""
     main_detection_function(
-        out_dir=out_dir, in_file=in_file, num_cpu=num_cpu, params_file=params_file
+        out_file=out_file, in_file=in_file, num_cpu=num_cpu, params_file=params_file
     )
 
 
@@ -541,7 +530,7 @@ def corrections(in_file, out_file, dark_channel, bg_file):
     "--in-file",
     "in_file",
     required=True,
-    default="HDF5/metadata.h5",
+    default="HDF5/data.h5",
     type=str,
     help="Input HDF5 or ND2 file with metadata.",
     show_default=True,
@@ -577,7 +566,7 @@ def print_metadata(in_file, sub_file_name):
     "--regions-file",
     "regions_file",
     required=False,
-    default="REG/regions_tables.h5",
+    default="regions_table.h5",
     type=str,
     help="HDF5 file containing image regions",
     show_default=True,
@@ -717,6 +706,65 @@ def lineage_tracking(in_file, out_file, length_buffer, trench_length):
         outfile=out_file,
         length_buffer=length_buffer,
         trench_length=trench_length,
+    )
+
+
+@cli.command(no_args_is_help=True)
+@click.option(
+    "-i",
+    "--images-file",
+    "images_file",
+    required=True,
+    default="HDF5/data.h5",
+    type=str,
+    help="Input HDF5 file with intensity images. Also required for converting masks, because it contains essential metadata.",
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--masks-file",
+    "masks_file",
+    required=False,
+    type=str,
+    help="Input HDF5 file with segmentation masks.",
+    show_default=True,
+)
+@click.option(
+    "-R",
+    "--regions-file",
+    "regions_file",
+    required=True,
+    default="corrected_regions.h5",
+    type=str,
+    help='HDF5 file with regions coordinates table. Assumes that stage drift has been accounted for and that trenches have been renumbered ("corrected_trench_label").',
+    show_default=True,
+)
+@click.option(
+    "-o",
+    "--out-dir",
+    "out_dir",
+    required=True,
+    type=str,
+    help="Directory to write HDF5 file with kymographs.",
+)
+@click.option(
+    "-n",
+    "--num-cpu",
+    "num_cpu",
+    required=False,
+    default=None,
+    type=click.IntRange(1, None, clamp=True),
+    help="Number of CPUs to use.  [default: all CPUs]",
+    show_default=False,
+)
+def write_kymographs(images_file, masks_file, regions_file, out_dir, num_cpu):
+    """Pre-render intensity image kymographs & write to disk."""
+    main_kymographs_function(
+        images_file=images_file,
+        masks_file=masks_file,
+        regions_file=regions_file,
+        out_dir=out_dir,
+        num_cpu=num_cpu,
     )
 
 

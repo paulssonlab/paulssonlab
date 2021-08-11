@@ -301,3 +301,13 @@ def run_niblack_segmentation(stack, ch_to_index, params):
             result[z] = watershed(image=image, markers=markers, mask=mask)
 
     return result
+
+
+def measure_whole_trench(stack, ch_to_index, params):
+    """
+    Returns a single labeled region for each whole trench (no cell segmentation).
+    Useful for measuring total intensities within a trench.
+    Doesn't require any parameters.
+    """
+    # Yes, this is a simple as returning all 1s!
+    return numpy.ones(stack.shape, dtype=numpy.uint16)

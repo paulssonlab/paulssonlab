@@ -7,11 +7,18 @@ from dask import delayed
 import dask.array
 import pandas
 from params import read_params_string, read_params_file
+
 from napari_browse_hdf5 import (
     get_largest_extents_hdf5,
     metadata_attributes_equal,
     metadata_array_equal,
 )
+
+# TODO spawn sub-tasks in multiple threads?
+# from napari.qt.threading import thread_worker
+
+# FIXME/TODO update loading Napari Settings, Corrections
+
 from lineages import relabel_mask_complete
 import matplotlib.cm
 
@@ -174,6 +181,35 @@ def kymo_masks(
     return kymograph_array.T
 
 
+def kymo_precomputed_mask(
+    trench_number,
+    row_number,
+    file,
+    fov,
+    z_level,
+    tr_width,
+    img_width,
+    height,
+    seg_channel,
+    masks_file,
+    frames,
+    regions_file,
+):
+    """
+    Pre-computed mask kymographs.
+    Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    NOTE some of the arguments aren't needed here, but we pass them because that way we can re-use the same
+    sub-routine, and just pass in a different function.
+    """
+    h5file_kymo = tables.open_file(masks_file, "r")
+    node_path = "/Images/{}/FOV_{}/Z_{}/row_{}/region_{}/{}".format(
+        file, fov, z_level, row_number, trench_number, seg_channel
+    )
+    img = h5file_kymo.get_node(node_path).read()
+    h5file_kymo.close()
+    return img.T
+
+
 def kymo_mask_layer(
     num_trenches,
     num_rows,
@@ -188,6 +224,7 @@ def kymo_mask_layer(
     sc,
     masks_file,
     regions_file,
+    img_func,
 ):
     """
     Generate kymographs of masks data.
@@ -202,7 +239,7 @@ def kymo_mask_layer(
             tr_width,
             img_width,
             height,
-            kymo_masks,
+            img_func,
             numpy.uint16,
             [c, masks_file, frames, regions_file],
         )
@@ -365,30 +402,44 @@ def kymo_computed_image(
     return kymograph_array.T
 
 
-def make_tab20_mapping(num_colors=65535):
+def make_tab20_mapping(ids_list):
     """
     Use the "tab20" colormap to color pairs of cells,
     and add "black" (transparent) for 0, and white for the first cell.
+
+    Pass in a list of ids to convert & store their modulo 20 mapping.
 
     tab20 is good because the colors come in pairs with similar hues,
     whereas the default mapping in Napari is more "randomized," which
     makes it hard to visually match pairs of cells.
 
-    NOTE/FIXME: how high do we want the labels to be? Use 65535 for now,
-    but since the labels increase as powers of 2, this might not be enough
-    for very long timelapses.
-    Could search the lineages file & find the maximum possible label?
+    Making the first cell white helps keep the pairs hue-matched for the subsequent generations.
     """
     tab20 = matplotlib.cm.get_cmap("tab20")
 
     mapping = {}
+
+    # NOTE there seems to be trouble when the values are very large
+    # This is a kludge which drops very high values (rendering them invisible),
+    # but allows the other values to display properly. Otherwise,
+    # the values all seem to be over-written, as though there is an invisible downcasting
+    # in the hashmap indices, causing a looping back?
+    # Ideally, the dtype would be numpy.uint64, and nothing would be dropped.
+    dtype = numpy.uint32
+    max_val = numpy.iinfo(dtype).max
+    ids_filter = ids_list < max_val
+    ids_list = ids_list[ids_filter].astype(dtype)
+
+    for i in ids_list:
+        # The tab20 map has 20 colors, so cycle them every 20 using modulo
+        # NOTE mapping[i + 2], or mapping[i] ??
+        mapping[i] = tab20(numpy.mod(i, 20))
+
     # Transparent for background
     mapping[0] = (0.0, 0.0, 0.0)
+
     # White for the first cell
     mapping[1] = (1.0, 1.0, 1.0)
-    for i in range(num_colors):
-        # The tab20 map has 20 colors, so cycle them every 20 using modulo
-        mapping[i + 2] = tab20((i + 2) % 20)
 
     return mapping
 
@@ -407,6 +458,7 @@ def kymo_lineages_layer(
     sc,
     masks_file,
     lineages_file,
+    img_func,
 ):
     """
     Generate kymographs of masks data and re-label the cells based on a computed lineage.
@@ -422,13 +474,89 @@ def kymo_lineages_layer(
             tr_width,
             img_width,
             height,
-            kymo_lineage_masks,
-            numpy.uint16,
+            img_func,
+            numpy.uint64,
             [c, frames, masks_file, lineages_file],
         )
 
-        mapping = make_tab20_mapping()
+        # Parse the lineages data table & generate color mappings, but _only_ for the
+        # existing values. This way, we don't have to populate an absurdly large list
+        # (most of which goes unused).
+        h5file = tables.open_file(lineages_file, "r")
+        df = pandas.DataFrame(h5file.get_node("/cell_measurements").read())
+        h5file.close()
+
+        # NOTE was having issues with invisible casting from uint64 to some sort
+        # of floating point when using as keys in the dict for mapping
+        # The best would be if it were possible to apply the modulo fix (below)
+        # only for display purposes, but not for label purposes.
+        ids_list = df["progeny_id"].unique()
+
+        # This will give unexpected behavior if the id values are large enough.
+        ids_list = numpy.sort(ids_list)
+        mapping = make_tab20_mapping(ids_list)
+
         viewer.add_labels(mask_stack, name="Lineages ({})".format(c), color=mapping)
+
+
+def kymo_precomputed_lineage_masks(
+    trench_number,
+    row_number,
+    file,
+    fov,
+    z_level,
+    tr_width,
+    img_width,
+    height,
+    sc,
+    frames,
+    masks_file,
+    lineages_file,
+):
+    """
+    Uses a pre-computed masks kymograph.
+    Re-label the cells based on information from a computed lineage.
+    """
+    h5file_lineages = tables.open_file(lineages_file, "r")
+    table_lineages = h5file_lineages.get_node("/cell_measurements")
+
+    query = """(corrected_trench_label == trench_number) & \
+               (info_row_number == row_number) & \
+               (info_file == file) & \
+               (info_fov == fov) & \
+               (info_z_level == z_level) & \
+               (info_seg_channel == sc)"""
+
+    cells_of_interest = table_lineages.read_where(query)
+    df_cells = pandas.DataFrame(cells_of_interest)
+    h5file_lineages.close()
+
+    h5file_masks = tables.open_file(masks_file, "r")
+    node_path = "/Images/{}/FOV_{}/Z_{}/row_{}/region_{}/{}".format(
+        file, fov, z_level, row_number, trench_number, sc
+    )
+    kymograph_array = h5file_masks.get_node(node_path).read()
+    h5file_masks.close()
+
+    # It makes sense to "z-stack" the frames. First dimension is the frame number.
+    # FIXME can we compute  num_frames once, outside this loop, and pass it in?
+    original_shape = kymograph_array.shape
+    num_frames = original_shape[0] // tr_width
+    kymograph_array = kymograph_array.reshape(num_frames, tr_width, height)
+
+    for frame_number in range(kymograph_array.shape[0]):
+        this_frame = df_cells[df_cells["info_frame"] == frame_number]
+        old_labels = this_frame["info_label"].values
+        new_labels = this_frame["progeny_id"].values
+
+        kymograph_array[frame_number] = relabel_mask_complete(
+            kymograph_array[frame_number], old_labels, new_labels
+        )
+
+    # Re-shape the array back to 2D
+    kymograph_array = kymograph_array.reshape(original_shape)
+
+    return kymograph_array.T
 
 
 def kymo_lineage_masks(
@@ -461,13 +589,14 @@ def kymo_lineage_masks(
 
     cells_of_interest = table_lineages.read_where(query)
     df_cells = pandas.DataFrame(cells_of_interest)
+    h5file_lineages.close()
 
-    kymograph_array = numpy.empty(shape=(img_width, height), dtype=numpy.uint16)
+    kymograph_array = numpy.empty(shape=(img_width, height), dtype=numpy.uint64)
     h5file_masks = tables.open_file(masks_file, "r")
 
     # Trenches across frames (over time)
     for frame in frames:
-        new_mask = numpy.zeros(shape=(tr_width, height), dtype=numpy.uint16)
+        new_mask = numpy.zeros(shape=(tr_width, height), dtype=numpy.uint64)
         try:
             # FIXME remove the .iloc once I fix the table merging stuff?
             # Right now it returns an entry for each segmented cell.
@@ -479,32 +608,10 @@ def kymo_lineage_masks(
             node = h5file_masks.get_node(node_path)
             mask = node.read()
 
-            # Re-label the labeled mask slice
-            all_lineages = this_frame["lineage"].unique()
-            for lineage in all_lineages:
-                # Re-label this lineage according to the progeny id
-                this_lineage = this_frame[this_frame["lineage"] == lineage]
-                old_labels = this_lineage["info_label"].values
-
-                # Run a series of logical ORs across all labels to get all matching pixels
-                # This "mask" only contains pixels from this lineage.
-                this_lineage_mask = numpy.zeros(new_mask.shape, dtype=numpy.bool)
-                for o in old_labels:
-                    this_lineage_mask |= mask == o
-
-                # Convert back to the original dtype so that we can do sums & multiplications
-                this_lineage_mask = this_lineage_mask.astype(new_mask.dtype)
-
-                # Apply the lineage mask to the original labels mask
-                labeled_pixels_this_lineage = mask * this_lineage_mask
-
-                # Now get the progeny_id as a mask too:
-                # Replace the labels in the lineage pixels with their progeny_id
-                new_labels = this_lineage["progeny_id"].values
-                labeled_pixels_progeny = relabel_mask_complete(
-                    labeled_pixels_this_lineage, old_labels, new_labels
-                )
-                new_mask += labeled_pixels_progeny
+            # NOTE NEW untested! This should work!
+            old_labels = this_frame["info_label"].values
+            new_labels = this_frame["progeny_id"].values
+            labeled_pixels_progeny = relabel_mask_complete(mask, old_labels, new_labels)
 
         except Exception as e:
             print(str(e))
@@ -512,7 +619,6 @@ def kymo_lineage_masks(
         kymograph_array[frame * tr_width : (frame + 1) * tr_width, 0:height] = new_mask
 
     h5file_masks.close()
-    h5file_lineages.close()
 
     return kymograph_array.T
 
@@ -532,6 +638,7 @@ def kymo_img(
     frames,
 ):
     """
+    Intensity image layers using kymographs computed on-the-fly.
     Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
     """
     matching_frames = query_regions_from_file(
@@ -577,6 +684,7 @@ def kymo_img_layers(
     corrections_file,
     regions_file,
     images_file,
+    img_func,
 ):
     """
     Generate kymographs of image data. TODO: Optionally apply flatfield & other corrections.
@@ -591,12 +699,41 @@ def kymo_img_layers(
             tr_width,
             img_width,
             height,
-            kymo_img,
+            img_func,
             numpy.float32,
             [c, regions_file, images_file, frames],
         )  # TODO: corrections, corrections_file, c])
 
         viewer.add_image(image_stack, **layer_params[c])
+
+
+def kymo_precomputed_img(
+    trench_number,
+    row_number,
+    file,
+    fov,
+    z_level,
+    tr_width,
+    img_width,
+    height,
+    channel,
+    regions_file,
+    images_file,
+    frames,
+):
+    """
+    Intensity image layers using pre-computed kymographs.
+    Returns a 2D numpy array with all of the kymograph timepoints written sequentially, from "left" to "right".
+    NOTE some of the arguments aren't needed here, but we pass them because that way we can re-use the same
+    sub-routine, and just pass in a different function.
+    """
+    h5file_kymo = tables.open_file(images_file, "r")
+    node_path = "/Images/{}/FOV_{}/Z_{}/row_{}/region_{}/{}".format(
+        file, fov, z_level, row_number, trench_number, channel
+    )
+    img = h5file_kymo.get_node(node_path).read()
+    h5file_kymo.close()
+    return img.T
 
 
 def get_reg_dims(regions_file):
@@ -628,21 +765,126 @@ def main_kymograph_browser_function(
     masks_file,
     regions_file,
     napari_settings_file,
-    corrections_file,
     lineages_file,
     viewer_params_file,
     data_table_file,
+    precomputed,
 ):
     """
     Main function, invoked from the command-line.
     """
-    with napari.gui_qt():
-        viewer = napari.Viewer()
+    viewer = napari.Viewer()
 
-        # Load the image layer params for napari
-        # TODO params for masks layers? regions layers?
-        layer_params = read_params_file(napari_settings_file)
+    # Load the image layer params for napari
+    # TODO params for masks layers? regions layers?
+    layer_params = read_params_file(napari_settings_file)
 
+    # The images have been pre-processed into kymographs & stored on disk.
+    if precomputed:
+        # Intensity images
+        h5file_kymo = tables.open_file(images_file, "r")
+
+        # NOTE the amount of quasi-redundant code could be cut down depending on how similarly
+        # the metadata are structured in raw image HDF5 vs pre-computed kymo image HDF5.
+        fields_of_view = h5file_kymo.get_node("/Metadata/fields_of_view").read()
+        z_levels = h5file_kymo.get_node("/Metadata/z_levels").read()
+        width = h5file_kymo.get_node("/Metadata/width").read()
+        height = h5file_kymo.get_node("/Metadata/height").read()
+        channels = h5file_kymo.get_node("/Metadata/channels").read()
+        channels = [c.decode("utf-8") for c in channels]
+        file_nodes = [x._v_name for x in h5file_kymo.list_nodes("/Images")]
+
+        h5file_kymo.close()
+
+        # Open the regions table, get the first region, and
+        # recalculate based on min_row, max_row; min_col, max_col.
+        # NOTE that we have to get num_rows, so we have to call this func.
+        # TODO could we store num_rows in the metadata?
+        (tr_width, height, num_rows, num_trenches) = get_reg_dims(regions_file)
+
+        # Image layers
+        # NOTE if some of the arguments aren't needed, then
+        # we should be able to pass in a None value
+        kymo_img_layers(
+            num_trenches=num_trenches,
+            num_rows=num_rows,
+            file_nodes=file_nodes,
+            fields_of_view=fields_of_view,
+            frames=None,
+            z_levels=z_levels,
+            viewer=viewer,
+            tr_width=None,
+            img_width=width,
+            height=height,
+            channels=channels,
+            layer_params=layer_params,
+            corrections_file=corrections_file,
+            regions_file=None,
+            images_file=images_file,
+            img_func=kymo_precomputed_img,
+        )
+
+        # Masks layers
+        if masks_file:
+            masks_file_path = os.path.join(masks_file, "kymographs.h5")
+
+            # Load the segmentation channels from the masks h5file
+            h5file_masks = tables.open_file(masks_file_path, "r")
+
+            seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
+            seg_params_str = seg_params_node.read().tobytes().decode("utf-8")
+            seg_params_dict = read_params_string(seg_params_str)
+            seg_channels = [k for k in seg_params_dict.keys()]
+
+            h5file_masks.close()
+
+            kymo_mask_layer(
+                num_trenches=num_trenches,
+                num_rows=num_rows,
+                file_nodes=file_nodes,
+                fields_of_view=fields_of_view,
+                frames=None,
+                z_levels=z_levels,
+                tr_width=None,
+                img_width=width,
+                height=height,
+                viewer=viewer,
+                sc=seg_channels,
+                masks_file=masks_file_path,
+                regions_file=None,
+                img_func=kymo_precomputed_mask,
+            )
+
+        # Lineages layers
+        if lineages_file:
+            # Load the segmentation channels from the measurements & lineages table
+            h5file_lineages = tables.open_file(lineages_file, "r")
+            table = h5file_lineages.get_node("/cell_measurements")
+            df = pandas.DataFrame(table.read())
+            seg_channels = df["info_seg_channel"].unique()
+            # TODO what about converting to / from bytes & utf-8?
+            h5file_lineages.close()
+            masks_file_path = os.path.join(masks_file, "kymographs.h5")
+
+            kymo_lineages_layer(
+                num_trenches=num_trenches,
+                num_rows=num_rows,
+                file_nodes=file_nodes,
+                fields_of_view=fields_of_view,
+                frames=None,
+                z_levels=z_levels,
+                tr_width=tr_width,
+                img_width=width,
+                height=height,
+                viewer=viewer,
+                sc=seg_channels,
+                masks_file=masks_file_path,
+                lineages_file=lineages_file,
+                img_func=kymo_precomputed_lineage_masks,
+            )
+
+    # The images are raw microscope frames. Calculate kymographs on-the-fly.
+    else:
         # File with images & metadata
         h5file = tables.open_file(images_file, "r")
 
@@ -676,7 +918,7 @@ def main_kymograph_browser_function(
         # Use the above to calculate this. Used to create empty canvases.
         img_width = num_frames * tr_width
 
-        # Image layers
+        # Intensity images
         kymo_img_layers(
             num_trenches=num_trenches,
             num_rows=num_rows,
@@ -693,6 +935,7 @@ def main_kymograph_browser_function(
             corrections_file=corrections_file,
             regions_file=regions_file,
             images_file=images_file,
+            img_func=kymo_img,
         )
 
         # Masks layers
@@ -750,6 +993,7 @@ def main_kymograph_browser_function(
                 sc=seg_channels,
                 masks_file=masks_file_path,
                 lineages_file=lineages_file,
+                img_func=kymo_lineage_masks,
             )
 
         # Input a set of images, but also run a calculation on them before displaying.
@@ -774,3 +1018,5 @@ def main_kymograph_browser_function(
                 data_table_file=data_table_file,
                 viewer_params=viewer_params,
             )
+
+    napari.run()
