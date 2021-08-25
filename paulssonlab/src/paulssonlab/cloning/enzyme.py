@@ -21,14 +21,7 @@ def _re_search(seq, enzyme, circular=None):
     )
     if circular:
         seq = seq + seq[: enzyme.size - 1]
-    re_sites = [
-        (
-            i.start(),
-            i.group(1) is not None,
-            len(i.group(1) if i.group(1) is not None else i.group(2)),
-        )
-        for i in re.finditer(compsite, seq)
-    ]
+    re_sites = [(i.start(), i.group(1) is not None) for i in re.finditer(compsite, seq)]
     return re_sites
 
 
@@ -59,7 +52,7 @@ def _re_search_cuts(binding_locs, enzyme):
             binding_upstream = 0
             binding_downstream = 0
             cuts.append(
-                CutSite._make(
+                CutSite(
                     cut5_loc,
                     cut3_loc,
                     cut_upstream,
