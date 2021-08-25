@@ -1,5 +1,6 @@
 from functools import cached_property
 from Bio.SeqUtils import GC
+from Bio.Seq import Seq
 from paulssonlab.cloning.sequence import reverse_complement, find_primer_binding_site
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
