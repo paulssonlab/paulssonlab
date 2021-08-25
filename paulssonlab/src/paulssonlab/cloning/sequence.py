@@ -955,13 +955,7 @@ def _find_primer_binding_site(
     return sorted(sites, key=itemgetter(1))
 
 
-def amplicon_location(template, primer1, primer2):
-    # TODO: use in pcr?
-    pass
-
-
-def pcr(template, primer1, primer2, min_score=10):
-    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+def _amplicon_location(template, primer1, primer2, min_score=10):
     both_sites = []
     sites1 = find_primer_binding_site(
         template, primer1, reverse_complement=None, min_score=min_score
@@ -983,6 +977,18 @@ def pcr(template, primer1, primer2, min_score=10):
     sense2, loc2, len2 = sites2[0]
     if sense1 != -sense2:
         raise ValueError("expecting a forward/reverse primer pair")
+    return loc1, loc2, len1, len2
+
+
+def amplicon_location(template, primer1, primer2, min_score=10):
+    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+    loc1, loc2, _, _ = _amplicon_location(template, primer1, primer2)
+    return loc1, loc2
+
+
+def pcr(template, primer1, primer2, min_score=10):
+    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+    loc1, loc2, len1, len2 = _amplicon_location(template, primer1, primer2)
     amplicon = template.slice(
         loc1, loc2, annotation_start=loc1 - len1, annotation_stop=loc2 + len2
     )
