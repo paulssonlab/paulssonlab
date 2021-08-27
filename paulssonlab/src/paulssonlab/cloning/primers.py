@@ -4,21 +4,10 @@ from Bio.Seq import Seq
 from paulssonlab.cloning.sequence import reverse_complement, find_primer_binding_site
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
-from paulssonlab.util import any_not_none
-
-# tm_func, tm_parameters
-# gc
+from paulssonlab.util import any_not_none, format_number
 
 
 class Primer:
-    #     seq: str = None
-    #     binding: str = None
-    #     overhang: str = None
-    #     tm: Optional[float] = None
-    #     mfe_monomer: Optional[float] = None
-    #     mfe_homodimer: Optional[float] = None
-    #     primer3: dict = field(repr=False, default_factory=dict)
-
     def __init__(
         self,
         overhang=None,
@@ -73,7 +62,7 @@ class Primer:
                             self.overhang = overhang[:overhang_length]
                         else:
                             if template is not None:
-                                overhang, binding, _ = get_primer_overhang(
+                                self.overhang, self.binding, _ = get_primer_overhang(
                                     template, overhang
                                 )
                             else:
@@ -92,6 +81,9 @@ class Primer:
     @property
     def seq(self):
         return self.overhang + self.binding
+
+    def __len__(self):
+        return len(self.overhang) + len(self.binding)
 
     @cached_property
     def gc(self):
@@ -112,19 +104,100 @@ class Primer:
         return self.mfe_homodimer
 
     def _calculate_thermodynamics(self):
-        self.mfe_monomer, self.mfe_homodimer = viennarna.dna_secondary_structure(
-            self.seq
-        )
+        self.mfe_monomer, self.mfe_homodimer = dna_secondary_structure(self.seq)
 
     def __str__(self):
         return str(sequence.get_seq(self.seq))
 
     def __repr__(self):
-        tm = self.__dict__.get("tm", "None")
-        mfe_monomer = self.__dict__.get("mfe_monomer", "None")
-        mfe_homodimer = self.__dict__.get("mfe_homodimer", "None")
-        primer3 = "{...}" if self.primer3 else "None"
-        return f"Primer(overhang={self.overhang}, binding={self.binding}, tm={tm}, mfe_monomer={mfe_monomer}, mfe_homodimer={mfe_monomer}, primer3={primer3})"
+        tm = self.__dict__.get("tm")
+        mfe_monomer = self.__dict__.get("mfe_monomer")
+        mfe_homodimer = self.__dict__.get("mfe_homodimer")
+        primer3 = "{...}" if hasattr(self, "primer3") and self.primer3 else "None"
+        return f"Primer(overhang={self.overhang}, binding={self.binding}, tm={format_number('{:.1f}', tm)}, mfe_monomer={format_number('{:.1f}', mfe_monomer)}, mfe_homodimer={format_number('{:.1f}', mfe_homodimer)}, primer3={primer3})"
+
+
+class PrimerPair:
+    def __init__(
+        self,
+        primer1,
+        primer2,
+        template=None,
+        primer3=None,
+        mfe_heterodimer=None,
+        ta_func=thermodynamics.ta,
+        ta_kwargs=None,
+    ):
+        if mfe_heterodimer is not None:
+            self.mfe_heterodimer = mfe_heterodimer
+        self.ta_func = ta_func
+        self.ta_kwargs = ta_kwargs
+        if primer3 is not None:
+            if any_not_none(
+                overhang, binding, template, binding_length, overhang_length
+            ):
+                raise ValueError(
+                    "if primer3 is specified, cannot also specify other primer sequences/lengths"
+                )
+            self.primer3 = primer3
+            self.binding = Seq(primer3["SEQUENCE"])
+            self.overhang = Seq(primer3["OVERHANG"])
+            self.gc = primer3["GC_PERCENT"]
+        else:
+            if not isinstance(primer1, Primer):
+                primer1 = Primer(primer1, template=template)
+            if not isinstance(primer2, Primer):
+                primer2 = Primer(primer2, template=template)
+            self.primer1 = primer1
+            self.primer2 = primer2
+
+    @property
+    def min_length(self):
+        return min(len(self.primer1), len(self.primer2))
+
+    @property
+    def max_length(self):
+        return max(len(self.primer1), len(self.primer2))
+
+    @property
+    def min_binding_length(self):
+        return min(len(self.primer1.binding), len(self.primer2.binding))
+
+    @property
+    def max_binding_length(self):
+        return max(len(self.primer1.binding), len(self.primer2.binding))
+
+    @property
+    def min_overhang_length(self):
+        return min(len(self.primer1.overhang), len(self.primer2.overhang))
+
+    @property
+    def max_overhang_length(self):
+        return max(len(self.primer1.overhang), len(self.primer2.overhang))
+
+    @property
+    def min_gc(self):
+        return min(self.primer1.gc, self.primer2.gc)
+
+    @property
+    def max_gc(self):
+        return max(self.primer1.gc, self.primer2.gc)
+
+    @property
+    def min_tm(self):
+        return min(self.primer1.tm, self.primer2.tm)
+
+    @property
+    def max_tm(self):
+        return max(self.primer1.tm, self.primer2.tm)
+
+    @cached_property
+    def tm(self):
+        return self.tm_func(self.binding, **(self.tm_kwargs or {}))
+
+    @cached_property
+    def mfe_heterodimer(self):
+        return dna_heterodimer(self.primer1.seq, self.primer2.seq)
 
 
 # class PrimerPair(NamedTuple):
@@ -132,14 +205,6 @@ class Primer:
 #     primer2: Primer
 #     ta: Optional[float]
 #     mfe_heterodimer: Optional[float]
-
-#     @property
-#     def min_length(self):
-#         return min(len(self.primer1.seq), len(self.primer2.seq))
-
-#     @property
-#     def max_length(self):
-#         return max(len(self.primer1.seq), len(self.primer2.seq))
 
 
 def evaluate_primer(seq, tm_kwargs=None, ta_kwargs=None):
@@ -161,6 +226,8 @@ def evaluate_primer_pair(primer1, primer2, tm_kwargs=None, ta_kwargs=None):
     return PrimerPair(primer1=primer1, primer2=primer2, mfe_heterodimer=mfe_heterodimer)
 
 
+# TODO: you should probably just use primer3 instead,
+# this works but have not implemented a method for picking primer pairs
 def enumerate_primers(
     seq,
     overhang="",
@@ -193,7 +260,7 @@ def enumerate_primers(
                 continue
             elif tm > max_tm:
                 break
-            mfe_monomer, mfe_homodimer = viennarna.dna_secondary_structure(primer_seq)
+            mfe_monomer, mfe_homodimer = dna_secondary_structure(primer_seq)
             if min(mfe_monomer, mfe_homodimer) < min_mfe:
                 if monotonic_mfe:
                     # if we assume mfe monotonically decreases with length, then we can stop extending
@@ -220,9 +287,9 @@ def get_primer_overhang(template, primer):
         )
     sense = sites[0][0]  # TODO: NamedTuple-ize
     score = sites[0][2]
-    primer_overlap = sites[0][4]
-    binding = primer_overlap[len(primer_overlap) - score :]
-    overhang = primer[: len(primer) - len(primer_binding)]
+    overlap = sites[0][4]
+    binding = overlap[len(overlap) - score :]
+    overhang = primer[: len(primer) - len(binding)]
     return overhang, binding, sense
 
 
