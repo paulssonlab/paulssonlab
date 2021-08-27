@@ -1,7 +1,11 @@
 from functools import cached_property
 from Bio.SeqUtils import GC
 from Bio.Seq import Seq
-from paulssonlab.cloning.sequence import reverse_complement, find_primer_binding_site
+from paulssonlab.cloning.sequence import (
+    reverse_complement,
+    find_primer_binding_site,
+    get_seq,
+)
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
 from paulssonlab.util import any_not_none, format_number
@@ -15,9 +19,10 @@ class Primer:
         template=None,
         binding_length=None,
         overhang_length=None,
+        primer3=None,
         mfe_monomer=None,
         mfe_homodimer=None,
-        primer3=None,
+        tm=None,
         tm_func=thermodynamics.tm,
         tm_kwargs=None,
     ):
@@ -25,16 +30,18 @@ class Primer:
             self.mfe_monomer = mfe_monomer
         if mfe_homodimer is not None:
             self.mfe_homodimer = mfe_homodimer
+        if tm is not None:
+            self.tm = tm
         self.tm_func = tm_func
         self.tm_kwargs = tm_kwargs
-        if primer3 is not None:
+        self.primer3 = primer3
+        if self.primer3 is not None:
             if any_not_none(
                 overhang, binding, template, binding_length, overhang_length
             ):
                 raise ValueError(
                     "if primer3 is specified, cannot also specify other primer sequences/lengths"
                 )
-            self.primer3 = primer3
             self.binding = Seq(primer3["SEQUENCE"])
             self.overhang = Seq(primer3["OVERHANG"])
             self.gc = primer3["GC_PERCENT"]
@@ -107,42 +114,42 @@ class Primer:
         self.mfe_monomer, self.mfe_homodimer = dna_secondary_structure(self.seq)
 
     def __str__(self):
-        return str(sequence.get_seq(self.seq))
+        return str(get_seq(self.seq))
 
     def __repr__(self):
         tm = self.__dict__.get("tm")
         mfe_monomer = self.__dict__.get("mfe_monomer")
         mfe_homodimer = self.__dict__.get("mfe_homodimer")
-        primer3 = "{...}" if hasattr(self, "primer3") and self.primer3 else "None"
+        primer3 = "{...}" if self.primer3 else "None"
         return f"Primer(overhang={self.overhang}, binding={self.binding}, tm={format_number('{:.1f}', tm)}, mfe_monomer={format_number('{:.1f}', mfe_monomer)}, mfe_homodimer={format_number('{:.1f}', mfe_homodimer)}, primer3={primer3})"
 
 
 class PrimerPair:
     def __init__(
         self,
-        primer1,
-        primer2,
+        primer1=None,
+        primer2=None,
         template=None,
-        primer3=None,
+        primer3=None,  # this refers to the Primer3 program, not the third primer after primer1/2!
         mfe_heterodimer=None,
-        ta_func=thermodynamics.ta,
+        ta=None,
+        ta_func=thermodynamics.ta_from_tms,
         ta_kwargs=None,
     ):
         if mfe_heterodimer is not None:
             self.mfe_heterodimer = mfe_heterodimer
+        if ta is not None:
+            self.ta = ta
         self.ta_func = ta_func
         self.ta_kwargs = ta_kwargs
-        if primer3 is not None:
-            if any_not_none(
-                overhang, binding, template, binding_length, overhang_length
-            ):
+        self.primer3 = primer3
+        if self.primer3 is not None:
+            if any_not_none(primer1, primer2, template):
                 raise ValueError(
-                    "if primer3 is specified, cannot also specify other primer sequences/lengths"
+                    "if primer3 is specified, cannot also specify primers and/or template"
                 )
-            self.primer3 = primer3
-            self.binding = Seq(primer3["SEQUENCE"])
-            self.overhang = Seq(primer3["OVERHANG"])
-            self.gc = primer3["GC_PERCENT"]
+            self.primer1 = Primer(primer3=primer3["LEFT"])
+            self.primer2 = Primer(primer3=primer3["RIGHT"])
         else:
             if not isinstance(primer1, Primer):
                 primer1 = Primer(primer1, template=template)
@@ -192,38 +199,18 @@ class PrimerPair:
         return max(self.primer1.tm, self.primer2.tm)
 
     @cached_property
-    def tm(self):
-        return self.tm_func(self.binding, **(self.tm_kwargs or {}))
+    def ta(self):
+        return self.ta_func(self.primer1.tm, self.primer2.tm, **(self.ta_kwargs or {}))
 
     @cached_property
     def mfe_heterodimer(self):
         return dna_heterodimer(self.primer1.seq, self.primer2.seq)
 
-
-# class PrimerPair(NamedTuple):
-#     primer1: Primer
-#     primer2: Primer
-#     ta: Optional[float]
-#     mfe_heterodimer: Optional[float]
-
-
-def evaluate_primer(seq, tm_kwargs=None, ta_kwargs=None):
-    tm = thermodynamics.tm(seq, **(tm_kwargs or {}))
-    ta = thermodynamics.ta_from_tms(tm, **(ta_kwargs or {}))
-    mfe_monomer, mfe_homodimer = dna_secondary_structure(seq)
-    return Primer(
-        seq=seq, tm=tm, ta=ta, mfe_monomer=mfe_monomer, mfe_homodimer=mfe_homodimer
-    )
-
-
-def evaluate_primer_pair(primer1, primer2, tm_kwargs=None, ta_kwargs=None):
-    if not isinstance(primer1, Primer):
-        primer1 = evaluate_primer(primer1, tm_kwargs=tm_kwargs, ta_kwargs=ta_kwargs)
-    if not isinstance(primer2, Primer):
-        primer2 = evaluate_primer(primer2, tm_kwargs=tm_kwargs, ta_kwargs=ta_kwargs)
-    ta = thermodynamics.ta_from_tms(primer1.tm, primer2.tm, **(ta_kwargs or {}))
-    mfe_heterodimer = dna_heterodimer(primer1.seq, primer2.seq)
-    return PrimerPair(primer1=primer1, primer2=primer2, mfe_heterodimer=mfe_heterodimer)
+    def __repr__(self):
+        ta = self.__dict__.get("ta")
+        mfe_heterodimer = self.__dict__.get("mfe_heterodimer")
+        primer3 = "{...}" if self.primer3 else "None"
+        return f"Primer(primer1={self.primer1!r},\n       primer2={self.primer2!r},\n       ta={format_number('{:.1f}', ta)}, mfe_heterodimer={format_number('{:.1f}', mfe_heterodimer)}, primer3={primer3})"
 
 
 # TODO: you should probably just use primer3 instead,
