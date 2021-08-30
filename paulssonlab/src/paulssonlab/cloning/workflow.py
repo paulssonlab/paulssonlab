@@ -10,7 +10,6 @@ from paulssonlab.cloning.sequence import (
     smoosh_sequences,
     find_homologous_ends,
     DsSeqRecord,
-    find_primer_binding_site,
     reverse_complement,
 )
 from paulssonlab.cloning.enzyme import re_digest

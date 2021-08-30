@@ -3,7 +3,7 @@ from Bio.SeqUtils import GC
 from Bio.Seq import Seq
 from paulssonlab.cloning.sequence import (
     reverse_complement,
-    find_primer_binding_site,
+    enumerate_primer_binding_sites,
     get_seq,
 )
 import paulssonlab.cloning.thermodynamics as thermodynamics
@@ -267,7 +267,7 @@ def enumerate_primers(
 
 
 def get_primer_overhang(template, primer):
-    sites = find_primer_binding_site(template, primer, return_sequences=True)
+    sites = enumerate_primer_binding_sites(template, primer, return_sequences=True)
     if len(sites) != 1:
         raise ValueError(
             f"expecting a unique primer binding site, instead got {len(sites)}"
@@ -292,7 +292,7 @@ def format_primer_orientation(template, primer, format="f"):
     uppercase_initial = format[0].isupper()
     uppercase_all = format[-1].isupper()
     format = format.lower()
-    sites = find_primer_binding_site(template, primer)
+    sites = enumerate_primer_binding_sites(template, primer)
     if len(sites) != 1:
         raise ValueError(
             f"expecting a unique primer binding site, instead got {len(sites)}"

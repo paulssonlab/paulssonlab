@@ -35,7 +35,7 @@ def reverse_complement(seq):
         return Seq(seq).reverse_complement()
 
 
-# we need this alias for find_primer_binding_site
+# we need this alias for enumerate_matches
 reverse_complement_ = reverse_complement
 
 
@@ -827,24 +827,49 @@ def _smoosh_sequences(a, b, max_overlap=None):
 
 
 def count_matching(a, b):
-    s = 0
-    for i in range(min(len(a), len(b))):
+    max_length = min(len(a), len(b))
+    score = 0
+    for i in range(max_length):
         if a[i] == b[i]:
-            s += 1
-    return s
+            score += 1
+    return score, 0, max_length
 
 
-def count_contiguous_matching(a, b, right=False):
-    s = 0
-    idxs = range(min(len(a), len(b)))
+def longest_justified_matching(a, b, right=False):
+    max_length = min(len(a), len(b))
+    score = 0
+    idxs = range(max_length)
     if right:
         idxs = reversed(idxs)
     for i in idxs:
         if a[i] == b[i]:
-            s += 1
+            score += 1
         else:
-            return s
-    return s
+            break
+    if right:
+        start = max_length - score
+        stop = max_length
+    else:
+        start = 0
+        stop = score
+    return score, start, stop
+
+
+def longest_contiguous_matching(a, b):
+    max_length = min(len(a), len(b))
+    max_score = 0
+    start = 0
+    score = 0
+    idxs = range(max_length)
+    for i in idxs:
+        if a[i] == b[i]:
+            score += 1
+        else:
+            if score > max_score:
+                start = i - score
+                max_score = score
+    stop = start + max_score
+    return max_score, start, stop
 
 
 def iterate_shifts(a, b):
@@ -871,7 +896,61 @@ def iterate_shifts(a, b):
         raise ValueError("cannot bind a circular sequence to another circular sequence")
 
 
-def find_primer_binding_site(
+def enumerate_matches():
+    pass
+
+
+def _enumerate_matches(scoring_func=longest_justified_matching):
+    if scoring_func is None:
+        if require_3prime_clamp is True:
+            # require matching at 3' end
+            scoring_func = partial(longest_justified_matching, right=True)
+        else:
+            # do not penalize mismatches
+            scoring_func = count_matching
+    orig_template = template
+    if reverse_complement is None:
+        strands = (1, -1)
+    elif reverse_complement is True:
+        strands = (-1,)
+    elif reverse_complement is False:
+        strands = (1,)
+    else:
+        raise ValueError("expecting reverse_complement to be one of: True, False, None")
+    sites = []
+    for strand in strands:
+        if strand == -1:
+            template = reverse_complement_(orig_template)
+        else:
+            template = orig_template
+        for (
+            template_start,
+            template_stop,
+            primer_start,
+            primer_stop,
+        ) in iterate_shifts(template, primer):
+            if require_3prime_clamp and primer_stop != len(primer):
+                # skip matches that do not overlap at 3' end of primer
+                continue
+            template_overlap = template.slice_or_reindex(template_start, template_stop)
+            primer_overlap = primer.slice_or_reindex(primer_start, primer_stop)
+            if lower:
+                template_overlap = template_overlap.seq_lower()
+                primer_overlap = primer_overlap.seq_lower()
+            score = scoring_func(template_overlap, primer_overlap)
+            if score >= min_score:
+                loc = template_stop
+                if strand == -1:
+                    # when reverse complementing template, need to adjust loc
+                    loc = len(template) - loc
+                if return_sequences:
+                    sites.append((strand, loc, score, template_overlap, primer_overlap))
+                else:
+                    sites.append((strand, loc, score))
+    return sorted(sites, key=itemgetter(1))
+
+
+def enumerate_primer_binding_sites(
     template,
     primer,
     reverse_complement=None,
@@ -882,7 +961,7 @@ def find_primer_binding_site(
     return_sequences=False,
 ):
     template, primer = ensure_dsseqrecords(template, primer)
-    return _find_primer_binding_site(
+    return _enumerate_primer_binding_sites(
         template,
         primer,
         reverse_complement=reverse_complement,
@@ -896,7 +975,7 @@ def find_primer_binding_site(
 
 # TODO: instead of specifying min_score, allow specifying min_tm
 # TODO: template and primer must have matching case (i.e., DsSeqRecord.seq_lower())
-def _find_primer_binding_site(
+def _enumerate_primer_binding_sites(
     template,
     primer,
     reverse_complement=None,
@@ -909,7 +988,7 @@ def _find_primer_binding_site(
     if scoring_func is None:
         if require_3prime_clamp is True:
             # require matching at 3' end
-            scoring_func = partial(count_contiguous_matching, right=True)
+            scoring_func = partial(count_justified_matching, right=True)
         else:
             # do not penalize mismatches
             scoring_func = count_matching
@@ -956,15 +1035,16 @@ def _find_primer_binding_site(
 
 
 def _amplicon_location(template, primer1, primer2, min_score=10):
+    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
     both_sites = []
-    sites1 = find_primer_binding_site(
+    sites1 = _enumerate_primer_binding_sites(
         template, primer1, reverse_complement=None, min_score=min_score
     )
     if len(sites1) != 1:
         raise ValueError(
             f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
-    sites2 = _find_primer_binding_site(
+    sites2 = _enumerate_primer_binding_sites(
         template, primer2, reverse_complement=(sites1[0][0] == 1), min_score=min_score
     )
     if len(sites2) != 1:
