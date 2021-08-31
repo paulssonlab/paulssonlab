@@ -5,11 +5,12 @@ from numbers import Integral
 from cytoolz import partial
 from itertools import product as it_product
 from collections import defaultdict, OrderedDict
-from operator import itemgetter
+from operator import attrgetter
 from copy import deepcopy
-from typing import Union
+from typing import Union, NamedTuple
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import sign, format_sign
+
 
 MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
@@ -896,19 +897,24 @@ def iterate_shifts(a, b):
         raise ValueError("cannot bind a circular sequence to another circular sequence")
 
 
-def enumerate_matches():
-    pass
+class SeqMatch(NamedTuple):
+    strand: int
+    score: int
+    seq1_start: int
+    seq1_stop: int
+    seq2_start: int
+    seq2_stop: int
 
 
-def _enumerate_matches(scoring_func=longest_justified_matching):
-    if scoring_func is None:
-        if require_3prime_clamp is True:
-            # require matching at 3' end
-            scoring_func = partial(longest_justified_matching, right=True)
-        else:
-            # do not penalize mismatches
-            scoring_func = count_matching
-    orig_template = template
+def iter_matches(
+    seq1,
+    seq2,
+    reverse_complement=None,
+    scoring_func=count_matching,
+    min_score=10,
+    lower=True,
+):
+    orig_seq1 = seq1
     if reverse_complement is None:
         strands = (1, -1)
     elif reverse_complement is True:
@@ -920,37 +926,64 @@ def _enumerate_matches(scoring_func=longest_justified_matching):
     sites = []
     for strand in strands:
         if strand == -1:
-            template = reverse_complement_(orig_template)
+            seq1 = reverse_complement_(orig_seq1)
         else:
-            template = orig_template
-        for (
-            template_start,
-            template_stop,
-            primer_start,
-            primer_stop,
-        ) in iterate_shifts(template, primer):
-            if require_3prime_clamp and primer_stop != len(primer):
-                # skip matches that do not overlap at 3' end of primer
-                continue
-            template_overlap = template.slice_or_reindex(template_start, template_stop)
-            primer_overlap = primer.slice_or_reindex(primer_start, primer_stop)
-            if lower:
-                template_overlap = template_overlap.seq_lower()
-                primer_overlap = primer_overlap.seq_lower()
-            score = scoring_func(template_overlap, primer_overlap)
+            seq1 = orig_seq1
+        if lower:
+            seq1_lower = seq1.lower()
+            seq2_lower = seq2.lower()
+        else:
+            seq1_lower = seq1
+            seq2_lower = seq2
+        for (seq1_start, seq1_stop, seq2_start, seq2_stop) in iterate_shifts(
+            seq1, seq2
+        ):
+            seq1_overlap = seq1_lower.slice_or_reindex(seq1_start, seq1_stop)
+            seq2_overlap = seq2_lower.slice_or_reindex(seq2_start, seq2_stop)
+            score, overlap_start, overlap_stop = scoring_func(
+                seq1_overlap, seq2_overlap
+            )
             if score >= min_score:
-                loc = template_stop
+                seq1_match_start = seq1_start + overlap_start
+                seq2_match_start = seq2_start + overlap_start
+                seq1_match_stop = seq1_start + overlap_stop
+                seq2_match_stop = seq2_start + overlap_stop
                 if strand == -1:
-                    # when reverse complementing template, need to adjust loc
-                    loc = len(template) - loc
-                if return_sequences:
-                    sites.append((strand, loc, score, template_overlap, primer_overlap))
-                else:
-                    sites.append((strand, loc, score))
-    return sorted(sites, key=itemgetter(1))
+                    # when reverse complementing seq1, need to adjust locations
+                    seq1_match_start = len(seq1) - seq1_match_start
+                    seq1_match_stop = len(seq1) - seq1_match_stop
+                match = SeqMatch(
+                    strand,
+                    score,
+                    seq1_match_start,
+                    seq1_match_stop,
+                    seq2_match_start,
+                    seq2_match_stop,
+                )
+                yield match
 
 
-def enumerate_primer_binding_sites(
+def enumerate_matches(
+    seq1,
+    seq2,
+    reverse_complement=None,
+    scoring_func=count_matching,
+    min_score=10,
+    lower=True,
+):
+    seq1, seq2 = ensure_dsseqrecords(seq1, seq2)
+    sites = iter_matches(
+        seq1,
+        seq2,
+        reverse_complement=reverse_complement,
+        scoring_func=scoring_func,
+        min_score=min_score,
+        lower=lower,
+    )
+    return sorted(list(sites), key=attrgetter("seq1_start"))
+
+
+def iter_primer_binding_sites(
     template,
     primer,
     reverse_complement=None,
@@ -961,21 +994,27 @@ def enumerate_primer_binding_sites(
     return_sequences=False,
 ):
     template, primer = ensure_dsseqrecords(template, primer)
-    return _enumerate_primer_binding_sites(
+    if scoring_func is None:
+        if require_3prime_clamp is True:
+            # require matching at 3' end
+            scoring_func = partial(longest_justified_matching, right=True)
+        else:
+            # do not penalize mismatches
+            scoring_func = count_matching
+    sites = iter_matches(
         template,
         primer,
         reverse_complement=reverse_complement,
         scoring_func=scoring_func,
         min_score=min_score,
-        require_3prime_clamp=require_3prime_clamp,
         lower=lower,
-        return_sequences=return_sequences,
     )
+    for site in sites:
+        if not require_3prime_clamp or site.seq2_stop == len(primer):
+            yield site
 
 
-# TODO: instead of specifying min_score, allow specifying min_tm
-# TODO: template and primer must have matching case (i.e., DsSeqRecord.seq_lower())
-def _enumerate_primer_binding_sites(
+def enumerate_primer_binding_sites(
     template,
     primer,
     reverse_complement=None,
@@ -983,55 +1022,17 @@ def _enumerate_primer_binding_sites(
     min_score=10,
     require_3prime_clamp=True,
     lower=True,
-    return_sequences=False,
 ):
-    if scoring_func is None:
-        if require_3prime_clamp is True:
-            # require matching at 3' end
-            scoring_func = partial(count_justified_matching, right=True)
-        else:
-            # do not penalize mismatches
-            scoring_func = count_matching
-    orig_template = template
-    if reverse_complement is None:
-        strands = (1, -1)
-    elif reverse_complement is True:
-        strands = (-1,)
-    elif reverse_complement is False:
-        strands = (1,)
-    else:
-        raise ValueError("expecting reverse_complement to be one of: True, False, None")
-    sites = []
-    for strand in strands:
-        if strand == -1:
-            template = reverse_complement_(orig_template)
-        else:
-            template = orig_template
-        for (
-            template_start,
-            template_stop,
-            primer_start,
-            primer_stop,
-        ) in iterate_shifts(template, primer):
-            if require_3prime_clamp and primer_stop != len(primer):
-                # skip matches that do not overlap at 3' end of primer
-                continue
-            template_overlap = template.slice_or_reindex(template_start, template_stop)
-            primer_overlap = primer.slice_or_reindex(primer_start, primer_stop)
-            if lower:
-                template_overlap = template_overlap.seq_lower()
-                primer_overlap = primer_overlap.seq_lower()
-            score = scoring_func(template_overlap, primer_overlap)
-            if score >= min_score:
-                loc = template_stop
-                if strand == -1:
-                    # when reverse complementing template, need to adjust loc
-                    loc = len(template) - loc
-                if return_sequences:
-                    sites.append((strand, loc, score, template_overlap, primer_overlap))
-                else:
-                    sites.append((strand, loc, score))
-    return sorted(sites, key=itemgetter(1))
+    sites = iter_primer_binding_sites(
+        template,
+        primer,
+        reverse_complement=reverse_complement,
+        scoring_func=scoring_func,
+        min_score=min_score,
+        require_3prime_clamp=require_3prime_clamp,
+        lower=lower,
+    )
+    return sorted(list(sites), key=attrgetter("seq1_start"))
 
 
 def _amplicon_location(template, primer1, primer2, min_score=10):
