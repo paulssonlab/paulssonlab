@@ -869,6 +869,10 @@ def longest_contiguous_matching(a, b):
             if score > max_score:
                 start = i - score
                 max_score = score
+            score = 0
+    if score > max_score:
+        start = max_length - score
+        max_score = score
     stop = start + max_score
     return max_score, start, stop
 
@@ -1033,6 +1037,19 @@ def enumerate_primer_binding_sites(
         lower=lower,
     )
     return sorted(list(sites), key=attrgetter("seq1_start"))
+
+
+def extract_matching_subsequence(template, product, min_score=10):
+    sites = iter_matches(
+        template, product, scoring_func=longest_contiguous_matching, min_score=min_score
+    )
+    site = sorted(list(sites), key=attrgetter("score"), reverse=True)[0]
+    return (
+        site.seq1_start,
+        site.seq2_stop,
+        product[: site.seq2_start],
+        product[site.seq2_stop :],
+    )
 
 
 def _amplicon_location(template, primer1, primer2, min_score=10):
