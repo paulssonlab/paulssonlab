@@ -13,6 +13,7 @@ import dask.array as da
 import dask.delayed as delayed
 import xarray as xr
 import holoviews as hv
+import panel as pn
 import scipy as sp
 import scipy.stats
 
@@ -539,6 +540,12 @@ def linked_kymograph_for_scatter(xrstack,df,x_dim_label,y_dim_label,select_scatt
         fig.state.x_range.end = x_window_size
         fig.state.x_range.reset_end = x_window_size
 
+        fig.state.y_range.start = 0
+        fig.state.y_range.reset_start = 0
+        fig.state.y_range.end = y_dim
+        fig.state.y_range.reset_end = y_dim
+
+
     if select_unpacked_trenchid != None:
         image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_scatter,select_trenchid,select_unpacked_trenchid])
         trenchid_display = hv.DynamicMap(print_trenchid, streams=[select_scatter,select_trenchid,select_unpacked_trenchid])
@@ -572,14 +579,14 @@ def linked_histogram(df,label,trenchids_as_list=False,trenchid_column='trenchid'
     frequencies, edges = np.histogram(data_vals,bins=50,range=(x_low,x_high))
     hist = hv.Histogram((edges,frequencies))
 
-    hist = hist.opts(tools=["hover","doubletap"],height=height,responsive=True,**histkwargs)
+    hist = hist.opts(tools=["hover","doubletap","box_select"],height=height,responsive=True,**histkwargs)
 
     select_histcolumn = hv.streams.Selection1D(source=hist,index=[0],rename={'index': 'histcolumn'})
 
     def get_hist_trenchids(histcolumn, df=df, label=label, edges=edges):
-
-        selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-        filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+        min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+        all_edges = edges[min_col:max_col+2]
+        filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
         filtered_dataset = hv.Dataset(filtered_df)
 
         return hv.Table(filtered_dataset)
@@ -591,9 +598,9 @@ def linked_histogram(df,label,trenchids_as_list=False,trenchid_column='trenchid'
     if trenchids_as_list:
 
         def unpack_trenchids(histcolumn, trenchid_index, df=df, label=label, edges=edges):
-
-            selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-            filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+            min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+            all_edges = edges[min_col:max_col+2]
+            filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
             filtered_dataset = hv.Dataset(filtered_df)
             double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
 
@@ -620,8 +627,11 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
     if select_unpacked_trenchid != None:
 
         def select_pt_load_image(channel,histcolumn,trenchid_index,unpack_trenchid_index,width=width,height=height):
-            selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-            filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+
+            min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+            all_edges = edges[min_col:max_col+2]
+            filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
+
             filtered_dataset = hv.Dataset(filtered_df)
             double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
             trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
@@ -629,8 +639,10 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
             return hv.Image(arr,bounds=(0,0,width,height))
 
         def print_trenchid(histcolumn,trenchid_index,unpack_trenchid_index):
-            selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-            filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+            min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+            all_edges = edges[min_col:max_col+2]
+            filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
+
             filtered_dataset = hv.Dataset(filtered_df)
             double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
             trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
@@ -640,8 +652,9 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
     else:
 
         def select_pt_load_image(channel,histcolumn,trenchid_index,width=width,height=height):
-            selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-            filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+            min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+            all_edges = edges[min_col:max_col+2]
+            filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
             filtered_dataset = hv.Dataset(filtered_df)
 
             trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
@@ -649,8 +662,9 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
             return hv.Image(arr,bounds=(0,0,width,height))
 
         def print_trenchid(histcolumn,trenchid_index):
-            selected_edges = edges[histcolumn[0]:histcolumn[0]+2]
-            filtered_df = df[(df[label]<selected_edges[1])&(df[label]>selected_edges[0])]
+            min_col,max_col = np.min(histcolumn),np.max(histcolumn)
+            all_edges = edges[min_col:max_col+2]
+            filtered_df = df[(df[label]<all_edges[-1])&(df[label]>all_edges[0])]
             filtered_dataset = hv.Dataset(filtered_df)
 
             trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
@@ -666,6 +680,11 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
         fig.state.x_range.reset_start = 0
         fig.state.x_range.end = x_window_size
         fig.state.x_range.reset_end = x_window_size
+
+        fig.state.y_range.start = 0
+        fig.state.y_range.reset_start = 0
+        fig.state.y_range.end = y_dim
+        fig.state.y_range.reset_end = y_dim
 
     if select_unpacked_trenchid != None:
         image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_histcolumn,select_trenchid,select_unpacked_trenchid])
@@ -686,7 +705,372 @@ def linked_kymograph_for_hist(xrstack,df,label,edges,select_histcolumn,select_tr
 
     return output_display
 
-def kymo_xarr(headpath,subset=None,in_memory=False,in_distributed_memory=False):
+def linked_gene_table(df,trenchids_as_list=False,trenchid_column='trenchid',height=400,**histkwargs):
+    df = df.reset_index(drop=False).set_index("Gene",drop=False).sort_index()
+    df.index = df.index.rename("Gene Index")
+    df_genes_only = df[["Gene"]].groupby("Gene").apply(lambda x: x.iloc[0])
+    dataset = hv.Dataset(df)
+    gene_dataset = hv.Dataset(df_genes_only)
+
+    def get_gene_list(gene_dataset=gene_dataset):
+        return hv.Table(gene_dataset)
+
+    gene_list_dmap = hv.DynamicMap(get_gene_list)
+    select_gene = hv.streams.Selection1D(source=gene_list_dmap,index=[0],rename={'index': 'select_gene_index'})
+
+    def get_gene_table(select_gene_index,df=df):
+        gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+        dataset = hv.Dataset(df.loc[gene_name])
+        return hv.Table(dataset)
+
+    trenchid_table = hv.DynamicMap(get_gene_table, streams=[select_gene])
+    select_trenchid = hv.streams.Selection1D(source=trenchid_table,index=[0],rename={'index': 'trenchid_index'})
+
+    if trenchids_as_list:
+        def unpack_trenchids(select_gene_index,trenchid_index,dataset=dataset):
+            gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+            dataset = hv.Dataset(df.loc[gene_name])
+            filtered_dataset = hv.Dataset({"trenchid": dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            return hv.Table(filtered_dataset)
+
+        unpack_trenchid_table = hv.DynamicMap(unpack_trenchids, streams=[select_gene,select_trenchid], responsive=True)
+        unpack_trenchid_table = unpack_trenchid_table.opts(height=height)
+        select_unpacked_trenchid = hv.streams.Selection1D(source=unpack_trenchid_table,index=[0],rename={'index': 'unpack_trenchid_index'})
+
+        gene_table_layout = gene_list_dmap + trenchid_table + unpack_trenchid_table
+
+        return gene_table_layout,select_gene,select_trenchid,select_unpacked_trenchid
+
+    else:
+        gene_table_layout = autocomplete + trenchid_table
+
+        return gene_table_layout,select_gene,select_trenchid
+
+def linked_kymograph_for_gene_table(xrstack,wrapped_xrstack,df,select_gene,select_trenchid,select_unpacked_trenchid=None,trenchid_column='trenchid',
+                                    y_scale=3,x_window_size=300,rescale_videos=True,fps=10,dpi=200):
+    ### stream must return trenchid value
+    #### df must have trenchid lookups
+    width,height = xrstack.shape[3],int(xrstack.shape[2]*y_scale)
+    x_window_scale = x_window_size/xrstack.shape[3]
+    x_size = int(xrstack.shape[3]*(y_scale*x_window_scale))
+
+    df = df.reset_index(drop=False).set_index("Gene",drop=False).sort_index()
+    df.index = df.index.rename("Gene Index")
+    df_genes_only = df[["Gene"]].groupby("Gene").apply(lambda x: x.iloc[0])
+    dataset = hv.Dataset(df)
+    gene_dataset = hv.Dataset(df_genes_only)
+
+    if select_unpacked_trenchid != None:
+        def select_pt_load_image(channel,select_gene_index,trenchid_index,unpack_trenchid_index,width=width,height=height):
+            gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
+            arr = xrstack.loc[channel,trenchid].values
+            return hv.Image(arr,bounds=(0,0,width,height))
+
+        def print_trenchid(select_gene_index,trenchid_index,unpack_trenchid_index):
+            gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
+            return hv.Text(3.,20.,str(trenchid),fontsize=30)
+
+    else:
+        def select_pt_load_image(channel,select_gene_index,trenchid_index,width=width,height=height):
+            gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
+            arr = xrstack.loc[channel,trenchid].values
+            return hv.Image(arr,bounds=(0,0,width,height))
+
+        def print_trenchid(select_gene_index,trenchid_index):
+            gene_name = gene_dataset.iloc[select_gene_index]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
+            return hv.Text(3.,20.,str(trenchid),fontsize=30)
+
+    def set_bounds(fig, element, y_dim=height, x_dim=width, x_window_size=x_window_size):
+        sy = y_dim-0.5
+        sx = x_dim-0.5
+
+        fig.state.y_range.bounds = (-0.5, sy)
+        fig.state.x_range.bounds = (0, sx)
+        fig.state.x_range.start = 0
+        fig.state.x_range.reset_start = 0
+        fig.state.x_range.end = x_window_size
+        fig.state.x_range.reset_end = x_window_size
+
+        fig.state.y_range.start = 0
+        fig.state.y_range.reset_start = 0
+        fig.state.y_range.end = y_dim
+        fig.state.y_range.reset_end = y_dim
+
+
+    if select_unpacked_trenchid != None:
+        image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_gene,select_trenchid,select_unpacked_trenchid])
+        trenchid_display = hv.DynamicMap(print_trenchid, streams=[select_gene,select_trenchid,select_unpacked_trenchid])
+    else:
+        image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_gene,select_trenchid])
+        trenchid_display = hv.DynamicMap(print_trenchid, streams=[select_gene,select_trenchid])
+
+    kymograph_display = image_stack.opts(plot={'Image': dict(colorbar=True, tools=['hover'],hooks=[set_bounds],aspect='equal'),})
+    kymograph_display = kymograph_display.opts(cmap='Greys_r',height=height,width=x_size)
+
+    kymograph_display = kymograph_display.redim.range(trenchid=(0,xrstack.shape[1]))
+    kymograph_display = kymograph_display.redim.values(Channel=xrstack.coords["Channel"].values.tolist())
+
+    if select_unpacked_trenchid != None:
+
+        def save_video(event):
+            hv.extension('matplotlib')
+            channel = kymograph_display.dimension_values("Channel")[0]
+            gene_name = gene_dataset.iloc[select_gene.index[0]]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[select_trenchid.index[0]][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[select_unpacked_trenchid.index[0]]["trenchid"][0]
+            arr = wrapped_xrstack.loc[channel,trenchid].values
+            if rescale_videos:
+                arr = np.array([sk.exposure.rescale_intensity(arr[t]) for t in range(arr.shape[0])])
+            hmap = hv.HoloMap([(t, hv.Raster(arr[t])) for t in range(0,arr.shape[0])], kdims=['t'])
+            hmap = hmap.opts(plot={'Raster': dict(tools=['hover'],aspect='equal',cmap='Greys_r'),})
+            hmap = hmap.opts(cmap='Greys_r')
+            hv.save(hmap, gene_name + '_trenchid=' + str(trenchid) + '.mp4', fmt='mp4', fps=fps, dpi=dpi , backend='matplotlib')
+            hv.extension('bokeh')
+
+    else:
+
+        def save_video(event):
+            hv.extension('matplotlib')
+            channel = kymograph_display.dimension_values("Channel")[0]
+            gene_name = gene_dataset.iloc[select_gene.index[0]]["Gene"][0]
+            filtered_dataset = hv.Dataset(df.loc[gene_name])
+            trenchid = filtered_dataset.iloc[select_trenchid.index[0]][trenchid_column][0]
+            arr = wrapped_xrstack.loc[channel,trenchid].values
+            if rescale_videos:
+                arr = np.array([sk.exposure.rescale_intensity(arr[t]) for t in range(arr.shape[0])])
+            hmap = hv.HoloMap([(t, hv.Raster(arr[t])) for t in range(0,arr.shape[0])], kdims=['t'])
+            hmap = hmap.opts(plot={'Raster': dict(tools=['hover'],aspect='equal',cmap='Greys_r'),})
+            hmap = hmap.opts(cmap='Greys_r')
+            hv.save(hmap, gene_name + '_trenchid=' + str(trenchid) + '.mp4', fmt='mp4', fps=fps, dpi=dpi , backend='matplotlib')
+            hv.extension('bokeh')
+
+    trenchid_display = trenchid_display.opts(text_align="left",text_color="white")
+
+    output_display = kymograph_display*trenchid_display
+
+    button = pn.widgets.button.Button(name='Save Video', width=60)
+    button.on_click(save_video)
+
+    return output_display, button
+
+def linked_table(df,index_key="Gene",trenchids_as_list=False,trenchid_column='trenchid',height=400,**histkwargs):
+    df = df.reset_index(drop=False).set_index(index_key,drop=False).sort_index()
+    df.index = df.index.rename(index_key + " Index")
+    df_index_only = df[[index_key]].groupby(index_key).apply(lambda x: x.iloc[0])
+    dataset = hv.Dataset(df)
+    index_dataset = hv.Dataset(df_index_only)
+
+    def get_index_list(index_dataset=index_dataset):
+        return hv.Table(index_dataset)
+
+    index_list_dmap = hv.DynamicMap(get_index_list)
+    select_index = hv.streams.Selection1D(source=index_list_dmap,index=[0],rename={'index': 'select_index'})
+
+    def get_index_table(select_index,df=df,index_key=index_key):
+        index_name = index_dataset.iloc[select_index][index_key][0]
+        dataset = hv.Dataset(df.loc[[index_name]])
+        return hv.Table(dataset)
+
+    trenchid_table = hv.DynamicMap(get_index_table, streams=[select_index])
+    select_trenchid = hv.streams.Selection1D(source=trenchid_table,index=[0],rename={'index': 'trenchid_index'})
+
+    if trenchids_as_list:
+        def unpack_trenchids(select_index,trenchid_index,dataset=dataset,index_key=index_key):
+            index_name = index_dataset.iloc[select_index][index_key][0]
+            dataset = hv.Dataset(df.loc[[index_name]])
+            filtered_dataset = hv.Dataset({"trenchid": dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            return hv.Table(filtered_dataset)
+
+        unpack_trenchid_table = hv.DynamicMap(unpack_trenchids, streams=[select_index,select_trenchid], responsive=True)
+        unpack_trenchid_table = unpack_trenchid_table.opts(height=height)
+        select_unpacked_trenchid = hv.streams.Selection1D(source=unpack_trenchid_table,index=[0],rename={'index': 'unpack_trenchid_index'})
+
+        index_table_layout = index_list_dmap + trenchid_table + unpack_trenchid_table
+
+        return index_table_layout,select_index,select_trenchid,select_unpacked_trenchid
+
+    else:
+        index_table_layout = index_list_dmap + trenchid_table
+
+        return index_table_layout,select_index,select_trenchid
+
+def linked_kymograph_for_table(xrstack,wrapped_xrstack,df,select_index,select_trenchid,index_key="Gene",select_unpacked_trenchid=None,trenchid_column='trenchid',
+                                    y_scale=3,x_window_size=300,rescale_videos=True,fps=10,dpi=200):
+    ### stream must return trenchid value
+    #### df must have trenchid lookups
+    width,height = xrstack.shape[3],int(xrstack.shape[2]*y_scale)
+    x_window_scale = x_window_size/xrstack.shape[3]
+    x_size = int(xrstack.shape[3]*(y_scale*x_window_scale))
+
+    df = df.reset_index(drop=False).set_index(index_key,drop=False).sort_index()
+    df.index = df.index.rename(index_key + " Index")
+    df_index_only = df[[index_key]].groupby(index_key).apply(lambda x: x.iloc[0])
+    dataset = hv.Dataset(df)
+    index_dataset = hv.Dataset(df_index_only)
+
+    if select_unpacked_trenchid != None:
+        def select_pt_load_image(channel,select_index,trenchid_index,unpack_trenchid_index,width=width,height=height,index_key=index_key):
+            index_name = index_dataset.iloc[select_index][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
+            arr = xrstack.loc[channel,trenchid].values
+            return hv.Image(arr,bounds=(0,0,width,height))
+
+        def print_trenchid(select_index,trenchid_index,unpack_trenchid_index,index_key=index_key):
+            index_name = index_dataset.iloc[select_index][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[trenchid_index][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[unpack_trenchid_index]["trenchid"][0]
+            return hv.Text(3.,20.,str(trenchid),fontsize=30)
+
+    else:
+        def select_pt_load_image(channel,select_index,trenchid_index,width=width,height=height,index_key=index_key):
+            index_name = index_dataset.iloc[select_index][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
+            arr = xrstack.loc[channel,trenchid].values
+            return hv.Image(arr,bounds=(0,0,width,height))
+
+        def print_trenchid(select_index,trenchid_index,index_key=index_key):
+            index_name = index_dataset.iloc[select_index][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            trenchid = filtered_dataset.iloc[trenchid_index][trenchid_column][0]
+            return hv.Text(3.,20.,str(trenchid),fontsize=30)
+
+    def set_bounds(fig, element, y_dim=height, x_dim=width, x_window_size=x_window_size):
+        sy = y_dim-0.5
+        sx = x_dim-0.5
+
+        fig.state.y_range.bounds = (-0.5, sy)
+        fig.state.x_range.bounds = (0, sx)
+        fig.state.x_range.start = 0
+        fig.state.x_range.reset_start = 0
+        fig.state.x_range.end = x_window_size
+        fig.state.x_range.reset_end = x_window_size
+
+        fig.state.y_range.start = 0
+        fig.state.y_range.reset_start = 0
+        fig.state.y_range.end = y_dim
+        fig.state.y_range.reset_end = y_dim
+
+
+    if select_unpacked_trenchid != None:
+        image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_index,select_trenchid,select_unpacked_trenchid])
+        trenchid_display = hv.DynamicMap(print_trenchid, streams=[select_index,select_trenchid,select_unpacked_trenchid])
+    else:
+        image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel'], streams=[select_index,select_trenchid])
+        trenchid_display = hv.DynamicMap(print_trenchid, streams=[select_index,select_trenchid])
+
+    kymograph_display = image_stack.opts(plot={'Image': dict(colorbar=True, tools=['hover'],hooks=[set_bounds],aspect='equal'),})
+    kymograph_display = kymograph_display.opts(cmap='Greys_r',height=height,width=x_size)
+
+    kymograph_display = kymograph_display.redim.range(trenchid=(0,xrstack.shape[1]))
+    kymograph_display = kymograph_display.redim.values(Channel=xrstack.coords["Channel"].values.tolist())
+
+    if select_unpacked_trenchid != None:
+
+        def save_video(event,index_key=index_key):
+            hv.extension('matplotlib')
+            channel = kymograph_display.dimension_values("Channel")[0]
+            index_name = index_dataset.iloc[select_index.index[0]][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            double_filtered_dataset = hv.Dataset({"trenchid": filtered_dataset.iloc[select_trenchid.index[0]][trenchid_column][0]},['trenchid'])
+            trenchid = double_filtered_dataset.iloc[select_unpacked_trenchid.index[0]]["trenchid"][0]
+            arr = wrapped_xrstack.loc[channel,trenchid].values
+            if rescale_videos:
+                arr = np.array([sk.exposure.rescale_intensity(arr[t]) for t in range(arr.shape[0])])
+            hmap = hv.HoloMap([(t, hv.Raster(arr[t])) for t in range(0,arr.shape[0])], kdims=['t'])
+            hmap = hmap.opts(plot={'Raster': dict(tools=['hover'],aspect='equal',cmap='Greys_r'),})
+            hmap = hmap.opts(cmap='Greys_r')
+            hv.save(hmap, index_key + '_trenchid=' + str(trenchid) + '.mp4', fmt='mp4', fps=fps, dpi=dpi , backend='matplotlib')
+            hv.extension('bokeh')
+
+    else:
+
+        def save_video(event,index_key=index_key):
+            hv.extension('matplotlib')
+            channel = kymograph_display.dimension_values("Channel")[0]
+            index_name = index_dataset.iloc[select_index.index[0]][index_key][0]
+            filtered_dataset = hv.Dataset(df.loc[[index_name]])
+            trenchid = filtered_dataset.iloc[select_trenchid.index[0]][trenchid_column][0]
+            arr = wrapped_xrstack.loc[channel,trenchid].values
+            if rescale_videos:
+                arr = np.array([sk.exposure.rescale_intensity(arr[t]) for t in range(arr.shape[0])])
+            hmap = hv.HoloMap([(t, hv.Raster(arr[t])) for t in range(0,arr.shape[0])], kdims=['t'])
+            hmap = hmap.opts(plot={'Raster': dict(tools=['hover'],aspect='equal',cmap='Greys_r'),})
+            hmap = hmap.opts(cmap='Greys_r')
+            hv.save(hmap, index_key + '_trenchid=' + str(trenchid) + '.mp4', fmt='mp4', fps=fps, dpi=dpi , backend='matplotlib')
+            hv.extension('bokeh')
+
+    trenchid_display = trenchid_display.opts(text_align="left",text_color="white")
+
+    output_display = kymograph_display*trenchid_display
+
+    button = pn.widgets.button.Button(name='Save Video', width=60)
+    button.on_click(save_video)
+
+    return output_display, button
+    #
+
+def unlinked_kymograph(xrstack,y_scale=3,x_window_size=300):
+    #### stream must return trenchid value
+    #### df must have trenchid lookups
+    width,height = xrstack.shape[3],int(xrstack.shape[2]*y_scale)
+    x_window_scale = x_window_size/xrstack.shape[3]
+    x_size = int(xrstack.shape[3]*(y_scale*x_window_scale))
+
+    def select_pt_load_image(channel,trenchid,width=width,height=height):
+        arr = xrstack.loc[channel,trenchid].values
+        return hv.Image(arr,bounds=(0,0,width,height))
+
+    def print_trenchid(trenchid):
+        return hv.Text(3.,20.,str(trenchid),fontsize=30)
+
+    def set_bounds(fig, element, y_dim=height, x_dim=width, x_window_size=x_window_size):
+        sy = y_dim-0.5
+        sx = x_dim-0.5
+
+        fig.state.y_range.bounds = (-0.5, sy)
+        fig.state.x_range.bounds = (0, sx)
+        fig.state.x_range.start = 0
+        fig.state.x_range.reset_start = 0
+        fig.state.x_range.end = x_window_size
+        fig.state.x_range.reset_end = x_window_size
+
+        fig.state.y_range.start = 0
+        fig.state.y_range.reset_start = 0
+        fig.state.y_range.end = y_dim
+        fig.state.y_range.reset_end = y_dim
+
+
+    image_stack = hv.DynamicMap(select_pt_load_image, kdims=['Channel','trenchid'])
+    trenchid_display = hv.DynamicMap(print_trenchid, kdims=['trenchid'])
+
+    kymograph_display = image_stack.opts(plot={'Image': dict(colorbar=True, tools=['hover'],hooks=[set_bounds],aspect='equal'),})
+    kymograph_display = kymograph_display.opts(cmap='Greys_r',height=height,width=x_size)
+
+    kymograph_display = kymograph_display.redim.range(trenchid=(0,xrstack.shape[1]))
+    kymograph_display = kymograph_display.redim.values(Channel=xrstack.coords["Channel"].values.tolist(),trenchid=xrstack.coords["trenchid"].values.tolist())
+
+    trenchid_display = trenchid_display.opts(text_align="left",text_color="white")
+
+    output_display = kymograph_display*trenchid_display
+
+    return output_display
+
+def kymo_xarr(headpath,subset=None,in_memory=False,in_distributed_memory=False,unwrap=True):
     data_parquet = dd.read_parquet(headpath + "/kymograph/metadata")
     meta_handle = pandas_hdf5_handler(headpath+"/metadata.hdf5")
     metadata = meta_handle.read_df("global",read_metadata=True).metadata
@@ -706,18 +1090,36 @@ def kymo_xarr(headpath,subset=None,in_memory=False,in_distributed_memory=False):
         da_file_index_arr = da.concatenate(da_file_arrays, axis=0)
         channel_arr.append(da_file_index_arr)
     da_channel_arr = da.stack(channel_arr, axis=0)
-    da_channel_arr = da_channel_arr.swapaxes(3,4).reshape(da_channel_arr.shape[0],da_channel_arr.shape[1],-1,da_channel_arr.shape[3]).swapaxes(2,3)
-    if subset != None:
-        da_channel_arr = da_channel_arr[:,subset]
-    if in_memory:
-        da_channel_arr = da_channel_arr.compute()
-    elif in_distributed_memory:
-        da_channel_arr = da_channel_arr.persist()
 
-    # defining xarr
-    dims = ['Channel','trenchid', 'y', 'xt']
-    coords = {d: np.arange(s) for d, s in zip(dims, da_channel_arr.shape)}
-    coords['Channel'] = np.array(channels)
-    kymo_xarr = xr.DataArray(da_channel_arr, dims=dims, coords=coords, name="Data").astype("uint16")
+    if unwrap:
+        da_channel_arr = da_channel_arr.swapaxes(3,4).reshape(da_channel_arr.shape[0],da_channel_arr.shape[1],-1,da_channel_arr.shape[3]).swapaxes(2,3)
+        if subset != None:
+            da_channel_arr = da_channel_arr[:,subset]
+        if in_memory:
+            da_channel_arr = da_channel_arr.compute()
+        elif in_distributed_memory:
+            da_channel_arr = da_channel_arr.persist()
 
-    return kymo_xarr
+        # defining xarr
+        dims = ['Channel','trenchid', 'y', 'xt']
+        coords = {d: np.arange(s) for d, s in zip(dims, da_channel_arr.shape)}
+        coords['Channel'] = np.array(channels)
+        kymo_xarr = xr.DataArray(da_channel_arr, dims=dims, coords=coords, name="Data").astype("uint16")
+
+        return kymo_xarr
+
+    else:
+        if subset != None:
+            da_channel_arr = da_channel_arr[:,subset]
+        if in_memory:
+            da_channel_arr = da_channel_arr.compute()
+        elif in_distributed_memory:
+            da_channel_arr = da_channel_arr.persist()
+
+        # defining xarr
+        dims = ['Channel','trenchid','t','y','x']
+        coords = {d: np.arange(s) for d, s in zip(dims, da_channel_arr.shape)}
+        coords['Channel'] = np.array(channels)
+        kymo_xarr = xr.DataArray(da_channel_arr, dims=dims, coords=coords, name="Data").astype("uint16")
+
+        return kymo_xarr

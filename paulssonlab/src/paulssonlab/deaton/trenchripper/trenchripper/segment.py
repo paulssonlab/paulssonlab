@@ -23,9 +23,10 @@ from pandas import HDFStore
 from matplotlib import pyplot as plt
 
 class fluo_segmentation:
-    def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,\
+    def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,eig_sigma=2.,\
+                 eig_ball_radius=20,eig_local_thr="niblack",eig_otsu_scaling=1.,eig_niblack_k=0.05,eig_window_size=7,\
                  hess_pad=6,local_thr="otsu",background_thr="triangle",global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,\
-                 min_obj_size=30,distance_threshold=2,border_buffer=1):
+                 min_obj_size=30,distance_threshold=2,border_buffer=1,horizontal_border_only=False):
 
         self.bit_max = bit_max
 
@@ -36,8 +37,14 @@ class fluo_segmentation:
 
         self.smooth_sigma = smooth_sigma
 
-        self.hess_thr_scale = hess_thr_scale
+#         self.hess_thr_scale = hess_thr_scale
         self.hess_pad = hess_pad
+        self.eig_sigma = eig_sigma
+        self.eig_ball_radius = eig_ball_radius
+        self.eig_local_thr = eig_local_thr
+        self.eig_otsu_scaling = eig_otsu_scaling
+        self.eig_niblack_k = eig_niblack_k
+        self.eig_window_size = eig_window_size
 
         self.local_thr = local_thr
         self.background_thr = background_thr
@@ -51,6 +58,7 @@ class fluo_segmentation:
         self.distance_threshold = distance_threshold
 
         self.border_buffer = border_buffer
+        self.horizontal_border_only = horizontal_border_only
 
     def to_8bit(self,img_arr,bit_max=None):
         img_max = np.max(img_arr)+0.0001
@@ -75,7 +83,7 @@ class fluo_segmentation:
     def get_eig_img(self,img_arr,edge_padding=6):
         inverted = sk.util.invert(img_arr)
         del img_arr
-        inverted = np.pad(inverted, edge_padding, 'reflect')
+        inverted = np.pad(inverted, edge_padding, 'edge')
         hessian = sk.feature.hessian_matrix(inverted,order="rc")
         del inverted
         eig_img = sk.feature.hessian_matrix_eigvals(hessian)
@@ -97,16 +105,32 @@ class fluo_segmentation:
             std_n = np.std(array.flatten())
         return mu_n,std_n
 
-    def get_eig_mask(self,eig_img,hess_thr_scale=1.):
-        hist_range = (0,np.percentile(eig_img.flatten(),90))
-        freq,val = np.histogram(eig_img.flatten(),bins=50,range=hist_range)
-        mu_n = val[np.argmax(freq)]
+#     def get_eig_mask(self,eig_img,hess_thr_scale=1.):
+#         hist_range = (0,np.percentile(eig_img.flatten(),90))
+#         freq,val = np.histogram(eig_img.flatten(),bins=50,range=hist_range)
+#         mu_n = val[np.argmax(freq)]
 
-        upper_tail = eig_img[eig_img>mu_n].flatten()
-        std_n = sp.stats.halfnorm.fit(upper_tail)[1]
-        background = mu_n - (hess_thr_scale*std_n)
-        eig_mask = eig_img>background
-        return eig_mask
+#         upper_tail = eig_img[eig_img>mu_n].flatten()
+#         std_n = sp.stats.halfnorm.fit(upper_tail)[1]
+#         background = mu_n - (hess_thr_scale*std_n)
+#         eig_mask = eig_img>background
+#         return eig_mask
+
+    def get_eig_mask(self,eig_img,eig_sigma=2.,eig_ball_radius=20,eig_local_thr="niblack",eig_otsu_scaling=1.,eig_niblack_k=0.05,eig_window_size=7):
+        inv_eig_img = sk.util.invert(sk.filters.gaussian(eig_img,sigma=eig_sigma,preserve_range=True).astype("uint8"))
+
+        norm_inv_hess = (inv_eig_img)/(2**8 - 1)
+        inv_eig_img = (sk.restoration.rolling_ball(norm_inv_hess,radius=eig_ball_radius)*(2**8 - 1)).astype("uint8")
+        del norm_inv_hess
+
+        if eig_local_thr == "otsu":
+            otsu_selem = sk.morphology.disk(eig_window_size)
+            eig_mask = inv_eig_img<(sk.filters.rank.otsu(inv_eig_img,otsu_selem)*eig_otsu_scaling)
+
+        elif eig_local_thr == "niblack":
+            eig_mask = inv_eig_img<sk.filters.threshold_niblack(inv_eig_img, window_size=eig_window_size, k=eig_niblack_k)
+
+        return eig_mask,inv_eig_img
 
 #     def get_cell_mask(self,img_arr,global_threshold=50,triangle_threshold_scaling=1.,cell_otsu_scaling=1.,local_otsu_r=15,min_obj_size=30):
 #         otsu_selem = sk.morphology.disk(local_otsu_r)
@@ -294,8 +318,12 @@ class fluo_segmentation:
         input_kymo = sk.filters.gaussian(input_kymo,sigma=self.smooth_sigma,preserve_range=True,mode='reflect').astype("uint8")
 
         eig_img = self.get_eig_img(input_kymo,edge_padding=self.hess_pad)
-        eig_mask = self.get_eig_mask(eig_img,hess_thr_scale=self.hess_thr_scale)
+#         eig_mask = self.get_eig_mask(eig_img,hess_thr_scale=self.hess_thr_scale)
+        eig_mask, inv_eig_img = self.get_eig_mask(eig_img,eig_sigma=self.eig_sigma,eig_ball_radius=self.eig_ball_radius,\
+                                                eig_local_thr=self.eig_local_thr,eig_otsu_scaling=self.eig_otsu_scaling,\
+                                                eig_niblack_k=self.eig_niblack_k,eig_window_size=self.eig_window_size)
         del eig_img
+        del inv_eig_img
 
         cell_mask = self.get_cell_mask(input_kymo,t_tot,local_thr = self.local_thr,\
                     background_thr = self.background_thr,\
@@ -326,19 +354,25 @@ class fluo_segmentation:
         output_kymo.import_unwrap(output_labels,t_tot)
         del output_labels
         output_kymo = output_kymo.return_wrap()
+
+        top_bottom_mask = np.ones(output_kymo.shape[1:],dtype=bool)
+        top_bottom_mask[:(self.border_buffer+1)] = False
+        top_bottom_mask[-(self.border_buffer+1):] = False
+
         for i in range(output_kymo.shape[0]):
-            if self.border_buffer >= 0:
+            if (self.border_buffer >= 0) and not self.horizontal_border_only:
                 output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], buffer_size=self.border_buffer) ##NEW
+            elif (self.border_buffer >= 0) and self.horizontal_border_only:
+                output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], mask=top_bottom_mask) ##NEWER
             output_kymo[i] = self.reorder_ids(output_kymo[i])
         return output_kymo
 
 class fluo_segmentation_cluster(fluo_segmentation):
     def __init__(self,headpath,paramfile=True,seg_channel="",bit_max=0,scale_timepoints=False,scaling_percentile=0.9,\
-                 img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,hess_pad=6,local_thr="otsu",background_thr="triangle",\
+                 img_scaling=1.,smooth_sigma=0.75,eig_sigma=2.,eig_ball_radius=20,eig_local_thr="niblack",eig_otsu_scaling=1.,\
+                 eig_niblack_k=0.05,eig_window_size=7,hess_pad=6,local_thr="otsu",background_thr="triangle",\
                  global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,min_obj_size=30,\
-                 distance_threshold=2,border_buffer=1):
-
-
+                 distance_threshold=2,border_buffer=1,horizontal_border_only=False):
 #             local_thr="otsu",background_thr="triangle",window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,border_buffer=1)
 
 
@@ -361,14 +395,25 @@ class fluo_segmentation_cluster(fluo_segmentation):
         niblack_k = param_dict['Niblack K:']
         background_scaling = param_dict['Background Threshold Scaling:']
         min_obj_size = param_dict['Minimum Object Size:']
-        hess_thr_scale = param_dict['Hessian Scaling:']
+
+        eig_sigma = param_dict['Hessian Blur Sigma:']
+        eig_ball_radius = param_dict['Hessian Rolling Ball Size:']
+        eig_local_thr = param_dict['Hessian Local Threshold Method:']
+        eig_otsu_scaling = param_dict['Hessian Otsu Scaling:']
+        eig_niblack_k = param_dict['Hessian Niblack K:']
+        eig_window_size = param_dict['Hessian Local Window Size:']
+#         hess_thr_scale = param_dict['Hessian Scaling:']
         distance_threshold = param_dict['Distance Threshold:']
         border_buffer = param_dict['Border Buffer:']
+        horizontal_border_only = param_dict['Horizontal Border Only:']
 
         super(fluo_segmentation_cluster, self).__init__(bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,img_scaling=img_scaling,\
-                                                        smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,\
+                                                        smooth_sigma=smooth_sigma,eig_sigma=eig_sigma,eig_ball_radius=eig_ball_radius,eig_local_thr=eig_local_thr,\
+                                                        eig_otsu_scaling=eig_otsu_scaling,eig_niblack_k=eig_niblack_k,eig_window_size=eig_window_size,\
+                                                        hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,\
                                                         global_threshold=global_threshold,window_size=window_size,cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,\
-                                                        background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer)
+                                                        background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer,\
+                                                       horizontal_border_only=horizontal_border_only)
 
         self.headpath = headpath
         self.seg_channel = seg_channel
