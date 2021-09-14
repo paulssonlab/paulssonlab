@@ -589,17 +589,21 @@ class focus_filter:
         with open(self.headpath + "/focus_filter.par", "wb") as outfile:
             pickle.dump(self.final_params, outfile)
 
+
 class fluo_segmentation_interactive(fluo_segmentation):
 
-    def __init__(self,headpath,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,hess_thr_scale=1.,\
+    def __init__(self,headpath,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,\
+                 eig_sigma=2.,eig_ball_radius=20,eig_local_thr="niblack",eig_otsu_scaling=1.,eig_niblack_k=0.05,eig_window_size=7,\
                  hess_pad=6,local_thr="otsu",background_thr="triangle",global_threshold=25,window_size=15,cell_otsu_scaling=1.,niblack_k=0.2,background_scaling=1.,\
-                 min_obj_size=30,distance_threshold=2,border_buffer=1):
+                 min_obj_size=30,distance_threshold=2,border_buffer=1,horizontal_border_only=False):
 
-        fluo_segmentation.__init__(self,bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,\
-                                   img_scaling=img_scaling,smooth_sigma=smooth_sigma,hess_thr_scale=hess_thr_scale,\
-                                  hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,global_threshold=global_threshold,\
-                                   window_size=window_size,cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,\
-                                   background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer)
+        fluo_segmentation.__init__(self,bit_max=bit_max,scale_timepoints=scale_timepoints,scaling_percentile=scaling_percentile,img_scaling=img_scaling,\
+                                    smooth_sigma=smooth_sigma,eig_sigma=eig_sigma,eig_ball_radius=eig_ball_radius,eig_local_thr=eig_local_thr,\
+                                    eig_otsu_scaling=eig_otsu_scaling,eig_niblack_k=eig_niblack_k,eig_window_size=eig_window_size,\
+                                    hess_pad=hess_pad,local_thr=local_thr,background_thr=background_thr,\
+                                    global_threshold=global_threshold,window_size=window_size,cell_otsu_scaling=cell_otsu_scaling,niblack_k=niblack_k,\
+                                    background_scaling=background_scaling,min_obj_size=min_obj_size,distance_threshold=distance_threshold,border_buffer=border_buffer,\
+                                  horizontal_border_only=horizontal_border_only)
 
         self.headpath = headpath
         self.kymographpath = headpath + "/kymograph"
@@ -875,27 +879,70 @@ class fluo_segmentation_interactive(fluo_segmentation):
         )
         display(cell_mask_list_int)
 
-    def plot_eig_mask(self,hess_thr_scale):
-        self.final_params['Hessian Scaling:'] = hess_thr_scale
+    def plot_eig_mask(self,eig_sigma,eig_ball_radius,eig_local_thr,eig_otsu_scaling,eig_niblack_k,eig_window_size):
+        self.final_params['Hessian Blur Sigma:'] = eig_sigma
+        self.final_params['Hessian Rolling Ball Size:'] = eig_ball_radius
+        self.final_params['Hessian Local Threshold Method:'] = eig_local_thr
+        self.final_params['Hessian Otsu Scaling:'] = eig_otsu_scaling
+        self.final_params['Hessian Niblack K:'] = eig_niblack_k
+        self.final_params['Hessian Local Window Size:'] = eig_window_size
 
         eig_mask_list = []
+        inv_eig_img_list = []
         for eig in self.eig_list:
-            eig_mask = self.get_eig_mask(eig,hess_thr_scale=hess_thr_scale)
+            eig_mask, inv_eig_img = self.get_eig_mask(eig,eig_sigma=eig_sigma,eig_ball_radius=eig_ball_radius,eig_local_thr=eig_local_thr,eig_otsu_scaling=eig_otsu_scaling,\
+                                         eig_niblack_k=eig_niblack_k,eig_window_size=eig_window_size)
             eig_mask_list.append(eig_mask)
+            inv_eig_img_list.append(inv_eig_img)
         self.eig_mask_list = eig_mask_list
+        self.inv_eig_img_list = inv_eig_img_list
 
         self.plot_img_list(self.eig_list)
+        self.plot_img_list(self.inv_eig_img_list)
         self.plot_img_list(self.eig_mask_list)
 
     def plot_eig_mask_inter(self):
         cell_eig_list_int = interactive(
             self.plot_eig_mask,
             {"manual": True},
-            hess_thr_scale=FloatSlider(
-                value=1.,
-                description="Edge Threshold Scaling:",
+            eig_local_thr=Dropdown(options=["otsu","niblack"],value="niblack"),
+            eig_sigma=FloatSlider(
+                value=2.,
+                description="Hessian Blur Sigma:",
                 min=0.0,
-                max=10.0,
+                max=5.0,
+                step=0.25,
+                disabled=False,
+            ),
+            eig_window_size=IntSlider(
+                value=7,
+                description="Hessian Window Size:",
+                min=0,
+                max=70,
+                step=1,
+                disabled=False,
+            ),
+            eig_ball_radius=IntSlider(
+                value=20,
+                description="Hessian Rolling Ball Radius:",
+                min=0,
+                max=50,
+                step=5,
+                disabled=False,
+            ),
+            eig_otsu_scaling=FloatSlider(
+                value=1.,
+                description="Hessian Otsu Scaling:",
+                min=0.0,
+                max=3.0,
+                step=0.01,
+                disabled=False,
+            ),
+            eig_niblack_k=FloatSlider(
+                value=0.05,
+                description="Hessian Niblack K:",
+                min=0.0,
+                max=1.0,
                 step=0.01,
                 disabled=False,
             ),
@@ -932,17 +979,25 @@ class fluo_segmentation_interactive(fluo_segmentation):
         )
         display(dist_mask_int)
 
-    def plot_marker_mask(self,hess_thr_scale,distance_threshold,border_buffer):
-        self.final_params['Hessian Scaling:'] = hess_thr_scale
+    def plot_marker_mask(self,eig_sigma,eig_ball_radius,eig_local_thr,eig_otsu_scaling,eig_niblack_k,eig_window_size,distance_threshold,border_buffer,horizontal_border_only):
+        self.final_params['Hessian Blur Sigma:'] = eig_sigma
+        self.final_params['Hessian Rolling Ball Size:'] = eig_ball_radius
+        self.final_params['Hessian Local Threshold Method:'] = eig_local_thr
+        self.final_params['Hessian Otsu Scaling:'] = eig_otsu_scaling
+        self.final_params['Hessian Niblack K:'] = eig_niblack_k
+        self.final_params['Hessian Local Window Size:'] = eig_window_size
+
         self.final_params['Distance Threshold:'] = distance_threshold
         self.final_params['Border Buffer:'] = border_buffer
+        self.final_params['Horizontal Border Only:'] = horizontal_border_only
         min_obj_size = self.final_params['Minimum Object Size:']
 
         original_shape = (self.output_array.shape[2],self.output_array.shape[1]*self.output_array.shape[3]) #k,t,y,x
         segmentation_list = []
         for i in range(len(self.eig_list)):
             eig = self.eig_list[i]
-            eig_mask = self.get_eig_mask(eig,hess_thr_scale=hess_thr_scale)
+            eig_mask, inv_eig_img = self.get_eig_mask(eig,eig_sigma=eig_sigma,eig_ball_radius=eig_ball_radius,eig_local_thr=eig_local_thr,eig_otsu_scaling=eig_otsu_scaling,\
+                                         eig_niblack_k=eig_niblack_k,eig_window_size=eig_window_size)
 
             cell_mask = self.cell_mask_list[i]
             dist_img = ndi.distance_transform_edt(cell_mask).astype("uint8")
@@ -959,9 +1014,16 @@ class fluo_segmentation_interactive(fluo_segmentation):
             output_kymo.import_unwrap(output_labels,self.t_tot)
             del output_labels
             output_kymo = output_kymo.return_wrap()
+
+            top_bottom_mask = np.ones(output_kymo.shape[1:],dtype=bool)
+            top_bottom_mask[:(border_buffer+1)] = False
+            top_bottom_mask[-(border_buffer+1):] = False
+
             for i in range(output_kymo.shape[0]):
-                if border_buffer >= 0:
+                if (border_buffer >= 0) and not horizontal_border_only:
                     output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], buffer_size=border_buffer) ##NEW
+                elif (border_buffer >= 0) and horizontal_border_only:
+                    output_kymo[i] = sk.segmentation.clear_border(output_kymo[i], mask=top_bottom_mask) ##NEWER
                 output_kymo[i] = self.reorder_ids(output_kymo[i])
 
             unwrapped_output = kymo_handle()
@@ -981,16 +1043,49 @@ class fluo_segmentation_interactive(fluo_segmentation):
         self.plot_img_list(seg_plt_list,cmap="jet",interpolation='nearest')
 
     def plot_marker_mask_inter(self):
-        if self.final_params['Hessian Scaling:'] is not None\
+        if self.final_params['Hessian Blur Sigma:'] is not None\
         and self.final_params['Distance Threshold:'] is not None:
             marker_mask_int = interactive(
                 self.plot_marker_mask,
                 {"manual": True},
-                hess_thr_scale=FloatSlider(
-                    value=self.final_params['Hessian Scaling:'],
-                    description="Edge Threshold Scaling:",
+                eig_local_thr=Dropdown(options=["otsu","niblack"],value=self.final_params['Hessian Local Threshold Method:']),
+                eig_sigma=FloatSlider(
+                    value=self.final_params['Hessian Blur Sigma:'],
+                    description="Hessian Blur Sigma:",
                     min=0.0,
-                    max=10.0,
+                    max=5.0,
+                    step=0.25,
+                    disabled=False,
+                ),
+                eig_window_size=IntSlider(
+                    value=self.final_params['Hessian Local Window Size:'],
+                    description="Hessian Window Size:",
+                    min=0,
+                    max=70,
+                    step=1,
+                    disabled=False,
+                ),
+                eig_ball_radius=IntSlider(
+                    value=self.final_params['Hessian Rolling Ball Size:'],
+                    description="Hessian Rolling Ball Radius:",
+                    min=0,
+                    max=50,
+                    step=5,
+                    disabled=False,
+                ),
+                eig_otsu_scaling=FloatSlider(
+                    value=self.final_params['Hessian Otsu Scaling:'],
+                    description="Hessian Otsu Scaling:",
+                    min=0.0,
+                    max=3.0,
+                    step=0.01,
+                    disabled=False,
+                ),
+                eig_niblack_k=FloatSlider(
+                    value=self.final_params['Hessian Niblack K:'],
+                    description="Hessian Niblack K:",
+                    min=0.0,
+                    max=1.0,
                     step=0.01,
                     disabled=False,
                 ),
@@ -1010,16 +1105,50 @@ class fluo_segmentation_interactive(fluo_segmentation):
                     step=1,
                     disabled=False,
                 ),
+                horizontal_border_only=Dropdown(options=[True,False],value=False,description="Horizontal Border Only:"),
             )
         else:
             marker_mask_int = interactive(
                 self.plot_marker_mask,
                 {"manual": True},
-                hess_thr_scale=FloatSlider(
-                    value=1.,
-                    description="Edge Threshold Scaling:",
+                eig_local_thr=Dropdown(options=["otsu","niblack"],value="niblack"),
+                eig_sigma=FloatSlider(
+                    value=2.,
+                    description="Hessian Blur Sigma:",
                     min=0.0,
-                    max=2.0,
+                    max=5.0,
+                    step=0.25,
+                    disabled=False,
+                ),
+                eig_window_size=IntSlider(
+                    value=7,
+                    description="Hessian Window Size:",
+                    min=0,
+                    max=70,
+                    step=1,
+                    disabled=False,
+                ),
+                eig_ball_radius=IntSlider(
+                    value=20,
+                    description="Hessian Rolling Ball Radius:",
+                    min=0,
+                    max=50,
+                    step=5,
+                    disabled=False,
+                ),
+                eig_otsu_scaling=FloatSlider(
+                    value=1.,
+                    description="Hessian Otsu Scaling:",
+                    min=0.0,
+                    max=3.0,
+                    step=0.01,
+                    disabled=False,
+                ),
+                eig_niblack_k=FloatSlider(
+                    value=0.05,
+                    description="Hessian Niblack K:",
+                    min=0.0,
+                    max=1.0,
                     step=0.01,
                     disabled=False,
                 ),
@@ -1039,6 +1168,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
                     step=1,
                     disabled=False,
                 ),
+                horizontal_border_only=Dropdown(options=[True,False],value=False,description="Horizontal Border Only:"),
             )
         display(marker_mask_int)
 
