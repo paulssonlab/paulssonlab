@@ -7,3 +7,5 @@
 **/*.zip
 **/*.obo
 **/*.mp4
+.*
+!/.gitignore
