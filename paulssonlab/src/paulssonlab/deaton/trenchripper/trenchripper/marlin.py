@@ -19,6 +19,7 @@ from matplotlib import pyplot as plt
 from .utils import pandas_hdf5_handler, writedir
 from parse import compile
 
+
 ###
 
 ## This might be broken at the moment, waiting for an oppertunity to test it.
@@ -434,13 +435,40 @@ def barcode_to_FISH(barcodestr,cycleorder=[0,1,6,7,12,13,18,19,24,25,2,3,8,9,14,
 
     return FISH_barcode
 
+
+def remove_bits_from_barcode(barcode,removed_bits=[]):
+    # Will convert removed bits to 0 values
+
+    barcode = np.array(list(barcode))
+    barcode[removed_bits] = 0
+    barcode = "".join(barcode.tolist())
+
+    return barcode
+
+
+def remove_bits(df,removed_bits):
+    # Will convert removed bits to 0 values
+
+    in_df = copy.deepcopy(df)
+
+    subsampled_barcode = in_df["barcode"].apply(remove_bits_from_barcode,removed_bits=removed_bits)
+    in_df["subsampled_barcode"] = subsampled_barcode
+    unique_barcodes, n_occurances = np.unique(subsampled_barcode,return_counts=True)
+    redundant_barcodes = unique_barcodes[n_occurances>1]
+    redundant_indices = subsampled_barcode[subsampled_barcode.isin(redundant_barcodes.tolist())].index
+
+    in_df = in_df.drop(redundant_indices).reset_index(drop=True).drop(['barcodeid','barcode'], axis=1)
+    in_df = in_df.rename({"subsampled_barcode": "barcode"},axis=1)
+    in_df['barcodeid'] = in_df.index
+
+    return in_df
+
 class fish_analysis():
-    def __init__(self,headpath,nanoporedfpath,nanoporejsonpath,subsample=5000,barcode_len=30,hamming_thr=0,\
+    def __init__(self,headpath,nanoporedfpath,subsample=5000,barcode_len=30,remove_bit_list=[],hamming_thr=0,\
                  channel_names=["RFP 98th Percentile","Cy5 98th Percentile","Cy7 98th Percentile"],\
                 cycleorder=[0,1,6,7,12,13,18,19,24,25,2,3,8,9,14,15,20,21,26,27,4,5,10,11,16,17,22,23,28,29]):
         self.headpath = headpath
         self.nanoporedfpath = nanoporedfpath
-        self.nanoporejsonpath = nanoporejsonpath
         self.subsample = subsample
         self.barcode_len = barcode_len
         self.hamming_thr = hamming_thr
@@ -448,10 +476,7 @@ class fish_analysis():
         self.cycleorder = cycleorder
         self.percentilepath = headpath + "/percentiles"
 
-        with open(nanoporejsonpath) as in_file:
-            self.nanopore_metadata = json.load(in_file)
-
-        self.removed_bits = self.nanopore_metadata["removed_bits"]
+        self.removed_bits = remove_bit_list
         self.removed_bit_cycles = [cycleorder[bit] for bit in self.removed_bits]
 
         kymograph_metadata = dd.read_parquet(self.percentilepath)
@@ -483,6 +508,7 @@ class fish_analysis():
         plt.ylabel("Number of Trenches",fontsize=20)
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
+        plt.savefig("./Barcode_Signal_Sum.png",dpi=150)
         plt.show()
 
     def plot_signal_threshold_inter(self):
@@ -566,6 +592,45 @@ class fish_analysis():
 
         display(channel_tab)
 
+    def export_bit_thresholds(self,figsize=(24, 10),colors = ["salmon", "violet", "firebrick"], ylabel="Number of Trenches", xlabel="98th Percentile Intensity", small_fontsize=16, large_fontsize=24):
+
+        timepoints = self.kymograph_metadata_subsample.index.get_level_values("timepoints").unique().tolist()
+        n_channels,n_timepoints = len(self.channel_names),len(timepoints)
+
+        fig, axes = plt.subplots(n_channels, n_timepoints, figsize=figsize)
+
+        for idx in range(n_channels*n_timepoints):
+            row_idx = idx // n_timepoints
+            column_idx = idx % n_timepoints
+            color = colors[row_idx]
+
+            max_val = np.percentile(self.high_signal_barcodes[:, idx].flatten(), 99)
+
+            bins = np.linspace(0, max_val, num=50)
+            high_signal_mask = self.high_signal_barcodes[:, idx]>self.bit_threshold_list[idx]
+            on_arr = self.high_signal_barcodes[:, idx][high_signal_mask]
+            off_arr = self.high_signal_barcodes[:, idx][~high_signal_mask]
+
+            on_frq, on_edges = np.histogram(on_arr, bins)
+            off_frq, off_edges = np.histogram(off_arr, bins)
+#             ttl_frq = np.sum(on_frq) + np.sum(off_frq)
+#             on_frq, off_frq = (on_frq / ttl_frq, off_frq / ttl_frq)
+
+            ax = axes[row_idx, column_idx]
+
+            ax.bar(off_edges[:-1], off_frq, width=np.diff(off_edges), align="edge", color="grey")
+            ax.bar(on_edges[:-1], on_frq, width=np.diff(on_edges), align="edge", color=color)
+            ax.tick_params(axis='x', labelsize=small_fontsize)
+            ax.tick_params(axis='y', labelsize=small_fontsize)
+
+        plt.title("Barcode Signal",fontsize=large_fontsize)
+        fig.text(0.5, -0.04, xlabel, ha="center", size=large_fontsize)
+        fig.text(-0.01, 0.5, ylabel, va="center", rotation="vertical", size=large_fontsize)
+
+        plt.tight_layout()
+        plt.savefig("./Bit_Thresholds.png",dpi=300,bbox_inches="tight")
+        plt.show()
+
     def get_barcode_df(self,epsilon=0.1):
         print("Getting Barcode df...")
         self.kymograph_metadata = dd.read_parquet(self.percentilepath)
@@ -592,6 +657,7 @@ class fish_analysis():
     def get_nanopore_df(self):
         print("Getting Nanopore df...")
         nanopore_df = pd.read_csv(self.nanoporedfpath,delimiter="\t",index_col=0)
+        nanopore_df = remove_bits(nanopore_df,self.removed_bits)
 
         nanopore_lookup = {}
         for _,row in nanopore_df.iterrows():
@@ -640,7 +706,7 @@ class fish_analysis():
         self.mergeddf = pd.DataFrame(mergeddf)
         del mergeddf
 
-    def output_barcode_df(self):
+    def output_barcode_df(self,fishanalysispath):
         self.get_barcode_df()
         self.get_nanopore_df()
         self.get_merged_df()
@@ -648,10 +714,10 @@ class fish_analysis():
         ttl_trenches = len(self.kymograph_metadata["trenchid"].unique().compute())
         ttl_trenches_w_cells = len(self.barcode_df)
 
-        output_handle = pandas_hdf5_handler(self.headpath+"/metadata.hdf5")
+        output_handle = pandas_hdf5_handler(fishanalysispath)
         output_handle.write_df("barcodes",self.mergeddf,metadata=\
         {"Total Trenches":ttl_trenches,"Total Trenches With Cells":ttl_trenches_w_cells,\
-         "Removed Bits":self.nanopore_metadata["removed_bits"],"Removed Bit Cycles":self.removed_bit_cycles,\
+         "Removed Bits":self.removed_bits,"Removed Bit Cycles":self.removed_bit_cycles,\
         "Cycle Order":self.cycleorder,"Barcode Length":self.barcode_len,"Hamming Threshold": self.hamming_thr,\
         "Channel Names":self.channel_names})
 

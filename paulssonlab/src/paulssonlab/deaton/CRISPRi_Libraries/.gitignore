@@ -9,3 +9,5 @@
 **/*.mp4
 dev_notebooks/2021-08-23_PAGA_Analysis_V2/PromoterSet.txt
 dev_notebooks/2021-08-09_lDE20_20x_biofloat_run_1_timeseries_v3/gene2go
+.*
+!/.gitignore

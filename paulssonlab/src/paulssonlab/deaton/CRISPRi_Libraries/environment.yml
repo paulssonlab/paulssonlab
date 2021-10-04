@@ -35,6 +35,7 @@ dependencies:
   - networkx
   - nodejs
   - numpy
+  - openpyxl
   - pandas
   - pip
   - pip:
