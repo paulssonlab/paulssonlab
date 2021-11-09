@@ -168,7 +168,7 @@ def insert_sheet_rows(sheet, row, entries, ignore_missing_columns=False, columns
             f"attempting to insert rows with data for missing columns: {unused_columns}"
         )
     # we insert at row - 1 because this inserts below the given row number
-    sheet.insert_rows(row - 1, number=len(values), values=values)
+    sheet.insert_rows(row - 1, number=len(values), values=values, inherit=True)
 
 
 def clear_sheet(sheet, skiprows=1):

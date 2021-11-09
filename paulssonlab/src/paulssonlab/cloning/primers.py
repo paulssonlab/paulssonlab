@@ -267,14 +267,14 @@ def enumerate_primers(
 
 
 def get_primer_overhang(template, primer):
-    sites = enumerate_primer_binding_sites(template, primer, return_sequences=True)
+    sites = enumerate_primer_binding_sites(template, primer)
     if len(sites) != 1:
         raise ValueError(
             f"expecting a unique primer binding site, instead got {len(sites)}"
         )
-    sense = sites[0][0]  # TODO: NamedTuple-ize
-    score = sites[0][2]
-    overlap = sites[0][4]
+    sense = sites[0].strand
+    score = sites[0].score
+    overlap = primer[sites[0].seq2_start : sites[0].seq2_stop]
     binding = overlap[len(overlap) - score :]
     overhang = primer[: len(primer) - len(binding)]
     return overhang, binding, sense
