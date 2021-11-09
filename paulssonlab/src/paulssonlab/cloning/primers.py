@@ -1,14 +1,18 @@
 from functools import cached_property
 from Bio.SeqUtils import GC
 from Bio.Seq import Seq
+import primer3plus
 from paulssonlab.cloning.sequence import (
     reverse_complement,
     enumerate_primer_binding_sites,
     get_seq,
 )
+from paulssonlab.cloning.workflow import smoosh_and_trim_flanks
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
 from paulssonlab.util import any_not_none, format_number
+
+PRIMER3_DEFAULT_TM = (55, 65, 72)
 
 
 class Primer:
@@ -210,7 +214,70 @@ class PrimerPair:
         ta = self.__dict__.get("ta")
         mfe_heterodimer = self.__dict__.get("mfe_heterodimer")
         primer3 = "{...}" if self.primer3 else "None"
-        return f"Primer(primer1={self.primer1!r},\n       primer2={self.primer2!r},\n       ta={format_number('{:.1f}', ta)}, mfe_heterodimer={format_number('{:.1f}', mfe_heterodimer)}, primer3={primer3})"
+        return f"PrimerPair(primer1={self.primer1!r},\n           primer2={self.primer2!r},\n           ta={format_number('{:.1f}', ta)}, mfe_heterodimer={format_number('{:.1f}', mfe_heterodimer)}, primer3={primer3})"
+
+
+# TODO: Q5/Phusion salt settings
+def run_primer3(design, tm=PRIMER3_DEFAULT_TM, return_explain=False, return_many=False):
+    if len(tm) != 3:
+        raise ValueError("expecting (min, optimal, max) tm")
+        design.params["PRIMER_OPT_TM"] = tm[0]
+        design.params["PRIMER_MIN_TM"] = tm[1]
+        design.params["PRIMER_MAX_TM"] = tm[2]
+    if return_many is False:
+        num_return = 1
+    else:
+        num_return = return_many
+    design.settings.primer_num_return(num_return)
+    # print(design.params)
+    results, explain = design.run()
+    if not return_many:
+        if len(results) == 0:
+            raise ValueError("did not design primers")
+        elif len(results) > 1:
+            raise NotImplementError
+        primers = PrimerPair(primer3=results[0])
+    else:
+        primers = [PrimerPair(primer3=r) for r in results.values()]
+    if return_explain:
+        return primers, explain
+    else:
+        return primers
+
+
+def primer3_product_from_template(
+    product,
+    template,
+    min_length=100,
+    tm=PRIMER3_DEFAULT_TM,
+    return_explain=False,
+    return_many=False,
+):
+    # find location of longest product/template match (ignoring ends)
+    # fix 5' end of primers (HOW?)
+    # set location
+    # find product overhangs
+    # use_overhangs
+
+    pass
+
+
+# TODO: limit length of primers/set acceptable region
+def primer3_amplicon_with_flanks(
+    amplicon, flanks, tm=PRIMER3_DEFAULT_TM, return_explain=False, return_many=False
+):
+    amplicon_seq = str(get_seq(amplicon)).lower()
+    trimmed_flanks = smoosh_and_trim_flanks(amplicon_seq, overhangs)
+    design = primer3plus.Design()
+    design.settings.template(amplicon_seq)
+    design.settings.as_cloning_task()
+    design.settings.use_overhangs()
+    design.settings.left_overhang(trimmed_flanks[0])
+    design.settings.right_overhang(trimmed_flanks[1])  # TODO: reverse complement?
+    design.settings.product_size([27, 10000], opt=0)
+    return run_primer3(
+        design, tm=tm, return_explain=return_explain, return_many=return_many
+    )
 
 
 # TODO: you should probably just use primer3 instead,
