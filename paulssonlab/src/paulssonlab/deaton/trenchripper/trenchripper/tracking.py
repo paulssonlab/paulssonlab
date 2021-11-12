@@ -1203,7 +1203,7 @@ class tracking_solver:
             if item == -1:
                 output.append(-1)
             else:
-                global_id = int(f'{file_idx:08}{file_trench_idx:04}{item:04}')
+                global_id = int(f'{file_idx:08n}{file_trench_idx:04n}{item:04n}')
                 output.append(global_id)
 
         return output
@@ -1241,7 +1241,7 @@ class tracking_solver:
             for idx in range(ttl_ids):
                 cell_id = cell_ids[idx]
                 centroid = centroids[t][idx]
-                global_cell_id = int(f'{file_idx:08}{file_trench_idx:04}{cell_id:04}')
+                global_cell_id = int(f'{file_idx:08n}{file_trench_idx:04n}{cell_id:04n}')
                 rp = non_intensity_rps[idx]
 
                 props_entry = [file_idx, file_trench_idx, t, cell_id, global_cell_id, lineage_score]
@@ -1329,8 +1329,8 @@ class tracking_solver:
 
 
     def lineage_trace(self,kymo_meta,file_idx,file_trench_idx):
-        file_trench_idx_i = int(f'{file_idx:08}{file_trench_idx:04}{0:04}')
-        file_trench_idx_f = int(f'{file_idx:08}{file_trench_idx+1:04}{0:04}')-1
+        file_trench_idx_i = int(f'{file_idx:08n}{file_trench_idx:04n}{0:04n}')
+        file_trench_idx_f = int(f'{file_idx:08n}{file_trench_idx+1:04n}{0:04n}')-1
         trench = kymo_meta.loc[file_trench_idx_i:file_trench_idx_f]
 
         orientation_dict = {"top":0,"bottom":1}
@@ -1375,7 +1375,7 @@ class tracking_solver:
             except:
                 pass
         mergeddf = pd.concat(mergeddf).reset_index()
-        parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):08}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1)
+        parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}'), axis=1)
         parq_file_idx.index = mergeddf.index
         mergeddf["File Parquet Index"] = parq_file_idx
         del mergeddf["File Index"]
@@ -1396,8 +1396,8 @@ class tracking_solver:
         #remove old indices
         del kymo_df["FOV Parquet Index"]
 
-        parq_file_idx = kymo_df.apply(lambda x: int(f'{int(x["File Index"]):08}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}{int(x["CellID"]):04}'), axis=1)
-        parq_fov_idx = kymo_df.apply(lambda x: int(f'{int(x["fov"]):04}{int(x["row"]):04}{int(x["trench"]):04}{int(x["timepoints"]):04}{int(x["CellID"]):04}'), axis=1)
+        parq_file_idx = kymo_df.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
+        parq_fov_idx = kymo_df.apply(lambda x: int(f'{int(x["fov"]):04n}{int(x["row"]):04n}{int(x["trench"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
 
         kymo_df["File Parquet Index"] = parq_file_idx
         kymo_df["FOV Parquet Index"] = parq_fov_idx

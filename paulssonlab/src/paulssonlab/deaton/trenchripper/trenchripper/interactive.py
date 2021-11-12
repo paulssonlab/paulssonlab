@@ -1219,7 +1219,7 @@ class hdf5_viewer:
         elif persist_data:
             self.main_array = self.main_array.persist()
 
-    def view(self ,width=1000, height=1000, cmap="Greys_r", hist_on=False, hist_color="grey"):
+    def view(self ,width=1000, height=1000, cmap="Greys_r", vmin=None, vmax=None, hist_on=False, hist_color="grey"):
         hv.extension('bokeh')
         # Wrap in xarray DataArray and label coordinates
         dims = ['FOV', 'Channel', 'time', 'y', 'x',]
@@ -1242,6 +1242,9 @@ class hdf5_viewer:
         # # Set plot options
         display_obj = regridded.opts(plot={'Image': dict(colorbar=True, width=width, height=height, tools=['hover'])})
         display_obj = display_obj.opts(cmap=cmap)
+
+        if (vmin!=None) and (vmax!=None):
+            display_obj = display_obj.opts(clim=(vmin,vmax))
 
         if hist_on:
             hist = hv.operation.histogram(image_stack,num_bins=30)

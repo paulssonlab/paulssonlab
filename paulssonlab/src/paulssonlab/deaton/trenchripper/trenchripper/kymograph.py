@@ -1005,8 +1005,8 @@ class kymograph_cluster:
             df = pd.DataFrame(pd_output,columns=["fov","row","trench","timepoints","File Index","Image Index","lane orientation","y (local)","x (local)"])
             df = df.astype({"fov":int,"row":int,"trench":int,"timepoints":int,"File Index":int,"Image Index":int,"lane orientation":str,"y (local)":float,"x (local)":float,})
 
-        fov_idx = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}{x["timepoints"]:04}'), axis=1)
-        temp_file_idx = df.apply(lambda x: int(f'{x["File Index"]:08}{x["Image Index"]:04}{x["timepoints"]:04}'), axis=1)
+        fov_idx = df.apply(lambda x: int(f'{x["fov"]:04n}{x["row"]:04n}{x["trench"]:04n}{x["timepoints"]:04n}'), axis=1)
+        temp_file_idx = df.apply(lambda x: int(f'{x["File Index"]:08n}{x["Image Index"]:04n}{x["timepoints"]:04n}'), axis=1)
         df["FOV Parquet Index"] = [item for item in fov_idx]
         df["Temp File Parquet Index"] = [item for item in temp_file_idx]
         df = df.set_index("FOV Parquet Index").sort_index()
@@ -1021,8 +1021,8 @@ class kymograph_cluster:
 
         proc_file_path = self.kymographpath+"/kymograph_processed_"+str(file_idx)+".hdf5"
         with h5py.File(proc_file_path,"r") as infile:
-            start_index = int(f'{file_idx:08}' + '00000000')
-            end_index = int(f'{file_idx:08}' + '99999999')
+            start_index = int(f'{file_idx:08n}' + '00000000')
+            end_index = int(f'{file_idx:08n}' + '99999999')
             working_filedf = df.loc[start_index:end_index].compute()
             del df
             working_filedf = working_filedf.set_index("FOV Parquet Index",drop=True).sort_index()
@@ -1270,7 +1270,7 @@ class kymograph_cluster:
 
 
     def add_trenchids(self,df):
-        trench_preindex = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}'), axis=1)
+        trench_preindex = df.apply(lambda x: int(f'{x["fov"]:04n}{x["row"]:04n}{x["trench"]:04n}'), axis=1)
         df["key"] = trench_preindex
         trenchids = df.groupby(["fov","row","trench"]).size().reset_index().drop(0,axis=1).reset_index().compute()
         trenchids["key"]= trench_preindex.unique()
@@ -1323,7 +1323,7 @@ class kymograph_cluster:
         reordered_columns = cols[:2] + cols[-1:] + cols[2:-1]
         df = df[reordered_columns]
 
-        fov_idx = df.apply(lambda x: int(f'{x["fov"]:04}{x["row"]:04}{x["trench"]:04}{x["timepoints"]:04}'), axis=1).compute().tolist()
+        fov_idx = df.apply(lambda x: int(f'{x["fov"]:04n}{x["row"]:04n}{x["trench"]:04n}{x["timepoints"]:04n}'), axis=1).compute().tolist()
 
         df = add_list_to_column(df,fov_idx,"FOV Parquet Index")
         df = df.set_index("FOV Parquet Index")
@@ -1419,7 +1419,7 @@ class kymograph_cluster:
         outputdf = add_list_to_column(outputdf,file_indices[0].tolist(),"File Index")
         outputdf = add_list_to_column(outputdf,file_trenchid[0].tolist(),"File Trench Index")
 
-        parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):08}{int(x["File Trench Index"]):04}{int(x["timepoints"]):04}'), axis=1, meta=int)
+        parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}'), axis=1, meta=int)
         outputdf["File Parquet Index"] = parq_file_idx
         outputdf = outputdf.astype({"File Index":int,"File Trench Index":int,"File Parquet Index":int})
 
@@ -1443,7 +1443,7 @@ class kymograph_cluster:
         outputdf = self.add_trenchids(outputdf)
 
         # NEW INDEX
-        outputdf["Trenchid Timepoint Index"] = outputdf.apply(lambda x: int(f'{x["trenchid"]:08}{x["timepoints"]:04}'), axis=1, meta=int)
+        outputdf["Trenchid Timepoint Index"] = outputdf.apply(lambda x: int(f'{x["trenchid"]:08n}{x["timepoints"]:04n}'), axis=1, meta=int)
         outputdf["Trenchid Timepoint Index"] = outputdf["Trenchid Timepoint Index"].astype(int)
         # END
 
