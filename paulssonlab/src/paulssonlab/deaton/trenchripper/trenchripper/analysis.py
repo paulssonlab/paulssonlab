@@ -24,7 +24,9 @@ from matplotlib import pyplot as plt
 ## HERE
 
 class regionprops_extractor:
-    def __init__(self,headpath,segmentationdir,intensity_channel_list=None,include_background=False,props=['centroid','area','mean_intensity'],unpack_dict={'centroid':["centroid_y","centroid_x"]}):
+    def __init__(self,headpath,segmentationdir,intensity_channel_list=None,include_background=False,props_list=['centroid','area'],\
+                 intensity_props_list=['mean_intensity'],props_to_unpack={'centroid':["centroid_y","centroid_x"]},\
+                 pixel_scaling_factors={'centroid_y': 1,'centroid_x': 1}):
         self.headpath = headpath
         self.intensity_channel_list = intensity_channel_list
         self.intensity_channel_dict = {channel:i for i,channel in enumerate(intensity_channel_list)}
@@ -32,11 +34,21 @@ class regionprops_extractor:
         self.kymographpath = headpath + "/kymograph"
         self.segmentationpath = headpath + "/" + segmentationdir
         self.metapath = self.kymographpath + "/metadata"
+
+        self.global_metapath = self.headpath + "/metadata.hdf5"
+        self.meta_handle = pandas_hdf5_handler(self.global_metapath)
+        fovdf = self.meta_handle.read_df("global",read_metadata=True)
+        self.metadata = fovdf.metadata
+
         self.analysispath = headpath + "/analysis"
-        self.props = props
-        self.unpack_dict = unpack_dict
+        self.props_list = props_list
+        self.intensity_props_list = intensity_props_list
+        self.props_to_unpack = props_to_unpack
+        self.pixel_scaling_factors = pixel_scaling_factors
 
     def get_file_regionprops(self,file_idx):
+        pixel_microns = self.metadata['pixel_microns']
+
         segmentation_file = self.segmentationpath + "/segmentation_" + str(file_idx) + ".hdf5"
         kymograph_file = self.kymographpath + "/kymograph_" + str(file_idx) + ".hdf5"
 
@@ -47,65 +59,81 @@ class regionprops_extractor:
             with h5py.File(kymograph_file,"r") as kymofile:
                 for intensity_channel in self.intensity_channel_list:
                     kymo_arr_list.append(kymofile[intensity_channel][:])
-        all_props_list = []
+        props_output = []
         for k in range(seg_arr.shape[0]):
             for t in range(seg_arr.shape[1]):
                 labels = sk.measure.label(seg_arr[k,t])
                 ## Measure regionprops of background pixels; will always be marked as the first object
                 if self.include_background:
                     labels += 1
+
+                #non intensity info first
+                non_intensity_rps = sk.measure.regionprops(labels)
+
                 if self.intensity_channel_list is not None:
+                    intensity_rps_list = []
                     for i,intensity_channel in enumerate(self.intensity_channel_list):
-                        rps = sk.measure.regionprops(labels, kymo_arr_list[i][k,t])
-                        props_list = []
-                        for obj,rp in enumerate(rps):
-                            props_entry = [file_idx, k, t, obj, intensity_channel]
-                            for prop_key in self.props:
-                                if prop_key in self.unpack_dict.keys():
-                                    prop_split = self.unpack_dict[prop_key]
-                                    prop_output = rp[prop_key]
-                                    props_entry += [prop_output[i] for i in range(len(prop_split))]
-                                else:
-                                    props_entry += [rp[prop_key]]
-                            props_list.append(props_entry)
-                        all_props_list+=props_list
+                        intensity_rps = sk.measure.regionprops(labels, kymo_arr_list[i][k,t])
+                        intensity_rps_list.append(intensity_rps)
 
-#                         for prop_key in self.props:
-#                             props_list.append([file_idx, k, t, obj, intensity_channel])
-#                         props_list = [[file_idx, k, t, obj, intensity_channel]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
-#                         all_props_list+=props_list
-                else:
-                    rps = sk.measure.regionprops(labels)
-                    props_list = []
-                    for obj,rp in enumerate(rps):
-                        props_entry = [file_idx, k, t, obj]
-                        for prop_key in self.props:
-                            if prop_key in self.unpack_dict.keys():
-                                prop_split = self.unpack_dict[prop_key]
-                                prop_output = rp[prop_key]
-                                props_entry += [prop_output[i] for i in range(len(prop_split))]
+                for idx in range(len(non_intensity_rps)):
+                    rp = non_intensity_rps[idx]
+                    props_entry = [file_idx, k, t, idx]
+                    for prop_key in self.props_list:
+                        prop = getattr(rp, prop_key)
+                        if prop_key in self.props_to_unpack.keys():
+                            prop_out = dict(zip(self.props_to_unpack[prop_key],list(prop)))
+                        else:
+                            prop_out = {prop_key:prop}
+                        for key,value in prop_out.items():
+                            if key in self.pixel_scaling_factors.keys():
+                                output = value*(pixel_microns**self.pixel_scaling_factors[key])
                             else:
-                                props_entry += [rp[prop_key]]
-                        props_list.append(props_entry)
-                    all_props_list+=props_list
+                                output = value
+                            props_entry.append(output)
 
+                    if self.intensity_channel_list is not None:
+                        for i,intensity_channel in enumerate(self.intensity_channel_list):
+                            intensity_rps=intensity_rps_list[i]
+                            inten_rp = intensity_rps[idx]
+                            for prop_key in self.intensity_props_list:
+                                prop = getattr(inten_rp, prop_key)
+                                if prop_key in self.props_to_unpack.keys():
+                                    prop_out = dict(zip(self.props_to_unpack[prop_key],list(prop)))
+                                else:
+                                    prop_out = {prop_key:prop}
+                                for key,value in prop_out.items():
+                                    if key in self.pixel_scaling_factors.keys():
+                                        output = value*(pixel_microns**self.pixel_scaling_factors[key])
+                                    else:
+                                        output = value
+                                    props_entry.append(output)
 
+                    props_output.append(props_entry)
 
+        base_list = ['File Index','File Trench Index','timepoints','Objectid']
 
-#                     props_list = [[file_idx, k, t, obj]+[getattr(rp, prop_key) for prop_key in self.props] for obj,rp in enumerate(rps)]
-#                     all_props_list+=props_list
-
-        property_columns = [self.unpack_dict[prop] if prop in self.unpack_dict.keys() else [prop] for prop in self.props]
-        property_columns = [item for sublist in property_columns for item in sublist]
+        unpacked_props_list = []
+        for prop_key in self.props_list:
+            if prop_key in self.props_to_unpack.keys():
+                unpacked_names = self.props_to_unpack[prop_key]
+                unpacked_props_list += unpacked_names
+            else:
+                unpacked_props_list.append(prop_key)
 
         if self.intensity_channel_list is not None:
-            column_list = ['File Index','File Trench Index','timepoints','Objectid','Intensity Channel'] + property_columns
-            df_out = pd.DataFrame(all_props_list, columns=column_list).reset_index()
-        else:
-            column_list = ['File Index','File Trench Index','timepoints','Objectid'] + property_columns
-            df_out = pd.DataFrame(all_props_list, columns=column_list).reset_index()
+            for channel in self.intensity_channel_list:
+                for prop_key in self.intensity_props_list:
+                    if prop_key in self.props_to_unpack.keys():
+                        unpacked_names = self.props_to_unpack[prop_key]
+                        unpacked_props_list += [channel + " " + item for item in unpacked_names]
+                    else:
+                        unpacked_props_list.append(channel + " " + prop_key)
 
-        file_idx = df_out.apply(lambda x: int(f"{x['File Index']:08}{x['File Trench Index']:04}{x['timepoints']:04}{x['Objectid']:02}{self.intensity_channel_dict[x['Intensity Channel']]:02}"), axis=1)
+        column_list = base_list + unpacked_props_list
+
+        df_out = pd.DataFrame(props_output, columns=column_list).reset_index()
+        file_idx = df_out.apply(lambda x: int(f'{x["File Index"]:08n}{x["File Trench Index"]:04n}{x["timepoints"]:04n}{x["Objectid"]:02n}'), axis=1)
 
         df_out["File Parquet Index"] = [item for item in file_idx]
         df_out = df_out.set_index("File Parquet Index").sort_index()
@@ -147,7 +175,7 @@ class regionprops_extractor:
         kymo_df = kymo_df.set_index("File Merge Index", sorted=True)
         kymo_df = kymo_df.drop(["File Index","File Trench Index","timepoints","File Parquet Index"], axis=1)
 
-        df_out["File Merge Index"] = df_out.apply(lambda x: int(f'{x["File Index"]:08}{x["File Trench Index"]:04}{x["timepoints"]:04}'), axis=1)
+        df_out["File Merge Index"] = df_out.apply(lambda x: int(f'{x["File Index"]:08n}{x["File Trench Index"]:04n}{x["timepoints"]:04n}'), axis=1)
         df_out = df_out.reset_index(drop=False)
         df_out = df_out.set_index("File Merge Index", sorted=True)
 
