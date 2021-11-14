@@ -17,7 +17,7 @@ bold="$(tput bold)"
 normal="$(tput sgr0)"
 if git remote -v | grep -q paulssonlab/paulssonlab; then
     # cloned from paulssonlab account, fork
-    hub fork --remote-name origin
+    gh fork --remote=true --remote-name=origin
     status=$?
     if [ $status != 0 ] ; then
         echo "❌  ${bold}Could not fork repo, aborting.${normal}"
