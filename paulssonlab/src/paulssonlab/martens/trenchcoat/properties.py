@@ -4,7 +4,7 @@ import numpy
 import tables
 
 """
-Functions for handling ND2 cell properties (measurements), including HDF5 tables.
+Functions for handling cell properties (measurements), including HDF5 tables.
 """
 
 
@@ -163,6 +163,12 @@ def write_properties_to_table_from_df(cell, table_row, columns):
     Write all the values from one to the other.
     """
     for column in columns:
+        # NOTE that this can fail in odd ways.
+        # For example, using itertuples doesn't work as well as using iloc
+        # when iterating the cells (rows), causing channel names
+        # with dashes to be re-labeled. getattr() is slightly more robust
+        # but will still fail in that instance!
+        # table_row[column] = getattr(cell, column)
         table_row[column] = cell[column]
 
     table_row.append()

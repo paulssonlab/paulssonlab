@@ -829,8 +829,7 @@ def parse_corrections_settings(corrections_settings):
         corr_h5.close()
 
     except:
-        # Don't do anything
-        pass
+        print("Warning: could not open corrections file!")
 
     return corrections_dict
 
@@ -940,7 +939,8 @@ def main_hdf5_browser_function(
         seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
         seg_params_str = seg_params_node.read().tostring().decode("utf-8")
         seg_params_dict = read_params_string(seg_params_str)
-        seg_channels = [k for k in seg_params_dict.keys()]
+        channels_list = seg_params_dict["segmentation"]
+        seg_channels = [k for k in channels_list.keys()]
 
         h5file_masks.close()
 

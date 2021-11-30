@@ -310,4 +310,5 @@ def measure_whole_trench(stack, ch_to_index, params):
     Doesn't require any parameters.
     """
     # Yes, this is a simple as returning all 1s!
-    return numpy.ones(stack.shape, dtype=numpy.uint16)
+    new_shape = (stack.shape[0], stack.shape[1], stack.shape[2])
+    return numpy.ones(new_shape, dtype=numpy.uint16)
