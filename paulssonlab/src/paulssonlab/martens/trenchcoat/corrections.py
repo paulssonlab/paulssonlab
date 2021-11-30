@@ -40,22 +40,28 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
 
     NOTE: could also add options such as running local window averaging, to smooth out variability. Would also help with hot pixels.
     """
-
+    ### Load the corrections data & metadata from HDF5
+    # Pass in either name of dark channel, or dict with bg values per channel.
     if dark_channel and bg_file:
         # FIXME Error!
         pass
     elif bg_file:
         background_values = read_params_file(bg_file)
 
+    # File with correction images (i.e. fluorescent dyes)
     h5file = tables.open_file(in_file, mode="r")
 
+    # There might be multiple ND2 files written into this HDF5 file, each with its own metadata.
     file_names = [i._v_name for i in h5file.list_nodes("/Images")]
 
+    # TODO iterate over the files!
+    # FIXME don't just grab the zeroth index!!
     node = h5file.get_node("/Metadata/{}".format(file_names[0]))()
     channels = get_metadata(node)["channels"]
     width = get_metadata(node)["width"]
     height = get_metadata(node)["height"]
 
+    # What is the total number of images in this "file", across all fovs, frames, Zs?
     total = 0
     for n in h5file.iter_nodes(h5file.root.Images):
         metadata_node = h5file.get_node("/Metadata/{}".format(n._v_name))()
@@ -67,19 +73,26 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
         )
 
     ### Calculate the means
+    # TODO other options: median, max, sampling, etc.
     # Input a channel name, output a numpy array which is the average of many images
     means = {}
 
     for c in channels:
         c = c.decode("utf-8")
-        # FIXME Or is it width, height?
+
         stack = numpy.empty(
             shape=(height, width, total), dtype=numpy.float32, order="F"
         )
 
+        # Load all of the images of a given channel into a single ndarray: all FOVs, frames, Zs.
+        # It's *probably* the case that there is only 1 frame & Z, but the looping is done here for
+        # the sake of generalizability.
+        # NOTE the shape of the field unevenness might actually change with Z. There might be situations
+        # where it would actually be desirable to calculate different corrections for different Zs?
+        #
+        # Use numpy to calculate the mean for us.
         i = 0
         for n in h5file.iter_nodes(h5file.root.Images):
-
             metadata_node = h5file.get_node("/Metadata/{}".format(n._v_name))()
             metadata = get_metadata(metadata_node)
 
@@ -96,8 +109,13 @@ def main_corrections_function(in_file, out_file, dark_channel, bg_file):
 
         # Compute the mean
         # TODO / FIXME: would it be more memory efficient to sum then manually, and then divide by the number?
+        # Instead of loading every single image into memory first, and then averaging, we would load each one one at a time,
+        # and progressively add its values to the total.
         # Would this come at the expense of precision? (not sure how numpy handles the mean calculation)
-        # Don't have to worry about overflow, because we are only working with float32.
+        # I wouldn't be surprised if numpy creates a float64, which is comparatively huge, adds them 1 at a time,
+        # then divides by the number, & then downcasts to float32 again.
+        # How many max-valued f32s can we add together before losing precision in an f64?
+        # Don't have to worry about overflow, because we are only working with float32???
         means[c] = stack.mean(axis=2)
 
     h5file.close()
