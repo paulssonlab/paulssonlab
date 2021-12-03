@@ -25,7 +25,7 @@ from properties import (
 )
 from metadata import get_metadata
 from params import read_params_file
-from napari_browse_hdf5 import parse_corrections_settings
+from napari_browse_hdf5 import parse_corrections_settings, sub_bg_no_underflow
 
 """
 Perform cell segmentation & measure fluorescence intensities in microscope images, with support for sub-regions (e.g. "trenches").
@@ -166,9 +166,9 @@ def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
         camera_noise = 100.0
 
     # No Regions ~ could also check if regions is None
-    if stack.shape[2] == 0:
+    if stack.shape[2] == 1:
         # 1. Camera Noise
-        for (ch, index) in ch_to_index.items():
+        for (channel, index) in ch_to_index.items():
             stack[..., 0, index] = sub_bg_no_underflow(
                 stack[..., 0, index], camera_noise
             )
@@ -187,7 +187,7 @@ def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
     else:
         if corrections_dict["flatfield"] is not None:
             for (channel, index) in ch_to_index.items():
-                if corrections_dict["flatfield"][ch] is not None:
+                if corrections_dict["flatfield"][channel] is not None:
                     # min_row, min_col, max_row, max_col
                     for j, r in enumerate(regions):
                         stack[..., j, index] = image_node[
