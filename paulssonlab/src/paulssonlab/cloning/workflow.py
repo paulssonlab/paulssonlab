@@ -70,17 +70,6 @@ def format_abx_marker(s):
     return marker
 
 
-# TODO: see below in import_addgene
-# def trim_unassigned_ids(worksheet):
-#     _, row = get_next_collection_id(worksheet)
-#     _trim_unassigned_ids(worksheet, row)
-
-
-# def _trim_unassigned_ids(worksheet, row):
-#     values = [[""] * (worksheet.rows - row)]
-#     worksheet.update_values(f"A{row}:", values, majordim="COLUMNS")
-
-
 def rename_ids(sheet, old_prefix, new_prefix, skiprows=1, column=1):
     values = sheet.get_values(
         (skiprows + 1, column),
@@ -123,6 +112,7 @@ def import_addgene(
     overwrite=True,
     progress_bar=PROGRESS_BAR,
 ):
+    raise NotImplementedError  # TODO: this needs to be updated to new registry API
     data = _import_addgene_data(
         urls,
         progress_bar=progress_bar,
@@ -182,9 +172,9 @@ def import_addgene(
     upload_plasmid_maps(service, plasmid_maps, plasmid_maps_folder, overwrite=overwrite)
     # TODO: add file metadata/row numbers to returned data?
     # trim extra rows
-    if trim:
-        trim_unassigned_ids(strain_sheet)
-        trim_unassigned_ids(plasmid_sheet)
+    # if trim:
+    #     trim_unassigned_ids(strain_sheet)
+    #     trim_unassigned_ids(plasmid_sheet)
     return dict(strains=strains, plasmids=plasmids, plasmid_maps=plasmid_maps)
 
 
