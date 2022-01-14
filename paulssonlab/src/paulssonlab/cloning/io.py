@@ -43,7 +43,7 @@ for mimetype, exts in MIMETYPE_TO_EXTENSION.items():
 
 def value_to_bytes(value):
     if isinstance(value, (Seq, SeqRecord)):
-        return value.format("genbank")
+        return value.format("genbank").encode()
     elif isinstance(value, str):
         return value.encode()
     else:
