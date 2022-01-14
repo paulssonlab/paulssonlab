@@ -632,9 +632,6 @@ class DsSeqRecord(SeqRecord):
         return "\n".join(lines)
 
 
-SEQ_TYPE = Union[str, Seq, SeqRecord, DsSeqRecord]
-
-
 def assemble(seqs, **kwargs):
     # we need only cast the first seq to DsSeqRecord because DsSeqRecord.assemble casts its input
     if not len(seqs):
@@ -1055,27 +1052,27 @@ def extract_matching_subsequence(template, product, min_score=10):
 def _amplicon_location(template, primer1, primer2, min_score=10):
     template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
     both_sites = []
-    sites1 = _enumerate_primer_binding_sites(
+    sites1 = enumerate_primer_binding_sites(
         template, primer1, reverse_complement=None, min_score=min_score
     )
     if len(sites1) != 1:
         raise ValueError(
             f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
-    sites2 = _enumerate_primer_binding_sites(
+    site1 = sites1[0]
+    sites2 = enumerate_primer_binding_sites(
         template, primer2, reverse_complement=(sites1[0][0] == 1), min_score=min_score
     )
     if len(sites2) != 1:
         raise ValueError(
             f"expecting a unique primer2 binding site, instead found {len(sites2)}"
         )
-    if sites1[0] == -1:
-        sites1, sites2 = sites2, sites1
-    sense1, loc1, len1 = sites1[0]
-    sense2, loc2, len2 = sites2[0]
-    if sense1 != -sense2:
+    site2 = sites2[0]
+    if site1.strand == -1:
+        site1, site2 = site2, site1
+    if site1.strand != -site2.strand:
         raise ValueError("expecting a forward/reverse primer pair")
-    return loc1, loc2, len1, len2
+    return site1.seq1_stop, site2.seq1_stop, site1.score, site2.score
 
 
 def amplicon_location(template, primer1, primer2, min_score=10):
@@ -1096,15 +1093,12 @@ def pcr(template, primer1, primer2, min_score=10):
 
 def anneal(a, b, min_score=6):
     b = reverse_complement(b)
-    loc = None
     best_score = -1
     for a_start, a_stop, b_start, b_stop in iterate_shifts(a, b):
         a_overlap = a[a_start:a_stop]
         b_overlap = b[b_start:b_stop]
         score = len(a_overlap)
-        loc = a_stop
         if a_overlap == b_overlap and score > best_score:
-            loc = len(b) - shift
             best_score = score
             if b_start > 0:
                 seq = b[:b_stop] + a[a_stop:]
@@ -1114,7 +1108,7 @@ def anneal(a, b, min_score=6):
                 seq = a[:a_stop] + b[b_stop:]
                 upstream_overhang = a_start
                 downstream_overhang = -(len(b) - b_stop)
-    if loc is None or best_score < min_score:
+    if best_score < min_score:
         raise ValueError(f"could not anneal sequences {a!r} and {b!r}")
     return DsSeqRecord(
         seq,
