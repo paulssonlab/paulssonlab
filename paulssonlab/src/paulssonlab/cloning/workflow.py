@@ -8,8 +8,10 @@ import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
 from paulssonlab.cloning.sequence import (
+    get_seq,
     smoosh_sequences,
     find_homologous_ends,
+    find_aligned_subsequence,
     DsSeqRecord,
     reverse_complement,
 )
@@ -436,6 +438,24 @@ def smoosh_and_trim_flanks(seq, flanks, lower=True):
         flanks[0][: len(flanks[0]) - upstream_overlap],
         flanks[1][downstream_overlap:],
     )
+
+
+def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
+    seq_str = str(get_seq(seq)).lower()
+    start = seq_str.find(prefix)
+    stop = -1
+    for suffix_ in suffix:
+        new_stop = find_aligned_subsequence(seq_str[start:], suffix_, last=True)
+        if new_stop is not None:
+            new_stop += len(suffix_)
+            if new_stop > stop:
+                stop = new_stop
+    if stop == -1:
+        raise ValueError(f"could not find aligned suffix {suffix}")
+    stop += (
+        start  # stop is indexed from start, see call to find_aligned_subsequence above
+    )
+    return start, stop
 
 
 def overhangs_for(x):
