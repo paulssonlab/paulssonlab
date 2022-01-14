@@ -90,14 +90,18 @@ def make_drive_folder(service, name, parent):
         "mimeType": FOLDER_MIMETYPE,
         "parents": [parent],
     }
-    new_folder = service.files().create(body=new_folder_metadata, fields="id").execute()
-    return new_folder["id"]
+    new_folder = (
+        service.files()
+        .create(body=new_folder_metadata, fields="id,name,mimeType,parents")
+        .execute()
+    )
+    return new_folder
 
 
 def copy_drive_file(service, source, name, parent):
     new_body = {"name": name, "parents": [parent]}
     new_file = service.files().copy(fileId=source, body=new_body).execute()
-    return new_file["id"]
+    return new_file
 
 
 def copy_drive_folder(
@@ -146,7 +150,7 @@ def copy_drive_folder(
                     # if there's an existing folder with the right name, just use it
                 folder = dest_files[new_name]["id"]
             if folder is None:
-                folder = make_drive_folder(service, new_name, dest_folder)
+                folder = make_drive_folder(service, new_name, dest_folder)["id"]
             if recursive:
                 copy_drive_folder(
                     service,
@@ -175,7 +179,9 @@ def upload_drive(
     parent=None,
 ):
     if not hasattr(content, "seek"):
-        content = io.BytesIO(content.encode())
+        if hasattr(content, "encode"):
+            content = content.encode()
+        content = io.BytesIO(content)
     media = MediaIoBaseUpload(content, mimetype=mimetype, resumable=True)
     body = {"mimeType": mimetype}
     if name is not None:
@@ -189,4 +195,4 @@ def upload_drive(
             body["parents"] = [parent]
         method = service.files().create
     response = method(body=body, media_body=media, fields="id").execute()
-    return response.get("id")
+    return response

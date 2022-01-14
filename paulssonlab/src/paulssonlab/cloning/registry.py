@@ -10,6 +10,7 @@ from paulssonlab.api.google import (
     update_sheet_rows,
     get_drive_by_path,
     ensure_drive_folder,
+    upload_drive,
     make_drive_folder,
     copy_drive_file,
     copy_drive_folder,
@@ -39,6 +40,7 @@ from paulssonlab.cloning.io import (
 )
 from paulssonlab.api.util import PROGRESS_BAR
 
+AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
 FOLDER_TYPES = ["maps", "sequencing"]
 TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
@@ -320,7 +322,7 @@ class ItemProxy(object):
 
 
 class FileClient(GDriveClient):
-    def __init__(self, registry_key, registry):
+    def __init__(self, registry_key, registry, trash_name="_Trash"):
         super().__init__(registry_key)
         self.gdrive_id = registry.gdrive_ids[registry_key[:2]]
         self.client = registry.drive_service
@@ -328,6 +330,7 @@ class FileClient(GDriveClient):
         self.bytes = ItemProxy(self, "bytes")
         self.content = ItemProxy(self, "content")
         self.clear_cache()
+        self._trash_name = trash_name
 
     def clear_cache(self):
         self.local = {}
@@ -350,13 +353,18 @@ class FileClient(GDriveClient):
         self._remote = {}
         self._remote_folders = {}
         self._list_folder((), self.gdrive_id)
+        # adding root id as an empty key makes some recursion in save() easier
+        self._remote_folders[()] = {"id": self.gdrive_id}
 
     def _list_folder(self, key, root):
-        files = list_drive(self.client, root=root)
+        files = list_drive(self.client, root=root, fields=["parents"])
         for name, file in files.items():
             new_key = key + (name,)
+            if new_key[0] == self._trash_name:
+                # don't include trash folder or its contents
+                continue
             if file["mimeType"] == FOLDER_MIMETYPE:
-                self._remote_folders[new_key] = file["id"]
+                self._remote_folders[new_key] = file
                 self._list_folder(new_key, file["id"])
             else:
                 self._remote[new_key] = file
@@ -370,7 +378,6 @@ class FileClient(GDriveClient):
             return None
 
     def _get_bytes(self, file):
-        # if file["mimeType"] ==
         if "bytes" not in file:
             if "content" not in file:
                 raise ValueError(
@@ -387,7 +394,14 @@ class FileClient(GDriveClient):
                     f"found neither 'bytes'/'mimeType' nor 'content' in file: '{file}'"
                 )
             else:
-                file["content"] = bytes_to_value(file["bytes"], file["mimeType"])
+                # if mimetype does not indicate file type
+                # (e.g., file was uploaded manually using google drive web interface)
+                # use filename to infer true mimetype
+                if file["mimeType"] in AMBIGUOUS_MIMETYPES:
+                    mimetype = filename_to_mimetype(file["name"])
+                else:
+                    mimetype = file["mimeType"]
+                file["content"] = bytes_to_value(file["bytes"], mimetype)
         return file["content"]
 
     def find(self, key):
@@ -610,26 +624,89 @@ class FileClient(GDriveClient):
         for key, value in other.items():
             self[key] = value
 
-    def save(self, overwrite=True, trash="_Trash"):
-        folders = set()
-        keys_to_delete = set()
-        for k, v in self.local.items():
-            if v is None:
-                if k in self.remote:
-                    keys_to_delete.add(k)
+    def _trash_folder_id(self):
+        trash_folder = self.remote_folders.get((self._trash_name,))
+        if trash_folder is None:
+            trash_folder = make_drive_folder(
+                self.client, self._trash_name, self.gdrive_id
+            )
+            self.remote_folders[(self._trash_name,)] = trash_folder
+        return trash_folder["id"]
+
+    def save(self, overwrite=True, trash="_Trash", remove_empty_folders=True):
+        keys_to_trash = set()
+        # REMOVE files/folders = None in local
+        for key, value in self.local.items():
+            if value is None:
+                if key in self.remote or key in self.remote_folders:
+                    keys_to_trash.add(key)
+        for key in keys_to_trash:
+            file = self.remote.get(key)
+            is_folder = False
+            if file is None:
+                file = self.remote_folders.get(key)
+                is_folder = True
+            if file is None:
+                continue
+            self.client.files().update(
+                fileId=file["id"],
+                addParents=self._trash_folder_id(),
+                removeParents=",".join(file["parents"]),
+            ).execute()
+            if is_folder:
+                # remove all remote files/folders with a key prefixed by "key"
+                for k in self.remote:
+                    if key == k[: len(key)]:
+                        del self.remote[k]
+                for k in self.remote_folders:
+                    if key == k[: len(key)]:
+                        del self.remote_folders[k]
             else:
-                folders.update(k[:i] for i in range(1, len(k)))
-        # keys_to_delete = set(
-        #     k for k, v in self.local.items() if v is None and k in self.remote
-        # )
-        # final_keys = (self.remote.keys() | self.local.keys()) - keys_to_delete
-        # print(1, final_keys, keys_to_delete)
-        # DELETE files = None in local
-        # DELETE files with parent folder = None
+                del self.remote[key]
         # MAKE FOLDERS for all parent keys for all local keys
-        # DELETE ALL remaining folders
-        # UPLOAD LOCAL DATA
-        pass
+        # list() makes a copy so we can delete keys as we iterate
+        for key, value in list(self.local.items()):
+            if value is not None:
+                for i in range(1, len(key)):
+                    folder_key = key[:i]
+                    if folder_key not in self.remote_folders:
+                        folder = make_drive_folder(
+                            self.client,
+                            folder_key[-1],
+                            self.remote_folders[folder_key[:-1]]["id"],
+                        )
+                        self.remote_folders[folder_key] = folder
+                if key in self.remote:
+                    if not overwrite:
+                        raise ValueError(f"file already exists remotely: {key}")
+                    file_id = self.remote[key]["id"]
+                else:
+                    file_id = None
+                upload_drive(
+                    self.client,
+                    self.bytes[key],
+                    key[-1],
+                    mimetype=value["mimeType"],
+                    file_id=file_id,
+                    parent=self.remote_folders[key[:-1]]["id"],
+                )
+                self.remote[key] = self.local[key]
+                del self.local[key]
+        # TRASH ALL remaining folders
+        if remove_empty_folders:
+            nonempty_folders = set([()])  # never remove root
+            for key in self.remote:
+                for i in range(1, len(key)):
+                    nonempty_folders.add(key[:i])
+            empty_folders = set(self.remote_folders) - nonempty_folders
+            for key in empty_folders:
+                folder = self.remote_folders[key]
+                self.client.files().update(
+                    fileId=folder["id"],
+                    addParents=self._trash_folder_id(),
+                    removeParents=",".join(folder["parents"]),
+                ).execute()
+                del self.remote_folders[key]
 
 
 TYPE_TO_CLIENT = {"maps": FileClient, "sequencing": FileClient, "_default": SheetClient}
@@ -741,7 +818,7 @@ class Registry(object):
         source_files = list_drive(self.drive_service, root=source_folder)
         dest_folder = make_drive_folder(
             self.drive_service, dest_folder_name, self.registry_folder
-        )
+        )["id"]
         for source_file in source_files.values():
             if source_file["mimeType"] == FOLDER_MIMETYPE:
                 continue
@@ -773,7 +850,7 @@ class Registry(object):
                         dest_seq_folder_name = f"{dest_type_prefix}_sequencing"
                         dest_seq_folder = make_drive_folder(
                             self.drive_service, dest_seq_folder_name, dest_folder
-                        )
+                        )["id"]
                         if source_seq_folder_name in source_files and not clear:
                             copy_drive_folder(
                                 self.drive_service,
@@ -786,7 +863,7 @@ class Registry(object):
                         dest_map_folder_name = f"{dest_type_prefix}_maps"
                         dest_map_folder = make_drive_folder(
                             self.drive_service, dest_map_folder_name, dest_folder
-                        )
+                        )["id"]
                         if source_map_folder_name in source_files and not clear:
                             copy_drive_folder(
                                 self.drive_service,
@@ -809,205 +886,7 @@ class Registry(object):
                             rename_ids(dest_sheet, source_prefix, dest_type_prefix)
         return dest_folder
 
-    # def get_sheet_by_id(self, id_):
-    #     sheet = self.sheets.get(id_)
-    #     if sheet is None:
-    #         sheet = self.sheets_client.open_by_key(id_).worksheet()
-    #         self.sheets[id_] = sheet
-    #     return sheet
-
-    # def get_sheet_by_id(self, id_):
-    #         sheet = self.sheets.get(id_)
-    #         if sheet is None:
-    #             if len(id_) not in (2, 3):
-    #                 raise ValueError(
-    #                     "expecting id tuple of form (prefix, type) or (prefix, type, sheet_index/sheet_title)"
-    #                 )
-    #             prefix_type = id_[:2]
-    #             if len(id_) == 3:
-    #                 sheet_id = id_[2]
-    #             else:
-    #                 sheet_id = None
-    #             if sheet_id is None:
-    #                 sheet_id = 0
-    #             if isinstance(sheet_id, Integral):
-    #                 sheet_id_type = "index"
-    #             else:
-    #                 sheet_id_type = "title"
-    #             sheet = self.sheets_client.open_by_key(prefix_type).worksheet(
-    #                 sheet_id_type, sheet_id
-    #             )
-    #             self.sheets[id_] = sheet
-    #         return sheet
-
-    # def get_sheet(self, key):
-    #     return self.get_sheet_by_id(self.registry[key])
-
-    # def get_df_by_id(self, id_):
-    #     df = self.dfs.get(id_)
-    #     if df is None:
-    #         df = self.get_sheet_by_id(id_).get_as_df(index_column=1)
-    #         self.dfs[id_] = df
-    #     return df
-
-    # def get_df_by_name(self, name, types=("plasmids", "strains", "oligos", "parts")):
-    #     match = re.match(ID_REGEX, name)
-    #     if match:
-    #         prefix = match.group(1)
-    #     else:
-    #         types = ("parts",)
-    #     for type_ in types:
-    #         if type_ == "parts":
-    #             for (prefix, part_type), id_ in self.registry.items():
-    #                 if part_type != "parts":
-    #                     continue
-    #                 sheet = self.get_df_by_id(id_)
-    #                 try:
-    #                     idx = sheet.index.get_loc(name)
-    #                     return sheet, prefix, part_type
-    #                 except KeyError:
-    #                     continue
-    #             break
-    #         else:
-    #             id_ = self.registry.get((prefix, type_))
-    #             if id_ is not None:
-    #                 return self.get_df_by_id(id_), prefix, type_
-    #     raise ValueError(f"could not find dataframe for '{name}'")
-
-    # def get_df(self, key):
-    #     return self.get_df_by_id(self.registry[key])
-
-    # def get_next_empty_row(worksheet, skip_columns=0):
-    #     last_idx, _ = _get_next_empty_row(worksheet, skip_columns=skip_columns)
-    #     if last_idx is None:
-    #         return 2
-    #     else:
-    #         # increment twice for:
-    #         # - add one to convert from zero-indexing to one-indexing
-    #         # - row 1 is header
-    #         return last_idx + 2
-
-    # def get_empty_column_mask(key):
-    #     if key in self.column_masks:
-    #         return self.column_masks[key]
-    #     else:
-    #         worksheet = self.get_sheet(key)
-    #         mask = empty_column_mask(worksheet)
-    #         self.column_masks[key] = mask
-    #         return mask
-
-    # def _get_next_empty_row(worksheet, skip_columns=0):
-    #     df = worksheet.get_as_df(value_render=pygsheets.ValueRenderOption.FORMULA)
-    #     formula_mask = df.iloc[0].str.startswith("=").values
-    #     has_datavalidation = columns_with_validation(
-    #         worksheet.client.sheet.service,
-    #         worksheet.spreadsheet.id,
-    #         worksheet.spreadsheet._sheet_list,
-    #     )
-    #     validation_mask = has_datavalidation[worksheet.title]
-    #     validation_mask += [False] * (len(df.columns) - len(validation_mask))
-    #     validation_mask = np.array(validation_mask)
-    #     mask = formula_mask | validation_mask
-    #     masked_values = df.iloc[:, skip_columns:].iloc[:, ~mask[skip_columns:]]
-    #     masked_values[masked_values == ""] = np.nan
-    #     nonempty = ~masked_values.isnull().all(axis=1)
-    #     last_idx = nonempty[nonempty].last_valid_index()
-    #     if last_idx is not None:
-    #         # convert to Python int because
-    #         # DataFrame.last_valid_index() returns np.int64, which is not JSON-serializable
-    #         last_idx = int(last_idx)
-    #     return last_idx, df
-
-    # def get_next_collection_id(worksheet):
-    #     last_idx, df = _get_next_empty_row(worksheet, skip_columns=1)
-    #     prefix = worksheet.spreadsheet.title.split("_")[0]
-    #     if last_idx is None:
-    #         num = 0
-    #     else:
-    #         num = last_idx + 1
-    #     # increment twice for:
-    #     # - add one to convert from zero-indexing to one-indexing
-    #     # - row 1 is header
-    #     row = num + 2
-    #     return (prefix, num + 1), row
-
-    # def get_next_id(self, key):
-    #     if key in self.ids:
-    #         id_ = self.ids[key]
-    #         (prefix, num), row = id_
-    #         self.ids[key] = ((prefix, num + 1), row + 1)
-    #         return id_
-    #     sheet = self.get_sheet(key)
-
-    # def types_for_prefix(self, prefix):
-    #     types = []
-    #     for reg_prefix, type_ in self.registry.keys():
-    #         if prefix == reg_prefix:
-    #             types.append(type_)
-    #     return types
-
-    # def get_map_list(self, prefix):
-    #     if prefix in self.maps:
-    #         return self.maps[prefix]
-    #     else:
-    #         key = (prefix, "maps")
-    #         maps_folder = self.registry.get(key)
-    #         if maps_folder is None:
-    #             raise ValueError(f"expecting a registry entry {key}")
-    #         maps = list_drive(
-    #             self.drive_service, root=maps_folder, is_folder=False
-    #         )
-    #         self.maps[prefix] = maps
-    #         return maps
-
-    # def _get_map(self, prefix, name):
-    #     seq_files = self.get_map_list(prefix)
-    #     seq_file = regex_key(seq_files, f"{name}\\.", check_duplicates=True)
-    #     seq = read_sequence(
-    #         self.drive_service.files()
-    #         .get_media(fileId=seq_file["id"])
-    #         .execute()
-    #         .decode("utf8")
-    #     )
-    #     molecule_type = seq.annotations["molecule_type"]
-    #     if molecule_type == "ds-DNA":
-    #         seq = DsSeqRecord(seq, id=name, name=name, description=name)
-    #     else:
-    #         raise NotImplementedError(
-    #             f"cannot import genbank molecule_type: '{molecule_type}'"
-    #         )
-    #     entry = {"_seq": seq}
-    #     return entry
-
-    # def _get(self, df, prefix, type_, name):
-    #     if name not in df.index:
-    #         raise ValueError(f"cannot find {name}")
-    #     entry = df.loc[name].to_dict()
-    #     entry["_id"] = name
-    #     entry["_type"] = type_
-    #     entry["_prefix"] = prefix
-    #     if type_ in TYPES_WITH_MAPS:
-    #         entry.update(self._get_map(prefix, name))
-    #     elif type_ == "parts":
-    #         res = eval_exprs_by_priority(entry["Usage"], self.get)
-    #         if res is None:
-    #             seq = None
-    #         else:
-    #             seq = res.get("_seq")
-    #         if seq is None:
-    #             seq = part_entry_to_seq(entry)
-    #         seq.id = seq.name = seq.description = name
-    #         entry["_seq"] = seq
-    #     elif "Sequence" in entry:
-    #         entry["_seq"] = Seq(entry["Sequence"])
-    #     return entry
-
-    # def get(self, name, types=("plasmids", "strains", "oligos", "parts"), seq=True):
-    #     df, prefix, type_ = self.get_df_by_name(name, types=types)
-    #     return self._get(df, prefix, type_, name)
-
     def get_with_prefix(self, name, prefix, type_):
-        # print(">", name, prefix, type_)
         if type_ == "parts":
             client = None
             for key in self.keys():
@@ -1073,6 +952,7 @@ class Registry(object):
     def sync_benchling(
         self, overwrite=None, return_data=False, progress_bar=PROGRESS_BAR
     ):
+        raise NotImplementedError  # TODO: update this to work with new registry
         cache = {}
         problems = []
         prefixes = self.registry.keys()
