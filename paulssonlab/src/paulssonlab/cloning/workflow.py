@@ -3,6 +3,7 @@ import re
 import requests
 from copy import deepcopy
 import string
+from datetime import datetime
 import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
@@ -445,3 +446,18 @@ def smoosh_and_trim_flanks(seq, flanks, lower=True):
         flanks[0][: len(flanks[0]) - upstream_overlap],
         flanks[1][downstream_overlap:],
     )
+
+
+def overhangs_for(x):
+    return (x["Upstream overhang"].lower(), x["Downstream overhang"].lower())
+
+
+def part_types_map(part_types):
+    d = {}
+    for name, row in part_types.items():
+        d[overhangs_for(row)] = row["Type"]
+    return d
+
+
+def date():
+    datetime.now().strftime("%-m/%-d/%Y")
