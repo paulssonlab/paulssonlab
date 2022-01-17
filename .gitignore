@@ -4,6 +4,7 @@
 
 # data files
 .snakemake
+.nextflow*
 *.fasta
 *.fastq
 *.fast5
