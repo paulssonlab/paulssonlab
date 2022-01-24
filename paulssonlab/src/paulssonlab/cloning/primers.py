@@ -285,9 +285,9 @@ def iter_bounds(
     min_length=10,
     max_length=None,
     anchor="stop",
-    outer_iter="stop",
-    reverse_inner_iter=False,
-    reverse_outer_iter=False,
+    outer="stop",
+    reverse_inner=False,
+    reverse_outer=False,
 ):
     """
     Parameters
@@ -327,46 +327,46 @@ def iter_bounds(
         max_length = min(max_length, length)
     if anchor not in ("start", "stop", None, False):
         raise ValueError("anchor must be start, stop, or None/False")
-    if outer_iter not in ("start", "stop", "length"):
-        raise ValueError("outer_iter must be start, stop, or length")
+    if outer not in ("start", "stop", "length"):
+        raise ValueError("outer must be start, stop, or length")
     start_idxs = None
     if anchor == "start":
-        outer_iter = "start"
+        outer = "start"
         start_idxs = [0]
     elif anchor == "stop":
-        outer_iter = "stop"
+        outer = "stop"
         anchor = "start"
     elif not anchor:
         pass
     else:
         raise NotImplementError
-    if outer_iter == "start":
+    if outer == "start":
         if start_idxs is None:
             start_idxs = range(0, length - min_length + 1)
         stop_idxs = lambda start: reverse_if(
-            reverse_inner_iter,
+            reverse_inner,
             range(start + min_length, min(start + max_length, length) + 1),
         )
-        for start in reverse_if(reverse_outer_iter, start_idxs):
+        for start in reverse_if(reverse_outer, start_idxs):
             for stop in stop_idxs(start):
                 yield start, stop
-    elif outer_iter == "stop":
+    elif outer == "stop":
         for start, stop in iter_bounds(
             length,
             min_length=min_length,
             max_length=max_length,
             anchor=anchor,
-            outer_iter="start",
-            reverse_inner_iter=reverse_inner_iter,
-            reverse_outer_iter=not reverse_outer_iter,
+            outer="start",
+            reverse_inner=reverse_inner,
+            reverse_outer=not reverse_outer,
         ):
             yield length - stop, length - start
-    elif outer_iter == "length":
+    elif outer == "length":
         lengths = range(min_length, max_length + 1)
         start_idxs = lambda subseq_length: reverse_if(
-            reverse_inner_iter, range(0, length - subseq_length + 1)
+            reverse_inner, range(0, length - subseq_length + 1)
         )
-        for subseq_length in reverse_if(reverse_outer_iter, lengths):
+        for subseq_length in reverse_if(reverse_outer, lengths):
             for start in start_idxs(subseq_length):
                 yield start, start + subseq_length
     else:
