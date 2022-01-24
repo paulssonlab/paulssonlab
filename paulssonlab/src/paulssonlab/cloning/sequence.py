@@ -1,6 +1,7 @@
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
+from math import ceil
 from numbers import Integral
 from cytoolz import partial
 from itertools import product as it_product
@@ -812,7 +813,7 @@ def smoosh_sequences(*seqs, max_overlap=None):
 
 
 def _smoosh_sequences(a, b, max_overlap=None):
-    """Returns the shortest sequence beginning with `a` and stoping with `b`.
+    """Returns the shortest sequence starting with `a` and ending with `b`.
 
     For example, this will eliminate a common substring on the junction
     between the two sequences.
@@ -822,6 +823,17 @@ def _smoosh_sequences(a, b, max_overlap=None):
         return a + b[overlap:]
     else:
         return a + b
+
+
+def find_aligned_subsequence(seq, subseq, last=False):
+    period = len(subseq)
+    idxs = range(int(ceil(len(seq) / period)))
+    if last:
+        idxs = reversed(idxs)
+    for i in idxs:
+        if seq[i * period : (i + 1) * period] == subseq:
+            return i * period
+    return None
 
 
 def count_matching(a, b):
@@ -1036,17 +1048,14 @@ def enumerate_primer_binding_sites(
     return sorted(list(sites), key=attrgetter("seq1_start"))
 
 
-def extract_matching_subsequence(template, product, min_score=10):
+def find_subsequence(template, product, min_score=10):
     sites = iter_matches(
         template, product, scoring_func=longest_contiguous_matching, min_score=min_score
     )
     site = sorted(list(sites), key=attrgetter("score"), reverse=True)[0]
-    return (
-        site.seq1_start,
-        site.seq2_stop,
-        product[: site.seq2_start],
-        product[site.seq2_stop :],
-    )
+    head = product[: site.seq2_start]
+    tail = product[site.seq2_stop :]
+    return (site.seq1_start, site.seq1_stop, head, tail)
 
 
 def _amplicon_location(template, primer1, primer2, min_score=10):
