@@ -298,22 +298,19 @@ def iter_bounds(
         Minimum subsequence length, or None.
     max_length : None, optional
         Maximum subsequence length, or None.
-    anchor_start : bool, optional
-        Start of subsequence should be anchored to the beginning of the sequence.
-    anchor_stop : bool, optional
-        End of subsequence should be anchored to the end of the sequence.
-    iter_start_fastest : None, optional
-        If True, start changes the fastest. If False, stop changes the fastest.
+    anchor : str, optional
+        Must be one of "start", "stop", or None/False. Specifies if either "start" or "stop" remains fixed.
+    outer : str, optional
+        Must be one of "start", "stop", or "length". Specifies which parameter is changed by the outermost iteration.
+    reverse_inner : bool, optional
+        Reverse the inner iteration.
+    reverse_outer : bool, optional
+        Reverse the outer iteration.
 
     Yields
-    ------
-    TYPE
-        Description
-
-    Raises
-    ------
-    ValueError
-        Description
+    -----------------
+    (start, stop) : (int, int)
+        Yields all possible indexes for slicing into a sequence of length `length` where the subsequence has length between `min_length` and `max_length`.
 
     """
     reverse_if = lambda cond, iterable: reversed(iterable) if cond else iterable
