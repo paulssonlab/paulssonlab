@@ -285,7 +285,7 @@ def iter_bounds(
     min_length=10,
     max_length=None,
     anchor="stop",
-    inner_iter="stop",
+    outer_iter="stop",
     reverse_inner_iter=False,
     reverse_outer_iter=False,
 ):
@@ -326,8 +326,8 @@ def iter_bounds(
         max_length = min(max_length, length)
     if anchor not in ("start", "stop", None, False):
         raise ValueError("anchor must be start, stop, or None/False")
-    if inner_iter not in ("start", "stop"):
-        raise ValueError("inner_iter must be start or stop")
+    if outer_iter not in ("start", "stop", "length"):
+        raise ValueError("outer_iter must be start, stop, or length")
     # start_idxs = None
     # stop_idxs = None
     # if anchor == "start":
@@ -345,15 +345,7 @@ def iter_bounds(
     # elif anchor_start:
     #     start_idxs = [0]
     # if start_idxs is None:
-    if inner_iter == "start":
-        stop_idxs = range(min_length, length + 1)
-        start_idxs = lambda stop: reversed(
-            range(max(stop - max_length, 0), stop - min_length + 1)
-        )
-        for stop in stop_idxs:
-            for start in start_idxs(stop):
-                yield start, stop
-    elif inner_iter == "stop":
+    if outer_iter == "start":
         start_idxs = reversed(range(0, length - min_length + 1))
         stop_idxs = lambda start: range(
             start + min_length, min(start + max_length, length) + 1
@@ -361,6 +353,23 @@ def iter_bounds(
         for start in start_idxs:
             for stop in stop_idxs(start):
                 yield start, stop
+    elif outer_iter == "stop":
+        for start, stop in iter_bounds(
+            length,
+            min_length=min_length,
+            max_length=max_length,
+            anchor=anchor,
+            outer_iter="start",
+            reverse_inner_iter=not reverse_inner_iter,
+            reverse_outer_iter=not reverse_outer_iter,
+        ):
+            yield length - stop, length - start
+    elif outer_iter == "length":
+        lengths = range(min_length, max_length + 1)
+        start_idxs = lambda subseq_length: range(0, length - subseq_length + 1)
+        for subseq_length in lengths:
+            for start in start_idxs(subseq_length):
+                yield start, start + subseq_length
     else:
         raise NotImplementError
     # #######
