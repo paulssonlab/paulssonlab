@@ -886,6 +886,16 @@ class Registry(object):
                             rename_ids(dest_sheet, source_prefix, dest_type_prefix)
         return dest_folder
 
+    def get_prefix_and_types(self, name):
+        match = re.match(ID_REGEX, name)
+        if match:
+            prefix = match.group(1)
+            types = [k[1] for k in self.keys() if k[0] == prefix]
+        else:
+            prefix = None
+            types = ["parts"]
+        return prefix, types
+
     def get_with_prefix(self, name, prefix, type_):
         if type_ == "parts":
             client = None
