@@ -336,6 +336,8 @@ def iter_bounds(
     elif anchor == "stop":
         outer_iter = "stop"
         anchor = "start"
+    elif not anchor:
+        pass
     else:
         raise NotImplementError
     if outer_iter == "start":
