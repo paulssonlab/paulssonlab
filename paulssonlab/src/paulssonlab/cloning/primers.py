@@ -282,10 +282,10 @@ def primer3_amplicon_with_flanks(
 
 # TODO: you should probably just use primer3 instead,
 # this works but have not implemented a method for picking primer pairs
-def enumerate_primers(
+def iter_primers(
     seq,
-    overhang="",
-    anchor_3prime=False,
+    overhang=None,
+    anchor_3prime=True,
     min_length=10,
     max_length=None,
     min_tm=60,
@@ -298,7 +298,7 @@ def enumerate_primers(
     primers = []
     assert len(seq) >= 1
     if anchor_3prime:
-        stop_idxs = [len(seq) - 1]
+        stop_idxs = [len(seq)]
     else:
         stop_idxs = reversed(range(len(seq) + 1))
     for stop in stop_idxs:
@@ -308,7 +308,10 @@ def enumerate_primers(
             min_start = stop - max_length
         for start in reversed(range(min_start, stop - min_length + 1)):
             binding_seq = seq[start:stop]
-            primer_seq = overhang + binding_seq
+            if overhang is not None:
+                primer_seq = overhang + binding_seq
+            else:
+                primer_seq = binding_seq
             tm = tm_func(binding_seq, **(tm_kwargs or {}))
             if tm < min_tm:
                 continue
@@ -323,14 +326,13 @@ def enumerate_primers(
                 else:
                     continue
             primer = Primer(
-                seq=primer_seq,
-                length=len(primer_seq),
+                overhang=overhang,
+                binding=binding_seq,
                 tm=tm,
                 mfe_monomer=mfe_monomer,
                 mfe_homodimer=mfe_homodimer,
             )
-            primers.append(primer)
-    return primers
+            yield primer
 
 
 def get_primer_overhang(template, primer):
