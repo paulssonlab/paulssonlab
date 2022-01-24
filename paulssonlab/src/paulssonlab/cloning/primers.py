@@ -280,59 +280,141 @@ def primer3_amplicon_with_flanks(
     )
 
 
+def iter_bounds(
+    length,
+    min_length=10,
+    max_length=None,
+    anchor="stop",
+    inner_iter="stop",
+    reverse_inner_iter=False,
+    reverse_outer_iter=False,
+):
+    """
+    Parameters
+    ----------
+    length : int
+        Length of sequence.
+    min_length : int, optional
+        Minimum subsequence length, or None.
+    max_length : None, optional
+        Maximum subsequence length, or None.
+    anchor_start : bool, optional
+        Start of subsequence should be anchored to the beginning of the sequence.
+    anchor_stop : bool, optional
+        End of subsequence should be anchored to the end of the sequence.
+    iter_start_fastest : None, optional
+        If True, start changes the fastest. If False, stop changes the fastest.
+
+    Yields
+    ------
+    TYPE
+        Description
+
+    Raises
+    ------
+    ValueError
+        Description
+
+    """
+    if length < 1:
+        raise ValueError("length must be >= 1")
+    if min_length is None:
+        min_length = 1
+    if max_length is None:
+        max_length = length
+    else:
+        max_length = min(max_length, length)
+    if anchor not in ("start", "stop", None, False):
+        raise ValueError("anchor must be start, stop, or None/False")
+    if inner_iter not in ("start", "stop"):
+        raise ValueError("inner_iter must be start or stop")
+    # start_idxs = None
+    # stop_idxs = None
+    # if anchor == "start":
+    #     pass
+    # elif anchor == "stop":
+    #     pass
+    # else:
+    #     raise NotImplementError
+    # start_idxs = lambda stop: reversed(
+    #     range(stop - max_length if max_length is None else 0, stop - min_length + 1)
+    # )
+    # stop_idxs = lambda start: reversed(range(length + 1))
+    # if anchor_stop:
+    #     stop_idxs = [len(seq)]
+    # elif anchor_start:
+    #     start_idxs = [0]
+    # if start_idxs is None:
+    if inner_iter == "start":
+        stop_idxs = range(min_length, length + 1)
+        start_idxs = lambda stop: reversed(
+            range(max(stop - max_length, 0), stop - min_length + 1)
+        )
+        for stop in stop_idxs:
+            for start in start_idxs(stop):
+                yield start, stop
+    elif inner_iter == "stop":
+        start_idxs = reversed(range(0, length - min_length + 1))
+        stop_idxs = lambda start: range(
+            start + min_length, min(start + max_length, length) + 1
+        )
+        for start in start_idxs:
+            for stop in stop_idxs(start):
+                yield start, stop
+    else:
+        raise NotImplementError
+    # #######
+    # if anchor_stop:
+    #     stop_idxs = [len(seq)]
+    # else:
+    #     stop_idxs = reversed(range(len(seq) + 1))
+    # yield start, stop
+
+
 # TODO: you should probably just use primer3 instead,
 # this works but have not implemented a method for picking primer pairs
 def iter_primers(
     seq,
     overhang=None,
-    anchor_3prime=True,
-    min_length=10,
-    max_length=None,
     min_tm=60,
     max_tm=72,
     min_mfe=-8,
     tm_func=thermodynamics.tm,
     monotonic_mfe=False,
     tm_kwargs=None,
+    bounds=None,
 ):
-    primers = []
-    assert len(seq) >= 1
-    if anchor_3prime:
-        stop_idxs = [len(seq)]
-    else:
-        stop_idxs = reversed(range(len(seq) + 1))
-    for stop in stop_idxs:
-        if max_length is None:
-            min_start = 0
+    if bounds is None:
+        bounds = iter_bounds(len(seq))
+    elif callable(bounds):
+        bounds = bounds()
+    for start, stop in bounds:
+        binding_seq = seq[start:stop]
+        if overhang is not None:
+            primer_seq = overhang + binding_seq
         else:
-            min_start = stop - max_length
-        for start in reversed(range(min_start, stop - min_length + 1)):
-            binding_seq = seq[start:stop]
-            if overhang is not None:
-                primer_seq = overhang + binding_seq
-            else:
-                primer_seq = binding_seq
-            tm = tm_func(binding_seq, **(tm_kwargs or {}))
-            if tm < min_tm:
-                continue
-            elif tm > max_tm:
+            primer_seq = binding_seq
+        tm = tm_func(binding_seq, **(tm_kwargs or {}))
+        if tm < min_tm:
+            continue
+        elif tm > max_tm:
+            break
+        mfe_monomer, mfe_homodimer = dna_secondary_structure(primer_seq)
+        if min_mfe is not None and min(mfe_monomer, mfe_homodimer) < min_mfe:
+            if monotonic_mfe:
+                # if we assume mfe monotonically decreases with length, then we can stop extending
+                # this is probably not exactly true but pretty close, and likely speeds things up
                 break
-            mfe_monomer, mfe_homodimer = dna_secondary_structure(primer_seq)
-            if min(mfe_monomer, mfe_homodimer) < min_mfe:
-                if monotonic_mfe:
-                    # if we assume mfe monotonically decreases with length, then we can stop extending
-                    # this is probably not exactly true but pretty close, and likely speeds things up
-                    break
-                else:
-                    continue
-            primer = Primer(
-                overhang=overhang,
-                binding=binding_seq,
-                tm=tm,
-                mfe_monomer=mfe_monomer,
-                mfe_homodimer=mfe_homodimer,
-            )
-            yield primer
+            else:
+                continue
+        primer = Primer(
+            overhang=overhang,
+            binding=binding_seq,
+            tm=tm,
+            mfe_monomer=mfe_monomer,
+            mfe_homodimer=mfe_homodimer,
+        )
+        yield primer
 
 
 def get_primer_overhang(template, primer):
