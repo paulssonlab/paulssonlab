@@ -328,25 +328,19 @@ def iter_bounds(
         raise ValueError("anchor must be start, stop, or None/False")
     if outer_iter not in ("start", "stop", "length"):
         raise ValueError("outer_iter must be start, stop, or length")
-    # start_idxs = None
-    # stop_idxs = None
-    # if anchor == "start":
-    #     pass
-    # elif anchor == "stop":
-    #     pass
-    # else:
-    #     raise NotImplementError
-    # start_idxs = lambda stop: reversed(
-    #     range(stop - max_length if max_length is None else 0, stop - min_length + 1)
-    # )
-    # stop_idxs = lambda start: reversed(range(length + 1))
-    # if anchor_stop:
-    #     stop_idxs = [len(seq)]
-    # elif anchor_start:
-    #     start_idxs = [0]
-    # if start_idxs is None:
+    start_idxs = None
+    stop_idxs = None
+    if anchor == "start":
+        outer_iter = "start"
+        start_idxs = [0]
+    elif anchor == "stop":
+        outer_iter = "stop"
+        anchor = "start"
+    else:
+        raise NotImplementError
     if outer_iter == "start":
-        start_idxs = reversed(range(0, length - min_length + 1))
+        if start_idxs is None:
+            start_idxs = reversed(range(0, length - min_length + 1))
         stop_idxs = lambda start: range(
             start + min_length, min(start + max_length, length) + 1
         )
@@ -372,12 +366,6 @@ def iter_bounds(
                 yield start, start + subseq_length
     else:
         raise NotImplementError
-    # #######
-    # if anchor_stop:
-    #     stop_idxs = [len(seq)]
-    # else:
-    #     stop_idxs = reversed(range(len(seq) + 1))
-    # yield start, stop
 
 
 # TODO: you should probably just use primer3 instead,
