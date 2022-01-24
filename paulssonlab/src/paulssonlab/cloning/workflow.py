@@ -15,6 +15,7 @@ from paulssonlab.cloning.sequence import (
     DsSeqRecord,
     reverse_complement,
 )
+from paulssonlab.cloning.commands.parser import expr_list_parser
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
@@ -452,14 +453,27 @@ def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
                 stop = new_stop
     if stop == -1:
         raise ValueError(f"could not find aligned suffix {suffix}")
-    stop += (
-        start  # stop is indexed from start, see call to find_aligned_subsequence above
-    )
+    # stop is indexed from start, see call to find_aligned_subsequence above
+    stop += start
     return start, stop
 
 
+def get_source_plasmid(registry, usage):
+    cmds = expr_list_parser.parse(usage)
+    for cmd in cmds:
+        if cmd["_type"] == "digest" and cmd["input"]["_type"] == "name":
+            name = cmd["input"]["name"]
+            prefix, types = registry.get_prefix_and_types(name)
+            if "plasmids" in types:
+                return name
+    return None
+
+
 def overhangs_for(x):
-    return (x["Upstream overhang"].lower(), x["Downstream overhang"].lower())
+    return (
+        normalize_seq(x["Upstream overhang"]),
+        normalize_seq(x["Downstream overhang"]),
+    )
 
 
 def part_types_map(part_types):
@@ -467,6 +481,10 @@ def part_types_map(part_types):
     for name, row in part_types.items():
         d[overhangs_for(row)] = row["Type"]
     return d
+
+
+def normalize_seq(seq):
+    return str(get_seq(seq)).lower()
 
 
 def date():
