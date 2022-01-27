@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import re
-from cytoolz import dissoc
+from cytoolz import dissoc, excepts
 from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
@@ -212,8 +212,6 @@ class SheetClient(GDriveClient):
             raise ValueError(f"unknown columns: {unknown_columns}")
 
     def __setitem__(self, key, row):
-        # ensure ID is parsable
-        parse_id(key)
         self._validate(row)
         self.local[key] = row
 
@@ -269,7 +267,9 @@ class SheetClient(GDriveClient):
         """
         rows_to_update = {}
         rows_to_append = []
-        for key in sorted(self.local.keys(), key=parse_id):
+        # we need to do this to handle IDs without sequential numeric indices (e.g., part names)
+        sorter = lambda x: excepts(ValueError, parse_id)(x) or (None, x)
+        for key in sorted(self.local.keys(), key=sorter):
             row = self.local[key]
             row_with_id = {**row, self.id_column_name: key}
             if key in self.remote_index:
