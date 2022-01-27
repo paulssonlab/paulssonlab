@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import re
+from cytoolz import dissoc
 from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
@@ -62,6 +63,9 @@ class GDriveClient(object):
     def __init__(self, registry_key):
         self.registry_key = registry_key
 
+    def __len__(self):
+        return len(self.keys())
+
     def keys(self):
         raise NotImplementedError
 
@@ -109,6 +113,10 @@ class SheetClient(GDriveClient):
         self.local = {}
         self._remote = None
         self._remote_index = None
+
+    @property
+    def id_column_name(self):
+        return self.columns[self.id_column]
 
     @property
     def spreadsheet(self):
@@ -194,13 +202,11 @@ class SheetClient(GDriveClient):
                 raise KeyError(key)
         else:
             row = self.remote.iloc[self.remote_index.get_loc(key)].to_dict()
-        return {**row, self.columns[self.id_column]: key}
+        return {**row, self.id_column_name: key}
 
     def _validate(self, row):
-        if self.columns[self.id_column] in row:
-            raise ValueError(
-                f"cannot specify ID column: '{self.columns[self.id_column]}'"
-            )
+        if self.id_column_name in row:
+            raise ValueError(f"cannot specify ID column: '{self.id_column_name}'")
         unknown_columns = row.keys() - set(self.columns)
         if unknown_columns:
             raise ValueError(f"unknown columns: {unknown_columns}")
@@ -217,29 +223,29 @@ class SheetClient(GDriveClient):
         return id_
 
     def upsert(self, row, key_columns=[], apply={}):
+        key_columns = list(set(key_columns) | apply.keys())
+        if not key_columns:
+            raise ValueError(
+                "at least one column must be specified in key_columns or apply"
+            )
         generate_key = lambda row: tuple(
             apply[col](row[col]) if col in apply else row[col] for col in key_columns
         )
-        key_columns = list(set(key_columns) & apply.keys())
         key_values = generate_key(row)
         id_ = None
-        for location in ("local", "remote"):
-            store = getattr(self, location)
-            if location == "remote":
-                rows = df.iterrows()
-            else:
-                rows = store.items()
-            matches = [key for key, row_ in rows if generate_key(row_) == key_values]
-            if len(matches) >= 2:
-                raise ValueError(
-                    f"upsert key must be unique, instead found {location} matches: {matches}"
-                )
-            elif len(matches) == 1:
-                id_ = matches[0]
-                self[id_] = {**store[id_], **row}
-                return id_
-        id_ = self.next_id()
-        self.local[id_] = row
+        matches = [
+            key for key, row_ in self.items() if generate_key(row_) == key_values
+        ]
+        if len(matches) >= 2:
+            raise ValueError(
+                f"upsert key must be unique, instead found matches: {matches}"
+            )
+        elif len(matches) == 1:
+            id_ = matches[0]
+            new_row = dissoc({**self[id_], **row}, self.id_column_name)
+            self[id_] = new_row
+            return id_
+        id_ = self.append(row)
         return id_
 
     def save(self, clobber_existing=True, append_only=True, formulae=True):
@@ -258,10 +264,9 @@ class SheetClient(GDriveClient):
         """
         rows_to_update = {}
         rows_to_append = []
-        id_column = self.columns[self.id_column]
         for key in sorted(self.local.keys(), key=parse_id):
             row = self.local[key]
-            row_with_id = {**row, id_column: key}
+            row_with_id = {**row, self.id_column_name: key}
             if key in self.remote_index:
                 rows_to_update[key] = row_with_id
             else:
