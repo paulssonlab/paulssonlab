@@ -28,6 +28,9 @@ from paulssonlab.api import regex_key
 from paulssonlab.api.util import PROGRESS_BAR
 from paulssonlab.cloning.io import bytes_to_value, filename_to_mimetype
 
+DEGENERATE_BASES = "RYMKSWHBVDN".lower()
+DEGENERATE_BASES_REGEX = re.compile(f"[{DEGENERATE_BASES}]", re.IGNORECASE)
+
 ID_REGEX = r"\s*([A-Za-z]*)\s*(\d+)(?:[.a-zA-Z]|\s+|$)\S*\s*$"
 
 # these are not currently used, but can be used for formatted outputs
@@ -488,4 +491,4 @@ def normalize_seq(seq):
 
 
 def date():
-    datetime.now().strftime("%-m/%-d/%Y")
+    return datetime.now().strftime("%-m/%-d/%Y")
