@@ -223,18 +223,23 @@ class SheetClient(GDriveClient):
         return id_
 
     def upsert(self, row, key_columns=[], apply={}):
+        """None values in apply is equivalent to the identity function.
+
+        Missing keys in rows are interpreted as empty strings.
+        """
         key_columns = list(set(key_columns) | apply.keys())
         if not key_columns:
             raise ValueError(
                 "at least one column must be specified in key_columns or apply"
             )
+        identity = lambda x: x
         generate_key = lambda row: tuple(
-            apply[col](row[col]) if col in apply else row[col] for col in key_columns
+            (apply.get(col, identity) or identity)(row.get(col, ""))
+            for col in key_columns
         )
         key_values = generate_key(row)
-        id_ = None
         matches = [
-            key for key, row_ in self.items() if generate_key(row_) == key_values
+            id_ for id_, row_ in self.items() if generate_key(row_) == key_values
         ]
         if len(matches) >= 2:
             raise ValueError(
