@@ -216,31 +216,31 @@ class SheetClient(GDriveClient):
         self[id_] = row
         return id_
 
-    def upsert(self, key_columns, row):
-        key_values = tuple(row[col] for col in key_columns)
-        key = None
+    def upsert(self, row, key_columns=[], apply={}):
+        generate_key = lambda row: tuple(
+            apply[col](row[col]) if col in apply else row[col] for col in key_columns
+        )
+        key_columns = list(set(key_columns) & apply.keys())
+        key_values = generate_key(row)
+        id_ = None
         for location in ("local", "remote"):
             store = getattr(self, location)
             if location == "remote":
                 rows = df.iterrows()
             else:
                 rows = store.items()
-            matches = [
-                key
-                for key, row in rows
-                if tuple(row[col] for col in key_columns) == key_values
-            ]
+            matches = [key for key, row_ in rows if generate_key(row_) == key_values]
             if len(matches) >= 2:
                 raise ValueError(
                     f"upsert key must be unique, instead found {location} matches: {matches}"
                 )
             elif len(matches) == 1:
-                key = matches[0]
-                self[key] = {**store[key], **row}
-                return key
-        key = self.next_id()
-        self.local[key] = row
-        return key
+                id_ = matches[0]
+                self[id_] = {**store[id_], **row}
+                return id_
+        id_ = self.next_id()
+        self.local[id_] = row
+        return id_
 
     def save(self, clobber_existing=True, append_only=True, formulae=True):
         """
