@@ -290,7 +290,7 @@ class DsSeqRecord(SeqRecord):
 
     def assemble(
         self,
-        seq,
+        seq=None,
         method="goldengate",
         try_reverse_complement=True,
         circularize=True,
