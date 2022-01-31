@@ -7,7 +7,7 @@ from paulssonlab.cloning.sequence import (
     enumerate_primer_binding_sites,
     get_seq,
 )
-from paulssonlab.cloning.workflow import smoosh_and_trim_flanks
+from paulssonlab.cloning.workflow import smoosh_and_trim_flanks, normalize_seq
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
 from paulssonlab.util import any_not_none, format_number
@@ -282,7 +282,7 @@ def primer3_amplicon_with_flanks(
 
 def iter_bounds(
     length,
-    min_length=10,
+    min_length=None,
     max_length=None,
     anchor="stop",
     outer="stop",
@@ -323,9 +323,9 @@ def iter_bounds(
     else:
         max_length = min(max_length, length)
     if anchor not in ("start", "stop", None, False):
-        raise ValueError("anchor must be start, stop, or None/False")
+        raise ValueError("anchor must be 'start', 'stop', or None/False")
     if outer not in ("start", "stop", "length"):
-        raise ValueError("outer must be start, stop, or length")
+        raise ValueError("outer must be 'start', 'stop', or 'length'")
     start_idxs = None
     if anchor == "start":
         outer = "start"
@@ -375,12 +375,48 @@ def iter_bounds(
 def iter_primers(
     seq,
     overhang=None,
+    min_length=10,
     min_tm=60,
     max_tm=72,
     min_mfe=-8,
     tm_func=thermodynamics.tm,
     monotonic_mfe=False,
     tm_kwargs=None,
+    gc_clamp=True,
+    anchor=None,
+):
+    if anchor not in ("3prime", "5prime", None, False):
+        raise ValueError("anchor must be one of '3prime', '5prime', or None/False")
+    if anchor == "3prime":
+        bounds = iter_bounds(len(seq), min_length=min_length, anchor="stop")
+    elif anchor == "5prime":
+        bounds = iter_bounds(len(seq), min_length=min_length, anchor="start")
+    else:
+        bounds = iter_bounds(len(seq), min_length=min_length)
+    yield from _iter_primers(
+        seq,
+        overhang=overhang,
+        min_tm=min_tm,
+        max_tm=max_tm,
+        min_mfe=min_mfe,
+        tm_func=tm_func,
+        monotonic_mfe=monotonic_mfe,
+        tm_kwargs=tm_kwargs,
+        gc_clamp=gc_clamp,
+        bounds=bounds,
+    )
+
+
+def _iter_primers(
+    seq,
+    overhang=None,
+    min_tm=60,
+    max_tm=72,
+    min_mfe=-8,
+    tm_func=thermodynamics.tm,
+    monotonic_mfe=False,
+    tm_kwargs=None,
+    gc_clamp=True,
     bounds=None,
 ):
     if bounds is None:
@@ -389,6 +425,9 @@ def iter_primers(
         bounds = bounds()
     for start, stop in bounds:
         binding_seq = seq[start:stop]
+        if gc_clamp:
+            if normalize_seq(binding_seq[-1]) not in ("g", "c"):
+                continue
         if overhang is not None:
             primer_seq = overhang + binding_seq
         else:
