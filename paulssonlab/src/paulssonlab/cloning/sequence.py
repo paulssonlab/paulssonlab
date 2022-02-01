@@ -192,6 +192,8 @@ class DsSeqRecord(SeqRecord):
                 )
             # need to grab the actual sequence
             seq = seq.seq
+        elif isinstance(seq, str):
+            seq = Seq(seq)
         id = id or "<unknown id>"
         name = name or "<unknown name>"
         description = description or "<unknown description>"
