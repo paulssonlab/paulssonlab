@@ -223,6 +223,12 @@ class DsSeqRecord(SeqRecord):
         return bool(len(self))
 
     @property
+    def ds_length(self):
+        return (
+            len(self.seq) - abs(self.upstream_overhang) - abs(self.downstream_overhang)
+        )
+
+    @property
     def circular(self):
         return self.annotations["topology"] == "circular"
 
@@ -231,7 +237,7 @@ class DsSeqRecord(SeqRecord):
         self.annotations["topology"] = "circular" if value else "linear"
 
     def _check_overhang(self, overhang1, overhang2):
-        if len(self) and abs(overhang1) + abs(overhang2) >= len(self):
+        if len(self) and self.ds_length < 0:
             raise ValueError("invalid overhang length")
 
     @property
@@ -411,7 +417,7 @@ class DsSeqRecord(SeqRecord):
             new.downstream_inward_cut = None
         return new
 
-    def cut(self, cut5, cut3):
+    def cut(self, cut5, cut3, keep_single_stranded=False):
         if not (-len(self) <= cut5 <= len(self) and -len(self) <= cut3 <= len(self)):
             raise IndexError("attempting to cut out of bounds")
         if cut5 < 0:
@@ -453,6 +459,9 @@ class DsSeqRecord(SeqRecord):
             second.upstream_overhang = -overhang
             first.downstream_overhang = overhang
             seqs = [first, second]
+            # remove single-stranded sequences
+            if not keep_single_stranded:
+                seqs = [s for s in seqs if s.ds_length]
             return seqs, min_loc
 
     def slice_or_reindex(self, start, stop, **kwargs):

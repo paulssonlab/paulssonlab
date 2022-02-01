@@ -25,8 +25,8 @@ def _re_search(seq, enzyme, circular=None):
     return re_sites
 
 
-def _re_search_cuts(binding_locs, enzyme):
-    cuts = []
+def _re_search_cuts(binding_locs, enzyme, length):
+    cuts = {}
     for loc, cut_upstream in binding_locs:
         for cut5, cut3 in ((enzyme.fst5, enzyme.fst3), (enzyme.scd5, enzyme.scd3)):
             if cut5 is None and cut3 is None:
@@ -51,16 +51,14 @@ def _re_search_cuts(binding_locs, enzyme):
                     cut3_loc = None
             binding_upstream = 0
             binding_downstream = 0
-            cuts.append(
-                CutSite(
-                    cut5_loc,
-                    cut3_loc,
-                    cut_upstream,
-                    binding_upstream,
-                    binding_downstream,
-                )
+            cut = CutSite(
+                cut5_loc, cut3_loc, cut_upstream, binding_upstream, binding_downstream
             )
-    return cuts
+            key = (cut5_loc % length, cut3_loc % length)
+            # uniquify
+            if key not in cuts:
+                cuts[key] = cut
+    return list(cuts.values())
 
 
 def re_search(seq, enzyme, circular=None):
@@ -69,7 +67,7 @@ def re_search(seq, enzyme, circular=None):
     if isinstance(enzyme, str):
         enzyme = getattr(Bio.Restriction, enzyme)
     binding_locs = _re_search(seq, enzyme, circular=circular)
-    cuts = _re_search_cuts(binding_locs, enzyme)
+    cuts = _re_search_cuts(binding_locs, enzyme, len(seq))
     return cuts
 
 
@@ -78,6 +76,7 @@ def _re_digest(seq, cuts):
     seqs = []
     for cut in cuts:
         frags, new_offset = seq.cut(cut.cut5 - offset, cut.cut3 - offset)
+        print(">>>", cut, frags, new_offset)
         if len(frags) == 1:
             frags[0].upstream_inward_cut = cut.cut_upstream
             frags[0].downstream_inward_cut = not cut.cut_upstream
