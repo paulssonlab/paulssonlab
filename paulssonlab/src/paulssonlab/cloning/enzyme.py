@@ -76,7 +76,6 @@ def _re_digest(seq, cuts):
     seqs = []
     for cut in cuts:
         frags, new_offset = seq.cut(cut.cut5 - offset, cut.cut3 - offset)
-        print(">>>", cut, frags, new_offset)
         if len(frags) == 1:
             frags[0].upstream_inward_cut = cut.cut_upstream
             frags[0].downstream_inward_cut = not cut.cut_upstream
