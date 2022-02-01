@@ -217,6 +217,9 @@ class DsSeqRecord(SeqRecord):
         self.upstream_inward_cut = upstream_inward_cut
         self.downstream_inward_cut = downstream_inward_cut
 
+    def __bool__(self):
+        return bool(len(self))
+
     @property
     def circular(self):
         return self.annotations["topology"] == "circular"
