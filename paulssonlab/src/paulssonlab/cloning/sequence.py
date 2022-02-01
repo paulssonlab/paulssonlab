@@ -412,10 +412,12 @@ class DsSeqRecord(SeqRecord):
         return new
 
     def cut(self, cut5, cut3):
-        if not (-len(self) <= cut5 < len(self) and -len(self) <= cut3 < len(self)):
+        if not (-len(self) <= cut5 <= len(self) and -len(self) <= cut3 <= len(self)):
             raise IndexError("attempting to cut out of bounds")
-        cut5 = cut5 % len(self)
-        cut3 = cut3 % len(self)
+        if cut5 < 0:
+            cut5 += len(self)
+        if cut3 < 0:
+            cut3 += len(self)
         min_loc = min(cut5, cut3)
         max_loc = max(cut5, cut3)
         overhang = cut5 - cut3
@@ -435,25 +437,23 @@ class DsSeqRecord(SeqRecord):
                 (
                     abs(self.upstream_overhang) * (self.upstream_overhang > 0)
                     <= cut5
-                    < len(self)
-                    - abs(self.downstream_overhang) * (self.downstream_overhang > 0)
+                    <= len(self)
+                    - abs(self.downstream_overhang) * (self.downstream_overhang < 0)
                 )
                 and (
                     abs(self.upstream_overhang) * (self.upstream_overhang < 0)
                     <= cut3
-                    < len(self)
-                    - abs(self.downstream_overhang) * (self.downstream_overhang < 0)
+                    <= len(self)
+                    - abs(self.downstream_overhang) * (self.downstream_overhang > 0)
                 )
             ):
                 raise ValueError("attempting to cut a missing strand")
-            min_loc = min(cut5, cut3)
-            max_loc = max(cut5, cut3)
-            overhang = cut5 - cut3
             first = self[:max_loc]
             second = self[min_loc:]
             second.upstream_overhang = -overhang
             first.downstream_overhang = overhang
-            return [first, second], min_loc
+            seqs = [first, second]
+            return seqs, min_loc
 
     def slice_or_reindex(self, start, stop, **kwargs):
         if start == stop:
@@ -1085,7 +1085,11 @@ def _amplicon_location(template, primer1, primer2, min_score=10):
         site1, site2 = site2, site1
     if site1.strand != -site2.strand:
         raise ValueError("expecting a forward/reverse primer pair")
-    return site1.seq1_stop, site2.seq1_stop, site1.score, site2.score
+    # this is needed to handle negative locs (when working with circular sequences)
+    # TODO: not tested!
+    loc1 = site1.seq1_stop % len(template)
+    loc2 = site2.seq1_stop % len(template)
+    return loc1, loc2, site1.score, site2.score
 
 
 def amplicon_location(template, primer1, primer2, min_score=10):
