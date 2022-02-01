@@ -490,5 +490,9 @@ def normalize_seq(seq):
     return str(get_seq(seq)).lower()
 
 
+def normalize_seq_upper(seq):
+    return str(get_seq(seq)).upper()
+
+
 def date():
     return datetime.now().strftime("%-m/%-d/%Y")
