@@ -107,9 +107,9 @@ class SheetClient(GDriveClient):
         self._spreadsheet = None
         self._worksheet = None
         self._columns = None
-        self.clear_cache()
+        self.rollback()
 
-    def clear_cache(self):
+    def rollback(self):
         self.local = {}
         self._remote = None
         self._remote_index = None
@@ -251,7 +251,7 @@ class SheetClient(GDriveClient):
         id_ = self.append(row)
         return id_
 
-    def save(self, clobber_existing=True, append_only=True, formulae=True):
+    def commit(self, clobber_existing=True, append_only=True, formulae=True):
         """
         Parameters
         ----------
@@ -280,7 +280,7 @@ class SheetClient(GDriveClient):
         self._append_rows(rows_to_append)
         # TODO: we could update self.remote here, but for now let's do the safer thing,
         # which is to fetch everything again from the server
-        self.clear_cache()
+        self.rollback()
 
     def _update_rows(self, rows):
         rows = [(self.remote_index.get_loc(key), row) for key, row in rows.items()]
@@ -339,10 +339,10 @@ class FileClient(GDriveClient):
         self.raw = ItemProxy(self, "raw")
         self.bytes = ItemProxy(self, "bytes")
         self.content = ItemProxy(self, "content")
-        self.clear_cache()
+        self.rollback()
         self._trash_name = trash_name
 
-    def clear_cache(self):
+    def rollback(self):
         self.local = {}
         self._remote = None
         self._remote_folders = None
@@ -363,7 +363,7 @@ class FileClient(GDriveClient):
         self._remote = {}
         self._remote_folders = {}
         self._list_folder((), self.gdrive_id)
-        # adding root id as an empty key makes some recursion in save() easier
+        # adding root id as an empty key makes some recursion in commit() easier
         self._remote_folders[()] = {"id": self.gdrive_id}
 
     def _list_folder(self, key, root):
@@ -643,7 +643,7 @@ class FileClient(GDriveClient):
             self.remote_folders[(self._trash_name,)] = trash_folder
         return trash_folder["id"]
 
-    def save(self, overwrite=True, trash="_Trash", remove_empty_folders=True):
+    def commit(self, overwrite=True, trash="_Trash", remove_empty_folders=True):
         keys_to_trash = set()
         # REMOVE files/folders = None in local
         for key, value in self.local.items():
@@ -727,7 +727,7 @@ class Registry(object):
         self.sheets_client = sheets_client
         self.registry_folder = registry_folder
         self.benchling_folder = benchling_folder
-        self.clear_cache()
+        self.rollback()
         self.refresh()
 
     @property
@@ -799,11 +799,11 @@ class Registry(object):
         for key, value in other.items():
             self[key].update(value)
 
-    def save(self):
+    def commit(self):
         for client in self.clients.values():
-            client.save()
+            client.commit()
 
-    def clear_cache(self):
+    def rollback(self):
         self.clients = {}
 
     def duplicate_collection(
