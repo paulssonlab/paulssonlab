@@ -40,6 +40,11 @@ def parse_nd2_file_metadata(nd2_file):
     return parse_nd2_metadata(nd2reader.ND2Reader(nd2_file))
 
 
+def _parse_xml(s):
+    # use native dicts, since they are ordered starting in Python 3.6
+    return xmltodict.parse(s, dict_constructor=dict)
+
+
 def _stringify_dict_keys(d):
     return recursive_map(
         lambda s: s.decode("utf-8"), d, shortcircuit=bytes, ignore=True, keys=True
@@ -84,7 +89,7 @@ def _nd2_parse_chunk(nd2, label=None, location=None):
 def _nd2_parse_xml_chunk(nd2, label=None, location=None):
     data = _nd2_parse_chunk(nd2, label=label, location=location)
     if data is not None:
-        return xmltodict.parse(data)
+        return _parse_xml(data)
     else:
         return None
 
@@ -143,7 +148,7 @@ def parse_nikon_tiff_metadata(tags):
         elif tag == 270:
             if data:
                 try:
-                    parsed_data = xmltodict.parse(data)
+                    parsed_data = _parse_xml(data)
                 except xml.parsers.expat.ExpatError:
                     parsed_data = data
             else:
@@ -168,7 +173,7 @@ def parse_nikon_tiff_metadata(tags):
             )  # TODO: no idea what these bytes are
             # print(tag,label,idx,data[idx:idx+100])
             # from IPython import embed;embed()
-            md = xmltodict.parse(data[idx:])
+            md = _parse_xml(data[idx:])
             metadata["app_info"] = md
         elif tag == 65333:
             # SEEMS TO STORE (with null bytes): hhh
@@ -176,7 +181,7 @@ def parse_nikon_tiff_metadata(tags):
             idx = (
                 data.index(label) + len(label) + 17
             )  # TODO: total hack, no idea why 17
-            md = xmltodict.parse(data[idx:])
+            md = _parse_xml(data[idx:])
             metadata["metadata_tiff"] = md
         else:
             metadata[tag] = data
