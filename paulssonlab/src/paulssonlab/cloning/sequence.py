@@ -194,9 +194,9 @@ class DsSeqRecord(SeqRecord):
             seq = seq.seq
         elif isinstance(seq, str):
             seq = Seq(seq)
-        id = id or "<unknown id>"
-        name = name or "<unknown name>"
-        description = description or "<unknown description>"
+        id = id or ""
+        name = name or ""
+        description = description or ""
         super().__init__(
             seq,
             id=id,
