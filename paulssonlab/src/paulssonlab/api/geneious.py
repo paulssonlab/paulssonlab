@@ -3,13 +3,21 @@ from paulssonlab.cloning.workflow import normalize_seq_upper
 from paulssonlab.cloning.primers import Primer
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
+from Bio.SeqFeature import (
+    SeqFeature,
+    FeatureLocation,
+    ExactPosition,
+    BeforePosition,
+    AfterPosition,
+)
 import sqlalchemy
 import xmltodict
 from lxml import etree
 from lxml.builder import E
 from cytoolz import get_in
+from datetime import datetime
 import time
+import re
 
 
 # def _parse_xml(s):
@@ -85,6 +93,7 @@ def _load_geneious_feature(d):
         stop = interval["maximumIndex"]
         direction = interval["direction"]
         # TODO: strand
+        # beginsBeforeMinimumIndex="true" endsAfterMaximumIndex="true"
     else:
         raise ValueError(f"expecting 'interval' in annotation location {intervals}")
     type_ = d.get("type")
@@ -98,17 +107,37 @@ def _load_geneious_feature(d):
     return feature
 
 
-def dump_geneious(seq, sep=" / "):
-    # TODO: seq.id, oligos
+def dump_geneious(seq, sep="; "):
     # SeqRecord/Seq
     if isinstance(seq, SeqRecord):
-        now = str(int(time.time()))
+        # geneious interprets genbank dates (e.g., "29-OCT-2018") in local time zone
+        # we instead correctly interpret them as UTC
+        date_str = seq.annotations.get("date")
+        if date_str:
+            epoch = datetime(1970, 1, 1, 0, 0, 0)
+            timestamp = str(
+                int(
+                    (datetime.strptime(date_str, "%d-%b-%Y") - epoch).total_seconds()
+                    * 1000
+                )
+            )
+        else:
+            timestamp = str(int(time.time() * 1000))
         fields = []
         stored_fields = [
             E.standardField(code=name)
             for name in ("modified_date", "molType", "topology", "geneticCode")
         ]
         insd_originalelements = []
+        source_feature = {}
+        for feature in seq.features:
+            if feature.type == "source":
+                source_feature = feature
+        # TODO: geneious imports commonName, db_xref, and chromosome from source_feature
+        # we decide to skip this
+        gid = seq.annotations.get("gi")
+        if gid:
+            fields.append(E.gid(gid))
         organism = seq.annotations.get("organism")
         if organism is not None:
             fields.append(E.organism(organism))
@@ -126,13 +155,20 @@ def dump_geneious(seq, sep=" / "):
         fields.append(E.geneticCode("Standard"))
         accessions = seq.annotations.get("accessions", [])
         if accessions:
-            fields.append(E.accession(sep.join(accessions)))
+            sequence_version = seq.annotations.get("sequence_version")
+            if sequence_version:
+                accession_format = "{}." + str(sequence_version)
+            else:
+                accession_format = "{}"
+            fields.append(
+                E.accession(sep.join(accession_format.format(a) for a in accessions))
+            )
             stored_fields.append(E.standardField(code="accession"))
         taxonomy = seq.annotations.get("taxonomy", [])
         if taxonomy:
             fields.append(E.taxonomy(sep.join(taxonomy)))
             stored_fields.append(E.standardField(code="taxonomy"))
-        fields.append(E.modified_date(now, type="date"))
+        fields.append(E.modified_date(timestamp, type="date"))
         molecule_type = seq.annotations.get("molecule_type", "ds-DNA")
         if molecule_type.startswith("ss-"):
             strandedness = "single"
@@ -146,8 +182,10 @@ def dump_geneious(seq, sep=" / "):
         else:
             strandedness = None
         fields.append(E.molType(molecule_type))
-        urn = E.urn("urn:sequence:genbank:.", type="urn")
-        created = E.created(now, type="date")
+        # not sure a '.' is the right default value if missing genbank ID
+        # that might just be bad handling by geneious or biopython (when parsing/outputting genbank)
+        urn = E.urn(f"urn:sequence:genbank:{gid or '.'}", type="urn")
+        created = E.created(timestamp, type="date")
         name = E.name(seq.name or "")
         description = E.description(seq.description or "")
         sequence_annotations = _dump_geneious_features(seq.features, sep=sep)
@@ -160,17 +198,20 @@ def dump_geneious(seq, sep=" / "):
         division = seq.annotations.get("data_file_division")
         if division:
             insd_originalelements.append(E.INSDSeq_division(division))
-        insd_originalelements.append(getattr(E, "INSDSeq_other-seqids"))
-        insd_originalelements.append(
-            E.INSDSeq_keywords(
-                *[E.INSDSeq_keyword(k) for k in seq.annotations.get("keywords", [])]
+        if gid:
+            other_seqids = [E.INSDSeqid(f"gi|{gid}")]
+        else:
+            other_seqids = []
+        insd_originalelements.append(getattr(E, "INSDSeq_other-seqids")(*other_seqids))
+        keywords = [k for k in seq.annotations.get("keywords", []) if k]
+        if keywords:
+            insd_originalelements.append(
+                E.INSDSeq_keywords(*[E.INSDSeq_keyword(k) for k in keywords])
             )
-        )
-        source = None
-        for feature in seq.features:
-            if feature.type == "source":
-                # if organism is missing/empty, is there any other qualifier geneious pulls from?
-                source = sep.join(feature.qualifiers.get("organism"))
+        source = seq.annotations.get("source")
+        if not source and source_feature:
+            # if organism is missing/empty, is there any other qualifier geneious pulls from?
+            source = sep.join(feature.qualifiers.get("organism"))
         if source:
             insd_originalelements.append(E.INSDSeq_source(source))
         insd_references = []
@@ -183,9 +224,12 @@ def dump_geneious(seq, sep=" / "):
                     E.INSDReference_position(f"{int(loc.start)+1}..{int(loc.end)}")
                 )
             if reference.authors:
+                authors = re.split(r",\s+|,?\s+and\s+", reference.authors)
                 insd_reference.append(
-                    E.INSDReference_authors(E.INSDAuthor(reference.authors))
+                    E.INSDReference_authors(*[E.INSDAuthor(a) for a in authors])
                 )
+            if reference.consrtm:
+                insd_reference.append(E.INSDReference_consortium(reference.consrtm))
             if reference.title:
                 insd_reference.append(E.INSDReference_title(reference.title))
             if reference.journal:
@@ -222,20 +266,27 @@ def _dump_geneious_features(features, sep=" / "):
     for feature in features:
         intervals = []
         for part in feature.location.parts:
+            # we use start+1, end because geneious seems to use 1-indexing
+            # and maximumIndex is inclusive
+            # (so unlike Python indexing in both respects)
+            interval_elements = [
+                E.minimumIndex(str(int(part.start) + 1)),
+                E.maximumIndex(str(int(part.end))),
+            ]
             if part.strand == 1:
                 direction = "leftToRight"
             elif part.strand == -1:
                 direction = "rightToLeft"
             else:
-                direction = "none"
-            # we use start+1, end because geneious seems to use 1-indexing
-            # and maximumIndex is inclusive
-            # (so unlike Python indexing in both respects)
-            interval = E.interval(
-                E.minimumIndex(str(int(part.start) + 1)),
-                E.maximumIndex(str(int(part.end))),
-                E.direction(direction),
-            )
+                direction = None
+            if direction:
+                interval_elements.append(E.direction(direction))
+            attributes = {}
+            if isinstance(part.start, BeforePosition):
+                attributes["beginsBeforeMinimumIndex"] = "true"
+            if isinstance(part.end, AfterPosition):
+                attributes["endsAfterMaximumIndex"] = "true"
+            interval = E.interval(*interval_elements, **attributes)
             intervals.append(interval)
         qualifiers = []
         description = None

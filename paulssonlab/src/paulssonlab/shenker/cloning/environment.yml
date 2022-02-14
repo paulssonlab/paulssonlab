@@ -11,6 +11,7 @@ dependencies:
   - cachetools
   - click
   - clustalo
+  - cockroachdb-python
   - cytoolz
   - frozendict
   - google-api-python-client
@@ -38,9 +39,11 @@ dependencies:
       - requests-html
       - pygsheets
       - pyppeteer
+  - psycopg2
   - pytoml
   - requests
   - seaborn
+  - sqlalchemy
   - tatsu
   - tqdm
   - viennarna
