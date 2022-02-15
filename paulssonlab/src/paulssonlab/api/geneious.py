@@ -6,10 +6,13 @@ from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import (
     SeqFeature,
     FeatureLocation,
+    CompoundLocation,
     ExactPosition,
     BeforePosition,
     AfterPosition,
+    Reference,
 )
+from Bio import GenBank
 import sqlalchemy
 import xmltodict
 from lxml import etree
@@ -19,92 +22,193 @@ from datetime import datetime
 import time
 import re
 
+GENEIOUS_TO_GENBANK = {
+    "fields/topology": "topology",
+    "INSD_originalElements/INSDSeq_division": "data_file_division",
+    "fields/gid": "gi",
+    "INSD_originalElements/INSDSeq_source": "source",
+    "fields/organism": "organism",
+}
 
-# def _parse_xml(s):
-#     # use native dicts, since they are ordered starting in Python 3.6
-#     return xmltodict.parse(s, dict_constructor=dict)
+INSD_TO_REFERENCE = {
+    "INSDReference_consortium": "consrtm",
+    "INSDReference_title": "title",
+    "INSDReference_journal": "journal",
+    "INSDReference_pubmed": "pubmed_id",
+}
 
 
-def load_geneious(s):
-    return _load_geneious(_parse_xml(s))
+def loads_geneious(s):
+    return load_geneious(etree.fromstring(s))
 
 
-def _load_geneious(xml):
-    if "XMLSerialisableRootElement" in xml:
-        xml = xml["XMLSerialisableRootElement"]
-    fields = xml["fields"]
+def _load_geneious_reference(xml, seq_length):
+    reference = Reference()
+    for src, dest in INSD_TO_REFERENCE.items():
+        element = xml.find(src)
+        if element is not None:
+            setattr(reference, dest, element.text)
+    authors = [a.text for a in xml.findall("INSDReference_authors/INSDAuthor")]
+    if authors:
+        reference.authors = authors
+    position_element = xml.find("INSDReference_position")
+    if position_element is not None:
+        # we do not handle compound locations, etc.
+        # (BioPython's hacky GenBank parser makes it hard to do this)
+        reference.location = GenBank._loc(position_element.text, seq_length, 0)
+    return reference
+
+
+def load_geneious(xml, sep="; "):
+    fields = xml.find("fields")
+    override_document_type = fields.find("overrideDocumentType")
     if (
-        fields.get("overrideDocumentType")
+        override_document_type
+        and override_document_type.text
         == "com.biomatters.geneious.publicapi.documents.sequence.DefaultSequenceListDocument$NucleotideSequenceList"
     ):
         # sequence list
-        seqs = [_load_geneious(d) for d in xml["nucleotideSequence"]]
+        seqs = [_load_geneious(d) for d in xml.findall("nucleotideSequence")]
         return seqs
-    else:
-        # single seq
-        seq = Seq(xml["charSequence"])
-        # fields
-        name = xml.get("name")
-        description = xml.get("description")
-        # features
-        features = [
-            _load_geneious_feature(a)
-            for a in get_in(("sequenceAnnotations", "annotation"), d)
-        ]
-        # annotations
-        insd_annotations = xml.get("INSD_originalElements")
-        if insd_annotations is not None:
-            # TODO: this should be name
-            id_ = insd_annotations["INSDSeq_locus"]
-            annotations = {}
-            for key in ("division", "source"):
-                insd_key = f"INSDSeq_{key}"
-                if insd_key in insd_annotations:
-                    annotations[key] = insd_annotations[insd_key]
-            if "INSDSeq_keywords" in insd_annotations:
-                # TODO: only handles a single keyword here... is there ever more than one?
-                annotations["keywords"] = [
-                    get_in(("INSDSeq_keywords", "INSDSeq_keyword"), insd_annotations)
-                ]
-            if "INSDSeq_division" in annotations:
-                pass
-            # INSDSeq_references
+    # single seq
+    seq = Seq(xml.find("charSequence").text)
+    annotations = {}
+    # fields
+    ####
+    # 'molecule_type'
+    ####
+    name = xml.find("name").text
+    description = xml.find("description").text
+    fields = xml.find("fields")
+    accession_element = fields.find("accession")
+    if accession_element is not None:
+        accession = accession_element.text
+        if accession.count(".") == 1:
+            accession, version = accession.split(".")
+            version = int(version)
+            annotations["sequence_version"] = version
+            id_ = f"{accession}.{version}"
         else:
-            id_ = None
-            annotations = None
-        # TODO: circularity
-        # TODO: ds-DNA
-        res = DsSeqRecord(
-            seq,
-            id=id_,
-            name=name,
-            description=description,
-            features=features,
-            annotations=annotations,
-        )
-        return res
-
-
-def _load_geneious_feature(d):
-    intervals = d["intervals"]
-    if "interval" in intervals:
-        interval = intervals["interval"]
-        start = interval["minimumIndex"]
-        stop = interval["maximumIndex"]
-        direction = interval["direction"]
-        # TODO: strand
-        # beginsBeforeMinimumIndex="true" endsAfterMaximumIndex="true"
+            id_ = accession
+        annotations["accessions"] = [accession]
     else:
-        raise ValueError(f"expecting 'interval' in annotation location {intervals}")
-    type_ = d.get("type")
-    # description = d.get("description")
-    feature = SeqFeature(FeatureLocation(start, stop), type=type_)
-    for qualifier in d["qualifiers"]:
-        if qualifier["name"] == "NCBI Feature Key":
+        id_ = None
+    # features
+    features = [
+        _load_geneious_feature(a) for a in xml.findall("sequenceAnnotations/annotation")
+    ]
+    source_feature = None
+    for feature in features:
+        if feature.type == "source":
+            source_feature = feature
+            break
+    # annotations
+    molecule_type = "ds-DNA"
+    moltype_element = xml.find("fields/molType")
+    if moltype_element is not None:
+        molecule_type = moltype_element.text
+        strandedness_element = xml.find("INSD_originalElements/INSDSeq_strandedness")
+        if "-" not in molecule_type and strandedness_element is not None:
+            strandedness = strandedness_element.text
+            if strandedness == "double":
+                molecule_type = "ds-" + molecule_type
+            elif strandedness == "single":
+                molecule_type = "ss-" + molecule_type
+            if strandedness == "mixed":
+                molecule_type = "ms-" + molecule_type
+    annotations["molecule_type"] = molecule_type
+    circular = None
+    is_circular_element = xml.find("fields/isCircular")
+    if is_circular_element is not None:
+        if is_circular_element.text == "true":
+            circular = True
+    for src, dest in GENEIOUS_TO_GENBANK.items():
+        element = xml.find(src)
+        if element is not None:
+            annotations[dest] = element.text
+    date_element = xml.find("fields/modified_date")
+    if date_element is not None:
+        timestamp = int(date_element.text) / 1000
+        modified_date = datetime.fromtimestamp(timestamp)
+        annotations["date"] = modified_date.strftime("%d-%b-%Y")
+    taxonomy_element = xml.find("fields/taxonomy")
+    if taxonomy_element is not None:
+        taxonomy = re.split(r"\s*;?\s+", taxonomy_element.text)
+        if taxonomy:
+            annotations["taxonomy"] = taxonomy
+    references = [
+        _load_geneious_reference(ref, len(seq))
+        for ref in xml.findall("INSD_originalElements/INSDSeq_references/INSDReference")
+    ]
+    if references:
+        annotations["references"] = references
+    keywords = [
+        k.text
+        for k in xml.findall("INSD_originalElements/INSDSeq_keywords/INSDSeq_keyword")
+    ]
+    if keywords:
+        annotations["keywords"] = keywords
+    # TODO: ds-DNA
+    res = DsSeqRecord(
+        seq,
+        id=id_,
+        name=name,
+        description=description,
+        features=features,
+        annotations=annotations,
+        circular=circular,
+    )
+    return res
+
+
+def _load_geneious_feature(xml):
+    parts = []
+    for interval in xml.findall("intervals/interval"):
+        start = int(interval.find("minimumIndex").text)
+        stop = int(interval.find("maximumIndex").text)
+        direction_element = interval.find("direction")
+        if direction_element is not None:
+            direction = direction_element.text
+        else:
+            direction = None
+        if direction == "leftToRight":
+            strand = 1
+        elif direction == "rightToLeft":
+            strand = -1
+        else:
+            strand = 0
+        if interval.attrib.get("beginsBeforeMinimumIndex") == "true":
+            start = BeforePosition(start)
+        else:
+            start = ExactPosition(start)
+        if interval.attrib.get("endsAfterMaximumIndex") == "true":
+            stop = AfterPosition(stop)
+        else:
+            stop = ExactPosition(stop)
+        parts.append(FeatureLocation(start, stop, strand=strand))
+    if len(parts) == 0:
+        raise ValueError("feature missing location")
+    elif len(parts) == 1:
+        location = parts[0]
+    else:
+        location = CompoundLocation(*parts)
+    type_ = xml.find("type").text
+    # skip description, geneious sets description using the contents
+    # of other qualifiers
+    feature = SeqFeature(location, type=type_)
+    for qualifier in xml.findall("qualifiers/qualifier"):
+        name = qualifier.find("name").text
+        value = qualifier.find("value").text
+        if name == "NCBI Feature Key":
             # skip, this is already included in type_
             continue
-        feature.qualifiers[qualifier["name"]] = [qualifier["value"]]
+        feature.qualifiers[name] = [value]
     return feature
+
+
+def dumps_geneious(seq, sep="; "):
+    root = dump_geneious(seq, sep=sep)
+    return etree.tostring(seq, encoding="utf8")
 
 
 def dump_geneious(seq, sep="; "):
@@ -133,6 +237,7 @@ def dump_geneious(seq, sep="; "):
         for feature in seq.features:
             if feature.type == "source":
                 source_feature = feature
+                break
         # TODO: geneious imports commonName, db_xref, and chromosome from source_feature
         # we decide to skip this
         gid = seq.annotations.get("gi")
@@ -153,6 +258,7 @@ def dump_geneious(seq, sep="; "):
             raise ValueError(f"do not understand topology '{topology}'")
         fields.append(E.topology(topology))
         fields.append(E.geneticCode("Standard"))
+        # TODO: not sure what separator should be used for multiple accessions
         accessions = seq.annotations.get("accessions", [])
         if accessions:
             sequence_version = seq.annotations.get("sequence_version")
@@ -160,8 +266,9 @@ def dump_geneious(seq, sep="; "):
                 accession_format = "{}." + str(sequence_version)
             else:
                 accession_format = "{}"
+            # SEE: Bio.GenBank._split_accessions
             fields.append(
-                E.accession(sep.join(accession_format.format(a) for a in accessions))
+                E.accession(" ".join(accession_format.format(a) for a in accessions))
             )
             stored_fields.append(E.standardField(code="accession"))
         taxonomy = seq.annotations.get("taxonomy", [])
