@@ -9,15 +9,49 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    event,
     text,
+    true,
+    orm,
 )
 from sqlalchemy.sql.sqltypes import NullType
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import Session, relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm.collections import column_mapped_collection
 
 Base = declarative_base()
 metadata = Base.metadata
+
+# FROM: https://docs.sqlalchemy.org/en/20/_modules/examples/extending_query/filter_public.html
+@event.listens_for(Session, "do_orm_execute")
+def _add_filtering_criteria(execute_state):
+    """Intercept all ORM queries.   Add a with_loader_criteria option to all of
+    them.
+
+    This option applies to SELECT queries and adds a global WHERE
+    criteria (or as appropriate ON CLAUSE criteria for join targets) to
+    all objects of a certain class or superclass.
+    """
+
+    # the with_loader_criteria automatically applies itself to
+    # relationship loads as well including lazy loads.   So if this is
+    # a relationship load, assume the option was set up from the top level
+    # query.
+
+    if (
+        not execute_state.is_column_load
+        and not execute_state.is_relationship_load
+        and not execute_state.execution_options.get("include_invisible", False)
+    ):
+        execute_state.statement = execute_state.statement.options(
+            orm.with_loader_criteria(
+                HasVisible, lambda cls: cls.visible == true(), include_aliases=True
+            )
+        )
+
+
+class HasVisible:
+    visible = Column(Boolean, nullable=False)
 
 
 class DocumentFileDatum(Base):
@@ -65,14 +99,13 @@ class SearchField(Base):
     field_xml = Column(String, nullable=False)
 
 
-class Folder(Base):
+class Folder(HasVisible, Base):
     __tablename__ = "folder"
     __table_args__ = (CheckConstraint("id != parent_folder_id"),)
 
     id = Column(Integer, primary_key=True)
     g_group_id = Column(ForeignKey("g_group.id"), nullable=False)
     parent_folder_id = Column(ForeignKey("folder.id"), index=True)
-    visible = Column(Boolean, nullable=False)
     modified = Column(DateTime, nullable=False)
     name = Column(String(255), index=True)
 
