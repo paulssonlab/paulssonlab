@@ -13,18 +13,25 @@ from sqlalchemy import (
     text,
     true,
     orm,
+    select,
+    update,
 )
+import sqlalchemy.sql as sql
 from sqlalchemy.sql.sqltypes import NullType
 from sqlalchemy.orm import Session, relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm.collections import column_mapped_collection
+from itertools import chain
+import datetime
 
 Base = declarative_base()
 metadata = Base.metadata
 
+# TODO: event listeners get duplicated when this file is autoreloaded, this mangles queries
+
 # FROM: https://docs.sqlalchemy.org/en/20/_modules/examples/extending_query/filter_public.html
 @event.listens_for(Session, "do_orm_execute")
-def _add_filtering_criteria(execute_state):
+def only_show_visible(execute_state):
     """Intercept all ORM queries.   Add a with_loader_criteria option to all of
     them.
 
@@ -51,7 +58,27 @@ def _add_filtering_criteria(execute_state):
 
 
 class HasVisible:
-    visible = Column(Boolean, nullable=False)
+    visible = Column(Boolean, nullable=False, default=True)
+
+
+@event.listens_for(Session, "after_flush")
+def update_next_table_id(session, flush_context):
+    klasses = set(
+        obj.__class__
+        for obj in chain(session.new, session.dirty)
+        if hasattr(obj.__class__, "id")
+    )
+    # for table in tables:
+    for klass in klasses:
+        next_id_subquery = select(sql.functions.max(klass.id) + 1).scalar_subquery()
+        session.execute(
+            update(NextTableId)
+            .where(NextTableId.table_name == klass.__tablename__)
+            .values(next_id=next_id_subquery)
+        )
+    #     session.execute(sql.functions.max(g.Table.id))
+    # print(tables, dir(session), "||", dir(flush_context))
+    # session.execute("UPDATE ")
 
 
 class DocumentFileDatum(Base):
@@ -70,12 +97,18 @@ class GGroup(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
 
+    def __repr__(self):
+        return f"<GGroup '{self.name}' id={self.id}>"
+
 
 class GRole(Base):
     __tablename__ = "g_role"
 
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
+
+    def __repr__(self):
+        return f"<GRole '{self.name}' id={self.id}>"
 
 
 class Metadata(Base):
@@ -84,12 +117,18 @@ class Metadata(Base):
     identifier = Column(String(80), primary_key=True)
     value = Column(String(255))
 
+    def __repr__(self):
+        return f"<Metadata '{self.identifier}'='{self.value}'>"
+
 
 class NextTableId(Base):
     __tablename__ = "next_table_id"
 
     table_name = Column(String(50), primary_key=True)
     next_id = Column(Integer)
+
+    def __repr__(self):
+        return f"<NextTableId {self.table_name}: {self.next_id}>"
 
 
 class SearchField(Base):
@@ -103,14 +142,15 @@ class Folder(HasVisible, Base):
     __tablename__ = "folder"
     __table_args__ = (CheckConstraint("id != parent_folder_id"),)
 
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        Integer, primary_key=True, default=text("(SELECT max(id)+1 FROM folder)")
+    )
     g_group_id = Column(ForeignKey("g_group.id"), nullable=False)
     parent_folder_id = Column(ForeignKey("folder.id"), index=True)
-    modified = Column(DateTime, nullable=False)
+    modified = Column(DateTime, nullable=False, default=datetime.datetime.now)
     name = Column(String(255), index=True)
 
     g_group = relationship("GGroup")
-    # parent_folder = relationship("Folder", remote_side=[id])
     children = relationship(
         "Folder",
         cascade="all, delete-orphan",
@@ -118,6 +158,9 @@ class Folder(HasVisible, Base):
         collection_class=column_mapped_collection(name),
     )
     users = relationship("GUser", secondary="hidden_folder_to_user")
+
+    def __repr__(self):
+        return f"<Folder '{self.name}' id={self.id} parent_folder_id={self.parent_folder_id}>"
 
 
 class GUser(Base):
@@ -128,6 +171,9 @@ class GUser(Base):
     username = Column(String(255), nullable=False)
 
     primary_group = relationship("GGroup")
+
+    def __repr__(self):
+        return f"<GUser '{self.username}' id={self.id} primary_group_id={self.primary_group_id}>"
 
 
 class AnnotatedDocument(Base):
