@@ -38,6 +38,12 @@ INSD_TO_REFERENCE = {
 }
 
 
+def connect(**kwargs):
+    db_url = sqlalchemy.engine.URL.create(**kwargs)
+    engine = sqlalchemy.create_engine(db_url, future=True)
+    sessionmaker = sqlalchemy.orm.sessionmaker(bind=engine, future=True)
+
+
 def loads_geneious(s):
     return load_geneious(etree.fromstring(s))
 
@@ -419,6 +425,7 @@ def _dump_geneious_features(features, sep=" / "):
 
 class GeneiousClient:
     # HOW DO WE PLAN TO INTEGRATE THIS WITH GDRIVE SYNCING?
+    # [need a way to access modified times for BOTH]
     # what are the different document types (children of Folder)?
     # can geneious handle DsSeqRecord overhangs?
     # RENAME clear_cache -> rollback, save -> commit
@@ -428,19 +435,38 @@ class GeneiousClient:
     # .xml for xml's
     # [] or .content for SeqRecords (how to handle duplicate names?? only error on getitem)
 
-    def __init__(self, conn):
-        self.conn = conn
+    @classmethod
+    def connect(self, **kwargs):
+        sessionmaker = connect(**kwargs)
+        self(sessionmaker)
+
+    def __init__(self, sessionmaker):
+        self.sessionmaker = sessionmaker
         self.rollback()
 
     def rollback(self):
-        pass
+        self.local = {}
+        self._remote = None
+        self._remote_folders = None
 
-    @classmethod
-    def connect(self, **kwargs):
-        db_url = sqlalchemy.engine.URL.create(**kwargs)
-        engine = sqlalchemy.create_engine(db_url)
-        conn = engine.connect()
-        self(conn)
+    @property
+    def remote(self):
+        if self._remote is None:
+            self._download()
+        return self._remote
+
+    @property
+    def remote_folders(self):
+        if self._remote_folders is None:
+            self._download_folders()
+        return self._remote_folders
+
+    def _download(self):
+        self._remote = {}
+        self._remote_folders = {}
+        self._list_folder((), self.gdrive_id)
+        # adding root id as an empty key makes some recursion in commit() easier
+        self._remote_folders[()] = {"id": self.gdrive_id}
 
     def __contains__(self, key):
         pass

@@ -159,6 +159,11 @@ class Folder(HasVisible, Base):
         backref=backref("parent_folder", remote_side=[id]),
         collection_class=column_mapped_collection(name),
     )
+    annotated_documents = relationship(
+        "AnnotatedDocument",
+        cascade="all, delete-orphan",
+        backref=backref("parent_folder"),
+    )
     users = relationship("GUser", secondary="hidden_folder_to_user")
 
     def __repr__(self):
@@ -191,9 +196,17 @@ class AnnotatedDocument(Base):
     plugin_document_xml = Column(String, nullable=False)
     reference_count = Column(Integer, nullable=False)
 
-    folder = relationship("Folder")
+    # folder = relationship("Folder")
     g_users = relationship("GUser", secondary="document_read")
     file_datas = relationship("DocumentFileDatum", secondary="document_to_file_data")
+    additional_document_xml = relationship(
+        "AdditionalDocumentXml",
+        cascade="all, delete-orphan",
+        backref=backref("additional_document_xml"),
+    )
+
+    def __repr__(self):
+        return f"<AnnotatedDocument id={self.id} {self.urn} modified={self.modified}>"
 
 
 class IndexingQueue(AnnotatedDocument):
@@ -305,8 +318,10 @@ class AdditionalDocumentXml(Base):
         Integer, primary_key=True, nullable=False, server_default=text("0:::INT8")
     )
 
-    annotated_document = relationship("AnnotatedDocument")
     g_user = relationship("GUser")
+
+    def __repr__(self):
+        return f"<AdditionalDocumentXml {self.document_urn} element_key={self.element_key}>"
 
 
 class AdditionalXmlTimestamp(Base):
@@ -328,6 +343,9 @@ class AdditionalXmlTimestamp(Base):
 
     annotated_document = relationship("AnnotatedDocument")
     g_user = relationship("GUser")
+
+    def __repr__(self):
+        return f"<AdditionalXmlTimestamp {self.document_urn} modified={self.modified}>"
 
 
 class BooleanSearchFieldValue(Base):
