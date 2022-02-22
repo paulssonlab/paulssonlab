@@ -147,7 +147,9 @@ class Folder(HasVisible, Base):
     )
     g_group_id = Column(ForeignKey("g_group.id"), nullable=False)
     parent_folder_id = Column(ForeignKey("folder.id"), index=True)
-    modified = Column(DateTime, nullable=False, default=datetime.datetime.now)
+    # modified = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    # modified = Column(DateTime, nullable=False, default=datetime.datetime.now)
+    modified = Column(DateTime, nullable=False, default=text("current_timestamp"))
     name = Column(String(255), index=True)
 
     g_group = relationship("GGroup")
@@ -274,6 +276,9 @@ class SpecialElement(Base):
     name = Column(String(255), primary_key=True, nullable=False)
 
     folder = relationship("Folder")
+
+    def __repr__(self):
+        return f"<SpecialElement '{self.name}' folder_id={self.folder_id}>"
 
 
 class AdditionalDocumentXml(Base):
