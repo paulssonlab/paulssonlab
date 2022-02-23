@@ -21,6 +21,8 @@ from cytoolz import get_in
 from datetime import datetime
 import time
 import re
+import uuid
+from copy import deepcopy
 
 GENEIOUS_TO_GENBANK = {
     "fields/topology": "topology",
@@ -38,10 +40,20 @@ INSD_TO_REFERENCE = {
 }
 
 
+def make_urn(location="local", user="paulssonlab"):
+    s = uuid.uuid1().hex
+    return f"urn:{location}:{user}:{s[:2]}-{s[2:9]}"
+
+
+def geneious_timestamp():
+    return int(time.time() * 1000)
+
+
 def connect(**kwargs):
     db_url = sqlalchemy.engine.URL.create(**kwargs)
     engine = sqlalchemy.create_engine(db_url, future=True)
     sessionmaker = sqlalchemy.orm.sessionmaker(bind=engine, future=True)
+    return sessionmaker
 
 
 def loads_geneious(s):
@@ -212,31 +224,44 @@ def _load_geneious_feature(xml):
     return feature
 
 
-def dumps_geneious(seq, sep="; "):
-    root = dump_geneious(seq, sep=sep)
-    return etree.tostring(seq, encoding="utf8")
+def dumps_geneious(*args, **kwargs):
+    xmls = dump_geneious(*args, **kwargs)
+    return [etree.tostring(xml, encoding="utf8") for xml in xmls]
 
 
-def dump_geneious(seq, sep="; "):
-    # SeqRecord/Seq
-    if isinstance(seq, SeqRecord):
+def dump_geneious(
+    seq,
+    urn,
+    document_type="genbank",
+    name=None,
+    description=None,
+    timestamp=None,
+    sep="; ",
+):
+    if document_type == "genbank":
+        # SeqRecord/Seq
+        seq = DsSeqRecord(seq)
+        if name is None:
+            name = seq.name or ""
+        if description is None:
+            description = seq.description or ""
         # geneious interprets genbank dates (e.g., "29-OCT-2018") in local time zone
         # we instead correctly interpret them as UTC
-        date_str = seq.annotations.get("date")
-        if date_str:
-            epoch = datetime(1970, 1, 1, 0, 0, 0)
-            timestamp = str(
-                int(
+        if timestamp is None:
+            date_str = seq.annotations.get("date")
+            if date_str:
+                epoch = datetime(1970, 1, 1, 0, 0, 0)
+                timestamp = int(
                     (datetime.strptime(date_str, "%d-%b-%Y") - epoch).total_seconds()
                     * 1000
                 )
-            )
-        else:
-            timestamp = str(int(time.time() * 1000))
+            else:
+                timestamp = geneious_timestamp()
+        timestamp = str(timestamp)
         fields = []
         stored_fields = [
-            E.standardField(code=name)
-            for name in ("modified_date", "molType", "topology", "geneticCode")
+            E.standardField(code=code)
+            for code in ("modified_date", "molType", "topology", "geneticCode")
         ]
         insd_originalelements = []
         source_feature = {}
@@ -295,14 +320,14 @@ def dump_geneious(seq, sep="; "):
         else:
             strandedness = None
         fields.append(E.molType(molecule_type))
-        # not sure a '.' is the right default value if missing genbank ID
-        # that might just be bad handling by geneious or biopython (when parsing/outputting genbank)
-        urn = E.urn(f"urn:sequence:genbank:{gid or '.'}", type="urn")
-        created = E.created(timestamp, type="date")
-        name = E.name(seq.name or "")
-        description = E.description(seq.description or "")
+        plugin_document_urn = f"urn:sequence:genbank:{gid or 'null'}"
+        urn_element = E.urn(plugin_document_urn, type="urn")
+        created_element = E.created(timestamp, type="date")
+        name_element = E.name(name)
+        description_element = E.description(description)
         sequence_annotations = _dump_geneious_features(seq.features, sep=sep)
-        char_sequence = E.charSequence(normalize_seq_upper(seq))
+        normalized_seq = normalize_seq_upper(seq)
+        char_sequence = E.charSequence(normalized_seq)
         insd_originalelements.append(E.INSDSeq_length(str(len(seq))))
         if seq.name:
             insd_originalelements.append(E.INSDSeq_locus(seq.name))
@@ -351,30 +376,177 @@ def dump_geneious(seq, sep="; "):
                 insd_reference.append(E.INSDReference_pubmed(reference.pubmed_id))
             insd_references.append(E.INSDReference(*insd_reference))
         insd_originalelements.append(E.INSDSeq_references(*insd_references))
-        xml = E.XMLSerialisableRootElement(
+        plugin_document_xml = E.XMLSerialisableRootElement(
             E.fields(*fields),
-            urn,
-            created,
+            urn_element,
+            created_element,
             E.storedFields(*stored_fields),
-            name,
-            description,
+            name_element,
+            description_element,
             sequence_annotations,
             char_sequence,
             E.INSD_originalElements(*insd_originalelements),
             # annotationsRevision="1",
             # charSequenceValidated="true",
         )
-        return xml
-    elif isinstance(seq, Seq):
-        return dump_geneious(DsSeqRecord(seq))
+        document_xml = dump_geneious_document_xml(
+            plugin_document_xml=plugin_document_xml,
+            plugin_document_urn=plugin_document_urn,
+            urn=urn,
+            name=name,
+            description=description,
+            molecule_type=molecule_type,
+            topology=topology,
+            organism=organism,
+            seq=normalized_seq,
+            timestamp=timestamp,
+            document_class="com.biomatters.plugins.ncbi.documents.GenBankNucleotideSequence",
+        )
+        return document_xml, plugin_document_xml
     # primer
-    elif isinstance(seq, Primer):
-        pass
+    elif document_type == "primer":
+        if not isinstance(seq, Primer):
+            seq = Primer(seq)
+        if name is None:
+            raise ValueError("name must be provided")
+        if description is None:
+            raise ValueError("description must be provided")
+        if timestamp is None:
+            raise ValueError("timestamp must be provided")
+        timestamp = str(timestamp)
+        normalized_seq = normalize_seq_upper(seq.seq)
+        binding = normalize_seq_upper(seq.binding)
+        overhang = normalize_seq_upper(seq.overhang)
+        minimum_index = len(overhang) + 1
+        maximum_index = len(seq)
+        fields_element = E.fields(E.oligoType("Primer"), E.molType("DNA"))
+        created_element = E.created(timestamp, type="date")
+        stored_fields = [
+            E.standardField(code="organism"),
+            E.field(
+                E.DocumentField(
+                    E.name("Oligo Type"),
+                    E.description(
+                        "The type of oligonulceotide, one of: Primer and Probe"
+                    ),
+                    E.code("oligoType"),
+                    E.type("java.lang.String"),
+                    E.enumerationOptions(E.value("Primer"), E.value("Probe")),
+                ),
+                **{
+                    "class": "com.biomatters.geneious.publicapi.documents.DocumentField"
+                },
+            ),
+        ]
+        annotation_uuid = uuid.uuid1().hex
+        annotations = [
+            E.annotation(
+                E.description("Binding Region"),
+                E.type("primer_bind"),
+                E.intervals(
+                    E.interval(
+                        E.minimumIndex(str(minimum_index)),
+                        E.maximumIndex(str(maximum_index)),
+                        E.direction("leftToRight"),
+                    )
+                ),
+                E.qualifiers(
+                    E.qualifier(E.name("annotation group"), E.value(annotation_uuid)),
+                    E.qualifier(E.name("Sequence"), E.value(binding)),
+                    E.qualifier(E.name("Extension"), E.value(overhang)),
+                ),
+            )
+        ]
+        # not sure why sequenceAnnotations and primerAnnotations contain duplicated information
+        # need to deepcopy annotations, otherwise it only appears in primerAnnotation
+        plugin_document_xml = E.XMLSerialisableRootElement(
+            fields_element,
+            created_element,
+            E.storedFields(*stored_fields),
+            E.name(name),
+            E.description(description),
+            E.sequenceAnnotations(*deepcopy(annotations)),
+            E.charSequence(normalized_seq),
+            E.primerAnnotation(
+                *annotations,
+                **{
+                    "class": "com.biomatters.geneious.publicapi.documents.sequence.SequenceAnnotation"
+                },
+            ),
+        )
+        document_xml = dump_geneious_document_xml(
+            plugin_document_xml=plugin_document_xml,
+            plugin_document_urn="",
+            urn=urn,
+            name=name,
+            topology="linear",
+            seq=normalized_seq,
+            timestamp=timestamp,
+            document_class="com.biomatters.geneious.publicapi.implementations.sequence.OligoSequenceDocument",
+        )
+        return document_xml, plugin_document_xml
     else:
-        raise ValueError(f"cannot dump type: {type(seq)}")
+        raise ValueError(f"cannot dump type: {document_type}")
 
 
-def _dump_geneious_features(features, sep=" / "):
+def dump_geneious_document_xml(
+    num_bytes=None,
+    plugin_document_xml=None,
+    plugin_document_urn="",
+    urn="",
+    name=None,
+    description=None,
+    molecule_type=None,
+    topology=None,
+    organism=None,
+    seq=None,
+    timestamp=None,
+    document_class=None,
+):
+    if num_bytes is None:
+        num_bytes = len(etree.tostring(plugin_document_xml, encoding="utf8").decode())
+    hidden_fields = [
+        E.unread("false", type="boolean"),
+        E.cache_plugin_document_urn(plugin_document_urn),
+        E.cache_urn(urn, type="urn"),
+        E.nucleotideSequenceWithQualityCount("0", type="int"),
+        E.cache_name(name),
+        E.cache_created(timestamp, type="date"),
+        E.trimmedSequencesCount("0", type="int"),
+    ]
+    hidden_fields_element = E.hiddenFields()
+    fields = [
+        E.document_size(str(num_bytes), type="bytes"),
+        E.sequence_length(str(len(seq)), type="int"),
+        E.sequence_residues(seq[:500]),
+        E.geneticCode("Standard"),
+        E.modified_date(timestamp, type="date"),
+    ]
+    if molecule_type is not None:
+        fields.append(E.molType(molecule_type))
+    if topology is not None:
+        fields.append(E.topology(topology))
+    if organism is not None:
+        fields.append(E.organism(organism))
+    if description is not None:
+        fields.append(E.description(description))
+    fields_element = E.fields(*fields)
+    xml = E.document(
+        hidden_fields_element,
+        fields_element,
+        version="1.3-11",
+        revisionNumber="1",
+        geneiousVersion="2022.0.2",
+        geneiousVersionMinimum="7.1",
+        PluginDocument_FormatLastChanged="7.1",
+        PluginDocument_FormatLastExtended="8.1",
+        PluginDocument_OldestVersionSerializableTo="6.0",
+        **{"class": document_class},
+    )
+    return xml
+
+
+def _dump_geneious_features(features, sep="; "):
     elements = []
     for feature in features:
         intervals = []
@@ -421,168 +593,3 @@ def _dump_geneious_features(features, sep=" / "):
         element = E.annotation(*annotation_elements)
         elements.append(element)
     return E.sequenceAnnotations(*elements)
-
-
-class GeneiousClient:
-    # HOW DO WE PLAN TO INTEGRATE THIS WITH GDRIVE SYNCING?
-    # [need a way to access modified times for BOTH]
-    # what are the different document types (children of Folder)?
-    # can geneious handle DsSeqRecord overhangs?
-    # RENAME clear_cache -> rollback, save -> commit
-    # refactor GDriveClient into a mixin
-
-    # .raw for {"mimeType": ..., "content": hhh, "xml": "..."}
-    # .xml for xml's
-    # [] or .content for SeqRecords (how to handle duplicate names?? only error on getitem)
-
-    @classmethod
-    def connect(self, **kwargs):
-        sessionmaker = connect(**kwargs)
-        self(sessionmaker)
-
-    def __init__(self, sessionmaker):
-        self.sessionmaker = sessionmaker
-        self.rollback()
-
-    def rollback(self):
-        self.local = {}
-        self._remote = None
-        self._remote_folders = None
-
-    @property
-    def remote(self):
-        if self._remote is None:
-            self._download()
-        return self._remote
-
-    @property
-    def remote_folders(self):
-        if self._remote_folders is None:
-            self._download_folders()
-        return self._remote_folders
-
-    def _download(self):
-        self._remote = {}
-        self._remote_folders = {}
-        self._list_folder((), self.gdrive_id)
-        # adding root id as an empty key makes some recursion in commit() easier
-        self._remote_folders[()] = {"id": self.gdrive_id}
-
-    def __contains__(self, key):
-        pass
-
-    def __iter__(self):
-        return iter(self.keys())
-
-    def keys(self):
-        pass
-
-    def items(self):
-        for key in self:
-            yield key, self[key]
-
-    def __getitem__(self, key):
-        pass
-
-    def __setitem__(self, key, value):
-        pass
-
-    def __delitem__(self, key):
-        pass
-
-    def _raw_contains(self, key):
-        pass
-
-    def _raw_delitem(self, key):
-        pass
-
-    def _raw_iter(self, key):
-        pass
-
-    def update(self, other):
-        for key, value in other.items():
-            self[key] = value
-
-    def commit(self):
-        pass
-        # start transaction
-        # read next_table_id
-        # make new folders
-        # delete empty folders
-        # add/delete documents
-        # update next_table_id
-        # commit transaction, retry if failed?
-        ################################################################################
-        keys_to_trash = set()
-        # REMOVE files/folders = None in local
-        for key, value in self.local.items():
-            if value is None:
-                if key in self.remote or key in self.remote_folders:
-                    keys_to_trash.add(key)
-        for key in keys_to_trash:
-            file = self.remote.get(key)
-            is_folder = False
-            if file is None:
-                file = self.remote_folders.get(key)
-                is_folder = True
-            if file is None:
-                continue
-            self.client.files().update(
-                fileId=file["id"],
-                addParents=self._trash_folder_id(),
-                removeParents=",".join(file["parents"]),
-            ).execute()
-            if is_folder:
-                # remove all remote files/folders with a key prefixed by "key"
-                for k in self.remote:
-                    if key == k[: len(key)]:
-                        del self.remote[k]
-                for k in self.remote_folders:
-                    if key == k[: len(key)]:
-                        del self.remote_folders[k]
-            else:
-                del self.remote[key]
-        # MAKE FOLDERS for all parent keys for all local keys
-        # list() makes a copy so we can delete keys as we iterate
-        for key, value in list(self.local.items()):
-            if value is not None:
-                for i in range(1, len(key)):
-                    folder_key = key[:i]
-                    if folder_key not in self.remote_folders:
-                        folder = make_drive_folder(
-                            self.client,
-                            folder_key[-1],
-                            self.remote_folders[folder_key[:-1]]["id"],
-                        )
-                        self.remote_folders[folder_key] = folder
-                if key in self.remote:
-                    if not overwrite:
-                        raise ValueError(f"file already exists remotely: {key}")
-                    file_id = self.remote[key]["id"]
-                else:
-                    file_id = None
-                upload_drive(
-                    self.client,
-                    self.bytes[key],
-                    key[-1],
-                    mimetype=value["mimeType"],
-                    file_id=file_id,
-                    parent=self.remote_folders[key[:-1]]["id"],
-                )
-                self.remote[key] = self.local[key]
-                del self.local[key]
-        # TRASH ALL remaining folders
-        if remove_empty_folders:
-            nonempty_folders = set([()])  # never remove root
-            for key in self.remote:
-                for i in range(1, len(key)):
-                    nonempty_folders.add(key[:i])
-            empty_folders = set(self.remote_folders) - nonempty_folders
-            for key in empty_folders:
-                folder = self.remote_folders[key]
-                self.client.files().update(
-                    fileId=folder["id"],
-                    addParents=self._trash_folder_id(),
-                    removeParents=",".join(folder["parents"]),
-                ).execute()
-                del self.remote_folders[key]
