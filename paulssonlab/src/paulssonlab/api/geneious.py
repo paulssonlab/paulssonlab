@@ -41,7 +41,7 @@ INSD_TO_REFERENCE = {
 
 
 def make_urn(location="local", user="paulssonlab"):
-    s = uuid.uuid1().hex
+    s = uuid.uuid4().hex
     return f"urn:{location}:{user}:{s[:2]}-{s[2:9]}"
 
 
@@ -224,9 +224,11 @@ def _load_geneious_feature(xml):
     return feature
 
 
-def dumps_geneious(*args, **kwargs):
+def dumps_geneious(*args, pretty_print=False, **kwargs):
     xmls = dump_geneious(*args, **kwargs)
-    return [etree.tostring(xml, encoding="utf8") for xml in xmls]
+    return [
+        etree.tostring(xml, encoding=str, pretty_print=pretty_print) for xml in xmls
+    ]
 
 
 def dump_geneious(
@@ -395,6 +397,7 @@ def dump_geneious(
             urn=urn,
             name=name,
             description=description,
+            genetic_code="Standard",
             molecule_type=molecule_type,
             topology=topology,
             organism=organism,
@@ -438,7 +441,7 @@ def dump_geneious(
                 },
             ),
         ]
-        annotation_uuid = uuid.uuid1().hex
+        annotation_uuid = str(uuid.uuid4())
         annotations = [
             E.annotation(
                 E.description("Binding Region"),
@@ -479,6 +482,8 @@ def dump_geneious(
             plugin_document_urn="",
             urn=urn,
             name=name,
+            description=description,
+            oligo_type="Primer",
             topology="linear",
             seq=normalized_seq,
             timestamp=timestamp,
@@ -496,6 +501,8 @@ def dump_geneious_document_xml(
     urn="",
     name=None,
     description=None,
+    oligo_type=None,
+    genetic_code=None,
     molecule_type=None,
     topology=None,
     organism=None,
@@ -506,7 +513,6 @@ def dump_geneious_document_xml(
     if num_bytes is None:
         num_bytes = len(etree.tostring(plugin_document_xml, encoding="utf8").decode())
     hidden_fields = [
-        E.unread("false", type="boolean"),
         E.cache_plugin_document_urn(plugin_document_urn),
         E.cache_urn(urn, type="urn"),
         E.nucleotideSequenceWithQualityCount("0", type="int"),
@@ -514,22 +520,25 @@ def dump_geneious_document_xml(
         E.cache_created(timestamp, type="date"),
         E.trimmedSequencesCount("0", type="int"),
     ]
-    hidden_fields_element = E.hiddenFields()
+    if description is not None:
+        hidden_fields.append(E.description(description))
+    hidden_fields_element = E.hiddenFields(*hidden_fields)
     fields = [
         E.document_size(str(num_bytes), type="bytes"),
         E.sequence_length(str(len(seq)), type="int"),
         E.sequence_residues(seq[:500]),
-        E.geneticCode("Standard"),
         E.modified_date(timestamp, type="date"),
     ]
+    if genetic_code is not None:
+        fields.append(E.geneticCode(genetic_code))
     if molecule_type is not None:
         fields.append(E.molType(molecule_type))
     if topology is not None:
         fields.append(E.topology(topology))
     if organism is not None:
         fields.append(E.organism(organism))
-    if description is not None:
-        fields.append(E.description(description))
+    if oligo_type is not None:
+        fields.append(E.oligoType(oligo_type))
     fields_element = E.fields(*fields)
     xml = E.document(
         hidden_fields_element,
