@@ -24,6 +24,8 @@ from sqlalchemy.orm.collections import column_mapped_collection
 from itertools import chain
 import datetime
 
+NEXT_ID_SUBQUERY = "SELECT coalesce(max(id)+1, 0) FROM"
+
 Base = declarative_base()
 metadata = Base.metadata
 
@@ -85,9 +87,7 @@ class DocumentFileDatum(Base):
     __tablename__ = "document_file_data"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     data = Column(NullType)
     local_file_path = Column(String)
@@ -99,9 +99,7 @@ class GGroup(Base):
     __tablename__ = "g_group"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     name = Column(String(255), nullable=False)
 
@@ -113,9 +111,7 @@ class GRole(Base):
     __tablename__ = "g_role"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     name = Column(String(255), nullable=False)
 
@@ -155,9 +151,7 @@ class Folder(HasVisible, Base):
     __table_args__ = (CheckConstraint("id != parent_folder_id"),)
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     g_group_id = Column(ForeignKey("g_group.id"), nullable=False)
     parent_folder_id = Column(ForeignKey("folder.id"), index=True)
@@ -194,9 +188,7 @@ class GUser(Base):
     __tablename__ = "g_user"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     primary_group_id = Column(ForeignKey("g_group.id"), nullable=False, index=True)
     username = Column(String(255), nullable=False)
@@ -211,9 +203,7 @@ class AnnotatedDocument(Base):
     __tablename__ = "annotated_document"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     folder_id = Column(
         ForeignKey("folder.id", ondelete="CASCADE"), nullable=False, index=True
@@ -230,7 +220,7 @@ class AnnotatedDocument(Base):
     additional_document_xml = relationship(
         "AdditionalDocumentXml",
         cascade="all, delete-orphan",
-        backref=backref("additional_document_xml"),
+        backref=backref("annotated_document"),
     )
     additional_xml_timestamp = relationship(
         "AdditionalXmlTimestamp",
@@ -322,7 +312,9 @@ class SpecialElement(Base):
     xml = Column(String, nullable=False)
     name = Column(String(255), primary_key=True, nullable=False)
 
-    folder = relationship("Folder")
+    folder = relationship(
+        "Folder", backref=backref("special_elements", cascade="all, delete-orphan")
+    )
 
     def __repr__(self):
         return f"<SpecialElement '{self.name}' folder_id={self.folder_id}>"
@@ -385,9 +377,7 @@ class BooleanSearchFieldValue(Base):
     __tablename__ = "boolean_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -403,7 +393,8 @@ class BooleanSearchFieldValue(Base):
         "AnnotatedDocument", backref=backref("boolean_search_field_values")
     )
     search_field = relationship(
-        "SearchField", backref=backref("boolean_search_field_values")
+        "SearchField",
+        backref=backref("boolean_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -411,9 +402,7 @@ class DateSearchFieldValue(Base):
     __tablename__ = "date_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -426,10 +415,12 @@ class DateSearchFieldValue(Base):
     value = Column(Date, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("date_search_field_values")
+        "AnnotatedDocument",
+        backref=backref("date_search_field_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("date_search_field_values")
+        "SearchField",
+        backref=backref("date_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -477,9 +468,7 @@ class DoubleSearchFieldValue(Base):
     __tablename__ = "double_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -492,10 +481,12 @@ class DoubleSearchFieldValue(Base):
     value = Column(Float, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("double_search_field_values")
+        "AnnotatedDocument",
+        backref=backref("double_search_field_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("double_search_field_values")
+        "SearchField",
+        backref=backref("double_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -503,9 +494,7 @@ class FloatSearchFieldValue(Base):
     __tablename__ = "float_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -518,10 +507,12 @@ class FloatSearchFieldValue(Base):
     value = Column(Float, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("float_search_field_values")
+        "AnnotatedDocument",
+        backref=backref("float_search_field_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("float_search_field_values")
+        "SearchField",
+        backref=backref("float_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -540,10 +531,12 @@ class IntegerSearchFieldValue(Base):
     value = Column(Integer, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("integer_search_field_values")
+        "AnnotatedDocument",
+        backref=backref("integer_search_field_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("integer_search_field_values")
+        "SearchField",
+        backref=backref("integer_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -551,9 +544,7 @@ class LongSearchFieldValue(Base):
     __tablename__ = "long_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -566,10 +557,12 @@ class LongSearchFieldValue(Base):
     value = Column(Integer, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("long_search_field_values")
+        "AnnotatedDocument",
+        backref=backref("long_search_field_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("long_search_field_values")
+        "SearchField",
+        backref=backref("long_search_field_values", cascade="all, delete-orphan"),
     )
 
 
@@ -577,9 +570,7 @@ class StringSearchFieldValue(Base):
     __tablename__ = "string_search_field_value"
 
     id = Column(
-        Integer,
-        primary_key=True,
-        default=text(f"(SELECT max(id)+1 FROM {__tablename__})"),
+        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -592,8 +583,10 @@ class StringSearchFieldValue(Base):
     value = Column(String, nullable=False)
 
     annotated_document = relationship(
-        "AnnotatedDocument", backref=backref("string_field_search_values")
+        "AnnotatedDocument",
+        backref=backref("string_field_search_values", cascade="all, delete-orphan"),
     )
     search_field = relationship(
-        "SearchField", backref=backref("string_field_search_values")
+        "SearchField",
+        backref=backref("string_field_search_values", cascade="all, delete-orphan"),
     )

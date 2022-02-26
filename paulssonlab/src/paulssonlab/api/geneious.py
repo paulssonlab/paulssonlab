@@ -92,9 +92,6 @@ def load_geneious(xml, sep="; "):
     seq = Seq(xml.find("charSequence").text)
     annotations = {}
     # fields
-    ####
-    # 'molecule_type'
-    ####
     name = xml.find("name").text
     description = xml.find("description").text
     fields = xml.find("fields")
@@ -282,10 +279,10 @@ def dump_geneious(
             stored_fields.append(E.standardField(code="organism"))
         fields.append(E.hasBeenModified("false", type="boolean"))
         if seq.annotations.get("topology") == "circular":
-            is_circular = "true"
-        else:
-            is_circular = "false"
-        fields.append(E.isCircular(is_circular))
+            fields.append(E.isCircular("true"))
+            # isCircular element should not exist for linear sequences!
+            # if topology == "linear" but we add <isCircular>false</isCircular>
+            # geneious will still show circular sequence viewer
         topology = seq.annotations.get("topology", "linear")
         if topology not in ("circular", "linear"):
             raise ValueError(f"do not understand topology '{topology}'")
@@ -586,19 +583,30 @@ def _dump_geneious_features(features, sep="; "):
         description = None
         for name, value in feature.qualifiers.items():
             if name == "label":
-                description = E.description(sep.join(value))
+                description = sep.join(value)
                 continue  # geneious encodes the label qualifier in <description> instead
             qualifier = E.qualifier(E.name(name), E.value(sep.join(value)))
             qualifiers.append(qualifier)
-        annotation_elements = [
+        if description is None:
+            # mimic what Geneious does
+            if feature.type == "source":
+                description = feature.type
+                label = sep.join(feature.qualifiers.get("organism", []))
+                if label:
+                    description += f" {label}"
+            else:
+                description = ""
+                for qualifier in ("gene", "product", "note"):
+                    label = sep.join(feature.qualifiers.get(qualifier, []))
+                    if label:
+                        description = f"{label} "
+                        break
+                description += feature.type
+        element = E.annotation(
+            E.description(description),
             E.type(feature.type),
             E.intervals(*intervals),
             E.qualifiers(*qualifiers),
-        ]
-        if description is not None:
-            # if label qualifier is missing, geneious seems to use f"{type} {qualifiers['source']}"
-            # as the description. we don't do that
-            annotation_elements = [description, *annotation_elements]
-        element = E.annotation(*annotation_elements)
+        )
         elements.append(element)
     return E.sequenceAnnotations(*elements)
