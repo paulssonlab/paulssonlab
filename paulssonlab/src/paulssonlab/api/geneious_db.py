@@ -24,8 +24,6 @@ from sqlalchemy.orm.collections import column_mapped_collection
 from itertools import chain
 import datetime
 
-NEXT_ID_SUBQUERY = "SELECT coalesce(max(id)+1, 0) FROM"
-
 Base = declarative_base()
 metadata = Base.metadata
 
@@ -78,16 +76,29 @@ def update_next_table_id(session, flush_context):
             .where(NextTableId.table_name == klass.__tablename__)
             .values(next_id=next_id_subquery)
         )
-    #     session.execute(sql.functions.max(g.Table.id))
-    # print(tables, dir(session), "||", dir(flush_context))
-    # session.execute("UPDATE ")
+
+
+def make_sequences(session):
+    next_ids_res = session.execute(select(g.NextTableId)).all()
+    next_ids = {o[0].table_name: o[0].next_id for o in next_ids_res}
+    for m in g.Base.registry.mappers:
+        table_name = m.class_.__tablename__  # m.mapped_table.name
+        if table_name in next_ids:
+            seq_name = f"next_id__{table_name}"
+            start = next_ids[table_name]
+            seq = sqlalchemy.Sequence(seq_name, start=start, minvalue=0, cache=10)
+            # TODO: drop if already exists?
+            # session.execute(sqlalchemy.schema.DropSequence(seq))
+            stmt = sqlalchemy.schema.CreateSequence(seq)
+            session.execute(stmt)
+    session.commit()
 
 
 class DocumentFileDatum(Base):
     __tablename__ = "document_file_data"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     data = Column(NullType)
     local_file_path = Column(String)
@@ -99,7 +110,7 @@ class GGroup(Base):
     __tablename__ = "g_group"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     name = Column(String(255), nullable=False)
 
@@ -111,7 +122,7 @@ class GRole(Base):
     __tablename__ = "g_role"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     name = Column(String(255), nullable=False)
 
@@ -151,7 +162,7 @@ class Folder(HasVisible, Base):
     __table_args__ = (CheckConstraint("id != parent_folder_id"),)
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     g_group_id = Column(ForeignKey("g_group.id"), nullable=False)
     parent_folder_id = Column(ForeignKey("folder.id"), index=True)
@@ -188,7 +199,7 @@ class GUser(Base):
     __tablename__ = "g_user"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     primary_group_id = Column(ForeignKey("g_group.id"), nullable=False, index=True)
     username = Column(String(255), nullable=False)
@@ -203,7 +214,7 @@ class AnnotatedDocument(Base):
     __tablename__ = "annotated_document"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     folder_id = Column(
         ForeignKey("folder.id", ondelete="CASCADE"), nullable=False, index=True
@@ -377,7 +388,7 @@ class BooleanSearchFieldValue(Base):
     __tablename__ = "boolean_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -402,7 +413,7 @@ class DateSearchFieldValue(Base):
     __tablename__ = "date_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -468,7 +479,7 @@ class DoubleSearchFieldValue(Base):
     __tablename__ = "double_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -494,7 +505,7 @@ class FloatSearchFieldValue(Base):
     __tablename__ = "float_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -544,7 +555,7 @@ class LongSearchFieldValue(Base):
     __tablename__ = "long_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
@@ -570,7 +581,7 @@ class StringSearchFieldValue(Base):
     __tablename__ = "string_search_field_value"
 
     id = Column(
-        Integer, primary_key=True, default=text(f"({NEXT_ID_SUBQUERY} {__tablename__})")
+        Integer, primary_key=True, default=text(f"nextval('next_id__{__tablename__}')")
     )
     annotated_document_id = Column(
         ForeignKey("annotated_document.id", ondelete="CASCADE"),
