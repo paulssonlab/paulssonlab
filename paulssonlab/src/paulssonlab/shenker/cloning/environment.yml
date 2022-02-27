@@ -22,6 +22,7 @@ dependencies:
   - jupyterlab_code_formatter
   - mafft
   - matplotlib
+  - natsort
   - nbformat
   - nextflow
   - nf-core

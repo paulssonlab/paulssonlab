@@ -6,6 +6,7 @@ from numbers import Integral
 from Bio.Seq import Seq
 import Bio.Restriction
 import pygsheets
+from natsort import natsorted, ns
 from paulssonlab.api.google import (
     insert_sheet_rows,
     update_sheet_rows,
@@ -180,9 +181,10 @@ class SheetClient(GDriveClient):
 
     def keys(self):
         # don't include rows with empty IDs
-        return self.local.keys() | set(self.remote_index) - set([""]) - set(
+        keys = self.local.keys() | set(self.remote_index) - set([""]) - set(
             k for k in self.local.keys() if self.local[k] is None
         )
+        return natsorted(keys, alg=ns.IGNORECASE)
 
     def __contains__(self, key):
         if key.strip() == "":
@@ -455,7 +457,8 @@ class FileClient(GDriveClient):
         return keys
 
     def keys(self):
-        return set(k[0] for k in self._keys_loc())
+        keys = set(k[0] for k in self._keys_loc())
+        return natsorted(keys, alg=ns.IGNORECASE)
 
     def _items_loc(self):
         for key, is_remote in self._keys_loc():
