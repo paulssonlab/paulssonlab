@@ -417,6 +417,15 @@ class DsSeqRecord(SeqRecord):
             new.downstream_inward_cut = None
         return new
 
+    def trim_overhangs(self, ends="both"):
+        start = 0
+        stop = len(self)
+        if ends in ("both", "upstream"):
+            start = abs(self.upstream_overhang)
+        if ends in ("both", "downstream"):
+            stop = len(self) - abs(self.downstream_overhang)
+        return self[start:stop]
+
     def cut(self, cut5, cut3, keep_single_stranded=False):
         if not (-len(self) <= cut5 <= len(self) and -len(self) <= cut3 <= len(self)):
             raise IndexError("attempting to cut out of bounds")
