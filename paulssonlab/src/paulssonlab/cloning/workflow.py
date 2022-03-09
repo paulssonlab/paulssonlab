@@ -423,6 +423,12 @@ def smoosh_and_trim_flanks(seq, flanks, lower=True):
     )
 
 
+# TODO: update the above to normalize similarly?
+def smoosh_and_normalize_sequences(*seqs):
+    seqs = [normalize_seq(seq) for seq in seqs]
+    return smoosh_sequences(*seqs)
+
+
 def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
     seq_str = str(get_seq(seq)).lower()
     start = seq_str.find(prefix)
