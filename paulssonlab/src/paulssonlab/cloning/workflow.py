@@ -364,10 +364,14 @@ def re_digest_part(seq, enzyme):
     # TODO: this doesn't handle the case where there is a cut site in the backbone
     # not sure there's a general way to pick out the intended part in that case
     frags = re_digest(seq, enzyme)
+    # TODO: this relies on inward_cut=None for blunt end cuts
+    # we should probably make this more robust by explictly checking for upstream/downstream_overhang==0
     non_backbone = [
         f
         for f in frags
-        if not (f.upstream_inward_cut is False and f.downstream_inward_cut is False)
+        if not (
+            f.upstream_inward_cut is not True and f.downstream_inward_cut is not True
+        )
     ]
     if len(non_backbone) == 0:
         raise ValueError(
