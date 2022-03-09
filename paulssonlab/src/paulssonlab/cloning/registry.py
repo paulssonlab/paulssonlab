@@ -30,7 +30,6 @@ from paulssonlab.cloning.workflow import (
     ID_REGEX,
 )
 from paulssonlab.api import regex_key
-from paulssonlab.api.benchling import upload_sequence
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
 from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
 from paulssonlab.cloning.io import (
@@ -48,7 +47,6 @@ FOLDER_TYPES = ["maps", "sequencing"]
 TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
 TYPES_WITH_MAPS = ["plasmids"]
 TYPES_WITHOUT_IDS = ["parts"]
-BENCHLING_SYNC_TYPES = ["parts", "plasmids", "oligos"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
 
@@ -726,16 +724,19 @@ TYPE_TO_CLIENT = {"maps": FileClient, "sequencing": FileClient, "_default": Shee
 
 
 class Registry(object):
-    def __init__(self, sheets_client, registry_folder, benchling_folder=None):
+    def __init__(
+        self,
+        sheets_client,
+        registry_folder,
+        geneious_sessionmaker=None,
+        geneious_folder=None,
+    ):
         self.sheets_client = sheets_client
         self.registry_folder = registry_folder
-        self.benchling_folder = benchling_folder
+        self.geneious_sessionmaker = geneious_sessionmaker
+        self.geneious_folder = geneious_folder
         self.rollback()
         self.refresh()
-
-    @property
-    def benchling_session(self):
-        return self.benchling_folder.session
 
     @property
     def sheet_service(self):
@@ -744,6 +745,18 @@ class Registry(object):
     @property
     def drive_service(self):
         return self.sheets_client.drive.service
+
+    @property
+    def geneious_folder(self):
+        return self._geneious_folder
+
+    @geneious_folder.setter
+    def geneious_folder(self, value):
+        if value is None:
+            value = ()
+        elif isinstance(value, str):
+            value = (value,)
+        self._geneious_folder = value
 
     def refresh(self):
         collection_folders = list_drive(
@@ -972,55 +985,64 @@ class Registry(object):
                 pass
         raise ValueError(f"could not find '{name}'")
 
-    def sync_benchling(
-        self, overwrite=None, return_data=False, progress_bar=PROGRESS_BAR
+    def sync_geneious(
+        self,
+        overwrite=None,
+        types=("oligos", "plasmids", "parts"),  # TODO: include tus as well
+        progress_bar=PROGRESS_BAR,
     ):
-        raise NotImplementedError  # TODO: update this to work with new registry
-        cache = {}
-        problems = []
-        prefixes = self.registry.keys()
-        if progress_bar is not None and len(prefixes):
-            prefixes = progress_bar(prefixes)
-        for prefix, type_ in prefixes:
-            if type_ not in BENCHLING_SYNC_TYPES:
-                continue
-            if hasattr(prefixes, "set_description"):
-                prefixes.set_description(f"Scanning {prefix} ({type_})")
-            oligo = type_ == "oligos"
-            df = self.get_df((prefix, type_))
-            rows = df.index[:1]  # TODO
-            if progress_bar is not None and len(rows) >= 2:
-                rows = progress_bar(rows)
-            for name in rows:
-                if not name:
-                    continue
-                if hasattr(rows, "set_description"):
-                    rows.set_description(f"Processing {name}")
-                try:
-                    seq = self._get(df, prefix, type_, name)["_seq"]
-                except Exception as e:
-                    problems.append((prefix, type_, name, e))
-                    continue
-                bases = str(get_seq(seq))
-                if not is_bases(bases):
-                    problems.append((prefix, type_, name, None))
-                    continue
-                # for parts, add annotations to indicate overhangs
-                # because Benchling can't display dsDNA with sticky ends
-                if type_ == "parts":
-                    seq = seq.annotate_overhangs()
-                path = (f"{prefix}_{type_}", name)
-                dna = upload_sequence(
-                    self.benchling_folder,
-                    path,
-                    seq,
-                    oligo=oligo,
-                    overwrite=overwrite,
-                    cache=cache,
-                )
-                if return_data:
-                    cache[path] = dna
-        if return_data:
-            return problems, cache
-        else:
-            return problems
+        for key in self:
+            pass
+
+    # def sync_benchling(
+    #     self, overwrite=None, return_data=False, progress_bar=PROGRESS_BAR
+    # ):
+    #     raise NotImplementedError  # TODO: update this to work with new registry
+    #     cache = {}
+    #     problems = []
+    #     prefixes = self.registry.keys()
+    #     if progress_bar is not None and len(prefixes):
+    #         prefixes = progress_bar(prefixes)
+    #     for prefix, type_ in prefixes:
+    #         if type_ not in BENCHLING_SYNC_TYPES:
+    #             continue
+    #         if hasattr(prefixes, "set_description"):
+    #             prefixes.set_description(f"Scanning {prefix} ({type_})")
+    #         oligo = type_ == "oligos"
+    #         df = self.get_df((prefix, type_))
+    #         rows = df.index[:1]  # TODO
+    #         if progress_bar is not None and len(rows) >= 2:
+    #             rows = progress_bar(rows)
+    #         for name in rows:
+    #             if not name:
+    #                 continue
+    #             if hasattr(rows, "set_description"):
+    #                 rows.set_description(f"Processing {name}")
+    #             try:
+    #                 seq = self._get(df, prefix, type_, name)["_seq"]
+    #             except Exception as e:
+    #                 problems.append((prefix, type_, name, e))
+    #                 continue
+    #             bases = str(get_seq(seq))
+    #             if not is_bases(bases):
+    #                 problems.append((prefix, type_, name, None))
+    #                 continue
+    #             # for parts, add annotations to indicate overhangs
+    #             # because Benchling can't display dsDNA with sticky ends
+    #             if type_ == "parts":
+    #                 seq = seq.annotate_overhangs()
+    #             path = (f"{prefix}_{type_}", name)
+    #             dna = upload_sequence(
+    #                 self.benchling_folder,
+    #                 path,
+    #                 seq,
+    #                 oligo=oligo,
+    #                 overwrite=overwrite,
+    #                 cache=cache,
+    #             )
+    #             if return_data:
+    #                 cache[path] = dna
+    #     if return_data:
+    #         return problems, cache
+    #     else:
+    #         return problems
