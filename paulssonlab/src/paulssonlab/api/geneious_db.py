@@ -240,6 +240,11 @@ class AnnotatedDocument(Base):
         uselist=False,
     )
 
+    @property
+    def name(self):
+        xml = etree.fromstring(self.document_xml)
+        return xml.find("name").text
+
     def __repr__(self):
         return f"<AnnotatedDocument id={self.id} {self.urn} modified={self.modified}>"
 
