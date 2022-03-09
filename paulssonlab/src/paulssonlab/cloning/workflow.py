@@ -339,33 +339,6 @@ def _format_addgene_for_spreadsheet(
         raise ValueError(f"unknown Addgene item type: {data['item']}")
 
 
-def insert_parts(part_sheet, parts, first_row):
-    parts = deepcopy(parts)
-    parts = _prepare_parts(part_sheet, parts, first_row)
-    # part_sheet.spreadsheet.default_parse must be True for formula to be parsed, but this is True by default
-    return insert_sheet_rows(part_sheet, first_row, parts)
-
-
-def _prepare_parts(part_sheet, parts, first_row):
-    cols = part_sheet.get_row(1)
-    overhang1_col = string.ascii_uppercase[cols.index("Upstream overhang")]
-    overhang2_col = string.ascii_uppercase[cols.index("Downstream overhang")]
-    seq_col = string.ascii_uppercase[cols.index("Sequence")]
-    for enzyme_name in ("BsaI", "BsmBI", "AarI", "BbsI"):
-        enzyme = getattr(Restriction, enzyme_name)
-        site1 = enzyme.site
-        site2 = str(Seq(site1).reverse_complement())
-        for row, part in enumerate(parts, first_row):
-            has_enzyme = f'=IF(AND(ISERROR(SEARCH("{site1}",${seq_col}{row})), ISERROR(SEARCH("{site2}",${seq_col}{row}))),"","yes")'
-            part[enzyme_name] = has_enzyme
-    for row, part in enumerate(parts, first_row):
-        part_type = f"=ArrayFormula(INDEX('Part types'!A:A, MATCH(${overhang1_col}{row}&\" \"&${overhang2_col}{row},{{'Part types'!B:B&\" \"&'Part types'!C:C}},0)))"
-        part["Type"] = part_type
-        correct_overhangs = f'=IF(AND(LEFT(${seq_col}{row},LEN(${overhang1_col}{row}))=${overhang1_col}{row},RIGHT(${seq_col}{row},LEN(${overhang2_col}{row}))=${overhang2_col}{row}),"","no")'
-        part["Correct overhangs?"] = correct_overhangs
-    return parts
-
-
 def part_entry_to_seq(entry):
     seq = entry["Sequence"]
     upstream_overhang_seq = entry["Upstream overhang"]
