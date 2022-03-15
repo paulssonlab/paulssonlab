@@ -25,6 +25,13 @@ from .utils import multifov,pandas_hdf5_handler,writedir
 from .daskutils import add_list_to_column
 from tifffile import imread
 
+## Hacky memory trim
+import ctypes
+
+def trim_memory() -> int:
+    libc = ctypes.CDLL("libc.so.6")
+    return libc.malloc_trim(0)
+
 # def get_focus_score(img_arr):
 #     # computes focus score from single image
 
@@ -92,7 +99,7 @@ def match_midpoints(midpoints, consensus_midpoints, midpoint_dist_tolerence):
     return matched_min_cons_idx, match_mask
 
 class kymograph_cluster:
-    def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],filter_channel=None,trench_len_y=270,padding_y=20,trench_width_x=30,use_median_drift=False,\
+    def __init__(self,headpath="",paramfile=False,all_channels=[""],filter_channel=None,trench_len_y=270,padding_y=20,trench_width_x=30,use_median_drift=False,\
                  invert=False,y_percentile=85,y_foreground_percentile=80,y_min_edge_dist=50,midpoint_dist_tolerence=50,smoothing_kernel_y=(1,9),y_percentile_threshold=0.2,\
                  top_orientation=0,expected_num_rows=None,alternate_orientation=True,alternate_over_rows=False,consensus_orientations=None,\
                  consensus_midpoints=None,x_percentile=85,background_kernel_x=(1,21),smoothing_kernel_x=(1,9),otsu_scaling=1.,min_threshold=0,trench_present_thr=0.):
@@ -137,7 +144,6 @@ class kymograph_cluster:
         self.seg_channel = self.all_channels[0]
         self.metapath = self.headpath + "/metadata.hdf5"
         self.meta_handle = pandas_hdf5_handler(self.metapath)
-        self.trenches_per_file = trenches_per_file
 
 #         self.t_range = t_range
         self.invert = invert
@@ -1240,10 +1246,14 @@ class kymograph_cluster:
 
         dd.to_parquet(df_out, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True,overwrite=True)
 
+        dask_controller.daskclient.cancel(df_out)
+        dask_controller.daskclient.cancel(good_futures)
+        dask_controller.daskclient.cancel(good_delayed)
 
-        del df_out
-        del good_futures
-        del good_delayed
+
+#         del df_out
+#         del good_futures
+#         del good_delayed
 
         if self.filter_channel != None:
             self.get_all_filter_scores(self.filter_channel)
@@ -1256,6 +1266,7 @@ class kymograph_cluster:
             wait(df_out)
             writedir(self.kymographpath + "/metadata",overwrite=True)
             dd.to_parquet(df_out, self.kymographpath + "/metadata",engine='fastparquet',compression='gzip',write_metadata_file=True)
+            dask_controller.daskclient.cancel(df_out)
 #             writedir(self.kymographpath + "/metadata",overwrite=True)
 #             shutil.move(self.kymographpath + "/temp_metadata",self.kymographpath + "/metadata")
 
@@ -1268,6 +1279,8 @@ class kymograph_cluster:
         with open(self.kymographpath + "/metadata.pkl", 'wb') as handle:
             pickle.dump(kymograph_metadata, handle)
 
+        dask_controller.daskclient.cancel([val for key,val in dask_controller.futures.items()])
+        dask_controller.daskclient.run(trim_memory)
 
     def add_trenchids(self,df):
         trench_preindex = df.apply(lambda x: int(f'{x["fov"]:04n}{x["row"]:04n}{x["trench"]:04n}'), axis=1)
@@ -1338,8 +1351,6 @@ class kymograph_cluster:
 
         with h5py.File(output_file_path,"w") as outfile:
             for channel in self.all_channels:
-#                 trenchids = trenchid_list[k*self.trenches_per_file:(k+1)*self.trenches_per_file]
-#                 working_trenchdf = trenchiddf.loc[trenchids].compute()
                 fov_list = working_trenchdf["fov"].unique().tolist()
                 trench_arr_fovs = []
                 for fov in fov_list:
@@ -1375,7 +1386,7 @@ class kymograph_cluster:
             os.remove(proc_file_path)
         return 1
 
-    def post_process(self,dask_controller,paramfile=True,focus_thr=0,intensity_thr=0,perc_above_thr=0,filter_channel=None):
+    def post_process(self,dask_controller,trench_timepoints_per_file=25000,paramfile=True,focus_thr=0,intensity_thr=0,perc_above_thr=0,filter_channel=None):
 
         dask_controller.futures = {}
 
@@ -1389,47 +1400,54 @@ class kymograph_cluster:
             intensity_thr = param_dict["Intensity Threshold"]
             perc_above_thr = param_dict["Percent Of Kymograph"]
 
-        df = dd.read_parquet(self.kymographpath + "/metadata").persist()
-        if filter_channel != None:
-            df = self.filter_trenchids(filter_channel,df,focus_threshold=focus_thr,intensity_threshold=intensity_thr,perc_above=perc_above_thr)
+        outputdf = dd.read_parquet(self.kymographpath + "/metadata")
 
-        trenchid_list = df["trenchid"].unique().compute().tolist()
-        file_list = df["File Index"].unique().compute().tolist()
-        outputdf = df.drop(columns = ["File Index","Image Index"]).persist()
-        trenchiddf = df.set_index("trenchid").persist()
+        if filter_channel != None: #revisit next time this is necessary, because outputdf no longer in memory
+            outputdf = self.filter_trenchids(filter_channel,outputdf,focus_threshold=focus_thr,intensity_threshold=intensity_thr,perc_above=perc_above_thr)
+
+        trenchid_list = outputdf["trenchid"].unique().compute().tolist()
+        file_list = outputdf["File Index"].unique().compute().tolist()
+
+        trenchiddf = outputdf.set_index("trenchid")
+        outputdf = outputdf.drop(columns = ["File Index","Image Index"]).persist()
 
 #         writedir(self.kymographpath + "/metadata",overwrite=True)
 
-
         num_tpts = len(trenchiddf["timepoints"].unique().compute().tolist())
-        chunk_size = self.trenches_per_file*num_tpts
-        if len(trenchid_list)%self.trenches_per_file == 0:
-            num_files = (len(trenchid_list)//self.trenches_per_file)
+        trenches_per_file = trench_timepoints_per_file//num_tpts
+        chunk_size = trenches_per_file*num_tpts
+
+        print("Number of timepoints per trench: " + str(num_tpts))
+        print("Number of trenches per file: " + str(trenches_per_file))
+
+        if len(trenchid_list)%trenches_per_file == 0:
+            num_files = (len(trenchid_list)//trenches_per_file)
         else:
-            num_files = (len(trenchid_list)//self.trenches_per_file) + 1
+            num_files = (len(trenchid_list)//trenches_per_file) + 1
 
         file_indices = np.repeat(np.array(range(num_files)),chunk_size)[:len(outputdf)]
-        file_trenchid = np.repeat(np.array(range(self.trenches_per_file)),num_tpts)
+        file_trenchid = np.repeat(np.array(range(trenches_per_file)),num_tpts)
         file_trenchid = np.repeat(file_trenchid[:,np.newaxis],num_files,axis=1).T.flatten()[:len(outputdf)]
         file_indices = pd.DataFrame(file_indices)
         file_trenchid = pd.DataFrame(file_trenchid)
         file_indices.index = outputdf.index
         file_trenchid.index = outputdf.index
 
-        outputdf = add_list_to_column(outputdf,file_indices[0].tolist(),"File Index")
-        outputdf = add_list_to_column(outputdf,file_trenchid[0].tolist(),"File Trench Index")
+        outputdf = add_list_to_column(outputdf,file_indices[0].tolist(),"File Index").persist()
+        outputdf = add_list_to_column(outputdf,file_trenchid[0].tolist(),"File Trench Index").persist()
 
         parq_file_idx = outputdf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}'), axis=1, meta=int)
         outputdf["File Parquet Index"] = parq_file_idx
-        outputdf = outputdf.astype({"File Index":int,"File Trench Index":int,"File Parquet Index":int})
+        outputdf = outputdf.astype({"File Index":int,"File Trench Index":int,"File Parquet Index":int}).persist()
 
         dd.to_parquet(trenchiddf, self.kymographpath + "/trenchiddf",engine='fastparquet',compression='gzip',write_metadata_file=True)
+        del trenchiddf
 
         random_priorities = np.random.uniform(size=(num_files,))
         for k in range(0,num_files):
             priority = random_priorities[k]
 
-            trenchids = trenchid_list[k*self.trenches_per_file:(k+1)*self.trenches_per_file]
+            trenchids = trenchid_list[k*trenches_per_file:(k+1)*trenches_per_file]
 
             future = dask_controller.daskclient.submit(self.reorg_kymograph,k,trenchids,retries=1,priority=priority)
             dask_controller.futures["Kymograph Reorganized: " + str(k)] = future
@@ -1439,8 +1457,8 @@ class kymograph_cluster:
         dask_controller.futures["Kymographs Cleaned Up"] = future
         dask_controller.daskclient.gather([future])
 
-        outputdf = self.reindex_trenches(outputdf)
-        outputdf = self.add_trenchids(outputdf)
+        outputdf = self.reindex_trenches(outputdf).persist()
+        outputdf = self.add_trenchids(outputdf).persist()
 
         # NEW INDEX
         outputdf["Trenchid Timepoint Index"] = outputdf.apply(lambda x: int(f'{x["trenchid"]:08n}{x["timepoints"]:04n}'), axis=1, meta=int)

@@ -20,6 +20,7 @@ dependencies:
   - jupyterlab
   - kmodes
   - line_profiler
+  - lmfit
   - matplotlib
   - nd2reader
   - nodejs
@@ -30,6 +31,7 @@ dependencies:
       - pulp
       - parse
       - h5py-cache
+  - pyarrow
   - pytables
   - python=3.8.5
   - pytorch
@@ -42,3 +44,4 @@ dependencies:
   - tifffile
   - torchvision
   - tslearn
+  - zarr

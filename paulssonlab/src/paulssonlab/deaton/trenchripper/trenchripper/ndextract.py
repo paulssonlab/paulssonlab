@@ -26,10 +26,11 @@ def generate_flatfield(flatfieldpath,outputpath): #can add dark image correction
     aggregated_img = aggregated_img/np.max(aggregated_img)
     tifffile.imsave(outputpath,data=aggregated_img)
 
-def apply_flat_to_img(img,flat_img):
-    trans_img = img/flat_img
-    trans_img = trans_img.astype("uint16")
-    return trans_img
+def apply_flatfield(img,flatfieldimg,darkimg):
+    outimg = (img - darkimg)/flatfieldimg
+    outimg = np.clip(outimg,0.,65535.)
+    outimg = outimg.astype("uint16")
+    return outimg
 
 class hdf5_fov_extractor:
     def __init__(self,nd2filename,headpath,tpts_per_file=100,ignore_fovmetadata=False,nd2reader_override={}): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
@@ -164,12 +165,6 @@ class hdf5_fov_extractor:
 
         return channel_tab
 
-    def apply_flatfield(self,img,flatfieldimg,darkimg):
-        outimg = (img - darkimg)/flatfieldimg
-        outimg = np.clip(outimg,0.,65535.)
-        outimg = outimg.astype("uint16")
-        return outimg
-
     def extract(self,dask_controller,retries=1):
         dask_controller.futures = {}
 
@@ -203,7 +198,7 @@ class hdf5_fov_extractor:
                                 frame = timepoint_list[j]
                                 nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
                                 nd2_image = np.array(nd2_image)
-                                nd2_image = self.apply_flatfield(nd2_image,flatfield_img_dict[channel],flatfield_img_dict["Dark_Image"])
+                                nd2_image = apply_flatfield(nd2_image,flatfield_img_dict[channel],flatfield_img_dict["Dark_Image"])
                                 hdf5_dataset[j,:,:] = nd2_image
                         else:
                             for j in range(len(timepoint_list)): ##not flatfielding channels
