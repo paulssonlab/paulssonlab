@@ -7,8 +7,8 @@ import holoviews as hv
 import dask.array as da
 import dask.dataframe as dd
 import xarray as xr
+import pickle as pkl
 import h5py
-import pickle
 import copy
 
 from scipy import ndimage as ndi
@@ -98,7 +98,7 @@ class kymograph_interactive(kymograph_multifov):
         fig = plt.figure()
 
         ### Subplot dimensions of plot
-        root_list_len = np.ceil(np.sqrt(len(y_percentiles_smoothed_list)))
+        root_list_len = int(np.ceil(np.sqrt(len(y_percentiles_smoothed_list))))
 
         ### Looping through each fov
         idx=0
@@ -271,7 +271,7 @@ class kymograph_interactive(kymograph_multifov):
         y_cropping = interactive(self.preview_y_crop,{"manual":True},y_percentiles_smoothed_list=fixed(self.y_percentiles_smoothed_list),\
                 imported_array_list=fixed(self.imported_array_list),\
                 y_min_edge_dist=IntSlider(value=50, min=5, max=1000, step=5),\
-                midpoint_dist_tolerence=IntSlider(value=50, min=5, max=100, step=5),\
+                midpoint_dist_tolerence=IntSlider(value=50, min=5, max=500, step=5),\
                 padding_y=IntSlider(value=20, min=0, max=500, step=5),\
                 trench_len_y=IntSlider(value=270, min=0, max=1000, step=5),
                 expected_num_rows=IntText(value=2,description='Number of Rows:',disabled=False),\
@@ -474,7 +474,7 @@ class kymograph_interactive(kymograph_multifov):
 
     def write_param_file(self):
         with open(self.headpath + "/kymograph.par", "wb") as outfile:
-            pickle.dump(self.final_params, outfile)
+            pkl.dump(self.final_params, outfile)
 
 class focus_filter:
     def __init__(self,headpath):
@@ -587,7 +587,7 @@ class focus_filter:
 
     def write_param_file(self):
         with open(self.headpath + "/focus_filter.par", "wb") as outfile:
-            pickle.dump(self.final_params, outfile)
+            pkl.dump(self.final_params, outfile)
 
 
 class fluo_segmentation_interactive(fluo_segmentation):
@@ -926,7 +926,7 @@ class fluo_segmentation_interactive(fluo_segmentation):
                 value=20,
                 description="Hessian Rolling Ball Radius:",
                 min=0,
-                max=50,
+                max=100,
                 step=5,
                 disabled=False,
             ),
@@ -1179,17 +1179,17 @@ class fluo_segmentation_interactive(fluo_segmentation):
 
     def write_param_file(self):
         with open(self.headpath + "/fluorescent_segmentation.par", "wb") as outfile:
-            pickle.dump(self.final_params, outfile)
+            pkl.dump(self.final_params, outfile)
 
 class hdf5_viewer:
     def __init__(self,headpath,compute_data=False,persist_data=False,select_fovs=[]):
         meta_handle = pandas_hdf5_handler(headpath+"/metadata.hdf5")
         hdf5_df = meta_handle.read_df("global",read_metadata=True)
-        metadata = hdf5_df.metadata
+        self.metadata = hdf5_df.metadata
         index_df = pd.DataFrame(range(len(hdf5_df)),columns=["lookup index"])
         index_df.index = hdf5_df.index
         hdf5_df = hdf5_df.join(index_df)
-        self.channels = metadata["channels"]
+        self.channels = self.metadata["channels"]
         if len(select_fovs)>0:
             fov_indices = select_fovs
         else:
@@ -1234,7 +1234,7 @@ class hdf5_viewer:
         image_stack = ds.to(hv.Image, ['x', 'y'], dynamic=True)
 
         # # Apply regridding if each image is large
-        regridded = regrid(image_stack)
+        regridded = regrid(image_stack, norm='linear')
 
         # # Set a global Intensity range
         # regridded = regridded.redim.range(Intensity=(0, 1000))
@@ -1252,3 +1252,80 @@ class hdf5_viewer:
             return display_obj << hist
         else:
             return display_obj
+
+class variant_overlay(hdf5_viewer):
+    def __init__(self,headpath,trench_timepoint_df_path,display_values_list=[],fov_timepoint_index=["fov","timepoints"],persist_data=False,bbox_color='grey',bbox_alpha=0.5):
+        #display_values_list is a list of strings of columns in the trench-timepoint dataframe
+        #the trench-timepoint dataframe must havbe exactly 1 entry per trench per timepoint!
+        super(variant_overlay, self).__init__(headpath,persist_data=persist_data)
+
+        self.display_values_list = display_values_list
+        self.bbox_color = bbox_color
+        self.bbox_alpha = bbox_alpha
+
+        self.pixel_microns = self.metadata['pixel_microns']
+
+        with open(headpath + "/kymograph/metadata.pkl", 'rb') as handle:
+            kymograph_metadata = pkl.load(handle)['kymograph_params']
+
+        self.trench_length = kymograph_metadata['padding_y'] + kymograph_metadata['ttl_len_y']
+        self.trench_width = kymograph_metadata['trench_width_x']
+
+        self.single_trench_timepoint_df = dd.read_parquet(trench_timepoint_df_path, engine="pyarrow")
+        self.single_trench_timepoint_df = self.single_trench_timepoint_df[fov_timepoint_index + display_values_list + ['y (local)','x (local)']].compute(scheduler='threads')
+        self.single_trench_timepoint_df = self.single_trench_timepoint_df.reset_index().set_index(fov_timepoint_index).sort_index()
+
+    def get_extents(self,y_coords,x_coords):
+
+        left = x_coords-(self.trench_width//2)
+        bottom = y_coords+self.trench_length
+        right = x_coords+(self.trench_width//2)
+        top = y_coords
+        extents_arr = np.stack([left,bottom,right,top])
+
+        return extents_arr
+
+    def get_trench_rectangles(self,trench_timepoint_df):
+
+        y_coord = (trench_timepoint_df['y (local)']/self.pixel_microns).astype(int)
+        x_coord = (trench_timepoint_df['x (local)']/self.pixel_microns).astype(int)
+
+        extents_arr = self.get_extents(y_coord,x_coord)
+
+        return extents_arr
+
+    def make_rectangle_img(self,fov,channel,timepoint):
+        ##open some dataframe and process; make sure everything relevent is in memory for speed (should be minimal anyways)
+        ##possibly write all of this as a subclass or something
+
+        if (fov,timepoint) in self.single_trench_timepoint_df.index:
+
+            selected_df = self.single_trench_timepoint_df.loc[fov,timepoint]
+
+            extents_arr = self.get_trench_rectangles(selected_df)
+            selected_df["Left"] = extents_arr[0]
+            selected_df["Bottom"] = extents_arr[1]
+            selected_df["Right"] = extents_arr[2]
+            selected_df["Top"] = extents_arr[3]
+
+            rectangles = hv.Rectangles(data = selected_df, kdims=["Left","Bottom","Right","Top"], vdims=self.display_values_list)
+
+        else:
+            rectangles = hv.Rectangles([])
+
+        rectangles = rectangles.opts(color=self.bbox_color, alpha=self.bbox_alpha)
+
+        return rectangles
+
+
+    def view_overlay(self,width=1000,height=1000,cmap='Greys_r',vmin=None,vmax=None):
+        main_view = self.view(width=width,height=height,cmap=cmap,vmin=vmin,vmax=vmax)
+        main_view = main_view.opts(tools=[])
+        dims = main_view.dimensions()
+
+        dmap = hv.DynamicMap(self.make_rectangle_img, kdims=dims)
+        dmap = dmap.opts(tools=['hover'])
+
+        overlay = (main_view * dmap)
+
+        return overlay

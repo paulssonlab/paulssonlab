@@ -6,6 +6,7 @@ channels:
 dependencies:
   - biopython
   - black
+  - dna_features_viewer
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
@@ -14,8 +15,10 @@ dependencies:
   - numpy
   - openssl=1.0
   - pandas
+  - pathlib
   - pip
   - pre-commit
+  - pydna
   - samtools
   - scikit-learn
   - seaborn

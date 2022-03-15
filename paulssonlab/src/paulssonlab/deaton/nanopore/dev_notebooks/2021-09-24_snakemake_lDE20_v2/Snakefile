@@ -1,6 +1,6 @@
 import os
 
-SCRATCH_PATH = "/home/de64/scratch/de64/sync_folder/2021-09-17_snakemake_lDE20_v2/"
+SCRATCH_PATH = "/home/de64/scratch/de64/sync_folder/2021-09-24_snakemake_lDE20_v2/"
 FAST5_PATH = SCRATCH_PATH + "fast5_files"
 
 FLOWCELL = "FLO-MIN106"
@@ -103,7 +103,7 @@ rule setthreshold:
         inv_barcode_codebook = SCRATCH_PATH+"graph_output/inv_codebook.tsv"
     params:
         threshold=DEPTH_THRESHOLD
-    resources: partition="short", time_min=20, mem_mb=8000, cpus=1, optflags=""
+    resources: partition="short", time_min=30, mem_mb=16000, cpus=1, optflags=""
     script:
         "scripts/set_barcode_threshold.py"
 

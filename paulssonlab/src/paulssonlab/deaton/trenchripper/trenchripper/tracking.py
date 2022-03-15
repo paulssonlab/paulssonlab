@@ -8,10 +8,12 @@ import dask.dataframe as dd
 import dask.delayed as delayed
 from time import sleep
 from distributed.client import futures_of
+from dask.distributed import as_completed
 
 import os
 import copy
 import h5py
+import shutil
 
 from sklearn import cluster
 from scipy.special import logsumexp
@@ -480,7 +482,9 @@ class scorefn:
         trench_idx = trench["File Trench Index"].unique().tolist()[0]
         orientation_dict = {"top":0,"bottom":1}
         orientation = trench["lane orientation"].unique().tolist()[0]
+        print(orientation)
         orientation = orientation_dict[orientation]
+        print(orientation)
 
         with h5py.File(self.segpath + "/segmentation_" + str(file_idx) + ".hdf5", "r") as infile:
             data = infile["data"][trench_idx]
@@ -967,7 +971,7 @@ class tracking_solver:
                 else:
                     relabeled_img[padded_img==l] = 0 #TEMP
 
-            ax.imshow(np.ma.array(relabeled_img, mask=(relabeled_img == 0)), extent=[t*x_dim, (t+1)*x_dim, 0, img_shape[1]], cmap=cmap, norm=norm, vmin=0)
+            ax.imshow(np.ma.array(relabeled_img, mask=(relabeled_img == 0)), extent=[t*x_dim, (t+1)*x_dim, 0, img_shape[1]], cmap=cmap, norm=norm)#, vmin=0)
             if len(centroids[t]) > 0:
                 adjusted_centroids = centroids[t] + t*np.array([x_dim,0]) + np.array([self.viewpadding,0])
 
@@ -1208,7 +1212,8 @@ class tracking_solver:
 
         return output
 
-    def get_lineage_df(self,file_idx,file_trench_idx,lineage_score,labeled_data,orientation,mother_dict,daughter_dict,sister_dict,centroids,cell_ids_list):
+    def get_lineage_df(self,file_idx,file_trench_idx,fov,row,trench_idx,trenchid,lineage_score,\
+                       labeled_data,orientation,mother_dict,daughter_dict,sister_dict,centroids,cell_ids_list):
 
         kymograph_file = self.kymopath + "/kymograph_" + str(file_idx) + ".hdf5"
         if self.intensity_channel_list is not None:
@@ -1244,7 +1249,7 @@ class tracking_solver:
                 global_cell_id = int(f'{file_idx:08n}{file_trench_idx:04n}{cell_id:04n}')
                 rp = non_intensity_rps[idx]
 
-                props_entry = [file_idx, file_trench_idx, t, cell_id, global_cell_id, lineage_score]
+                props_entry = [file_idx, file_trench_idx, fov, row, trench_idx, trenchid, t, idx, cell_id, global_cell_id, lineage_score]
                 props_entry += self.get_cell_lineage(file_idx,file_trench_idx,cell_id,mother_dict,daughter_dict,sister_dict)
 
                 if orientation==0:
@@ -1295,7 +1300,7 @@ class tracking_solver:
 
                 props_output.append(props_entry)
 
-        base_list = ['File Index','File Trench Index','timepoints','CellID','Global CellID','Trench Score','Mother CellID','Daughter CellID 1','Daughter CellID 2','Sister CellID','Centroid X','Centroid Y']
+        base_list = ['File Index','File Trench Index','fov','row','trench','trenchid','timepoints','Segment Index','CellID','Global CellID','Trench Score','Mother CellID','Daughter CellID 1','Daughter CellID 2','Sister CellID','Centroid X','Centroid Y']
 
         unpacked_props_list = []
         for prop_key in self.props_list:
@@ -1332,6 +1337,10 @@ class tracking_solver:
         file_trench_idx_i = int(f'{file_idx:08n}{file_trench_idx:04n}{0:04n}')
         file_trench_idx_f = int(f'{file_idx:08n}{file_trench_idx+1:04n}{0:04n}')-1
         trench = kymo_meta.loc[file_trench_idx_i:file_trench_idx_f]
+        fov = trench["fov"].iloc[0]
+        row = trench["row"].iloc[0]
+        trench_idx = trench["trench"].iloc[0]
+        trenchid = trench["trenchid"].iloc[0]
 
         orientation_dict = {"top":0,"bottom":1}
         orientation = trench["lane orientation"].unique().tolist()[0]
@@ -1344,7 +1353,7 @@ class tracking_solver:
 
         mother_dict,daughter_dict,sister_dict,cell_ids_list = self.get_nuclear_lineage(sizes,Aik_arr_list)
 
-        df_out = self.get_lineage_df(file_idx,file_trench_idx,lineage_score,labeled_data,orientation,mother_dict,daughter_dict,sister_dict,centroids,cell_ids_list)
+        df_out = self.get_lineage_df(file_idx,file_trench_idx,fov,row,trench_idx,trenchid,lineage_score,labeled_data,orientation,mother_dict,daughter_dict,sister_dict,centroids,cell_ids_list)
 
         return df_out
 
@@ -1360,13 +1369,6 @@ class tracking_solver:
         kymo_df = kymo_df.loc[start_idx:end_idx].compute(scheduler='threads')
         trench_idx_list = kymo_df["File Trench Index"].unique().tolist()
 
-##         kymo_meta = self.meta_handle.read_df("kymograph") ### HERE
-#         kymo_meta = kymo_meta.reset_index(inplace=False)
-#         kymo_meta = kymo_meta.set_index(["File Index","File Trench Index","timepoints"], drop=True, append=False, inplace=False)
-#         kymo_meta = kymo_meta.sort_index()
-#         kymo_meta = kymo_meta.loc[file_idx:file_idx]
-#         trench_idx_list = kymo_meta.loc[file_idx].index.get_level_values(0).unique().tolist()
-
         mergeddf = []
         for file_trench_idx in trench_idx_list:
             try:
@@ -1375,88 +1377,130 @@ class tracking_solver:
             except:
                 pass
         mergeddf = pd.concat(mergeddf).reset_index()
-        parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}'), axis=1)
-        parq_file_idx.index = mergeddf.index
-        mergeddf["File Parquet Index"] = parq_file_idx
-        del mergeddf["File Index"]
-        del mergeddf["File Trench Index"]
-        del mergeddf["timepoints"]
+        kymo_parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}'), axis=1)
+        kymo_parq_file_idx.index = mergeddf.index
+        kymo_parq_fov_idx = mergeddf.apply(lambda x: int(f'{int(x["fov"]):08n}{int(x["row"]):04n}{int(x["trench"]):04n}{int(x["timepoints"]):04n}'), axis=1)
+        kymo_parq_fov_idx.index = mergeddf.index
+        kymo_parq_trenchid_idx = mergeddf.apply(lambda x: int(f'{int(x["trenchid"]):08n}{int(x["timepoints"]):04n}'), axis=1)
+        kymo_parq_trenchid_idx.index = mergeddf.index
+        mergeddf["Kymograph File Parquet Index"] = kymo_parq_file_idx
+        mergeddf["Kymograph FOV Parquet Index"] = kymo_parq_fov_idx
+        mergeddf["Trenchid Timepoint Index"] = kymo_parq_trenchid_idx
         del mergeddf["index"]
 
-        kymo_df = kymo_df.join(mergeddf.set_index("File Parquet Index")).dropna(axis=0,subset=["Mother CellID","Daughter CellID 1",\
-                                                                                       "Daughter CellID 2","Sister CellID"]) #altered after adding spline function
+        mergeddf = mergeddf.dropna(axis=0,subset=["Mother CellID","Daughter CellID 1","Daughter CellID 2","Sister CellID"])
 
-        kymo_df["Mother CellID"] = kymo_df["Mother CellID"].astype(int)
-        kymo_df["Daughter CellID 1"] = kymo_df["Daughter CellID 1"].astype(int)
-        kymo_df["Daughter CellID 2"] = kymo_df["Daughter CellID 2"].astype(int)
-        kymo_df["Sister CellID"] = kymo_df["Sister CellID"].astype(int)
-        kymo_df["CellID"] = kymo_df["CellID"].astype(int)
-        kymo_df["Global CellID"] = kymo_df["Global CellID"].astype(int)
+##         kymo_df = kymo_df.join(mergeddf.set_index("File Parquet Index")).dropna(axis=0,subset=["Mother CellID","Daughter CellID 1",\
+##                                                                                        "Daughter CellID 2","Sister CellID"]) #removed to make smaller output without kymograph merge
+
+        mergeddf["Mother CellID"] = mergeddf["Mother CellID"].astype(int)
+        mergeddf["Daughter CellID 1"] = mergeddf["Daughter CellID 1"].astype(int)
+        mergeddf["Daughter CellID 2"] = mergeddf["Daughter CellID 2"].astype(int)
+        mergeddf["Sister CellID"] = mergeddf["Sister CellID"].astype(int)
+        mergeddf["Segment Index"] = mergeddf["Segment Index"].astype(int)
+        mergeddf["CellID"] = mergeddf["CellID"].astype(int)
+        mergeddf["Global CellID"] = mergeddf["Global CellID"].astype(int)
 
         #remove old indices
-        del kymo_df["FOV Parquet Index"]
+#         del mergeddf["FOV Parquet Index"]
 
-        parq_file_idx = kymo_df.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
-        parq_fov_idx = kymo_df.apply(lambda x: int(f'{int(x["fov"]):04n}{int(x["row"]):04n}{int(x["trench"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
+        parq_file_idx = mergeddf.apply(lambda x: int(f'{int(x["File Index"]):08n}{int(x["File Trench Index"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
+        parq_fov_idx = mergeddf.apply(lambda x: int(f'{int(x["fov"]):04n}{int(x["row"]):04n}{int(x["trench"]):04n}{int(x["timepoints"]):04n}{int(x["CellID"]):04n}'), axis=1)
 
-        kymo_df["File Parquet Index"] = parq_file_idx
-        kymo_df["FOV Parquet Index"] = parq_fov_idx
+        mergeddf["File Parquet Index"] = parq_file_idx
+        mergeddf["FOV Parquet Index"] = parq_fov_idx
 
-        kymo_df = kymo_df.set_index("File Parquet Index")
+        mergeddf = mergeddf.set_index("File Parquet Index")
 
-#         kymo_df = kymo_df.set_index("FOV Parquet Index")
-
-#         mergeddf = dd.from_pandas(mergeddf,npartitions=1)
-
-#         df_path = self.lineagepath + "/block_" + str(file_idx) + ".parquet"
-
-#         mergeddf.to_parquet(df_path,engine='fastparquet',compression='gzip')
         print("Done.")
+        mergeddf.to_hdf(self.lineagepath + "/temp_output/temp_output." + str(file_idx) + ".hdf", "data",mode="w",format="table")
 
-        return kymo_df
+        return file_idx
 
-    def lineage_trace_all_files(self,dask_cont):
+    def lineage_trace_all_files(self,dask_cont,entries_per_partition = 100000, overwrite=False):
+
+        writedir(self.lineagepath+ "/temp_output",overwrite=overwrite)
+
+        # Check for existing files in case of in progress run
+        if os.path.exists(self.lineagepath + "/progress.pkl"):
+            with open(self.lineagepath + "/progress.pkl", 'rb') as infile:
+                finished_files = pkl.load(infile)
+        else:
+            finished_files = []
+
         kymo_meta = dd.read_parquet(self.headpath+"/kymograph/metadata")
         kymo_meta = kymo_meta.set_index("File Parquet Index",sorted=True)
         n_partitions,divisions = (kymo_meta.npartitions,kymo_meta.divisions)
+        n_entries = len(kymo_meta)
 
-        file_list = kymo_meta["File Index"].unique().compute().tolist()
+        original_file_list = kymo_meta["File Index"].unique().compute().tolist()
+        ttl_files = len(original_file_list)
+        entries_per_file = n_entries//ttl_files
+
+        file_list = list(set(original_file_list) - set(finished_files))
         num_file_jobs = len(file_list)
+
+        kymograph_files_per_partition = (entries_per_partition//entries_per_file) + 1
+
+        print("Kymograph files per partition: " + str(kymograph_files_per_partition))
+
         random_priorities = np.random.uniform(size=(num_file_jobs,))
         lineage_futures = []
+
+        ## check which files have been completed (skipping for now)
+
         for k,file_idx in enumerate(file_list):
+            future = dask_cont.daskclient.submit(self.lineage_trace_file,file_idx,n_partitions,divisions,retries=1)
+            lineage_futures.append(future)
 
-            lineage_future = dask_cont.daskclient.submit(self.lineage_trace_file,file_idx,n_partitions,divisions,retries=0)
-            lineage_futures.append(lineage_future)
+            # df_delayed = delayed(self.lineage_trace_file)(file_idx,n_partitions,divisions)
+            # delayed_list.append(df_delayed)
 
-#             df_delayed = delayed(self.lineage_trace_file)(file_idx,n_partitions,divisions)
-#             future = dask_cont.daskclient.submit(self.lineage_trace_file,file_idx,retries=1,priority=priority)
-#             dask_cont.futures["File Index: " + str(file_idx)] = future
-#             delayed_list.append(df_delayed.persist())
+        for future in as_completed(lineage_futures):
+            result = future.result()
+            finished_files = finished_files + [result]
+            with open(self.lineagepath + "/progress.pkl", 'wb') as infile:
+                pkl.dump(finished_files,infile)
+            future.cancel()
 
-        while any(future.status == 'pending' for future in lineage_futures):
-            sleep(0.1)
-        good_futures = []
+        dask_cont.reset_worker_memory()
 
-        for future in lineage_futures:
-            if future.status == 'finished':
-                good_futures.append(future)
+        temp_output_file_list = [self.lineagepath + "/temp_output/temp_output." + str(file_idx) + ".hdf" for file_idx in original_file_list]
+        temp_df = dd.read_hdf(temp_output_file_list,"data",mode="r",sorted_index=True)
 
-        good_delayed = [delayed(good_future.result)() for good_future in good_futures]
+        div_tail = "".join(["0" for i in range(12)])
 
-        df_out = dd.from_delayed(good_delayed).repartition(partition_size="250MB").persist()
-        dd.to_parquet(df_out, self.lineagepath + "/output",engine='fastparquet',compression='gzip',write_metadata_file=True,overwrite=True)
+        last_file_idx = sorted(original_file_list)[-1]
 
-    def get_stats(self):
-        input_df = dd.read_parquet(self.headpath+"/kymograph/metadata").persist()
-        output_df = dd.read_parquet(self.lineagepath + "/output/").persist()
+        if kymograph_files_per_partition != 1:
+            repartition_divisions = [int(str(div)+div_tail) for div in range(0,last_file_idx+1,kymograph_files_per_partition)] + [temp_df.divisions[-1]]
+            temp_df = temp_df.repartition(divisions=repartition_divisions)
+        dd.to_parquet(temp_df, self.lineagepath + "/output",engine='fastparquet',compression='gzip',write_metadata_file=True,overwrite=True)
 
-        num_initial_trenches = len(input_df["trenchid"].unique().compute())
-        num_final_trenches = len(output_df["trenchid"].unique().compute())
+        shutil.rmtree(self.lineagepath + "/temp_output")
+        os.remove(self.lineagepath + "/progress.pkl")
+
+        return n_partitions,divisions
+
+    def get_stats(self,n_partitions,divisions):
+
+        kymo_df = dd.read_parquet(self.headpath+"/kymograph/metadata")
+        kymo_df = kymo_df.reset_index(drop=False).set_index("File Parquet Index",sorted=True,npartitions=n_partitions,divisions=divisions)
+
+        lineage_df = dd.read_parquet(self.lineagepath + "/output/")
+
+        n_indices = len(lineage_df["Kymograph File Parquet Index"])
+        n_splits = (n_indices//30000000)+1
+
+        kymo_df_lineage_subset = kymo_df.loc[lineage_df["Kymograph File Parquet Index"].unique(split_out=n_splits).compute().tolist()]
+        kymo_idx = lineage_df["Kymograph File Parquet Index"].unique(split_out=n_splits).compute().tolist()
+
+        num_initial_trenches = len(kymo_df["trenchid"].compute().unique())
+        num_final_trenches = len(kymo_df["trenchid"].compute().loc[kymo_idx].unique())
 
         print("# Trenches Processed / # Trenches = " + str(num_final_trenches) + "/" + str(num_initial_trenches))
 
-#     def reorg_parquet(self,dask_cont,futures_list):
+##     def reorg_parquet(self,dask_cont,futures_list):
 #         df_futures = dask_cont.daskclient.gather(futures_list)
 #         df_out = dd.concat(df_futures)
 #         dd.to_parquet(df_out, self.lineagepath + "/output/",engine='fastparquet',compression='gzip',write_metadata_file=True)
@@ -1474,12 +1518,12 @@ class tracking_solver:
 #         num_file_jobs = len(file_list)
 #         file_idx_list = dask_cont.daskclient.gather([dask_cont.futures["File Index: " + str(file_idx)] for file_idx in file_list],errors="skip")
 
-    def compute_all_lineages(self,dask_cont):
-        writedir(self.lineagepath,overwrite=True)
+    def compute_all_lineages(self,dask_cont,entries_per_partition=100000,overwrite=False):
+        writedir(self.lineagepath,overwrite=overwrite)
         dask_cont.futures = {}
         try:
-            self.lineage_trace_all_files(dask_cont)
-            self.get_stats()
+            n_partitions,divisions = self.lineage_trace_all_files(dask_cont,entries_per_partition=entries_per_partition,overwrite=overwrite)
+            self.get_stats(n_partitions,divisions)
         except:
             raise
 
@@ -1519,8 +1563,8 @@ class tracking_solver:
         param_dict = {}
 
         param_dict["Channels:"] = self.intensity_channel_list
-#         param_dict["Merges Detected Per Iteration:"] = self.merge_per_iter
-#         param_dict["# Unimproved Iterations Before Stopping:"] = self.conv_tolerence
+##         param_dict["Merges Detected Per Iteration:"] = self.merge_per_iter
+##         param_dict["# Unimproved Iterations Before Stopping:"] = self.conv_tolerence
         param_dict["Closest N Objects to Consider:"] = self.edge_limit
         param_dict["Mean Size Increase:"] = self.ScoreFn.u_size
         param_dict["Standard Deviation of Size Increase:"] = self.ScoreFn.sig_size
