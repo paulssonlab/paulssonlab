@@ -283,7 +283,8 @@ class SheetClient(GDriveClient):
         self.rollback()
 
     def _update_rows(self, rows):
-        rows = [(self.remote_index.get_loc(key), row) for key, row in rows.items()]
+        # increment index once for column header, once for 1-indexing
+        rows = [(self.remote_index.get_loc(key) + 2, row) for key, row in rows.items()]
         updates = [
             (
                 pygsheets.DataRange(
