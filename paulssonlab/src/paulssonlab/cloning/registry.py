@@ -220,7 +220,7 @@ class SheetClient(GDriveClient):
         self[id_] = row
         return id_
 
-    def upsert(self, row, key_columns=[], apply={}):
+    def find_id(self, row, key_columns=[], apply={}):
         """None values in apply is equivalent to the identity function.
 
         Missing keys in rows are interpreted as empty strings.
@@ -240,15 +240,25 @@ class SheetClient(GDriveClient):
             id_ for id_, row_ in self.items() if generate_key(row_) == key_values
         ]
         if len(matches) >= 2:
-            raise ValueError(
-                f"upsert key must be unique, instead found matches: {matches}"
-            )
+            raise ValueError(f"key must be unique, instead found matches: {matches}")
         elif len(matches) == 1:
             id_ = matches[0]
-            new_row = dissoc({**self[id_], **row}, self.id_column_name)
-            self[id_] = new_row
             return id_
-        id_ = self.append(row)
+        return None
+
+    def find(self, row, key_columns=[]):
+        apply = {k: None for k in row.keys()}
+        id_ = self.find_id(row, key_columns=key_columns, apply=apply)
+        return self[id_]
+
+    def upsert(self, row, key_columns=[], apply={}, overwrite=False):
+        id_ = self.find_id(row, key_columns=key_columns, apply=apply)
+        if id_ is None:
+            id_ = self.append(row)
+        else:
+            if overwrite:
+                new_row = dissoc({**self[id_], **row}, self.id_column_name)
+                self[id_] = new_row
         return id_
 
     def commit(self, clobber_existing=True, append_only=True, formulae=True):
