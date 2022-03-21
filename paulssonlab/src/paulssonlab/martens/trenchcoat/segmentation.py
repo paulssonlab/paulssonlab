@@ -33,7 +33,7 @@ Perform cell segmentation & measure fluorescence intensities in microscope image
 TODO:
 1. Pass in min. region size. Use pixel_microns to help convert from true area in microns^2 to region size in pixels.
    Makes this parameter magnification-independent.
-   
+
 2. Are the masks being symbolically linked correctly in the HDF5 files?
 """
 
@@ -711,6 +711,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
             corrections_dict = parse_corrections_settings(corr_p)
         except:
             print("No flatfielding params. detected.")
+            corrections_dict = None
 
         # Analyze the images & write the masks
         print("Computing masks & measuring properties...")

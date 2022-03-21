@@ -512,35 +512,34 @@ For example:
 8. Create a segmentation parameters file:
 
 	```
-mKate2:
-    algorithm: "fluor_sharpen"
+    mKate2:
+        algorithm: "fluor_sharpen"
 
-    fluorescent_channel: MCHERRY"
+        fluorescent_channel: MCHERRY"
 
-    parameters:
-        # -0.75 was pretty good, but occasionally cells seemed to be split up
-        # about 1 frame too soon, and would merge again 1 frame.
-        niblack_k: -0.75
+        parameters:
+            # -0.75 was pretty good, but occasionally cells seemed to be split up
+            # about 1 frame too soon, and would merge again 1 frame.
+            niblack_k: -0.75
 
-        # Local window averaging
-        # [9, 31] works well
-        # First dim is along trench width, second is along trench length
-        niblack_w: [13, 21]
-        otsu_multiplier: 1.1
+            # Local window averaging
+            # [9, 31] works well
+            # First dim is along trench width, second is along trench length
+            niblack_w: [13, 21]
+            otsu_multiplier: 1.1
 
-         # Important for avoiding background pixels in empty trenches
-        garbage_otsu_value: 2200
+            # Important for avoiding background pixels in empty trenches
+            garbage_otsu_value: 2200
 
-        # Sharpening helps a lot!
-        unsharp_mask_radius: 4
-        unsharp_mask_amount: 5
+            # Sharpening helps a lot!
+            unsharp_mask_radius: 4
+            unsharp_mask_amount: 5
 
-        # Sometimes a small piece of a cell doesn't make it with the rest
-        # Get rid of the fragments, lest they be considered separate cells
-        # and interfere with the lineage tracking etc.
-        min_size: 20.00
-        # TODO Convert using px_mu? 5.00 # 60 pixels total; roughly 3.12 microns x 3.12 microns
-
+            # Sometimes a small piece of a cell doesn't make it with the rest
+            # Get rid of the fragments, lest they be considered separate cells
+            # and interfere with the lineage tracking etc.
+            min_size: 20.00
+            # TODO Convert using px_mu? 5.00 # 60 pixels total; roughly 3.12 microns x 3.12 microns
 	```
 
 9. Segment cells and write their masks & measurements to disk:
