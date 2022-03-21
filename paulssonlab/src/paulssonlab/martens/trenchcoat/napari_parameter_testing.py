@@ -328,7 +328,7 @@ def main_function(
         # NOTE it's possible to add rotate=-90 as one of the parameters,
         # however this causes the coordinates to become negative :(
         # Unclear how to do a rotation and keep normal coords.
-        viewer.add_image(img.astype("float"), **layer_params[c])
+        viewer.add_image(img.astype("float"), **layer_params["napari_settings"][c])
 
     # TODO Assume that at this point we will have access to the rows which were returned by the previous widget.
 
