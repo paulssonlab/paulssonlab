@@ -16,7 +16,9 @@ dependencies:
   - jsondiff
   - jupyterlab
   - jupyterlab_code_formatter
+  - libxml2=2.9.10
   - mafft
+  - natsort
   - nbformat
   - nextflow
   - nf-core
@@ -26,15 +28,17 @@ dependencies:
   - pip
   - pip:
       - benchlingapi
-      - dnachisel
       - escapejson
-      - primer3-py
       - primer3plus
-      - requests-html
       - pygsheets
-      - pyppeteer
+      - sqlalchemy-cockroachdb
+  - primer3-py
+  - psycopg2
+  - pyppeteer
   - pytoml
   - requests
+  - requests-html
+  - sqlalchemy
   - tatsu
   - tqdm
   - viennarna
