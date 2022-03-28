@@ -1,5 +1,6 @@
 import os
 import io
+import requests
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -98,4 +99,10 @@ def read_file(filename):
     with open(filename, "rb") as f:
         bytes_ = f.read()
     mimetype = filename_to_mimetype(filename)
+    return bytes_to_value(bytes_, mimetype)
+
+
+def read_http(url):
+    mimetype = filename_to_mimetype(url)
+    bytes_ = requests.get(url).content
     return bytes_to_value(bytes_, mimetype)
