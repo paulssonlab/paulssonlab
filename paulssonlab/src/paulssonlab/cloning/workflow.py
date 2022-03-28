@@ -4,6 +4,8 @@ import requests
 from copy import deepcopy
 import string
 from datetime import datetime
+from collections import ChainMap
+import textwrap
 import pygsheets
 from Bio.Seq import Seq
 import Bio.Restriction as Restriction
@@ -481,3 +483,88 @@ def normalize_seq_upper(seq):
 
 def date():
     return datetime.now().strftime("%-m/%-d/%Y")
+
+
+def cluster_sequences_by_prefix(d, start_index=0, num_subseqs=None, max_length=None):
+    seqs = list(d.values())
+    if num_subseqs is None:
+        num_subseqs = min(len(seq) for seq in seqs)
+    if max_length is None:
+        max_length = max(len(subseq) for seq in seqs for subseq in seq[:num_subseqs])
+    mismatch = False
+    for idx in range(max_length):
+        for subseq_idx in range(num_subseqs):
+            base0 = seqs[0][subseq_idx][idx]
+            if not all(seq[subseq_idx][idx] == base0 for seq in seqs[1:]):
+                mismatch = True
+                break
+        if mismatch:
+            break
+    if not mismatch:
+        # idx refers to the first mismatched base, so if no mismatches found, set to max_length
+        idx += 1
+    common_key = tuple(
+        seqs[0][subseq_idx][start_index:idx] for subseq_idx in range(num_subseqs)
+    )
+    if idx > start_index:
+        if idx == max_length:
+            values = tuple(d.keys())
+        else:
+            values = cluster_sequences_by_prefix(
+                d, start_index=idx, num_subseqs=num_subseqs, max_length=max_length
+            )
+        res = {common_key: values, "_size": len(d)}
+        return res
+    else:
+        clusters = {}
+        for name, seq in d.items():
+            key = tuple(
+                seq[subseq_idx][start_index : idx + 1]
+                for subseq_idx in range(num_subseqs)
+            )
+            clusters.setdefault(key, {})
+            clusters[key][name] = seq
+        res = ChainMap(
+            {"_size": len(d)},
+            *[
+                cluster_sequences_by_prefix(
+                    cluster,
+                    start_index=idx,
+                    num_subseqs=num_subseqs,
+                    max_length=max_length,
+                )
+                for cluster in clusters.values()
+            ],
+        )
+        return res
+
+
+def print_sequence_clusters(
+    clusters, length=0, indent_level=0, extra_indent=4, wrap_width=100
+):
+    indent_str = " " * indent_level
+    for key, cluster in clusters.items():
+        if key == "_size":
+            continue
+        segment = "/".join(key)
+        if isinstance(cluster, tuple):
+            num_seqs = len(cluster)
+        else:
+            num_seqs = cluster["_size"]
+        new_length = length + len(key[0])
+        print(f"{indent_str}{segment} ({new_length}nt x {num_seqs}):")
+        if isinstance(cluster, tuple):
+            print(
+                textwrap.fill(
+                    ", ".join(cluster),
+                    width=wrap_width,
+                    initial_indent=" " * (indent_level + extra_indent),
+                    subsequent_indent=" " * (indent_level + extra_indent),
+                    break_long_words=True,
+                )
+            )
+            print()
+        else:
+            print_sequence_clusters(
+                cluster, length=new_length, indent_level=indent_level + 2
+            )
