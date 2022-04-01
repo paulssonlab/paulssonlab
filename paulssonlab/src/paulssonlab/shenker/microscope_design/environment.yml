@@ -11,6 +11,7 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
+  - libxml2=2.9.10
   - matplotlib
   - nd2reader
   - nodejs
@@ -21,6 +22,7 @@ dependencies:
   - pip
   - pre-commit
   - pyyaml
+  - requests-html
   - scikit-image
   - scipy
   - tqdm
