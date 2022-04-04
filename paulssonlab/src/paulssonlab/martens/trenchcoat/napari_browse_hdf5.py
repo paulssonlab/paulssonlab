@@ -11,6 +11,12 @@ import os
 from imwarp import imwarp
 from imref import imref2d
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.setLevel("DEBUG")
+
 """
 NOTE for now, assumes image dtype is float32
 
@@ -726,6 +732,9 @@ def load_img(
             img = sub_bg_no_underflow(img, corrections_dict["camera_noise"])
         else:
             # A default value of 100.0
+            logger.warning(
+                "No camera noise matrix detected, subtracting default value of 100.0."
+            )
             img = sub_bg_no_underflow(img, 100.0)
 
         # Optional for each channel
@@ -739,7 +748,7 @@ def load_img(
         if corrections_dict["registration"] is not None:
             registration_mat = corrections_dict["registration"][channel]
             if registration_mat is not None:
-                print("Warping ", channel, "with matrix ", registration_mat)
+                logger.debug("Warping ", channel, "with matrix ", registration_mat)
                 # FIXME it works on the entire 3D stack,
                 # but we're only loading 1 Z level at a time.
                 # --> How to apply the warping to a single slice?
@@ -751,6 +760,7 @@ def load_img(
         return img.T
 
     except:
+        logger.warning("Image not found, returning empty image.")
         return numpy.zeros((height, width), dtype=dtype)
 
 
@@ -777,28 +787,38 @@ def parse_corrections_settings(corrections_settings):
             camera_noise = corr_h5.get_node("/CAMERA/camera_noise").read()
             corrections_dict["camera_noise"] = camera_noise
         except:
+            logger.warning("Skipping camera noise correction.")
             corrections_dict["camera_noise"] = None
 
         # Flat-fielding matrices
-        try:
-            ff_dict = {}
-            for ch_img, ch_corr in corrections_settings[
-                "flatfield_channel_mapping"
-            ].items():
+        ff_dict = {}
+        for ch_img, ch_corr in corrections_settings[
+            "flatfield_channel_mapping"
+        ].items():
+            logger.debug("ch_img: {} ch_corr: {}".format(ch_img, ch_corr))
+            try:
                 # Optional for each channel
-                if ch_corr:
+                logger.debug(ch_corr)
+                if ch_corr is not None:
                     corr_img = corr_h5.get_node("/FLATFIELD/{}".format(ch_corr)).read()
                     ff_dict[ch_img] = corr_img
                 else:
+                    logger.warning(
+                        "Skipping flatfielding for channel {} - {}".format(
+                            ch_img, ch_corr
+                        )
+                    )
                     ff_dict[ch_img] = 1.0
 
-            corrections_dict["flatfield"] = ff_dict
+            # Default value of 1.0 (no change)
+            except:
+                logger.warning("Skipping flatfielding.")
+                corrections_dict["flatfield"] = None
 
-        # Default value of 1.0 (no change)
-        except:
-            corrections_dict["flatfield"] = None
+        corrections_dict["flatfield"] = ff_dict
 
         # Registration calibration (fiducial beads, e.g. TetraSpeck)
+        # TODO change how the try / excepts are nested?
         try:
             # Input reference_moving_mode_inworld, output array
             registration_dict = {}
@@ -817,20 +837,21 @@ def parse_corrections_settings(corrections_settings):
                     registration_dict[ch] = registration_h5.get_node(path).read()
                 # None is used for the reference channel in the registrations dict
                 else:
+                    logger.warning("Skipping registration for channel {}".format(ch))
                     registration_dict[ch] = None
 
             registration_h5.close()
             corrections_dict["registration"] = registration_dict
 
         except:
+            logger.warning("Skipping registration.")
             corrections_dict["registration"] = None
 
         # Done!
         corr_h5.close()
 
     except:
-        # Don't do anything
-        pass
+        logger.warning("Could not open corrections file!")
 
     return corrections_dict
 
@@ -883,6 +904,13 @@ def main_hdf5_browser_function(
     width = metadata_attributes_equal(h5file, "width")
 
     # Define the channels
+    # FIXME I had this written in anticipation for agar pads, where each separate
+    # file has the same channels. However, when generating flat fielding images using
+    # slides coated with fluorescent dyes, each file will be of a different dye,
+    # and a different channel. So each sub-file has its own set of channels.
+    # Also, one of those channels is the "DARK" channel.
+    # Otherwise, must define the superset of all channels,
+    # and then some files might have blanks for some of them.
     channels = metadata_array_equal(h5file, "channels")
     channels = [c.decode("utf-8") for c in channels]
 
@@ -940,7 +968,8 @@ def main_hdf5_browser_function(
         seg_params_node = h5file_masks.get_node("/Parameters", "seg_params.yaml")
         seg_params_str = seg_params_node.read().tostring().decode("utf-8")
         seg_params_dict = read_params_string(seg_params_str)
-        seg_channels = [k for k in seg_params_dict.keys()]
+        channels_list = seg_params_dict["segmentation"]
+        seg_channels = [k for k in channels_list.keys()]
 
         h5file_masks.close()
 

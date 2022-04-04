@@ -104,7 +104,7 @@ def browse_nd2(in_dir, settings_file):
     required=True,
     default="trenchcoat_settings.yaml",
     type=str,
-    help="Trenchcoat settings file (YAML).",
+    help="TrenchCoat settings file (YAML).",
     show_default=True,
 )
 @click.option(
@@ -586,7 +586,7 @@ def print_metadata(in_file, sub_file_name):
     "--measurements-file",
     "cell_measurements_file",
     required=False,
-    default="SEG",
+    default="SEG/",
     type=str,
     help="Directory containing subdir with cell measurements with original trench numbering.",
     show_default=True,

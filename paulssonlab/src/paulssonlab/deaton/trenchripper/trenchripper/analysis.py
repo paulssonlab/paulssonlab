@@ -349,7 +349,7 @@ def get_mapping(df):
 
     return trenchid_map
 
-def get_trenchid_map(kymodf1,kymodf2):
+def get_trenchid_map(kymodf1,kymodf2,offset_x=0.,offset_y=0.):
 
     ## Generates trenchid map from two kymograph dataframes
     ## Generally inputs should be kymograph dataframes containing
@@ -366,7 +366,10 @@ def get_trenchid_map(kymodf1,kymodf2):
     fovdf1_trenchid.columns=["Frame 1 Trenchid"]
 
     fovdf2_groupby = kymodf2.set_index("fov",sorted=True).groupby("fov")
-    fovdf2_pos = fovdf2_groupby.apply(lambda x:[list(x["y (local)"]),list(x["x (local)"])],meta=list).loc[list(fov_intersection)].to_frame()
+    if (offset_x == 0.) and (offset_y == 0.):
+        fovdf2_pos = fovdf2_groupby.apply(lambda x:[list(x["y (local)"]),list(x["x (local)"])],meta=list).loc[list(fov_intersection)].to_frame()
+    else:
+        fovdf2_pos = fovdf2_groupby.apply(lambda x:[list(x["y (local)"]-offset_y),list(x["x (local)"]-offset_x)],meta=list).loc[list(fov_intersection)].to_frame()
     fovdf2_pos.columns=["Frame 2 Position"]
     fovdf2_trenchid = fovdf2_groupby.apply(lambda x:list(x["trenchid"]),meta=list).loc[list(fov_intersection)].to_frame()
     fovdf2_trenchid.columns=["Frame 2 Trenchid"]
@@ -378,21 +381,22 @@ def get_trenchid_map(kymodf1,kymodf2):
 
     return trenchid_map
 
-def files_to_trenchid_map(phenotype_kymopath,barcode_kymopath):
+def files_to_trenchid_map(phenotype_kymopath,barcode_kymopath,offset_x=0.,offset_y=0.):
 
-    ## Utility for establishing a trenchid map from phenotype data to barcode data
-    ## Using the last and first timepoints, respectively
+    ### Utility for establishing a trenchid map from phenotype data to barcode data
+    ### Using the last and first timepoints, respectively
+    ### offsets defined as shift to move phenotype trench to barcode trench position (reason for the sign flip)
 
     pheno_kymo_df = dd.read_parquet(phenotype_kymopath)
     barcode_kymo_df = dd.read_parquet(barcode_kymopath)
 
-    max_pheno_tpt = pheno_kymo_df.loc[:1000]["timepoints"].max().compute()
-    min_barcode_tpt = barcode_kymo_df.loc[:1000]["timepoints"].min().compute()
+    max_pheno_tpt = pheno_kymo_df.get_partition(0)["timepoints"].max().compute()
+    min_barcode_tpt = barcode_kymo_df.get_partition(0)["timepoints"].min().compute()
 
     last_pheno_tpt_df = pheno_kymo_df[pheno_kymo_df["timepoints"] == max_pheno_tpt]
     first_barcode_tpt_df = barcode_kymo_df[barcode_kymo_df["timepoints"] == min_barcode_tpt]
 
-    trenchid_map = get_trenchid_map(first_barcode_tpt_df,last_pheno_tpt_df)
+    trenchid_map = get_trenchid_map(first_barcode_tpt_df,last_pheno_tpt_df,offset_x=-offset_x,offset_y=-offset_y)
 
     return trenchid_map
 

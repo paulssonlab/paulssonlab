@@ -43,6 +43,7 @@ dependencies:
       - parse
       - h5py-cache
   - pre-commit
+  - pyarrow
   - pycairo
   - pytables
   - python=3.8.5
@@ -59,3 +60,4 @@ dependencies:
   - torchvision
   - tslearn
   - umap-learn
+  - zarr
