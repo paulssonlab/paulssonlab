@@ -1,0 +1,44 @@
+segmentation:
+    SCFP3:
+        algorithm: "fluor_sharpen"
+        
+        fluorescent_channel: "CFP"
+        
+        parameters:
+            # -0.75 was pretty good, but occasionally cells seemed to be split up
+            # about 1 frame too soon, and would merge again 1 frame.
+            niblack_k: -0.75
+            
+            # Local window averaging
+            # [9, 31] works well
+            # First dim is along trench width, second is along trench length
+            niblack_w: [13, 21]
+            otsu_multiplier: 1.1
+            
+            # Important for avoiding background pixels in empty trenches
+            garbage_otsu_value: 2200
+            
+            # Sharpening helps a lot!
+            unsharp_mask_radius: 4
+            unsharp_mask_amount: 5
+            
+            # Sometimes a small piece of a cell doesn't make it with the rest
+            # Get rid of the fragments, lest they be considered separate cells
+            # and interfere with the lineage tracking etc.
+            min_size: 20.00
+            # TODO Convert using px_mu? 5.00 # 60 pixels total; roughly 3.12 microns x 3.12 microns
+
+# Optional. These are used for applying corrections on-the-fly.
+corrections:
+    corrections_file: "corrections.h5"
+    # Which image to correct which?
+    # Input channel of image, return channel of correction
+    flatfield_channel_mapping:
+        Phase_TRIPLE: NULL
+        YFP : "YFP"
+        CFP : "CFP"
+        
+    # Which image to correct which?
+    # Input channel of image, return channel of correction
+    #registration_channel_mapping:
+        #GFP : "GFP"

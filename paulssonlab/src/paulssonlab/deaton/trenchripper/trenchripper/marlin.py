@@ -5,6 +5,9 @@ import h5py
 import os
 import copy
 import h5py_cache
+import tifffile
+import shutil
+import dask
 import numpy as np
 import pandas as pd
 import scipy as sp
@@ -17,12 +20,14 @@ import sklearn.mixture
 
 from matplotlib import pyplot as plt
 from .utils import pandas_hdf5_handler, writedir
+from .ndextract import apply_flatfield
 from parse import compile
 
 
-###
+####
 
 ## This might be broken at the moment, waiting for an oppertunity to test it.
+## Also does not do a good job of keeping metadata at the moment...
 class marlin_extractor:
     def __init__(
         self,
@@ -58,6 +63,8 @@ class marlin_extractor:
         self.organism = ""
         self.microscope = ""
         self.notes = ""
+
+        self.channel_to_flat_dict = {}
 
     def get_metadata(
         self,
@@ -284,6 +291,23 @@ class marlin_extractor:
         )
         display(selection)
 
+    def set_flatfieldpath(self,channel,path):
+        self.channel_to_flat_dict[channel] = path
+
+    def inter_set_flatfieldpaths(self):
+        channels_list = self.metadata["channels"]
+        ext_channel_list = channels_list + ["Dark_Image"]
+
+        channel_children = [ipyw.interactive(self.set_flatfieldpath,channel=ipyw.fixed(channel),\
+                            path=ipyw.Text(description=channel + " Flatfield Path", value='')) for channel in ext_channel_list]
+        channel_tab = ipyw.Tab()
+
+        channel_tab.children = channel_children
+        for i,channel in enumerate(ext_channel_list):
+            channel_tab.set_title(i, channel)
+
+        return channel_tab
+
     def extract(self, dask_controller, retries=1):
         dask_controller.futures = {}
 
@@ -295,6 +319,13 @@ class marlin_extractor:
         metadf = metadf.set_index(["File Index", "Image Index"], drop=True, append=False, inplace=False).sort_index()
 
         def writehdf5(fovnum, num_entries, timepoint_list, file_idx):
+
+            ### open flatfield images
+            flatfield_img_dict = {}
+            for channel,path in self.channel_to_flat_dict.items():
+                if path != "":
+                    flatfield_img_dict[channel] = tifffile.imread(path)
+
             metadf = self.meta_handle.read_df("global", read_metadata=True)
             metadf = metadf.reset_index(inplace=False)
             metadf = metadf.set_index(["File Index", "Image Index"], drop=True, append=False, inplace=False).sort_index()
@@ -308,13 +339,24 @@ class marlin_extractor:
             with h5py_cache.File(self.hdf5path + "/hdf5_" + str(file_idx) + ".hdf5","w",chunk_cache_mem_size=self.chunk_cache_mem_size) as h5pyfile:
                 for i, channel in enumerate(self.metadata["channels"]):
                     hdf5_dataset = h5pyfile.create_dataset(str(channel),(num_entries, y_dim, x_dim),chunks=self.chunk_shape,dtype="uint16")
-                    for j in range(len(timepoint_list)):
-                        frame = timepoint_list[j]
-                        entry = filedf.loc[frame]["channel_paths"]
-                        file_path = entry[channel]
-                        with h5py_cache.File(file_path, "r") as infile:
-                            img = infile["data"][:]
-                        hdf5_dataset[j, :, :] = img
+
+                    if self.channel_to_flat_dict[channel] != '': ##flatfielding channels
+                        for j in range(len(timepoint_list)):
+                            frame = timepoint_list[j]
+                            entry = filedf.loc[frame]["channel_paths"]
+                            file_path = entry[channel]
+                            with h5py_cache.File(file_path, "r") as infile:
+                                img = infile["data"][:]
+                            img = apply_flatfield(img,flatfield_img_dict[channel],flatfield_img_dict["Dark_Image"])
+                            hdf5_dataset[j, :, :] = img
+                    else:
+                        for j in range(len(timepoint_list)):
+                            frame = timepoint_list[j]
+                            entry = filedf.loc[frame]["channel_paths"]
+                            file_path = entry[channel]
+                            with h5py_cache.File(file_path, "r") as infile:
+                                img = infile["data"][:]
+                            hdf5_dataset[j, :, :] = img
             return "Done."
 
         file_list = metadf.index.get_level_values("File Index").unique().values
@@ -666,7 +708,7 @@ class fish_analysis():
         self.nanopore_lookup_df = pd.DataFrame(nanopore_lookup).T
         del nanopore_lookup
 
-    def get_merged_df(self):
+    def get_merged_df(self,dask_cont):
         print("Merging...")
         mergeddf = []
 
@@ -684,13 +726,29 @@ class fish_analysis():
             nanopore_idx = da.from_array(nanopore_idx,chunks=(10000,30))
             queries = np.array([np.array(list(item)).astype(bool) for item in self.barcode_df["Barcode"].tolist()]).astype(bool)
             queries = da.from_array(queries,chunks=(10000,30))
-            match = (nanopore_idx.astype("uint8")@queries.T.astype("uint8"))+\
-            ((~nanopore_idx).astype("uint8")@(~queries).T.astype("uint8"))
+            match_1 = (nanopore_idx.astype("uint8")@queries.T.astype("uint8"))
+            match_0 = ((~nanopore_idx).astype("uint8")@(~queries).T.astype("uint8"))
+
+            match_1.to_zarr(self.headpath + '/match_1.zarr',overwrite=True)
+            match_0.to_zarr(self.headpath + '/match_0.zarr',overwrite=True)
+
+            match_1 = da.from_zarr(self.headpath + '/match_1.zarr',inline_array=True)
+            match_0 = da.from_zarr(self.headpath + '/match_0.zarr',inline_array=True)
+            match = match_1 + match_0
             hamming_dist = self.barcode_len-match
-            closest_match_thr = da.min(hamming_dist,axis=0)<=self.hamming_thr
-            closest_match = da.argmin(hamming_dist,axis=0)
+            hamming_dist.to_zarr(self.headpath + '/hamming_dist.zarr',overwrite=True,inline_array=True)
+            shutil.rmtree(self.headpath + '/match_1.zarr')
+            shutil.rmtree(self.headpath + '/match_0.zarr')
+            dask_cont.daskclient.cancel([match_1,match_0])
+
+            hamming_dist = da.from_zarr(self.headpath + '/hamming_dist.zarr')
+            closest_match_thr = (da.min(hamming_dist,axis=0)<=self.hamming_thr).compute()
+            closest_match = da.argmin(hamming_dist,axis=0).compute()
+
+            dask_cont.daskclient.cancel([hamming_dist])
+            shutil.rmtree(self.headpath + '/hamming_dist.zarr')
+
             closest_match[~closest_match_thr] = -1
-            closest_match = closest_match.compute()
             filtered_lookup = {query_idx:target_idx for query_idx,target_idx in enumerate(closest_match) \
                                if target_idx != -1}
             mergeddf = []
@@ -706,10 +764,11 @@ class fish_analysis():
         self.mergeddf = pd.DataFrame(mergeddf)
         del mergeddf
 
-    def output_barcode_df(self,fishanalysispath):
+
+    def output_barcode_df(self,dask_cont,fishanalysispath):
         self.get_barcode_df()
         self.get_nanopore_df()
-        self.get_merged_df()
+        self.get_merged_df(dask_cont)
 
         ttl_trenches = len(self.kymograph_metadata["trenchid"].unique().compute())
         ttl_trenches_w_cells = len(self.barcode_df)
@@ -723,36 +782,36 @@ class fish_analysis():
 
         del self.mergeddf
 
-def get_trenchid_map(kymodf1,kymodf2):
-    trenchid_map = {}
+# def get_trenchid_map(kymodf1,kymodf2):
+#     trenchid_map = {}
 
-    fovset1 = set(kymodf1["fov"].unique().tolist())
-    fovset2 = set(kymodf2["fov"].unique().tolist())
-    fov_intersection = fovset1.intersection(fovset2)
+#     fovset1 = set(kymodf1["fov"].unique().tolist())
+#     fovset2 = set(kymodf2["fov"].unique().tolist())
+#     fov_intersection = fovset1.intersection(fovset2)
 
-    for fov in fov_intersection:
-        df1_chunk = kymodf1[kymodf1["fov"] == fov]
-        df2_chunk = kymodf2[kymodf2["fov"] == fov]
+#     for fov in fov_intersection:
+#         df1_chunk = kymodf1[kymodf1["fov"] == fov]
+#         df2_chunk = kymodf2[kymodf2["fov"] == fov]
 
-        df1_xy = df1_chunk[["y (local)","x (local)"]].values
-        df2_xy = df2_chunk[["y (local)","x (local)"]].values
+#         df1_xy = df1_chunk[["y (local)","x (local)"]].values
+#         df2_xy = df2_chunk[["y (local)","x (local)"]].values
 
-        ymat = np.subtract.outer(df1_xy[:,0],df2_xy[:,0])
-        xmat = np.subtract.outer(df1_xy[:,1],df2_xy[:,1])
-        distmat = (ymat**2+xmat**2)**(1/2)
+#         ymat = np.subtract.outer(df1_xy[:,0],df2_xy[:,0])
+#         xmat = np.subtract.outer(df1_xy[:,1],df2_xy[:,1])
+#         distmat = (ymat**2+xmat**2)**(1/2)
 
-        #ensuring map is one-to-one
-        mapping = np.argmin(distmat,axis=1)
-        invmapping = np.argmin(distmat,axis=0)
-        mapping = {idx:map_idx for idx,map_idx in enumerate(mapping) if invmapping[map_idx]==idx}
+#         #ensuring map is one-to-one
+#         mapping = np.argmin(distmat,axis=1)
+#         invmapping = np.argmin(distmat,axis=0)
+#         mapping = {idx:map_idx for idx,map_idx in enumerate(mapping) if invmapping[map_idx]==idx}
 
-        df1_trenchids = df1_chunk["trenchid"].tolist()
-        df2_trenchids = df2_chunk["trenchid"].tolist()
+#         df1_trenchids = df1_chunk["trenchid"].tolist()
+#         df2_trenchids = df2_chunk["trenchid"].tolist()
 
-        trenchid_map.update({trenchid: df2_trenchids[mapping[i]] for i,trenchid in enumerate(df1_trenchids)\
-                            if i in mapping.keys()})
+#         trenchid_map.update({trenchid: df2_trenchids[mapping[i]] for i,trenchid in enumerate(df1_trenchids)\
+#                             if i in mapping.keys()})
 
-    return trenchid_map
+#     return trenchid_map
 
 def map_Series(x,series,trenchid_map,dtype=str):
     if x["trenchid"] in trenchid_map.keys():
@@ -762,3 +821,31 @@ def map_Series(x,series,trenchid_map,dtype=str):
             return "Unknown"
     else:
         return "Unknown"
+
+def get_barcode_pheno_df(phenotype_df, barcode_df, trenchid_map, output_index="File Parquet Index"):
+    ##phenotype_df must contain trenchids column and a File Parquet Index
+
+    valid_barcode_df = barcode_df[barcode_df["trenchid"].isin(trenchid_map.keys())].compute()
+    barcode_df_mapped_trenchids = valid_barcode_df["trenchid"].apply(lambda x: trenchid_map[x])
+    phenotype_df_idx = phenotype_df["trenchid"].unique().compute().tolist()
+
+    valid_init_df_indices = barcode_df_mapped_trenchids.isin(phenotype_df_idx)
+    barcode_df_mapped_trenchids = barcode_df_mapped_trenchids[valid_init_df_indices]
+    barcode_df_mapped_trenchids_list = barcode_df_mapped_trenchids.tolist()
+    final_valid_barcode_df_indices = barcode_df_mapped_trenchids.index.to_list()
+
+    called_df = barcode_df.loc[final_valid_barcode_df_indices]
+    called_df["phenotype trenchid"] = barcode_df_mapped_trenchids
+    called_df["phenotype trenchid"] = called_df["phenotype trenchid"].astype(int)
+    called_df = called_df.drop(["Barcode Signal"], axis=1)
+    called_df = called_df.reset_index().set_index("phenotype trenchid",drop=True,sorted=False)
+
+    output_df = phenotype_df.rename(columns={"trenchid":"phenotype trenchid"})
+    output_df = output_df.reset_index().set_index("phenotype trenchid",drop=True,sorted=True)
+    output_df = output_df.loc[barcode_df_mapped_trenchids_list]
+
+    called_df = called_df.repartition(divisions = output_df.divisions).persist()
+    output_df = output_df.merge(called_df,how='inner',left_index=True,right_index=True)
+    output_df = output_df.reset_index().set_index(output_index)
+
+    return output_df

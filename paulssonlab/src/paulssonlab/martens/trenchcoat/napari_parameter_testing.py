@@ -108,8 +108,10 @@ def main_function(
     # Skip px_mu conversion
     trench_params = edit_params(trench_params)
 
+    # FIXME  this has mKate2 hard-coded!!!
     params_segmentation = read_params_file(params_file_segmentation)
     params_segmentation = params_segmentation["mKate2"]["parameters"]
+    # params_segmentation = params_segmentation["channel_1"]["parameters"]
 
     ###
 
@@ -196,8 +198,8 @@ def main_function(
         otsu_multiplier={"max": 10.0},
         garbage_otsu_value={"min": 0, "max": 65536},
         min_size={"min": 0, "max": 1000},
-        unsharp_mask_radius={"min": 1, "max": 10},
-        unsharp_mask_amount={"min": 1, "max": 10},
+        # unsharp_mask_radius = {"min": 1,   "max": 10},
+        # unsharp_mask_amount = {"min": 1,   "max": 10}
     )
     def run_fluor_sharpen_segmentation_napari(
         Layer_Fluor: Image,
@@ -278,84 +280,83 @@ def main_function(
         return Labels(canvas, name="Segmentation mask")
 
     # Main GUI init:
-    with napari.gui_qt():
-        # create a viewer and add some images
-        viewer = napari.Viewer()
+    # create a viewer and add some images
+    viewer = napari.Viewer()
 
-        ## Get the largest extents across all the nd2 files within the h5 file,
-        ## so that the dask array is made with the proper min, max dimensions for each dimension.
-        # attributes = ["fields_of_view", "frames", "z_levels"]
-        # extents = {}
-        # for a in attributes:
-        # (smallest, largest) = get_largest_extents_hdf5(h5file, a)
-        # if smallest == largest:
-        # extents[a] = [smallest]
-        # else:
-        # extents[a] = [i for i in range(smallest, largest + 1)]
+    ## Get the largest extents across all the nd2 files within the h5 file,
+    ## so that the dask array is made with the proper min, max dimensions for each dimension.
+    # attributes = ["fields_of_view", "frames", "z_levels"]
+    # extents = {}
+    # for a in attributes:
+    # (smallest, largest) = get_largest_extents_hdf5(h5file, a)
+    # if smallest == largest:
+    # extents[a] = [smallest]
+    # else:
+    # extents[a] = [i for i in range(smallest, largest + 1)]
 
-        ## Get the height & width, while checking that they are identical across all nd2 files
-        # height = metadata_attributes_equal(h5file, "height")
-        # width = metadata_attributes_equal(h5file, "width")
+    ## Get the height & width, while checking that they are identical across all nd2 files
+    # height = metadata_attributes_equal(h5file, "height")
+    # width = metadata_attributes_equal(h5file, "width")
 
-        ## Define the channels
-        # channels = metadata_array_equal(h5file, "channels")
+    ## Define the channels
+    # channels = metadata_array_equal(h5file, "channels")
 
-        # corrections_file = None
+    # corrections_file = None
 
-        ## Image layers
-        # add_image_layers(
-        # h5file,
-        # height,
-        # width,
-        # extents["fields_of_view"],
-        # extents["frames"],
-        # extents["z_levels"],
-        # viewer,
-        # channels,
-        # layer_params,
-        # corrections_file,
-        # )
+    ## Image layers
+    # add_image_layers(
+    # h5file,
+    # height,
+    # width,
+    # extents["fields_of_view"],
+    # extents["frames"],
+    # extents["z_levels"],
+    # viewer,
+    # channels,
+    # layer_params,
+    # corrections_file,
+    # )
 
-        # add_image_layers(images_file, file_nodes, width, height, fields_of_view, frames, z_levels, viewer, channels, layer_params, corrections_file)
+    # add_image_layers(images_file, file_nodes, width, height, fields_of_view, frames, z_levels, viewer, channels, layer_params, corrections_file)
 
-        for c in CHANNELS:
-            c = c.decode("utf-8")
-            img = h5file.get_node(
-                "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(
-                    FILE, FOV, FRAME, Z_LEVEL, c
-                )
-            ).read()
-            img = img.T
-            # NOTE it's possible to add rotate=-90 as one of the parameters,
-            # however this causes the coordinates to become negative :(
-            # Unclear how to do a rotation and keep normal coords.
-            viewer.add_image(img.astype("float"), **layer_params[c])
+    for c in CHANNELS:
+        c = c.decode("utf-8")
+        img = h5file.get_node(
+            "/Images/{}/FOV_{}/Frame_{}/Z_{}/{}".format(FILE, FOV, FRAME, Z_LEVEL, c)
+        ).read()
+        img = img.T
+        # NOTE it's possible to add rotate=-90 as one of the parameters,
+        # however this causes the coordinates to become negative :(
+        # Unclear how to do a rotation and keep normal coords.
+        viewer.add_image(img.astype("float"), **layer_params["napari_settings"][c])
 
-        # TODO Assume that at this point we will have access to the rows which were returned by the previous widget.
+    # TODO Assume that at this point we will have access to the rows which were returned by the previous widget.
 
-        # Trenches
-        # add the gui to the viewer as a dock widget
-        viewer.window.add_dock_widget(
-            run_trench_detection_napari, name="Trenches", area="left"
-        )
+    # Trenches
+    # add the gui to the viewer as a dock widget
+    viewer.window.add_dock_widget(
+        run_trench_detection_napari, name="Trenches", area="left"
+    )
 
-        # if a layer gets added or removed, refresh the dropdown choices
-        viewer.layers.events.inserted.connect(run_trench_detection_napari.reset_choices)
-        viewer.layers.events.removed.connect(run_trench_detection_napari.reset_choices)
+    # if a layer gets added or removed, refresh the dropdown choices
+    viewer.layers.events.inserted.connect(run_trench_detection_napari.reset_choices)
+    viewer.layers.events.removed.connect(run_trench_detection_napari.reset_choices)
 
-        # Segmentation
-        # add the gui to the viewer as a dock widget
-        viewer.window.add_dock_widget(
-            run_fluor_sharpen_segmentation_napari, name="Segmentation", area="left"
-        )
+    # Segmentation
+    # add the gui to the viewer as a dock widget
+    viewer.window.add_dock_widget(
+        run_fluor_sharpen_segmentation_napari, name="Segmentation", area="left"
+    )
 
-        # if a layer gets added or removed, refresh the dropdown choices
-        viewer.layers.events.inserted.connect(
-            run_fluor_sharpen_segmentation_napari.reset_choices
-        )
-        viewer.layers.events.removed.connect(
-            run_fluor_sharpen_segmentation_napari.reset_choices
-        )
+    # if a layer gets added or removed, refresh the dropdown choices
+    viewer.layers.events.inserted.connect(
+        run_fluor_sharpen_segmentation_napari.reset_choices
+    )
+    viewer.layers.events.removed.connect(
+        run_fluor_sharpen_segmentation_napari.reset_choices
+    )
+
+    napari.run()
 
     h5file.close()
 

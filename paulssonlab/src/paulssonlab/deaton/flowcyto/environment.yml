@@ -1,0 +1,21 @@
+name: flowcyto
+channels:
+  - pyviz
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - bokeh
+  - holoviews
+  - hvplot
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - nodejs
+  - numpy
+  - pandas
+  - pip
+  - pip:
+      - flowkit
+  - pre-commit

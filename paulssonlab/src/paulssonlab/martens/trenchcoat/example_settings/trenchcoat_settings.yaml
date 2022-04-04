@@ -1,0 +1,56 @@
+napari_settings:
+    Phase_TRIPLE:
+        rgb            : False
+        multiscale     : False
+        colormap       : "gray"
+        contrast_limits:
+            - 500
+            - 15000
+        gamma          : 1.0
+        interpolation  : "nearest"
+        name           : "Phase contrast"
+        opacity        : 1.0
+        blending       : "additive"
+        visible        : True
+
+    YFP:
+        rgb            : False
+        multiscale     : False
+        colormap       : "yellow"
+        contrast_limits:
+        - 100
+        - 25000
+        gamma          : 1.0
+        interpolation  : "nearest"
+        name           : "mVenus"
+        opacity        : 1.0
+        blending       : "additive"
+        visible        : True
+
+    CFP:
+        rgb            : False
+        multiscale     : False
+        colormap       : "cyan"
+        contrast_limits:
+        - 700
+        - 15000
+        gamma          : 1.0
+        interpolation  : "nearest"
+        name           : "SCFP3"
+        opacity        : 1.0
+        blending       : "additive"
+        visible        : True
+# Optional. These are used for applying corrections on-the-fly.
+corrections:
+    corrections_file: "corrections.h5"
+    # Which image to correct which?
+    # Input channel of image, return channel of correction
+    flatfield_channel_mapping:
+        Phase_TRIPLE: None
+        YFP : "YFP"
+        CFP : "CFP"
+        
+    # Which image to correct which?
+    # Input channel of image, return channel of correction
+    #registration_channel_mapping:
+        #GFP : "GFP"

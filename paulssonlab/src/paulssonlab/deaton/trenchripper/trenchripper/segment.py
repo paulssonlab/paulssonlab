@@ -5,10 +5,11 @@ import scipy as sp
 import h5py
 import os
 import copy
-import pickle
+import pickle as pkl
 import pandas as pd
 import dask.dataframe as dd
 from scipy import ndimage as ndi
+from dask.distributed import as_completed
 
 from skimage import measure,feature,segmentation,future,util,morphology,filters,exposure,transform
 from skimage.segmentation import watershed
@@ -379,7 +380,7 @@ class fluo_segmentation_cluster(fluo_segmentation):
         if paramfile:
             parampath = headpath + "/fluorescent_segmentation.par"
             with open(parampath, 'rb') as infile:
-                param_dict = pickle.load(infile)
+                param_dict = pkl.load(infile)
 
         seg_channel = param_dict["Segmentation Channel:"]
         bit_max = param_dict['8 Bit Maximum:']
@@ -433,31 +434,57 @@ class fluo_segmentation_cluster(fluo_segmentation):
         trench_output = np.concatenate(trench_output,axis=0)
         with h5py.File(self.fluorsegmentationpath + "/segmentation_" + str(file_idx) + ".hdf5", "w") as h5pyfile:
             hdf5_dataset = h5pyfile.create_dataset("data", data=trench_output, dtype="uint16")
+        del trench_output
         return file_idx
 
     def segmentation_completed(self,seg_future):
         return 0
 
-    def dask_segment(self,dask_controller):
-        writedir(self.fluorsegmentationpath,overwrite=True)
+    def dask_segment(self,dask_controller,overwrite=False):
+
         dask_controller.futures = {}
 
-        kymodf = dd.read_parquet(self.metapath).persist()
+        writedir(self.fluorsegmentationpath,overwrite=overwrite)
+
+        # Check for existing files in case of in progress run
+        if os.path.exists(self.fluorsegmentationpath + "/progress.pkl"):
+            with open(self.fluorsegmentationpath + "/progress.pkl", 'rb') as infile:
+                finished_files = pkl.load(infile)
+        else:
+            finished_files = []
+
+        kymodf = dd.read_parquet(self.metapath)
         file_list = kymodf["File Index"].unique().compute().tolist()
+
+        file_list = list(set(file_list) - set(finished_files))
         num_file_jobs = len(file_list)
 
         random_priorities = np.random.uniform(size=(num_file_jobs,))
+
+        segmentation_futures_list = []
         for k,file_idx in enumerate(file_list):
             priority = random_priorities[k]
 
             future = dask_controller.daskclient.submit(self.generate_segmentation,file_idx,retries=0,priority=priority)
             dask_controller.futures["Segmentation: " + str(file_idx)] = future
-        for k,file_idx in enumerate(file_list):
-            priority = random_priorities[k]
+            segmentation_futures_list.append(future)
 
-            future = dask_controller.daskclient.submit(self.segmentation_completed,dask_controller.futures["Segmentation: " + str(file_idx)],retries=0,priority=priority)
-            dask_controller.futures["Segmentation Completed: " + str(file_idx)] = future
-        gathered_tasks = dask_controller.daskclient.gather([dask_controller.futures["Segmentation Completed: " + str(file_idx)] for file_idx in file_list],errors="skip")
+        for future in as_completed(segmentation_futures_list):
+            result = future.result()
+            finished_files = finished_files + [result]
+            with open(self.fluorsegmentationpath + "/progress.pkl", 'wb') as infile:
+                pkl.dump(finished_files,infile)
+            future.cancel()
+
+        dask_controller.reset_worker_memory()
+        os.remove(self.fluorsegmentationpath + "/progress.pkl")
+#         for k,file_idx in enumerate(file_list):
+#             priority = random_priorities[k]
+
+#             future = dask_controller.daskclient.submit(self.segmentation_completed,dask_controller.futures["Segmentation: " + str(file_idx)],retries=0,priority=priority)
+#             dask_controller.futures["Segmentation Completed: " + str(file_idx)] = future
+#         gathered_tasks = dask_controller.daskclient.gather([dask_controller.futures["Segmentation Completed: " + str(file_idx)] for file_idx in file_list],errors="skip")
+
 
 class phase_segmentation:
     """Segmentation algorithm for high mag phase images.

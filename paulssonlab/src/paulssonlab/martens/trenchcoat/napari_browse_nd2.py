@@ -11,6 +11,10 @@ from convert import make_nd2_list
 
 """
 Use Napari to browse a directory of ND2 files.
+
+TODO: what if each "file" within the ND2 directory had different channels?
+For example, this comes up when flatfielding using dyes. Each dye has only a subset of the channels.
+There should be a way to insert zeros as needed in the empty positions.
 """
 
 
@@ -48,7 +52,7 @@ def main_nd2_browser_function(in_dir, settings_file):
 
     # 4. Load the images into a dask array using delayed (lazy) loading
     # define a lazy function once, for later use
-    zeros = delayed(numpy.zeros)
+    delayed_zeros = delayed(numpy.zeros)
 
     # NOTE: as written this seems awfully confusing, with so many loops and dicts and lists,
     # but it makes sense. The idea is that each set of images for a channel, in a given layer,
@@ -77,6 +81,7 @@ def main_nd2_browser_function(in_dir, settings_file):
 
     # TODO sorted iteration order?
     for _, reader in nd2_dict.items():
+        delayed_get_image_stack = delayed(reader.get_image_stack)
         # FOVs
         fov_array = {}
         for c in channels:
@@ -96,20 +101,18 @@ def main_nd2_browser_function(in_dir, settings_file):
 
                 for z in extents["z_levels"]:
                     # 1. load stack of images from all channels, given this fov, frame, z_level
-                    # NOTE: this is using the modified function (not present in original nd2reader library)
+                    # NOTE: this uses the modified function (not present in original nd2reader library)
 
                     # a. if images were found: iterate channels & add images to the dask arrays, lazily
                     try:
-                        stack = delayed(
-                            reader.get_image_stack(
-                                field_of_view=fov, frame_number=frame, z_level=z
-                            )
+                        stack = delayed_get_image_stack(
+                            field_of_view=fov, frame_number=frame, z_level=z
                         )
 
                     # b. if images cannot be found, then for each channel add zeros array with same dimension (lazily)
                     except:
                         # FIXME width, height -- or height, width??
-                        stack = zeros(
+                        stack = delayed_zeros(
                             shape=(width, height, len(channels)),
                             dtype=numpy.uint16,
                             order="F",

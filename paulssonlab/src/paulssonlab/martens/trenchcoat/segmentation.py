@@ -25,6 +25,7 @@ from properties import (
 )
 from metadata import get_metadata
 from params import read_params_file
+from napari_browse_hdf5 import parse_corrections_settings, sub_bg_no_underflow
 
 """
 Perform cell segmentation & measure fluorescence intensities in microscope images, with support for sub-regions (e.g. "trenches").
@@ -32,7 +33,7 @@ Perform cell segmentation & measure fluorescence intensities in microscope image
 TODO:
 1. Pass in min. region size. Use pixel_microns to help convert from true area in microns^2 to region size in pixels.
    Makes this parameter magnification-independent.
-   
+
 2. Are the masks being symbolically linked correctly in the HDF5 files?
 """
 
@@ -50,6 +51,7 @@ def run_segmentation_analysis_regions(
     regions_file,
     max_len_filenames,
     max_len_seg_channels,
+    corrections_dict,
 ):
     """
     Read region co-ordinates from an HDF5 file (with support for multiple sets of regions per image).
@@ -96,6 +98,10 @@ def run_segmentation_analysis_regions(
             h5file, z_node, channels, regions
         )
 
+        # Apply flat-fielding corrections?
+        if corrections_dict is not None:
+            stack = run_flatfielding(stack, ch_to_index, regions, corrections_dict)
+
         # d. Run the analysis on the given image stack
         # NOTE would it make sense to also pass in the region info,
         # so that the cell centroids can also be recorded with respect
@@ -120,6 +126,7 @@ def run_segmentation_analysis_regions(
             True,
             max_len_filenames,
             max_len_seg_channels,
+            corrections_dict,
         )
 
         # Contatenate the lists from each row of trenches
@@ -134,6 +141,68 @@ def run_segmentation_analysis_regions(
     return results
 
 
+def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
+    """
+    Given a stack + channel-to-index,
+    and given a set of corrections,
+    apply the corrections to the data.
+
+    Corrections include:
+    1. Subtracting "dark" image (camera noise), or a fixed value (e.g. 100), taking care not to underflow
+    2. Dividing the sample image by the flatfielding image (i.e. fluorescent dyes)
+
+    Corrections is a dict which maps between channels & correction matrices. Same convention as used in
+    napari_browse_hdf5.py.
+
+    TODO registration? (beads correction)
+
+    TODO what if there are regions? Then need to slice out each specific regional
+    area from the correction images, then do the corrections, one region at a time.
+    """
+    if corrections_dict["camera_noise"] is not None:
+        camera_noise = corrections_dict["camera_noise"]
+    else:
+        # A default value of 100.0
+        camera_noise = 100.0
+
+    # No Regions ~ could also check if regions is None
+    if stack.shape[2] == 1:
+        # 1. Camera Noise
+        for (channel, index) in ch_to_index.items():
+            stack[..., 0, index] = sub_bg_no_underflow(
+                stack[..., 0, index], camera_noise
+            )
+
+        # 2. Flatfielding
+        # Optional for each channel
+        # If there is nothing, then do nothing!
+        if corrections_dict["flatfield"] is not None:
+            for (channel, index) in ch_to_index.items():
+                if corrections_dict["flatfield"][channel] is not None:
+                    stack[..., 0, index] = numpy.divide(
+                        stack[..., 0, index], corrections_dict["flatfield"][channel]
+                    )
+
+    # Regions
+    else:
+        if corrections_dict["flatfield"] is not None:
+            for (channel, index) in ch_to_index.items():
+                if corrections_dict["flatfield"][channel] is not None:
+                    # min_row, min_col, max_row, max_col
+                    for j, r in enumerate(regions):
+                        stack[..., j, index] = image_node[
+                            r[0] : r[2], r[1] : r[3]
+                        ].astype(numpy.float32, casting="safe", copy=False)
+                        # Add warning if values become negative? How to tell without checking all pixels? (could be expensive)
+                        # could check if min val is > 0 after running operation.
+                        stack[..., j, index] -= camera_bias[channel]
+                        stack[..., j, index] /= f_field[channe][
+                            r[0] : r[2], r[1] : r[3]
+                        ]
+
+    return stack
+
+
 def run_segmentation_analysis_no_regions(
     in_file,
     name,
@@ -146,6 +215,7 @@ def run_segmentation_analysis_no_regions(
     algo_dict,
     max_len_filenames,
     max_len_seg_channels,
+    corrections_dict,
 ):
     """
     Open h5file with images, load without regions. Call segmentation.
@@ -158,6 +228,10 @@ def run_segmentation_analysis_no_regions(
 
     (stack, ch_to_index) = make_ch_to_img_stack_no_regions(h5file, z_node, channels)
     h5file.close()
+
+    # Apply flat-fielding corrections?
+    if corrections_dict is not None:
+        stack = run_flatfielding(stack, ch_to_index, None, corrections_dict)
 
     # No regions, no regions_set_number -> set row to 0
     results = run_segmentation_analysis(
@@ -176,6 +250,7 @@ def run_segmentation_analysis_no_regions(
         False,
         max_len_filenames,
         max_len_seg_channels,
+        corrections_dict,
     )
 
     # No regions, no rows, so pass along the stack, ch_to_index,
@@ -200,6 +275,7 @@ def run_segmentation_analysis(
     has_regions,
     max_len_filenames,
     max_len_seg_channels,
+    corrections_dict,
 ):
     """
     Create new HDF5 files for writing masks, measurements table Load all
@@ -291,15 +367,26 @@ def write_masks(
         # but this is a pain because of the dtypes.
         # It *should* be possible to exactly predict the sizes!!
         total_num_cells = 0
+
+        # If we determine the number of unique pixel labels in each region,
+        # then we can pre-calculate the total number of cells.
         for region_number in range(masks.shape[2]):
             mask = masks[..., region_number]
-            # If all zeros, then unique will have len == 1
-            len_uni = len(numpy.unique(mask))
-            # Minus 1, because zero (background) are also values
-            total_num_cells += len_uni - 1
+
+            # Is it _not_ all zero?
+            if mask.any():
+                len_uni = len(numpy.unique(mask))
+
+                # Minus 1, because zero (background) are also values
+                # But only make this correction if there are any background
+                # values.
+                if mask.min() == 0:
+                    len_uni -= 1
+
+                total_num_cells += len_uni
 
         # Initialize the structure
-        if masks.shape[2] > 0:
+        if masks.shape[2] > 1:
             has_regions = True
         else:
             has_regions = False
@@ -565,6 +652,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
     pathlib.Path(out_dir_tables).mkdir(parents=True, exist_ok=True)
 
     # Segmentation parameters, in YAML
+    # and optional flatfielding & camera noise corrections parameters
     # TODO: verify that the channels specified in the params match the available channels in the files?
     # TODO: if an algorithm doesn't require any parameters, what do we do?
     params = read_params_file(params_file)
@@ -599,7 +687,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
 
         # Input a channel, output an algorithm
         algo_dict = {}
-        for ch, p in params.items():
+        for ch, p in params["segmentation"].items():
             algo_dict[ch] = algo_to_func[p["algorithm"]]
 
         # Max len is useful for setting column names with fixed string sizes
@@ -617,6 +705,14 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                 * len(metadata["z_levels"])
             )
 
+        # Parse the optional flatfielding, camera noise parameters
+        try:
+            corr_p = params["corrections"]
+            corrections_dict = parse_corrections_settings(corr_p)
+        except:
+            print("No flatfielding params. detected.")
+            corrections_dict = None
+
         # Analyze the images & write the masks
         print("Computing masks & measuring properties...")
 
@@ -631,12 +727,7 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
         # to the same HDF5 table, acting as a synchronizer between processes.
         # NOTE unclear if it's required to define within here,
         # so that it can "inherit" its parental scope? (Kind of ugly...)
-        def write_tables(*a):
-            # Zeroth element of the tuple *a:
-            # contains results, a dict of lists
-            # FIXME can we do without the goofy *a syntax?
-            results = a[0]
-
+        def write_tables(results):
             # Each list represents a column for a particular property
             # Each list should have exactly the same length (1 entry per cell).
             # Iterate the lists in parallel, & write them to the HDF5 table, one at a time.
@@ -666,7 +757,8 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
             # Otherwise, we must grab every single possible column and pass it in,
             # which is weird because the number of columns isn't static (depends on
             # the number of seg channels, etc.), or we must copy the row into yet another dict.
-            for cell in merged_results.itertuples():
+            for cell_number in range(len(merged_results)):
+                cell = merged_results.iloc[cell_number]
                 write_properties_to_table_from_df(
                     cell, table_measurements.row, merged_results.columns
                 )
@@ -716,13 +808,14 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 fov,
                                 frame,
                                 z_level,
-                                params,
+                                params["segmentation"],
                                 channels,
                                 out_dir_masks,
                                 algo_dict,
                                 regions_file,
                                 max_len_filenames,
                                 max_len_seg_channels,
+                                corrections_dict,
                             ]
                             pool.apply_async(
                                 run_segmentation_analysis_regions,
@@ -731,8 +824,8 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 error_callback=error_callback,
                             )
                             ##DEBUG
-                            # result = run_segmentation_analysis_regions(*func_args)
-                            # write_tables((result))
+                            # results = run_segmentation_analysis_regions(*func_args)
+                            # write_tables(results)
 
         # No regions
         else:
@@ -763,12 +856,13 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 fov,
                                 frame,
                                 z_level,
-                                params,
+                                params["segmentation"],
                                 channels,
                                 out_dir_masks,
                                 algo_dict,
                                 max_len_filenames,
                                 max_len_seg_channels,
+                                corrections_dict,
                             ]
 
                             pool.apply_async(
@@ -777,6 +871,9 @@ def main_segmentation_function(out_dir, in_file, num_cpu, params_file, regions_f
                                 callback=write_tables,
                                 error_callback=error_callback,
                             )
+                            ##DEBUG
+                            # results = run_segmentation_analysis_no_regions(*func_args)
+                            # write_tables(results)
 
         pool.close()
         pool.join()
