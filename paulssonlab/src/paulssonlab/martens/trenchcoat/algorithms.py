@@ -5,7 +5,7 @@ from skimage.segmentation import watershed
 from skimage.measure import label
 from skimage.filters import gaussian, threshold_otsu, threshold_niblack
 
-from ipywidgets import fixed, interactive
+# from ipywidgets import fixed, interactive
 
 from scipy import ndimage
 
@@ -22,13 +22,13 @@ def run_single_threshold(stack, ch_to_index, params):
     return single_threshold(data, **params["parameters"])
 
 
-def run_single_threshold_interactive(stack, ch_to_index, params):
-    """
-    Very simple max thresholding example.
-    Interactive version, with ipywidgets.
-    """
-    data = stack[ch_to_index[params["channel"]]]
-    return interactive(single_threshold, data=fixed(data), **params["parameters"])
+# def run_single_threshold_interactive(stack, ch_to_index, params):
+# """
+# Very simple max thresholding example.
+# Interactive version, with ipywidgets.
+# """
+# data = stack[ch_to_index[params["channel"]]]
+# return interactive(single_threshold, data=fixed(data), **params["parameters"])
 
 
 def single_threshold(data, cutoff):
@@ -49,21 +49,21 @@ def run_fluor_phase_segmentation(stack, ch_to_index, params):
     return fluor_phase_segmentation(stack_fl, stack_ph, **params["parameters"])
 
 
-def run_fluor_phase_segmentation_interactive(stack, ch_to_index, params):
-    """
-    A version which uses thresholding on fluor & phase channels
-    Thresholding which also uses Niblack (mean, std dev) & watershedding.
-    Interactive version, with ipywidgets.
-    """
-    stack_fl = stack[..., ch_to_index[params["fluorescent_channel"]]]
-    stack_ph = stack[..., ch_to_index[params["phase_channel"]]]
+# def run_fluor_phase_segmentation_interactive(stack, ch_to_index, params):
+# """
+# A version which uses thresholding on fluor & phase channels
+# Thresholding which also uses Niblack (mean, std dev) & watershedding.
+# Interactive version, with ipywidgets.
+# """
+# stack_fl = stack[..., ch_to_index[params["fluorescent_channel"]]]
+# stack_ph = stack[..., ch_to_index[params["phase_channel"]]]
 
-    return interactive(
-        fluor_phase_segmentation,
-        stack_fl=fixed(stack_fl),
-        stack_ph=fixed(stack_ph),
-        **params["parameters"],
-    )
+# return interactive(
+# fluor_phase_segmentation,
+# stack_fl=fixed(stack_fl),
+# stack_ph=fixed(stack_ph),
+# **params["parameters"],
+# )
 
 
 def fluor_phase_segmentation(
@@ -301,3 +301,14 @@ def run_niblack_segmentation(stack, ch_to_index, params):
             result[z] = watershed(image=image, markers=markers, mask=mask)
 
     return result
+
+
+def measure_whole_trench(stack, ch_to_index, params):
+    """
+    Returns a single labeled region for each whole trench (no cell segmentation).
+    Useful for measuring total intensities within a trench.
+    Doesn't require any parameters.
+    """
+    # Yes, this is a simple as returning all 1s!
+    new_shape = (stack.shape[0], stack.shape[1], stack.shape[2])
+    return numpy.ones(new_shape, dtype=numpy.uint16)

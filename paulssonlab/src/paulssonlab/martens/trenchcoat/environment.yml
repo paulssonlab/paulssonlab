@@ -5,15 +5,17 @@ dependencies:
   - click
   - dask
   - ipywidgets
+  - magicgui
+  - matplotlib
+  # For imwarp registration
+  - napari
+  - numba
   - numpy
   - pathlib
+  - pyside2
   - pytables
   - ruamel.yaml
   - scikit-image
   - scipy
   - tqdm
   - xmltodict
-  - magicgui
-  - napari
-  - pyside2
-  - matplotlib

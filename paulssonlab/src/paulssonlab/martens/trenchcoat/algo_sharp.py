@@ -64,8 +64,6 @@ def fluor_sharpen_segmentation(
         bimodal[..., z] *= threshold > garbage_otsu_value
 
     # Apply Niblack method
-    # The "multiply by scaling_factor" trick emphasizes the values of non-zero pixels.
-    # This enhances the std. dev. at the edges of cells.
     niblack = numpy.empty(stack_fl.shape, dtype=numpy.float32, order="F")
     for z in range(niblack.shape[2]):
         niblack[..., z] = threshold_niblack(
@@ -86,15 +84,15 @@ def fluor_sharpen_segmentation(
         # Remove small objects.
         # Connectivity of 1 seems to help a lot in preventing adjacent cells from being merged?
         # But connectivity of 2 can help if the eroded bits are very small.
-        remove_small_objects(
-            mask[..., z], min_size=min_size, connectivity=1, in_place=True
+        mask[..., z] = remove_small_objects(
+            mask[..., z], min_size=min_size, connectivity=1
         )
 
         # Label the regions
         # NOTE is there a way to change the labeling so that it
         # coincides with the "top down" view that we associate with trenches?
         # (it seems to go more left-to-right, which doesn't make sense!)
-        # Yes, by making an intermediate, rotated labels array, and then
+        # Yes, by making an intermediate, tranposed labels array, and then
         # transposing it back & storing it again. Could maybe improve
         # performance by tweaking their algo. to operate in the correct dimensional order?
         markers[..., z] = label(mask[..., z].T, connectivity=1).T
@@ -120,7 +118,9 @@ def fluor_sharpen_segmentation(
         # unless I multiply it by a bunch of boolean ones.
         o = numpy.ones(mask[..., z].shape, dtype=numpy.bool)
         result[..., z] = watershed(
-            image=image[..., z], markers=markers[..., z], mask=mask[..., z] * o
+            image=image[..., z],
+            markers=markers[..., z],
+            mask=mask[..., z] * o,  # multiply by boolean 1s
         )
 
     return result

@@ -1,2 +1,7 @@
-**/logs_slurm/
+**/logs_slurm
 ont-guppy/
+.*
+**/.*
+!/.gitignore
+./dev_notebooks/2021-09-16_snakemake_lDE15_v2/barcode_counts_dict.pkl
+**/*.pkl

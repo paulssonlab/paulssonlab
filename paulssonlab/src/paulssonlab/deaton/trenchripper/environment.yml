@@ -8,6 +8,7 @@ dependencies:
   - cudatoolkit=10.2
   - dask
   - dask-jobqueue
+  - dask-ml
   - datashader
   - distributed
   - fastparquet
@@ -17,7 +18,9 @@ dependencies:
   - ipympl
   - ipywidgets
   - jupyterlab
+  - kmodes
   - line_profiler
+  - lmfit
   - matplotlib
   - nd2reader
   - nodejs
@@ -28,6 +31,7 @@ dependencies:
       - pulp
       - parse
       - h5py-cache
+  - pyarrow
   - pytables
   - python=3.8.5
   - pytorch
@@ -36,5 +40,8 @@ dependencies:
   - scikit-learn
   - scipy
   - seaborn
+  - statsmodels
   - tifffile
   - torchvision
+  - tslearn
+  - zarr
