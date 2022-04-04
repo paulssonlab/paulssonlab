@@ -1,0 +1,42 @@
+<model>
+<species name="Goff" value="1.0" />
+<species name="Gon" value="0.0" />
+<species name="T" value="0.0" />
+<species name="X" value="0.0" />
+
+<parameter name="kon" value="1.5" />
+<parameter name="koff" value="1.5" />
+<parameter name="ktx" value="1.5" />
+<parameter name="DummyVar_PositiveHillPropensity_n_0" value="1.0" />
+<parameter name="KR" value="20.0" />
+<parameter name="ktl" value="10.0" />
+<parameter name="deltaT" value="0.5" />
+<parameter name="deltaX" value="0.001" />
+<parameter name="n" value="2.0" />
+
+<reaction text= "Goff -- Gon ">
+	<propensity type="massaction" k="kon" species="Goff" />
+	<delay type="none" />
+</reaction>
+<reaction text= "Gon -- Goff ">
+	<propensity type="massaction" k="koff" species="Gon" />
+	<delay type="none" />
+</reaction>
+<reaction text= "Gon -- Goff + T ">
+	<propensity type="massaction" k="ktx" species="Gon" />
+	<delay type="none" />
+</reaction>
+<reaction text= "T -- T + X ">
+	<propensity type="hillpositive" s1="T" k="ktl" K="KR" n="DummyVar_PositiveHillPropensity_n_0" />
+	<delay type="none" />
+</reaction>
+<reaction text= "T -- ">
+	<propensity type="massaction" k="deltaT" species="T" />
+	<delay type="none" />
+</reaction>
+<reaction text= "X -- ">
+	<propensity type="massaction" k="deltaX" species="X" />
+	<delay type="none" />
+</reaction>
+
+</model>

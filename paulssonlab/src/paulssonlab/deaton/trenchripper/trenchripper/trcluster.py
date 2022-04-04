@@ -11,12 +11,21 @@ from dask_jobqueue import SLURMCluster
 from IPython.core.display import display, HTML
 from .utils import writedir
 
+## Hacky memory trim
+import ctypes
+import gc
+
+def trim_memory() -> int:
+    libc = ctypes.CDLL("libc.so.6")
+    return libc.malloc_trim(0)
+
 class dask_controller: #adapted from Charles' code
-    def __init__(self,n_workers=6,local=True,queue="short",death_timeout=3.,\
-                 walltime='01:30:00',cores=1,processes=1,memory='6GB',\
+    def __init__(self,n_workers=6,n_workers_min=6,local=True,queue="short",death_timeout=3.,\
+                 walltime='01:00:00',cores=1,processes=1,memory='6GB',\
                  working_directory="./",job_extra=[]):
         self.local = local
         self.n_workers = n_workers
+        self.n_workers_min = n_workers_min
         self.walltime = walltime
         self.queue = queue
         self.death_timeout = death_timeout
@@ -25,6 +34,19 @@ class dask_controller: #adapted from Charles' code
         self.cores = cores
         self.working_directory = working_directory
         self.job_extra = job_extra
+        self.futures = {}
+
+        split_walltime = walltime.split(":")
+        wall_hrs,wall_mins,wall_secs = tuple(split_walltime)
+        ttl_wall_mins = (60*int(wall_hrs)) + int(wall_mins)
+
+        if ttl_wall_mins < 10:
+            raise ValueError("Walltime must be at least 10 mins long!")
+
+        self.lifetime = str(max(ttl_wall_mins-10,10)) + "m"
+        print(self.lifetime)
+        print(walltime)
+        self.extra = ["--lifetime", self.lifetime, "--lifetime-stagger", "5m"]
 
         writedir(working_directory,overwrite=False)
 
@@ -33,24 +55,27 @@ class dask_controller: #adapted from Charles' code
             self.daskclient = Client()
             self.daskclient.cluster.scale(self.n_workers)
         else:
-            self.daskcluster = SLURMCluster(n_workers=self.n_workers,queue=self.queue,death_timeout=self.death_timeout,walltime=self.walltime,\
+            self.daskcluster = SLURMCluster(n_workers=self.n_workers_min,queue=self.queue,death_timeout=self.death_timeout,walltime=self.walltime,\
                                    processes=self.processes,memory=self.memory,\
                                   cores=self.cores,local_directory=self.working_directory,\
-                                log_directory=self.working_directory,job_extra=self.job_extra)
+                                log_directory=self.working_directory,job_extra=self.job_extra,extra=self.extra)
 #             self.workers = self.daskcluster.start_workers(self.n_workers)
+            self.daskcluster.adapt(minimum=self.n_workers_min, maximum=self.n_workers,\
+                                   interval="1m",wait_count=10)
             self.daskclient = Client(self.daskcluster)
 
-    def shutdown(self):
-        self.daskclient.restart()
+    def shutdown(self, delete_files=True):
+        self.reset_worker_memory()
         if not self.local:
             self.daskcluster.close()
-        for item in os.listdir(self.working_directory):
-            if "worker-" in item or "slurm-" in item or ".lock" in item:
-                path = "./" + item
-                if os.path.isfile(path):
-                    os.remove(path)
-                elif os.path.isdir(path):
-                    shutil.rmtree(path)
+        if delete_files:
+            for item in os.listdir(self.working_directory):
+                if "worker-" in item or "slurm-" in item or ".lock" in item:
+                    path = "./" + item
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    elif os.path.isdir(path):
+                        shutil.rmtree(path)
 
     def printprogress(self):
         complete = len([item for item in self.futures if item.status=="finished"])
@@ -79,6 +104,12 @@ class dask_controller: #adapted from Charles' code
         self.proc_fovs = [fov for fov,future in self.futures.items() if future.status == 'pending']
         out = self.daskclient.restart()
         self.mapfovs(self.function,self.proc_fovs,retries=self.retries)
+
+    def reset_worker_memory(self):
+        self.daskclient.cancel([val for key,val in self.futures.items()])
+        self.daskclient.run(gc.collect)
+        self.daskclient.run(trim_memory)
+        print("Done.")
 
 class hdf5lock:
     def __init__(self,filepath,updateperiod=0.1):

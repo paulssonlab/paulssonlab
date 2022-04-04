@@ -11,9 +11,26 @@ import pandas as pd
 import ipywidgets as ipyw
 
 from nd2reader import ND2Reader
-from tifffile import imsave, imread
 from .utils import pandas_hdf5_handler,writedir
 from parse import compile
+
+def generate_flatfield(flatfieldpath,outputpath): #can add dark image correction to this
+    img_arr = []
+    with ND2Reader(flatfieldpath) as infile:
+        for j in range(infile.sizes['v']):
+            nd2_image = infile.get_frame_2D(c=0, t=0, v=j)
+            in_arr = np.array(nd2_image)
+            img_arr.append(np.array(in_arr))
+    img_arr = np.array(img_arr)
+    aggregated_img = np.median(img_arr,axis=0)
+    aggregated_img = aggregated_img/np.max(aggregated_img)
+    tifffile.imsave(outputpath,data=aggregated_img)
+
+def apply_flatfield(img,flatfieldimg,darkimg):
+    outimg = (img - darkimg)/flatfieldimg
+    outimg = np.clip(outimg,0.,65535.)
+    outimg = outimg.astype("uint16")
+    return outimg
 
 class hdf5_fov_extractor:
     def __init__(self,nd2filename,headpath,tpts_per_file=100,ignore_fovmetadata=False,nd2reader_override={}): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
@@ -28,6 +45,8 @@ class hdf5_fov_extractor:
         self.organism = ''
         self.microscope = ''
         self.notes = ''
+
+        self.channel_to_flat_dict = {}
 
     def writemetadata(self,t_range=None,fov_list=None):
         ndmeta_handle = nd_metadata_handler(self.nd2filename,ignore_fovmetadata=self.ignore_fovmetadata,nd2reader_override=self.nd2reader_override)
@@ -112,16 +131,39 @@ class hdf5_fov_extractor:
 
     def inter_set_params(self):
         self.read_metadata()
+        channels_list = self.metadata["channels"]
+        ext_channel_list = channels_list + ["Dark_Image"]
+        self.channel_to_flat_dict = {channel:None for channel in ext_channel_list}
+
         t0,tf = (self.metadata['frames'][0],self.metadata['frames'][-1])
         available_fov_list = self.metadf["fov"].unique().tolist()
+
         selection = ipyw.interactive(self.set_params, {"manual":True}, fov_list=ipyw.SelectMultiple(options=available_fov_list),\
                 t_range=ipyw.IntRangeSlider(value=[t0, tf],\
                 min=t0,max=tf,step=1,description='Time Range:',disabled=False), organism=ipyw.Textarea(value='',\
                 placeholder='Organism imaged in this experiment.',description='Organism:',disabled=False),\
                 microscope=ipyw.Textarea(value='',placeholder='Microscope used in this experiment.',\
                 description='Microscope:',disabled=False),notes=ipyw.Textarea(value='',\
-                placeholder='General experiment notes.',description='Notes:',disabled=False),)
+                placeholder='General experiment notes.',description='Notes:',disabled=False),
+                )
         display(selection)
+
+    def set_flatfieldpath(self,channel,path):
+        self.channel_to_flat_dict[channel] = path
+
+    def inter_set_flatfieldpaths(self):
+        channels_list = self.metadata["channels"]
+        ext_channel_list = channels_list + ["Dark_Image"]
+
+        channel_children = [ipyw.interactive(self.set_flatfieldpath,channel=ipyw.fixed(channel),\
+                            path=ipyw.Text(description=channel + " Flatfield Path", value='')) for channel in ext_channel_list]
+        channel_tab = ipyw.Tab()
+
+        channel_tab.children = channel_children
+        for i,channel in enumerate(ext_channel_list):
+            channel_tab.set_title(i, channel)
+
+        return channel_tab
 
     def extract(self,dask_controller,retries=1):
         dask_controller.futures = {}
@@ -134,6 +176,13 @@ class hdf5_fov_extractor:
         self.metadf = metadf.sort_index()
 
         def writehdf5(fovnum,num_entries,timepoint_list,file_idx,num_fovs):
+            ### open flatfield images
+            flatfield_img_dict = {}
+            for channel,path in self.channel_to_flat_dict.items():
+                if path != "":
+                    flatfield_img_dict[channel] = tifffile.imread(path)
+
+            ### start reading nd2 files
             with ND2Reader(self.nd2filename) as nd2file:
                 for key,item in self.nd2reader_override.items():
                     nd2file.metadata[key] = item
@@ -143,10 +192,19 @@ class hdf5_fov_extractor:
                     for i,channel in enumerate(self.metadata["channels"]):
                         hdf5_dataset = h5pyfile.create_dataset(str(channel),\
                         (num_entries,y_dim,x_dim), chunks=self.chunk_shape, dtype='uint16')
-                        for j in range(len(timepoint_list)):
-                            frame = timepoint_list[j]
-                            nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
-                            hdf5_dataset[j,:,:] = nd2_image
+
+                        if self.channel_to_flat_dict[channel] != '': ##flatfielding channels
+                            for j in range(len(timepoint_list)):
+                                frame = timepoint_list[j]
+                                nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
+                                nd2_image = np.array(nd2_image)
+                                nd2_image = apply_flatfield(nd2_image,flatfield_img_dict[channel],flatfield_img_dict["Dark_Image"])
+                                hdf5_dataset[j,:,:] = nd2_image
+                        else:
+                            for j in range(len(timepoint_list)): ##not flatfielding channels
+                                frame = timepoint_list[j]
+                                nd2_image = nd2file.get_frame_2D(c=i, t=frame, v=fovnum)
+                                hdf5_dataset[j,:,:] = nd2_image
             return "Done."
 
         file_list = self.metadf.index.get_level_values("File Index").unique().values
@@ -211,12 +269,25 @@ class nd_metadata_handler:
         raw_metadata = nd2file.parser._raw_metadata
         imaging_settings = {}
         for key,meta in raw_metadata.image_metadata_sequence[b'SLxPictureMetadata'][b'sPicturePlanes'][b'sSampleSetting'].items():
+            out_dict = {}
             camera_settings = meta[b'pCameraSetting']
-            camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
             channel_name = camera_settings[b'Metadata'][b'Channels'][b'Channel_0'][b'Name'].decode('utf-8')
-            obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
-            spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
-            imaging_settings[channel_name] = {'camera_name':camera_name,'obj_settings':obj_settings,**spec_settings}
+            try:
+                camera_name = camera_settings[b'CameraUserName'].decode('utf-8')
+                out_dict['camera_name'] = camera_name
+            except:
+                print("No camera name detected!")
+            try:
+                obj_settings = self.decode_unidict(meta[b'pObjectiveSetting'])
+                out_dict['obj_settings'] = obj_settings
+            except:
+                print("No objective setting detected!")
+            try:
+                spec_settings = self.read_specsettings(meta[b'sSpecSettings'])
+                out_dict.update({**spec_settings})
+            except:
+                print("No spec settings detected!")
+            imaging_settings[channel_name] = out_dict
         return imaging_settings
 
     def make_fov_df(self,nd2file, exp_metadata): #only records values for single timepoints, does not seperate between channels....
@@ -283,7 +354,8 @@ def get_tiff_tags(filepath):
     return tiff_tags
 
 class tiff_extractor:
-    def __init__(self,tiffpath,headpath,channels,tpts_per_file=100,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"]): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
+    def __init__(self,tiffpath,headpath,channels,tpts_per_file=100,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"],\
+                constant_key=None): #note this chunk size has a large role in downstream steps...make sure is less than 1 MB
         """Utility to convert individual tiff files to hdf5 archives.
 
         Attributes:
@@ -302,17 +374,21 @@ class tiff_extractor:
         self.tpts_per_file = tpts_per_file
         self.parsestr = parsestr
         self.zero_base_keys = zero_base_keys
+        self.constant_key = constant_key
 
         self.organism = ''
         self.microscope = ''
         self.notes = ''
 
-    def get_metadata(self,tiffpath,channels,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"]):
+    def get_metadata(self,tiffpath,channels,parsestr="t{timepoints:d}xy{fov:d}c{channel:d}.tif",zero_base_keys=["timepoints","fov","channel"],constant_key=None):
         parser = compile(parsestr)
         parse_keys = [item.split("}")[0].split(":")[0] for item in parsestr.split("{")[1:]] + ["image_paths"]
 
         exp_metadata = {}
         fov_metadata = {key:[] for key in parse_keys}
+        if constant_key is not None:
+            for key in constant_key.keys():
+                fov_metadata[key] = []
 
         tiff_files = []
         for root, _, files in os.walk(tiffpath):
@@ -321,7 +397,11 @@ class tiff_extractor:
         tags = get_tiff_tags(tiff_files[0])
         exp_metadata["height"] = tags['ImageLength']
         exp_metadata["width"] = tags['ImageWidth']
-        exp_metadata['pixel_microns'] = tags['65326']
+        try:
+            exp_metadata['pixel_microns'] = tags['65326']
+        except:
+            exp_metadata['pixel_microns'] = 1
+            print("Pixel microns not detected. Global position annotations will be invalid.")
         exp_metadata["channels"] = channels
 
         for f in tiff_files:
@@ -332,6 +412,9 @@ class tiff_extractor:
                 fov_frame_dict = match.named
                 for key, value in fov_frame_dict.items():
                     fov_metadata[key].append(value)
+                if constant_key is not None:
+                    for key in constant_key.keys():
+                        fov_metadata[key].append(constant_key[key])
                 fov_metadata["image_paths"].append(f)
 
         for zero_base_key in zero_base_keys:
@@ -382,7 +465,7 @@ class tiff_extractor:
 
     def writemetadata(self,t_range=None,fov_list=None):
 
-        exp_metadata,fov_metadata = self.get_metadata(self.tiffpath,self.channels,parsestr=self.parsestr,zero_base_keys=self.zero_base_keys)
+        exp_metadata,fov_metadata = self.get_metadata(self.tiffpath,self.channels,parsestr=self.parsestr,zero_base_keys=self.zero_base_keys,constant_key=self.constant_key)
 
         if t_range != None:
             exp_metadata["frames"] = exp_metadata["frames"][t_range[0]:t_range[1]+1]

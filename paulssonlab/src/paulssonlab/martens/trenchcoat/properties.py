@@ -4,8 +4,174 @@ import numpy
 import tables
 
 """
-Functions for handling ND2 cell properties (measurements), including HDF5 tables.
+Functions for handling cell properties (measurements), including HDF5 tables.
 """
+
+
+def init_properties_dict(
+    channels, has_regions, size, max_len_filenames, max_len_seg_channels
+):
+    """
+    Create a dict of empty lists for storing single cell measurements (properties).
+    Eventually, this will be written to an HDF5 table.
+
+    NOTE Would dynamic numpy arrays be helpful?
+    https://github.com/maciejkula/dynarray
+
+    Or, pass in size for a given batch:
+    all the regions & masks for this particular task.
+
+    Then, we collect a list of dicts of numpy arrays.
+    Finally, we can either concatenate them into a dataframe, & write to disk,
+    or just iterate them all.
+
+    Note that it will be necessary to collect multiple such dicts of there are multiple rows,
+    because these will be passed back to the same callback function.
+
+    Considerations include the time it takes to convert to a dataframe,
+    and the faster (vectorized) iterations that pandas can do compared
+    to python for loops.
+
+    The hope is that, by specifying the dtypes up front, that we will
+    minimize conversion costs.
+
+    FIXME how to determine the dtype for the 2 string type columns:
+    1. info_seg_channel
+    2. info_file
+
+    In principle, we know the max lengths in advance,
+    and could pass these all the way down through the functions.
+    Should it be numpy.bytes_, or ???
+    """
+    results = {
+        "info_file": numpy.empty(size, dtype="S{}".format(max_len_filenames)),
+        "info_fov": numpy.empty(size, dtype=numpy.uint16),
+        "info_frame": numpy.empty(size, dtype=numpy.uint16),
+        "info_z_level": numpy.empty(size, dtype=numpy.uint16),
+        "info_row_number": numpy.empty(size, dtype=numpy.uint16),
+        "info_trench_number": numpy.empty(size, dtype=numpy.uint16),
+        "info_label": numpy.empty(size, dtype=numpy.uint16),
+        "info_seg_channel": numpy.empty(size, dtype="S{}".format(max_len_seg_channels)),
+        "geometry_Area": numpy.empty(size, dtype=numpy.uint16),
+        "geometry_Orientation": numpy.empty(size, dtype=numpy.float32),
+        "geometry_Perimeter": numpy.empty(size, dtype=numpy.float32),
+        "axis_length_major": numpy.empty(size, dtype=numpy.float32),
+        "axis_length_minor": numpy.empty(size, dtype=numpy.float32),
+        "centroid_row": numpy.empty(size, dtype=numpy.uint16),
+        "centroid_col": numpy.empty(size, dtype=numpy.uint16),
+        "bounding_box_min_row": numpy.empty(size, dtype=numpy.uint16),
+        "bounding_box_min_col": numpy.empty(size, dtype=numpy.uint16),
+        "bounding_box_max_row": numpy.empty(size, dtype=numpy.uint16),
+        "bounding_box_max_col": numpy.empty(size, dtype=numpy.uint16),
+    }
+
+    for c in channels:
+        results["total_intensity_{}".format(c)] = numpy.empty(size, dtype=numpy.float64)
+
+    if has_regions:
+        results["geometry_Max_Width_Area"] = numpy.empty(size, dtype=numpy.uint32)
+        for c in channels:
+            results["width_intensity_{}".format(c)] = numpy.empty(
+                size, dtype=numpy.float64
+            )
+
+    return results
+
+
+def add_properties(
+    results,
+    mask,
+    file,
+    fov,
+    frame,
+    z_level,
+    row_number,
+    trench_number,
+    seg_channel,
+    stack,
+    ch_to_index,
+    cell_properties,
+    index,
+):
+    """
+    Add a single cell's properties (from skimage measure) to the dict of lists.
+    Modify the dictionary in-place (don't need to return or re-assign).
+    """
+    # NOTE skimage is changing their coordinates -- do we still want to transpose??? I think so...
+    coords = cell_properties.coords.T
+
+    # NOTE: skip background corrections. Leave that for data analysis step.
+    for ch, i in ch_to_index.items():
+        results["total_intensity_{}".format(ch)][index] = stack[
+            coords[0], coords[1], trench_number, i
+        ].sum()
+
+    # Are there multiple regions?
+    if stack.shape[2] > 1:
+        # Filter out pixels that either belong to this cell
+        # or to no cell at all (exclude other cells).
+        not_other_cell = (
+            mask[..., cell_properties.bbox[1] : cell_properties.bbox[3]]
+            == cell_properties.label
+        ) + (mask[..., cell_properties.bbox[1] : cell_properties.bbox[3]] == 0)
+
+        # FIXME but this doesn't take into account the no_other_cell bit
+        # Instead, make it the sum of no_other_cell?
+        # row["geometry_Max_Width_Area"] = (stack.shape[0]) * (cell_properties.bbox[3] - cell_properties.bbox[1])
+        results["geometry_Max_Width_Area"][index] = not_other_cell.sum()
+
+        for ch, i in ch_to_index.items():
+            rect_region = stack[
+                ..., cell_properties.bbox[1] : cell_properties.bbox[3], trench_number, i
+            ]
+            rect_region *= not_other_cell
+            results["width_intensity_{}".format(ch)][index] = rect_region.sum()
+
+    results["info_file"][index] = file
+    results["info_fov"][index] = fov
+    results["info_frame"][index] = frame
+    results["info_z_level"][index] = z_level
+    results["info_row_number"][index] = row_number
+    results["info_trench_number"][index] = trench_number
+    results["info_label"][index] = cell_properties.label
+    results["info_seg_channel"][index] = seg_channel
+
+    results["geometry_Area"][index] = cell_properties.area
+    results["geometry_Orientation"][index] = cell_properties.orientation
+    results["geometry_Perimeter"][index] = cell_properties.perimeter
+
+    # FIXME very small numbers --> math domain error.
+    # Shouldn't the skimage library handle this issue and just return NaN?
+    # The values might drop below zero due to floating-point error,
+    # and then a square root of a neg number causes the error.
+    # Maybe we can wrap each of these in try clauses, and write NaN if they thresults exceptions.
+    results["axis_length_major"][index] = cell_properties.major_axis_length
+    results["axis_length_minor"][index] = cell_properties.minor_axis_length
+
+    results["centroid_row"][index] = cell_properties.centroid[0]
+    results["centroid_col"][index] = cell_properties.centroid[1]
+
+    results["bounding_box_min_row"][index] = cell_properties.bbox[0]
+    results["bounding_box_min_col"][index] = cell_properties.bbox[1]
+    results["bounding_box_max_row"][index] = cell_properties.bbox[2]
+    results["bounding_box_max_col"][index] = cell_properties.bbox[3]
+
+
+def write_properties_to_table_from_df(cell, table_row, columns):
+    """
+    Input a row from a dataframe, an HDF5 table row element, and a list of column names.
+    Write all the values from one to the other.
+    """
+    for column in columns:
+        # NOTE that this can fail in odd ways.
+        # For example, using itertuples doesn't work as well as using iloc
+        # when iterating the cells (rows), causing channel names
+        # with dashes to be re-labeled. getattr() is slightly more robust
+        # but will still fail in that instance!
+        # table_row[column] = getattr(cell, column)
+        table_row[column] = cell[column]
+
+    table_row.append()
 
 
 def write_properties_to_table(
@@ -17,7 +183,6 @@ def write_properties_to_table(
     trench_number,
     properties,
     sc,
-    params,
     row,
     stack,
     ch_to_index,
@@ -123,7 +288,6 @@ def make_cell_type(channels, seg_channels, file_names, has_regions):
     }
 
     for c in channels:
-        c = c.decode("utf-8")
         # Total intensities
         column_types["total_intensity_{}".format(c)] = tables.Float64Col()
 
@@ -132,7 +296,6 @@ def make_cell_type(channels, seg_channels, file_names, has_regions):
         column_types["geometry_Max_Width_Area"] = tables.UInt32Col()
 
         for c in channels:
-            c = c.decode("utf-8")
             # Total intensities spanning the entire width of the trench
             column_types["width_intensity_{}".format(c)] = tables.Float64Col()
 
@@ -200,10 +363,7 @@ def merge_tables(in_file, out_file, channels, seg_channels, file_names, has_regi
 
     h5file_out = tables.open_file(out_file, mode="w")
     big_table = h5file_out.create_table(
-        "/",
-        "cell_measurements",
-        Cell,
-        filters=tables.Filters(complevel=1, complib="zlib"),
+        "/", "measurements", Cell, filters=tables.Filters(complevel=1, complib="zlib")
     )
 
     # NOTE: had to resort to much more complex code, and not a single walk_nodes,
