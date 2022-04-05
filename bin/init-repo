@@ -15,14 +15,20 @@ fi
 cd "$root"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
-if git remote -v | grep -q paulssonlab/paulssonlab; then
-    # cloned from paulssonlab account, fork
-    hub fork --remote-name origin
-    status=$?
-    if [ $status != 0 ] ; then
-        echo "❌  ${bold}Could not fork repo, aborting.${normal}"
-        exit 1
-    fi
+if git remote -v | grep -q github.com:paulssonlab/paulssonlab; then
+    read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
+    echo
+    case ${answer:0:1} in
+        y|Y )
+            # cloned from paulssonlab account, fork
+            hub fork --remote-name origin
+            status=$?
+            if [ $status != 0 ] ; then
+                echo "❌  ${bold}Could not fork repo, aborting.${normal}"
+                exit 1
+            fi
+        ;;
+    esac
 else
     # cloned from personal account, add upstream remote
     git remote add upstream git@github.com:paulssonlab/paulssonlab.git
