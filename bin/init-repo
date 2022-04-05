@@ -19,7 +19,9 @@ if git remote -v | grep -q github.com:paulssonlab/paulssonlab; then
     read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
     echo
     case ${answer:0:1} in
-        y|Y )
+        n|N )
+            ;;
+        * )
             # cloned from paulssonlab account, fork
             hub fork --remote-name origin
             status=$?
