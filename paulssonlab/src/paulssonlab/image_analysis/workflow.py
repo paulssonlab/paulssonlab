@@ -24,7 +24,7 @@ from .util import (
     kwcompose,
 )
 
-# from .metadata import parse_nd2_metadata
+from paulssonlab.io.metadata import parse_nd2_metadata
 from .geometry import get_image_limits, get_trench_bbox, bounding_box
 from .diagnostics import expand_diagnostics_by_label
 from .image import get_regionprops
