@@ -32,4 +32,5 @@ dependencies:
   - streamz
   - tornado
   - wrapt
+  - xmltodict
   - zarr

@@ -47,7 +47,7 @@ def _parse_xml(s):
 
 def _stringify_dict_keys(d):
     return recursive_map(
-        lambda s: s.decode("utf-8"), d, shortcircuit=bytes, ignore=True, keys=True
+        lambda s: s.decode(), d, shortcircuit=bytes, ignore=True, keys=True
     )
 
 
