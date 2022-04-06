@@ -49,7 +49,7 @@ def _RevImage(cls, img, **kwargs):
     # TODO: I think datashader is doing this correctly, but the original Image display screws up the frame dimensions
     # return cls(img[::-1], bounds=(0,0,img.shape[1],img.shape[0])).options(invert_yaxis=True, data_aspect=(img.shape[1]/img.shape[0])**2, width=400)#, responsive=False)
     return cls(img[::-1], bounds=(0, 0, img.shape[1], img.shape[0])).options(
-        aspect=img.shape[1] / img.shape[0], width=250
+        aspect=img.shape[1] / img.shape[0], frame_width=250
     )  # , responsive=False)
 
 
@@ -100,7 +100,7 @@ def show_plot_stack(diags, keys=None):
     plots = []
     for key in keys:
         plot = hv.HoloMap({t: diag[key] for t, diag in enumerate(diags)}).options(
-            title_format=key, finalize_hooks=[_set_active_tool]
+            title_format=key, hooks=[_set_active_tool]
         )
         plots.append(plot)
     return hv.Layout.from_values(plots).cols(1).options(normalize=False)
@@ -153,7 +153,7 @@ def display_plot_browser_item(
     if range_xy is None:
         range_xy = hv.streams.RangeXY()
     if isinstance(obj, hv.core.ViewableElement):
-        obj = obj.options(finalize_hooks=[_set_active_tool])
+        obj = obj.options(hooks=[_set_active_tool])
     if stream is None:
         with output:
             if isinstance(obj, hv.core.ViewableElement):

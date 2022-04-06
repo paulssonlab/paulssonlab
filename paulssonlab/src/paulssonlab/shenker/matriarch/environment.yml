@@ -12,20 +12,24 @@ dependencies:
   - datashader
   - filelock
   - holoviews
+  - hvplot
   - ipython
   - ipywidgets
+  - jupyterlab
   - matplotlib
-  - nd2reader
   - numba
   - numcodecs
   - numpy
   - numpy-indexed
   - pandas
+  - panel=0.12.7
   - peakutils
   - pyarrow
   - qgrid
   - scikit-image
   - scikit-learn
   - scipy
+  - streamz
   - tornado
+  - wrapt
   - zarr
