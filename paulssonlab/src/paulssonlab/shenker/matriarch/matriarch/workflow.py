@@ -23,7 +23,8 @@ from .util import (
     get_kwargs,
     kwcompose,
 )
-from .metadata import parse_nd2_metadata
+
+# from .metadata import parse_nd2_metadata
 from .geometry import get_image_limits, get_trench_bbox, bounding_box
 from .diagnostics import expand_diagnostics_by_label
 from .image import get_regionprops
@@ -252,13 +253,7 @@ def _get_trench_bboxes_dataframe(trenches, x_lim, y_lim, **kwargs):
     upper_left = points_dataframe(upper_left)
     lower_right = points_dataframe(lower_right)
 
-    df = pd.concat(
-        {
-            "upper_left": upper_left,
-            "lower_right": lower_right,
-        },
-        axis=1,
-    )
+    df = pd.concat({"upper_left": upper_left, "lower_right": lower_right}, axis=1)
     df.index = trenches.index
     return df
 

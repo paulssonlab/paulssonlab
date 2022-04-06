@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 import pandas.core.groupby.groupby
-from collections import defaultdict, Sequence, Mapping
+from collections import defaultdict
+from collections.abc import Sequence, Mapping
 from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
