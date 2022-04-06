@@ -1,4 +1,4 @@
-name: matriarch
+name: image_analysis
 channels:
   - pyviz
   - conda-forge
