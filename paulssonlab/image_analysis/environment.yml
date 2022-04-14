@@ -1,8 +1,6 @@
 name: image_analysis
 channels:
-  - pyviz
   - conda-forge
-  - defaults
 dependencies:
   - bokeh
   - cachetools
@@ -22,8 +20,9 @@ dependencies:
   - numpy
   - numpy-indexed
   - pandas
-  - panel=0.12.7
+  - panel
   - peakutils
+  - pip
   - pyarrow
   - qgrid
   - scikit-image
@@ -34,3 +33,5 @@ dependencies:
   - wrapt
   - xmltodict
   - zarr
+  - pip:
+    - git+https://git@github.com/paulssonlab/nd2reader.git
