@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pandas.core.groupby.groupby
 from collections import defaultdict
-from collections.abc import Sequence, Mapping
+from collections.abc import Sequence, Mapping, MutableMapping
 from tqdm import tqdm, tqdm_notebook
 import zarr
 from datetime import datetime, timezone
@@ -209,7 +209,7 @@ def drop_constant_columns(df):
 
 
 # predicate that's useful for flatten_dict
-mapping_values_are_dict = lambda x: isinstance(get_one(x), collections.MutableMapping)
+mapping_values_are_dict = lambda x: isinstance(get_one(x), MutableMapping)
 
 # FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
 def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
@@ -224,9 +224,7 @@ def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
             new_key = parent_key + sep + str(k) if parent_key else str(k)
         else:
             new_key = parent_key + (k,)
-        if isinstance(v, collections.MutableMapping) and (
-            lookahead is None or lookahead(v)
-        ):
+        if isinstance(v, MutableMapping) and (lookahead is None or lookahead(v)):
             items.extend(
                 flatten_dict(
                     v,

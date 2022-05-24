@@ -533,7 +533,7 @@ class MultiIndexStream(Stream):
     def define(cls, name, index, cache_size=100):
         params = {"name": param.Parameter(default=name)}
         for col_idx, column in enumerate(index.names):
-            default = index.levels[col_idx][index.labels[col_idx][0]]
+            default = index.levels[col_idx][index.codes[col_idx][0]]
             params[column] = param.Parameter(default=default, constant=True)
         # TODO: big performance issue in __repr__
         # if _index is a param
@@ -684,7 +684,7 @@ def viewer(callback, *streams, scroll_wheel=True):
 
     dmap = hv.DynamicMap(callback_wrapper, streams=list(streams))
     if scroll_wheel:
-        dmap = dmap.options(finalize_hooks=[_set_active_tool])
+        dmap = dmap.options(hooks=[_set_active_tool])
     return dmap
 
 

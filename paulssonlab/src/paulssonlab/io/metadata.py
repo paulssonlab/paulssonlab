@@ -1,12 +1,10 @@
 import nd2reader
 from tifffile import TiffFile
-import PIL
 import array
 import zarr
 from numcodecs import Blosc
 import xmltodict
 import xml
-from paulssonlab.util import recursive_map
 
 DEFAULT_METADATA_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0
@@ -19,7 +17,12 @@ ND2_METADATA_PARSED = [
     "image_text_info",
     "image_metadata",
 ]
-ND2_METADATA_XML = ["lut_data", "grabber_settings", "custom_data", "app_info"]
+ND2_METADATA_XML = [
+    "lut_data",
+    "grabber_settings",
+    "custom_data",
+    "app_info",
+]
 ND2_METADATA_ARRAYS = {
     "pfs_status": "i",
     "pfs_offset": "i",
@@ -46,9 +49,18 @@ def _parse_xml(s):
 
 
 def _stringify_dict_keys(d):
-    return recursive_map(
-        lambda s: s.decode(), d, shortcircuit=bytes, ignore=True, keys=True
-    )
+    # TODO: go back to using recursive_map?
+    # recursive_map(
+    #     lambda s: s.decode(), d, shortcircuit=bytes, ignore=True, keys=True
+    # )
+    if isinstance(d, bytes):
+        return d.decode()
+    elif isinstance(d, dict):
+        return {k.decode(): _stringify_dict_keys(v) for k, v in d.items()}
+    elif isinstance(d, list):
+        return [_stringify_dict_keys(v) for v in d]
+    else:
+        return d
 
 
 def parse_nd2_metadata(nd2):
@@ -158,13 +170,13 @@ def parse_nikon_tiff_metadata(tags):
             # SEEMS TO STORE (with null bytes): CameraTemp1, Camera_ExposureTime1, PFS_OFFSET, PFS_STATUS
             label = _nikon_tiff_label(b"SLxImageTextInfo")
             idx = data.index(label) - 2
-            md = nd2reader.common.read_metadata(data[idx:], 1)
-            metadata["image_text_info"] = _stringify_dict_keys(md)
+            metadata["image_text_info"] = nd2reader.common.read_metadata(data[idx:], 1)
         elif tag == 65331:
             label = _nikon_tiff_label(b"SLxPictureMetadata")
             idx = data.index(label) - 2
-            md = nd2reader.common.read_metadata(data[idx:], 1)
-            metadata["image_metadata_sequence"] = _stringify_dict_keys(md)
+            metadata["image_metadata_sequence"] = nd2reader.common.read_metadata(
+                data[idx:], 1
+            )
         elif tag == 65332:
             # SEEMS TO STORE (UTF-16 encoded): AppInfo_V1_0, CustomDataV2_0, GrabberCameraSettingsV1_0, LUTDataV1_0
             label = _nikon_tiff_label(b"AppInfo_V1_0")
