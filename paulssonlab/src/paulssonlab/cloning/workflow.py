@@ -27,8 +27,7 @@ from paulssonlab.api.google import (
     columns_with_validation,
     insert_sheet_rows,
 )
-from paulssonlab.api import regex_key
-from paulssonlab.api.util import PROGRESS_BAR
+from paulssonlab.api.util import PROGRESS_BAR, regex_key
 from paulssonlab.cloning.io import bytes_to_value, filename_to_mimetype
 
 DEGENERATE_BASES = "RYMKSWHBVDN".lower()

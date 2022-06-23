@@ -29,7 +29,6 @@ from paulssonlab.cloning.workflow import (
     is_bases,
     ID_REGEX,
 )
-from paulssonlab.api import regex_key
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
 from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
 from paulssonlab.cloning.io import (
@@ -39,7 +38,7 @@ from paulssonlab.cloning.io import (
     filename_to_mimetype,
     value_to_extension,
 )
-from paulssonlab.api.util import PROGRESS_BAR
+from paulssonlab.api.util import PROGRESS_BAR, regex_key
 
 AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
