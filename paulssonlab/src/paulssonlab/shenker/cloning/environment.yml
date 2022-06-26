@@ -1,6 +1,5 @@
 name: shenker-cloning
 channels:
-  - pyviz
   - conda-forge
   - bioconda
   - defaults
