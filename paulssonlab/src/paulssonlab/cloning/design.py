@@ -1,9 +1,12 @@
 import random
 from paulssonlab.cloning.sequence import reverse_complement
+from paulssonlab.cloning.workflow import normalize_seq
 
 
-def random_bases(n, letters="atcg"):
-    return "".join(random.choice(letters) for _ in range(max(n, 0)))
+def random_bases(n, letters="atcg", seed=""):
+    seed = normalize_seq(seed)
+    myrandom = random.Random(seed)
+    return "".join(myrandom.choice(letters) for _ in range(max(n, 0)))
 
 
 def type2s_with_spacer(enzyme, overhang_length):
