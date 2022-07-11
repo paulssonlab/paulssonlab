@@ -131,9 +131,14 @@ def _assemble_gibson(
         return None, -1
 
 
-def ensure_dsseqrecords(*seqs):
+def ensure_dsseqrecords(*seqs, allow_nones=False):
     seqs = list(seqs)
     for idx in range(len(seqs)):
+        if seqs[idx] is None:
+            if allow_nones:
+                continue
+            else:
+                raise ValueError("got None, expecting DsSeqRecord")
         if isinstance(seqs[idx], str):
             seqs[idx] = Seq(seqs[idx])
         if not isinstance(seqs[idx], DsSeqRecord):
@@ -1081,7 +1086,9 @@ def find_subsequence(template, product, min_score=10):
 
 
 def _amplicon_location(template, primer1, primer2, min_score=10):
-    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+    template, primer1, primer2 = ensure_dsseqrecords(
+        template, primer1, primer2, allow_nones=True
+    )
     both_sites = []
     sites1 = enumerate_primer_binding_sites(
         template, primer1, reverse_complement=None, min_score=min_score
@@ -1091,38 +1098,59 @@ def _amplicon_location(template, primer1, primer2, min_score=10):
             f"expecting a unique primer1 binding site, instead found {len(sites1)}"
         )
     site1 = sites1[0]
-    sites2 = enumerate_primer_binding_sites(
-        template, primer2, reverse_complement=(sites1[0][0] == 1), min_score=min_score
-    )
-    if len(sites2) != 1:
-        raise ValueError(
-            f"expecting a unique primer2 binding site, instead found {len(sites2)}"
+    if primer2 is None:
+        if site1.strand == 1:
+            loc1 = site1.seq1_stop
+            loc2 = len(template)
+        else:
+            loc1 = 0
+            loc2 = site1.seq1_stop
+        return loc1, loc2, site1.score, 0
+    else:
+        sites2 = enumerate_primer_binding_sites(
+            template,
+            primer2,
+            reverse_complement=(sites1[0][0] == 1),
+            min_score=min_score,
         )
-    site2 = sites2[0]
-    if site1.strand == -1:
-        site1, site2 = site2, site1
-    if site1.strand != -site2.strand:
-        raise ValueError("expecting a forward/reverse primer pair")
-    # this is needed to handle negative locs (when working with circular sequences)
-    # TODO: not tested!
-    loc1 = site1.seq1_stop % len(template)
-    loc2 = site2.seq1_stop % len(template)
-    return loc1, loc2, site1.score, site2.score
+        if len(sites2) != 1:
+            raise ValueError(
+                f"expecting a unique primer2 binding site, instead found {len(sites2)}"
+            )
+        site2 = sites2[0]
+        if site1.strand == -1:
+            site1, site2 = site2, site1
+        if site1.strand != -site2.strand:
+            raise ValueError("expecting a forward/reverse primer pair")
+        # this is needed to handle negative locs (when working with circular sequences)
+        # TODO: not tested!
+        loc1 = site1.seq1_stop % len(template)
+        loc2 = site2.seq1_stop % len(template)
+        return loc1, loc2, site1.score, site2.score
 
 
 def amplicon_location(template, primer1, primer2, min_score=10):
-    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+    template, primer1, primer2 = ensure_dsseqrecords(
+        template, primer1, primer2, allow_nones=True
+    )
     loc1, loc2, _, _ = _amplicon_location(template, primer1, primer2)
     return loc1, loc2
 
 
-def pcr(template, primer1, primer2, min_score=10):
-    template, primer1, primer2 = ensure_dsseqrecords(template, primer1, primer2)
+def pcr(template, primer1, primer2=None, min_score=10):
+    template, primer1, primer2 = ensure_dsseqrecords(
+        template, primer1, primer2, allow_nones=True
+    )
     loc1, loc2, len1, len2 = _amplicon_location(template, primer1, primer2)
     amplicon = template.slice(
         loc1, loc2, annotation_start=loc1 - len1, annotation_stop=loc2 + len2
     )
-    product = primer1 + amplicon + reverse_complement(primer2)
+    if loc2 == len(template):
+        product = primer1 + amplicon
+    elif loc1 == 0:
+        product = amplicon + reverse_complement(primer1)
+    else:
+        product = primer1 + amplicon + reverse_complement(primer2)
     return product
 
 

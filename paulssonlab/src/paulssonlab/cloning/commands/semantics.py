@@ -56,8 +56,9 @@ def _eval_command(ast, get_func):
         arguments = [
             _eval_command(ast.template, get_func),
             _eval_command(ast.primer1, get_func),
-            _eval_command(ast.primer2, get_func),
         ]
+        if ast.primer2:
+            arguments.append(_eval_command(ast.primer2, get_func))
         ast = AST(command_name="PCR", arguments=arguments)
         # return apply_expr(
         #     pcr,
@@ -126,12 +127,17 @@ def cmd_gib(args, dest=None, ctx=None):
 
 
 def cmd_pcr(args, dest=None, ctx=None):
-    if len(args) != 3:
+    if len(args) == 2:
+        primer2 = None
+    elif len(args) == 3:
+        primer3 = args[2]["_seq"]
+    else:
         raise ValueError(
-            "@PCR expecting exactly three arguments: input, primer1, primer2"
+            "@PCR expecting two or three arguments: input, primer1, and optionally primer2"
         )
-    template, primer1, primer2 = args
-    product = pcr(template["_seq"], primer1["_seq"], primer2["_seq"])
+    template = args[0]["_seq"]
+    primer1 = args[1]["_seq"]
+    product = pcr(template, primer1, primer2)
     res = {"_seq": product}
     return res
 

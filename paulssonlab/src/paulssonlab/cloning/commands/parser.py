@@ -19,7 +19,7 @@ anneal = _type:`anneal` strand1:name '=' strand2:name ;
 
 dna = anneal | name ;
 
-pcr = _type:`pcr` template:dna '<' primer1:name ',' primer2:name '>' ;
+pcr = _type:`pcr` template:dna '<' primer1:name [ ',' primer2:name ] '>' ;
 
 restriction_digest = _type:`digest` input:expr '/' enzyme:name ;"""
 
@@ -85,7 +85,10 @@ def unparse_expr(expr):
     if type_ == "name":
         return expr["name"]
     elif type_ == "pcr":
-        return f"{unparse_expr(expr['template'])}<{unparse_expr(expr['primer1'])},{unparse_expr(expr['primer2'])}>"
+        primers = unparse_expr(expr["primer1"])
+        if expr.get("primer2"):
+            primers += f",{unparse_expr(expr['primer2'])}"
+        return f"{unparse_expr(expr['template'])}<{primers}>"
     elif type_ == "digest":
         return f"{unparse_expr(expr['input'])}/{unparse_expr(expr['enzyme'])}"
     elif type_ == "anneal":
