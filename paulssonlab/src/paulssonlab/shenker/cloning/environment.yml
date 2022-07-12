@@ -45,6 +45,7 @@ dependencies:
   - seaborn
   - sqlalchemy
   - tatsu
+  - toml
   - tqdm
   - viennarna
   - xlrd
