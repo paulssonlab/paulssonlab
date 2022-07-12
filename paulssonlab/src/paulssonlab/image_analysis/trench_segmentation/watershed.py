@@ -3,6 +3,7 @@ import holoviews as hv
 import scipy.stats
 import skimage
 import skimage.morphology
+import skimage.segmentation
 from ..image import hessian_eigenvalues, permute_labels
 from ..ui import RevImage, _trench_img
 from ..util import repeat_apply
@@ -86,7 +87,7 @@ def segment(img, dtype=np.uint16, diagnostics=None):
     )
     if diagnostics is not None:
         diagnostics["clean_seeds"] = RevImage(clean_seeds)
-    watershed_labels = skimage.morphology.watershed(
+    watershed_labels = skimage.segmentation.watershed(
         img_k1, clean_seeds, mask=mask, watershed_line=False, compactness=0.01
     )
     watershed_labels = watershed_labels.astype(dtype)
