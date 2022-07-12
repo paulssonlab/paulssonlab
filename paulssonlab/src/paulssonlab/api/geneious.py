@@ -14,7 +14,6 @@ from Bio.SeqFeature import (
 )
 from Bio import GenBank
 import sqlalchemy
-import xmltodict
 from lxml import etree
 from lxml.builder import E
 from cytoolz import get_in
