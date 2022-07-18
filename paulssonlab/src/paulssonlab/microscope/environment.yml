@@ -1,0 +1,11 @@
+name: microscope
+channels:
+  - conda-forge
+dependencies:
+  - black
+  - click
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - numpy
+  - pip
