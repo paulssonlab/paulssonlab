@@ -47,12 +47,16 @@ def aa_frequency(codon_usage_table=None):
     return aa_freq
 
 
-def codons_by_relative_frequency(codon_usage_table=None):
+def _sorted_codon_usage_table(codon_usage_table=None):
     if codon_usage_table is None:
         codon_usage_table = get_codon_usage_table()
-    total_counts = sum(t[2] for t in codon_usage_table)
-    aa_freq = aa_frequency(codon_usage_table)
     codon_usage_table = sorted(codon_usage_table, key=itemgetter(2), reverse=True)
+    return codon_usage_table
+
+
+def codons_by_relative_frequency(codon_usage_table=None):
+    codon_usage_table = _sorted_codon_usage_table(codon_usage_table)
+    aa_freq = aa_frequency(codon_usage_table)
     aa_to_codons = {}
     for codon, aa, freq in codon_usage_table:
         if aa not in aa_to_codons:
@@ -62,10 +66,8 @@ def codons_by_relative_frequency(codon_usage_table=None):
 
 
 def codons_by_absolute_frequency(codon_usage_table=None):
-    if codon_usage_table is None:
-        codon_usage_table = get_codon_usage_table()
+    codon_usage_table = _sorted_codon_usage_table(codon_usage_table)
     total_counts = sum(t[2] for t in codon_usage_table)
-    codon_usage_table = sorted(codon_usage_table, key=itemgetter(2), reverse=True)
     aa_to_codons = {}
     for codon, aa, freq in codon_usage_table:
         if aa not in aa_to_codons:
@@ -74,8 +76,7 @@ def codons_by_absolute_frequency(codon_usage_table=None):
     return aa_to_codons
 
 
-def back_translate(aa_seq, aa_to_codons=None):
-    if aa_to_codons is None:
-        aa_to_codons = most_common_codons(codon_usage_table)
-    seq = "".join([first(aa_to_codons[aa].keys()) for aa in aa_seq])
+def back_translate(aa_seq, codon_usage_table=None):
+    codon_usage_table = codons_by_absolute_frequency(codon_usage_table)
+    seq = "".join([first(codon_usage_table[aa].keys()) for aa in aa_seq])
     return seq
