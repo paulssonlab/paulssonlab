@@ -41,11 +41,10 @@ from paulssonlab.cloning.io import (
 from paulssonlab.api.util import PROGRESS_BAR, regex_key
 
 AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
-DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "parts"]
+DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "fragments"]
 FOLDER_TYPES = ["maps", "sequencing"]
 TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
 TYPES_WITH_MAPS = ["plasmids"]
-TYPES_WITHOUT_IDS = ["parts"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
 
@@ -193,7 +192,7 @@ class SheetClient(GDriveClient):
 
     def __getitem__(self, key):
         # don't allow accesing rows with empty IDs
-        if key.strip() == "":
+        if key is None or key.strip() == "":
             raise KeyError(key)
         if key in self.local:
             row = self.local[key]
@@ -219,11 +218,13 @@ class SheetClient(GDriveClient):
         self[id_] = row
         return id_
 
-    def find_id(self, row, key_columns=[], apply={}):
+    def find_id(self, row, key_columns=None, apply={}):
         """None values in apply is equivalent to the identity function.
 
         Missing keys in rows are interpreted as empty strings.
         """
+        if key_columns is None:
+            key_columns = [k for k in row.keys()]
         key_columns = list(set(key_columns) | apply.keys())
         if not key_columns:
             raise ValueError(
@@ -246,9 +247,11 @@ class SheetClient(GDriveClient):
         return None
 
     def find(self, row, key_columns=[]):
-        apply = {k: None for k in row.keys()}
-        id_ = self.find_id(row, key_columns=key_columns, apply=apply)
-        return self[id_]
+        id_ = self.find_id(row, key_columns=None)
+        if id_ is None:
+            return None
+        else:
+            return self[id_]
 
     def upsert(self, row, key_columns=[], apply={}, overwrite=False):
         id_ = self.find_id(row, key_columns=key_columns, apply=apply)
@@ -914,7 +917,7 @@ class Registry(object):
                                 dest_file["id"]
                             ).worksheet()
                             clear_sheet(dest_sheet)
-                        elif source_type not in TYPES_WITHOUT_IDS:
+                        else:
                             # get first worksheet
                             dest_sheet = self.sheets_client.open_by_key(
                                 dest_file["id"]
@@ -929,20 +932,23 @@ class Registry(object):
             types = [k[1] for k in self.keys() if k[0] == prefix]
         else:
             prefix = None
-            types = ["parts"]
+            types = ["fragments"]
         return prefix, types
 
-    def get_with_prefix(self, name, prefix, type_):
-        if type_ == "parts":
+    def get_with_prefix(self, name, prefix, type_, name_column="Name"):
+        if type_ == "fragments":
             client = None
             for key in self.keys():
-                if key[1] != "parts":
+                if key[1] != "fragments":
                     continue
-                if name in self[key]:
+                # if name in self[key]:
+                client = self[key]
+                id_ = client.find_id({name_column: name})
+                if id_ is not None:
                     prefix = key[0]
-                    client = self[key]
+                    name = id_
                     break
-            if client is None:
+            if prefix is None:
                 raise ValueError(f"could not find part '{name}'")
         else:
             key = (prefix, type_)
@@ -963,7 +969,7 @@ class Registry(object):
             if name not in map_client:
                 raise ValueError(f"could not find map for '{name}'")
             entry["_seq"] = map_client[name]
-        elif type_ == "parts":
+        elif type_ == "fragments":
             res = eval_exprs_by_priority(entry["Usage"], self.get)
             if res is None:
                 seq = None
@@ -981,13 +987,13 @@ class Registry(object):
             entry["_seq"] = DsSeqRecord(Seq(entry["Sequence"]))
         return entry
 
-    def get(self, name, types=("plasmids", "strains", "oligos", "parts")):
+    def get(self, name, types=("plasmids", "strains", "oligos", "fragments")):
         match = re.match(ID_REGEX, name)
         if match:
             prefix = match.group(1)
         else:
             prefix = None
-            types = ("parts",)
+            types = ("fragments",)
         for type_ in types:
             try:
                 return self.get_with_prefix(name, prefix, type_)
@@ -998,7 +1004,7 @@ class Registry(object):
     def sync_geneious(
         self,
         overwrite=None,
-        types=("oligos", "plasmids", "parts"),  # TODO: include tus as well
+        types=("oligos", "plasmids", "fragments"),  # TODO: include tus as well
         progress_bar=PROGRESS_BAR,
     ):
         for key in self:
