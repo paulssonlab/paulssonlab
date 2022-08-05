@@ -121,7 +121,11 @@ def cmd_goldengate(args, dest=None, ctx=None):
 
 def cmd_gib(args, dest=None, ctx=None):
     seqs = [arg["_seq"] for arg in args]
-    product = assemble(seqs, method="gibson")
+    if len(seqs) == 1:
+        # special case to circularize single sequences
+        product = seqs[0].assemble(method="gibson")
+    else:
+        product = assemble(seqs, method="gibson")
     res = {"_seq": product}
     return res
 
