@@ -30,7 +30,11 @@ from paulssonlab.cloning.workflow import (
     ID_REGEX,
 )
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
-from paulssonlab.cloning.commands.semantics import eval_exprs_by_priority
+from paulssonlab.cloning.commands.semantics import (
+    eval_expr,
+    eval_command,
+    eval_exprs_by_priority,
+)
 from paulssonlab.cloning.io import (
     value_to_bytes,
     bytes_to_value,
@@ -1000,6 +1004,12 @@ class Registry(object):
             except ValueError:
                 pass
         raise ValueError(f"could not find '{name}'")
+
+    def eval_expr(self, expr):
+        return eval_expr(expr, self.get)
+
+    def eval_command(self, command):
+        return eval_command(command, self.get)
 
     def sync_geneious(
         self,
