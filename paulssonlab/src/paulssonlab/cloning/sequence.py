@@ -1143,6 +1143,8 @@ def pcr(template, primer1, primer2=None, min_score=10):
     template, primer1, primer2 = ensure_dsseqrecords(
         template, primer1, primer2, allow_nones=True
     )
+    if primer2 is None and template.circular:
+        raise ValueError("cannot PCR a circular template with a single primer")
     loc1, loc2, len1, len2 = _amplicon_location(template, primer1, primer2)
     amplicon = template.slice(
         loc1, loc2, annotation_start=loc1 - len1, annotation_stop=loc2 + len2
