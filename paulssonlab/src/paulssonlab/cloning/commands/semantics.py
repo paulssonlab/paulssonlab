@@ -130,7 +130,7 @@ def cmd_pcr(args, dest=None, ctx=None):
     if len(args) == 2:
         primer2 = None
     elif len(args) == 3:
-        primer3 = args[2]["_seq"]
+        primer2 = args[2]["_seq"]
     else:
         raise ValueError(
             "@PCR expecting two or three arguments: input, primer1, and optionally primer2"
