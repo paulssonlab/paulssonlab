@@ -598,8 +598,10 @@ class DsSeqRecord(SeqRecord):
         return other.__add__(self)
 
     def __eq__(self, other):
-        # TODO
-        return self.seq.lower() == other.seq.lower()
+        # TODO: should compare other attributes too
+        if not isinstance(other, DsSeqRecord):
+            other = DsSeqRecord(other)
+        return self.seq_lower() == other.seq_lower()
 
     def __ne__(self, other):
         return not self.__eq__(other)
