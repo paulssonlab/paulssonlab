@@ -46,7 +46,7 @@ expr_list_parser = tatsu.compile(expr_list_grammar)
 command_grammar = rf"""@@grammar::Command
 @@whitespace :: //
 
-start = command $ ;
+start = command | expr $ ;
 
 argument
     =
