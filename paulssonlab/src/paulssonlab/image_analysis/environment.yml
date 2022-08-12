@@ -25,6 +25,7 @@ dependencies:
   - panel=0.12.7
   - peakutils
   - pyarrow
+  - pytables
   - python-lmdb
   - qgrid
   - scikit-image
