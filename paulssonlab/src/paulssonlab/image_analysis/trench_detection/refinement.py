@@ -59,9 +59,7 @@ def get_trench_line_profiles(
         padded_line_points.append(padded_points)
     if diagnostics is not None:
         # TODO: make hv.Path??
-        diagnostics["profiles"] = hv.Overlay.from_values(
-            [hv.Curve(tp) for tp in padded_profiles]
-        )
+        diagnostics["profiles"] = hv.Overlay([hv.Curve(tp) for tp in padded_profiles])
     if diagnostics is not None:
         lines_plot = hv.Path(
             [[points[0], points[-1]] for points in line_points]

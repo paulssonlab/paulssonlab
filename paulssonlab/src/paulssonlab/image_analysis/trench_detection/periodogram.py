@@ -153,11 +153,11 @@ def detect_trench_region(
         # anchors = np.vstack((xs[idxs], ys[idxs])).T
         # for l in lines:
         #    print(l, (l[1][0], l[2][0]), (l[1][1], l[2][1]))
-        region_slices_plot = hv.Overlay.from_values(
+        region_slices_plot = hv.Overlay(
             [hv.Path(((l[1][0], l[2][0]), (l[1][1], l[2][1]))) for l in lines]
         )
         diagnostics["region_slices"] = RevImage(bin_img) * region_slices_plot
-        diagnostics["cross_sections"] = hv.Overlay.from_values(
+        diagnostics["cross_sections"] = hv.Overlay(
             [hv.Curve(cs) for cs in cross_sections]
         )
     cross_section_vars = np.array([cs.var() for cs in cross_sections])
@@ -215,7 +215,7 @@ def _detect_trench_end(img, anchors, theta, margin=15, threshold=0.8, diagnostic
         yss.append(ys)
         trench_profiles.append(img[ys, xs])
     if diagnostics is not None:
-        diagnostics["trench_profiles"] = hv.Overlay.from_values(
+        diagnostics["trench_profiles"] = hv.Overlay(
             [hv.Curve(tp) for tp in trench_profiles]
         )
         diagnostics["threshold"] = threshold

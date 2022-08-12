@@ -103,7 +103,7 @@ def show_plot_stack(diags, keys=None):
             title_format=key, hooks=[_set_active_tool]
         )
         plots.append(plot)
-    return hv.Layout.from_values(plots).cols(1).options(normalize=False)
+    return hv.Layout(plots).cols(1).options(normalize=False)
 
 
 def show_plot_browser(plots, key=None, stream=None, range_xy=None, **kwargs):
