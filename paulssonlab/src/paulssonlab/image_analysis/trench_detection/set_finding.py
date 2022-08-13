@@ -49,7 +49,6 @@ def drop_rare_labels(labels):
     total = sum(counter)
     good_labels = []
     for label, count in counter.iteritems():
-        print(count / total)
         if count / total > 0.01:
             good_labels.append(label)
     return good_labels
@@ -98,7 +97,7 @@ def find_trench_sets_by_cutting(
     profile_mask = stacked_profile_smooth > threshold_value
     if min_length:
         skimage.morphology.remove_small_objects(
-            profile_mask, min_size=min_length, in_place=True
+            profile_mask, min_size=min_length, out=profile_mask
         )
     profile_labels = skimage.measure.label(profile_mask)
     endpoints = []
@@ -283,7 +282,7 @@ def binarize_trench_image(
         diagnostics["num_components"] = num_components
     cleaned_components = components.copy()
     skimage.morphology.remove_small_objects(
-        cleaned_components, min_size=min_component_size, in_place=True
+        cleaned_components, min_size=min_component_size, out=cleaned_components
     )
     remove_large_objects(cleaned_components, max_component_size, in_place=True)
     cleaned_components, _, inverse_map = skimage.segmentation.relabel_sequential(
@@ -296,7 +295,7 @@ def binarize_trench_image(
     normalized_img = normalize_componentwise(
         img_highpass,
         cleaned_components,
-        label_index=np.arange(num_cleaned_components) + 1,
+        label_index=np.arange(num_cleaned_components) + 1,  # TODO: is this right?
     )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)

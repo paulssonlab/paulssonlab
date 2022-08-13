@@ -50,6 +50,7 @@ def find_periodic_lines(
     img,
     theta=None,
     smooth=4,
+    threshold_quantile=0.75,
     upscale=None,
     hough_func=hough_line_intensity,
     peak_func=find_periodic_peaks,
@@ -57,7 +58,11 @@ def find_periodic_lines(
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
-    h, theta, rho = hough_func(img, theta=theta)
+    if threshold_quantile is not None:
+        img_thresh = img * (img > np.percentile(img, threshold_quantile * 100))
+    else:
+        img_thresh = img
+    h, theta, rho = hough_func(img_thresh, theta=theta)
     diff_h = np.diff(h.astype(np.int_), axis=1)  # TODO: is diff necessary??
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
     if smooth:
@@ -70,6 +75,7 @@ def find_periodic_lines(
     angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
+        diagnostics["thresholded_image"] = RevImage(img_thresh)
         # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1])) # TODO: arrow/parquet nested column
         diagnostics["angle_range_min"] = np.rad2deg(theta[0])
         diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
@@ -142,6 +148,7 @@ def find_periodic_lines(
 
 
 def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None):
+    # TODO: can probably reduce sampling here in one or both hough calls
     angle1, *_ = find_periodic_lines(
         img, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
     )
