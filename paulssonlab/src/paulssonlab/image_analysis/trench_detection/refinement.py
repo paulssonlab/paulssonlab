@@ -7,6 +7,7 @@ from ..ui import RevImage
 from ..workflow import points_dataframe
 from .hough import trench_anchors
 from .geometry import edge_point, coords_along
+from paulssonlab.util.numeric import silent_nanquantile
 
 
 def get_trench_line_profiles(
@@ -96,7 +97,7 @@ def find_trench_ends(
     profiles, stacked_points, anchor_idx = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     stacked_profile_diff = holo_diff(1, stacked_profile)
     # using np.nanargmax/min because we might have an all-nan axis
     top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)

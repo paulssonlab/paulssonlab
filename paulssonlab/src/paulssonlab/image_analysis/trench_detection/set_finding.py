@@ -18,6 +18,7 @@ from ..image import (
 )
 from ..ui import RevImage
 from ..util import getitem_if_not_none
+from paulssonlab.util.numeric import silent_nanquantile
 
 
 def _standardize_cluster_labels(X, fit):
@@ -86,14 +87,14 @@ def find_trench_sets_by_cutting(
     profiles, stacked_points, _ = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
         stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
             stacked_profile, smooth
         )
     else:
         stacked_profile_smooth = stacked_profile
-    threshold_value = np.nanquantile(stacked_profile_smooth, threshold)
+    threshold_value = silent_nanquantile(stacked_profile_smooth, threshold)
     profile_mask = stacked_profile_smooth > threshold_value
     if min_length:
         skimage.morphology.remove_small_objects(
@@ -180,7 +181,7 @@ def find_trench_sets_by_diff_cutting(
     profiles, _, _ = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
         stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
             stacked_profile, smooth
