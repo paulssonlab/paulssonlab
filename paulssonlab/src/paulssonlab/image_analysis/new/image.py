@@ -1,7 +1,10 @@
 import numpy as np
 import pandas as pd
+import holoviews as hv
 from paulssonlab.image_analysis.trench_detection import find_trenches
 from paulssonlab.image_analysis.geometry import get_image_limits, get_trench_bbox
+from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.util import getitem_if_not_none
 
 
 def _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
@@ -35,12 +38,50 @@ def get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
 
 
 # TODO: integrate this into find_trenches?
-def find_trench_bboxes(img, overlap=0):
-    trenches = find_trenches(img)
+def find_trench_bboxes(img, overlap=0, diagnostics=None, **kwargs):
+    trenches = find_trenches(
+        img, diagnostics=getitem_if_not_none(diagnostics, "find_trenches"), **kwargs
+    )
     image_limits = get_image_limits(img.shape)
     trench_bboxes = get_trench_bboxes(trenches, *image_limits, overlap=overlap)
     if trench_bboxes is not None:
         trenches = pd.concat([trenches, trench_bboxes], axis=1)
+    if diagnostics is not None:
+        top_endpoints = np.vstack(
+            (trenches["top_x"].values, trenches["top_y"].values)
+        ).T
+        bottom_endpoints = np.vstack(
+            (trenches["bottom_x"].values, trenches["bottom_y"].values)
+        ).T
+        trench_plot = hv.Path(
+            [
+                [top_endpoint, bottom_endpoint]
+                for top_endpoint, bottom_endpoint in zip(
+                    top_endpoints, bottom_endpoints
+                )
+            ]
+        ).options(color="white")
+        top_points_plot = hv.Points(top_endpoints).options(size=3, color="green")
+        bottom_points_plot = hv.Points(bottom_endpoints).options(size=3, color="red")
+        bbox_plot = hv.Rectangles(
+            (
+                trench_bboxes["ul_x"],
+                trench_bboxes["lr_y"],
+                trench_bboxes["lr_x"],
+                trench_bboxes["ul_y"],
+            )
+        ).opts(fill_color=None, line_color="red")
+        label_plot = hv.Labels(
+            (trench_bboxes["ul_x"], trench_bboxes["ul_y"], trenches.index.values)
+        ).opts(text_color="white", fontsize=10, xoffset=3, yoffset=3)
+        diagnostics["bboxes"] = (
+            RevImage(img)
+            * trench_plot
+            * top_points_plot
+            * bottom_points_plot
+            * bbox_plot
+            * label_plot
+        )
     return trenches
 
 
