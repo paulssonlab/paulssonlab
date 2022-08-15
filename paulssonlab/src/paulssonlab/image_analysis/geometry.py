@@ -35,11 +35,13 @@ def linear_mix(x, y, s):
     return (1 - s) * x + s * y
 
 
-def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
+def get_trench_bbox(top, bottom, trench_idx, x_lim, y_lim, overlap=0):
+    trench_points = (top, bottom)
     # separation=0 is the narrowest trench, separation=1 includes neighboring trench midlines
     separation = 0.5 + overlap
-    # trench_points[0][trench_idx], trench_points[1][trench_idx]
-    num_trenches = min(len(trench_points[0]), len(trench_points[1]))
+    if len(top) != len(bottom):
+        raise ValueError("top and bottom should have equal lengths")
+    num_trenches = len(top)
     if num_trenches <= 1:
         raise ValueError("need at least two trenches to get bboxes")
     if not 0 <= trench_idx < num_trenches:
