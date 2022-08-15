@@ -4,7 +4,7 @@ import scipy
 import skimage
 import skimage.morphology
 import skimage.segmentation
-from itertools import zip_longest
+from itertools import zip_longest, repeat
 import holoviews as hv
 import holoviews.operation.datashader as datashader
 
@@ -143,15 +143,29 @@ def find_periodic_lines(
     return angle, anchor_rho, rho_min, rho_max, info
 
 
-def find_trench_lines(img, window=np.deg2rad(2), diagnostics=None, **kwargs):
+def find_trench_lines(
+    img, max_angle=np.deg2rad(10), num_angles=400, diagnostics=None, **kwargs
+):
     # TODO: can probably reduce sampling here in one or both hough calls
-    angle1, *_ = find_periodic_lines(
-        img, **kwargs, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
-    )
-    res2 = find_periodic_lines(
-        img,
-        theta=np.linspace(angle1 - window, angle1 + window, 200),
-        **kwargs,
-        diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
-    )
-    return res2
+    if not isinstance(max_angle, (tuple, list)):
+        max_angle_iter = [max_angle]
+    else:
+        max_angle_iter = max_angle
+    if not isinstance(num_angles, (tuple, list)):
+        num_angles_iter = [num_angles]
+    else:
+        num_angles_iter = num_angles
+    angle = 0
+    res = None
+    for hough_iter, (max_angle, num_angles) in enumerate(
+        zip(max_angle_iter, num_angles_iter)
+    ):
+        theta = np.linspace(angle - max_angle, angle + max_angle, num_angles)
+        res = find_periodic_lines(
+            img,
+            theta=theta,
+            **kwargs,
+            diagnostics=getitem_if_not_none(diagnostics, f"hough_{hough_iter}"),
+        )
+        angle = res[0]
+    return res
