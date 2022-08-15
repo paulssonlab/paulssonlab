@@ -135,9 +135,13 @@ def find_trench_ends(
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )
     trench_index = np.arange(len(mask))[mask]
-    df_columns = {
-        "top": points_dataframe(top_endpoints, index=trench_index),
-        "bottom": points_dataframe(bottom_endpoints, index=trench_index),
-    }
-    df = pd.concat(df_columns, axis=1)
+    df = pd.DataFrame(
+        {
+            "top_x": top_endpoints[:, 0],
+            "top_y": top_endpoints[:, 1],
+            "bottom_x": bottom_endpoints[:, 0],
+            "bottom_y": bottom_endpoints[:, 1],
+        },
+        index=trench_index,
+    )
     return df

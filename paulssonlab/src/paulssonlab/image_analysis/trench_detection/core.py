@@ -66,10 +66,6 @@ def find_trenches(
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
         if anchor_info is not None:
-            # TODO: remove use of multiindex
-            anchor_info.columns = pd.MultiIndex.from_product(
-                [["info"], anchor_info.columns]
-            )
             trench_sets[label] = trench_sets[label].join(anchor_info, how="left")
             if reindex:
                 trench_sets[label].reset_index(drop=True, inplace=True)
