@@ -3,16 +3,36 @@ import pandas as pd
 import holoviews as hv
 import scipy.signal
 import scipy.ndimage
-import peakutils
+import warnings
 
 
 def find_peaks(
-    profile, threshold=0.1, min_dist=10, detrend_window=200, diagnostics=None
+    profile,
+    prominence=0.2,
+    min_distance=10,
+    prominence_wlen=None,
+    detrend_window=200,
+    diagnostics=None,
 ):
+    if prominence_wlen is None:
+        prominence_wlen = 5 * min_distance
     minimum = scipy.ndimage.minimum_filter1d(profile, detrend_window, mode="constant")
     maximum = scipy.ndimage.maximum_filter1d(profile, detrend_window, mode="constant")
-    profile_detrended = (profile - minimum) / (maximum - minimum)
-    idxs = peakutils.indexes(profile_detrended, thres=threshold, min_dist=min_dist)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            "invalid value encountered in true_divide",
+        )
+        profile_detrended = (profile - minimum) / (maximum - minimum)
+    # TODO: which properties do we want to calculate?
+    idxs, properties = scipy.signal.find_peaks(
+        profile_detrended,
+        distance=min_distance,
+        height=(None, None),
+        prominence=prominence,
+        wlen=prominence_wlen,
+        width=(None, None),
+    )
     if diagnostics is not None:
         points = hv.Scatter((idxs, profile[idxs])).options(size=5, color="cyan")
         points_detrended = hv.Scatter((idxs, profile_detrended[idxs])).options(
@@ -25,7 +45,8 @@ def find_peaks(
             * points
         )
         diagnostics["peaks"] = hv.Curve(profile_detrended) * points_detrended
-    return idxs, None
+    info = pd.DataFrame(properties)
+    return idxs, info
 
 
 def find_periodic_peaks(

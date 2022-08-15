@@ -9,7 +9,6 @@ import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
 from ..misc.holoborodko_diff import holo_diff
-import peakutils
 from .refinement import get_trench_line_profiles
 from ..image import (
     gaussian_box_approximation,
@@ -175,7 +174,7 @@ def find_trench_sets_by_diff_cutting(
     profile_quantile=0.95,
     min_length=50,
     smooth=10,
-    threshold=0.7,
+    prominence=0.5,
     diagnostics=None,
 ):
     profiles, _, _ = get_trench_line_profiles(
@@ -190,11 +189,18 @@ def find_trench_sets_by_diff_cutting(
         stacked_profile_smooth = stacked_profile
     stacked_profile_diff = holo_diff(1, stacked_profile_smooth)
     stacked_profile_diff[np.isnan(stacked_profile_diff)] = 0
-    start_idxs = peakutils.indexes(
-        stacked_profile_diff, thres=threshold, min_dist=min_length
+    abs_prominence = np.abs(stacked_profile_diff).max() * prominence
+    stacked_profile_diff_pos = np.clip(stacked_profile_diff, 0, None)
+    stacked_profile_diff_neg = np.clip(-stacked_profile_diff, 0, None)
+    start_idxs = scipy.signal.find_peaks(
+        stacked_profile_diff_pos,
+        distance=min_length,
+        prominence=abs_prominence,
     )
-    stop_idxs = peakutils.indexes(
-        -stacked_profile_diff, thres=threshold, min_dist=min_length
+    stop_idxs = scipy.signal.find_peaks(
+        stacked_profile_diff_neg,
+        distance=min_length,
+        prominence=abs_prominence,
     )
     if diagnostics is not None:
         diagnostics["profile_quantile"] = profile_quantile

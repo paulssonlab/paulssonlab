@@ -10,7 +10,6 @@ import holoviews.operation.datashader as datashader
 
 # TODO: fix imports
 from ..misc.holoborodko_diff import holo_diff
-import peakutils
 from .geometry import edge_point, coords_along
 from .peaks import find_periodic_peaks
 from ..util import getitem_if_not_none
@@ -144,7 +143,7 @@ def find_periodic_lines(
     return angle, anchor_rho, rho_min, rho_max, info
 
 
-def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None, **kwargs):
+def find_trench_lines(img, window=np.deg2rad(2), diagnostics=None, **kwargs):
     # TODO: can probably reduce sampling here in one or both hough calls
     angle1, *_ = find_periodic_lines(
         img, **kwargs, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
