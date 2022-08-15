@@ -121,4 +121,5 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
+    # TODO: use scipy.signal.peak_widths to calculate peak widths
     return refined_idxs, info

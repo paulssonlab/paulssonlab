@@ -7,13 +7,14 @@ from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
 
 
-def _get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
+def _get_trench_bboxes(trenches, x_lim, y_lim, width_factor=2, **kwargs):
+    width = trenches["widths"].median() * width_factor
     top_points = np.vstack((trenches["top_x"], trenches["top_y"])).T
     bottom_points = np.vstack((trenches["bottom_x"], trenches["bottom_y"])).T
     return np.hstack(
         [
             get_trench_bbox(
-                top_points, bottom_points, trench_idx, x_lim, y_lim, **kwargs
+                top_points, bottom_points, width, trench_idx, x_lim, y_lim, **kwargs
             )[:, np.newaxis]
             for trench_idx in range(len(top_points))
         ]
@@ -38,12 +39,12 @@ def get_trench_bboxes(trenches, x_lim, y_lim, **kwargs):
 
 
 # TODO: integrate this into find_trenches?
-def find_trench_bboxes(img, overlap=0, diagnostics=None, **kwargs):
+def find_trench_bboxes(img, diagnostics=None, **kwargs):
     trenches = find_trenches(
         img, diagnostics=getitem_if_not_none(diagnostics, "find_trenches"), **kwargs
     )
     image_limits = get_image_limits(img.shape)
-    trench_bboxes = get_trench_bboxes(trenches, *image_limits, overlap=overlap)
+    trench_bboxes = get_trench_bboxes(trenches, *image_limits)
     if trench_bboxes is not None:
         trenches = pd.concat([trenches, trench_bboxes], axis=1)
     if diagnostics is not None:
@@ -85,5 +86,12 @@ def find_trench_bboxes(img, overlap=0, diagnostics=None, **kwargs):
     return trenches
 
 
-def segment_trenches(img, trenches):
-    channel_image[ul_y : lr_y + 1, ul_x : lr_x + 1]
+def iter_crops(img, trenches):
+    index = trenches.index.values
+    ul_x = trenches["ul_x"].values
+    ul_y = trenches["ul_y"].values
+    lr_x = trenches["lr_x"].values
+    lr_y = trenches["lr_y"].values
+    for i in range(len(index)):
+        crop = img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
+        yield i, crop
