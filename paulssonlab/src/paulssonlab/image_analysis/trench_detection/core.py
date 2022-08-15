@@ -22,7 +22,7 @@ def stack_jagged_points(arys):
 def find_trenches(
     img,
     reindex=True,
-    setwise=True,
+    setwise=True,  # TODO: set False by default?
     set_finding_func=find_trench_sets_by_cutting,
     diagnostics=None,
 ):
@@ -65,10 +65,12 @@ def find_trenches(
             rho_max,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
+        trench_sets[label]["trench_set"] = label
         if anchor_info is not None:
             trench_sets[label] = trench_sets[label].join(anchor_info, how="left")
             if reindex:
+                # TODO: what is the purpose of reindexing?
                 trench_sets[label].reset_index(drop=True, inplace=True)
-    trenches_df = pd.concat(trench_sets)
-    trenches_df.index.names = ["trench_set", "trench"]
+    trenches_df = pd.concat(trench_sets.values())
+    trenches_df.reset_index(drop=True, inplace=True)
     return trenches_df
