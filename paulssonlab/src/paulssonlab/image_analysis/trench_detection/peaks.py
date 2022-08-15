@@ -3,11 +3,34 @@ import pandas as pd
 import holoviews as hv
 import scipy.signal
 import scipy.ndimage
+import peakutils
+
+
+def find_peaks(
+    profile, threshold=0.1, min_dist=10, detrend_window=200, diagnostics=None
+):
+    minimum = scipy.ndimage.minimum_filter1d(profile, detrend_window, mode="constant")
+    maximum = scipy.ndimage.maximum_filter1d(profile, detrend_window, mode="constant")
+    profile_detrended = (profile - minimum) / (maximum - minimum)
+    idxs = peakutils.indexes(profile_detrended, thres=threshold, min_dist=min_dist)
+    if diagnostics is not None:
+        points = hv.Scatter((idxs, profile[idxs])).options(size=5, color="cyan")
+        points_detrended = hv.Scatter((idxs, profile_detrended[idxs])).options(
+            size=5, color="cyan"
+        )
+        diagnostics["profile_detrended"] = (
+            hv.Curve(profile)
+            * hv.Curve(minimum).opts(color="red")
+            * hv.Curve(maximum).opts(color="green")
+            * points
+        )
+        diagnostics["peaks"] = hv.Curve(profile_detrended) * points_detrended
+    return idxs, None
 
 
 def find_periodic_peaks(
     profile,
-    refine=True,
+    refine=1,  # TODO: choose better default?
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,

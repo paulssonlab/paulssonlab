@@ -41,11 +41,6 @@ def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
     return anchors
 
 
-def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
-    idxs = peakutils.indexes(profile, thres=threshold, min_dist=min_dist)
-    return idxs, None
-
-
 def find_periodic_lines(
     img,
     theta=None,
@@ -108,7 +103,8 @@ def find_periodic_lines(
     assert rho_min <= rho[idx_max] <= rho_max
     trimmed_profile = profile[idx_min : idx_max + 1]
     trimmed_rho = rho[idx_min : idx_max + 1]
-    trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
+    if diagnostics is not None:
+        trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
     if upscale:
         interpolated_func = scipy.interpolate.interp1d(
             trimmed_rho, trimmed_profile, kind="cubic", copy=False, assume_sorted=True
@@ -117,9 +113,10 @@ def find_periodic_lines(
             trimmed_rho[0], trimmed_rho[-1], len(trimmed_rho) * upscale
         )
         interpolated_profile = interpolated_func(interpolated_rho)
-        trimmed_profile_plot *= hv.Curve(
-            (interpolated_rho, interpolated_profile)
-        ).options(color="cyan")
+        if diagnostics is not None:
+            trimmed_profile_plot *= hv.Curve(
+                (interpolated_rho, interpolated_profile)
+            ).options(color="cyan")
     else:
         interpolated_profile = trimmed_profile
     if diagnostics is not None:
@@ -147,14 +144,15 @@ def find_periodic_lines(
     return angle, anchor_rho, rho_min, rho_max, info
 
 
-def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None):
+def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None, **kwargs):
     # TODO: can probably reduce sampling here in one or both hough calls
     angle1, *_ = find_periodic_lines(
-        img, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
+        img, **kwargs, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
     )
     res2 = find_periodic_lines(
         img,
         theta=np.linspace(angle1 - window, angle1 + window, 200),
+        **kwargs,
         diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
     )
     return res2

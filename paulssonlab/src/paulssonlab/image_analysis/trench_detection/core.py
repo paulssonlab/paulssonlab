@@ -3,6 +3,7 @@ import pandas as pd
 import skimage.morphology
 from .set_finding import binarize_trench_image, find_trench_sets_by_cutting
 from .hough import find_trench_lines
+from .peaks import find_periodic_peaks
 from .refinement import find_trench_ends
 from ..util import getitem_if_not_none
 from .. import common
@@ -23,6 +24,7 @@ def find_trenches(
     img,
     reindex=True,
     setwise=True,  # TODO: set False by default?
+    peak_func=find_periodic_peaks,
     set_finding_func=find_trench_sets_by_cutting,
     diagnostics=None,
 ):
@@ -33,6 +35,7 @@ def find_trenches(
     )
     angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
         img_normalized,
+        peak_func=peak_func,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "find_trench_lines"),
     )
     img_labels, label_index = set_finding_func(
@@ -55,6 +58,7 @@ def find_trenches(
         if setwise:
             angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
                 img_masked,
+                peak_func=peak_func,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
         trench_sets[label] = find_trench_ends(
