@@ -2,9 +2,25 @@ import numpy as np
 import dask
 import h5py
 import nd2reader
+import cachetools
 from cytoolz import excepts
 from itertools import product
 from paulssonlab.io.metadata import parse_nd2_metadata
+
+ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
+
+
+def _get_nd2_reader(filename, memmap=False, **kwargs):
+    return nd2reader.ND2Reader(filename, memmap=memmap, **kwargs)
+
+
+get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
+
+
+def get_nd2_frame(filename, position, channel_idx, t, memmap=False):
+    reader = get_nd2_reader(filename, memmap=memmap)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+    return ary
 
 
 # TODO: random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
@@ -29,11 +45,12 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
         coords = dict(zip(axis_order, idxs))
         # TODO: this might not work delayed because ND2Reader doesn't reopen file handles correctly
         # TODO: use an LRU buffer for open ND2 file handles?
-        image = delayed(nd2.get_frame_2D)(**coords)
+        # image = delayed(nd2.get_frame_2D)(**coords)
         fov_num = coords["v"]
         channel = nd2.metadata["channels"][coords["c"]]
         z_level = coords["z"]
         t = coords["t"]
+        image = delayed(get_nd2_frame)(filename, fov_num, coords["c"], t)
         # we can put arbitrary per-frame metadata here
         # TODO: do we need a way to encode metadata that differs between individual frames? [maybe not.]
         image_metadata = {
