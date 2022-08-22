@@ -1,0 +1,20 @@
+name: plots
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - black
+  - bokeh
+  - holoviews
+  - hvplot
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib
+  - numpy
+  - pandas
+  - pint
+  - pip
+  - pip:
+      - dnaplotlib
+  - scipy
+  - tqdm
