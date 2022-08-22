@@ -3,6 +3,7 @@ import pandas as pd
 import skimage.morphology
 from .set_finding import binarize_trench_image, find_trench_sets_by_cutting
 from .hough import find_trench_lines
+from .peaks import find_periodic_peaks
 from .refinement import find_trench_ends
 from ..util import getitem_if_not_none
 from .. import common
@@ -22,7 +23,8 @@ def stack_jagged_points(arys):
 def find_trenches(
     img,
     reindex=True,
-    setwise=True,
+    setwise=True,  # TODO: set False by default?
+    peak_func=find_periodic_peaks,
     set_finding_func=find_trench_sets_by_cutting,
     diagnostics=None,
 ):
@@ -33,6 +35,7 @@ def find_trenches(
     )
     angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
         img_normalized,
+        peak_func=peak_func,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "find_trench_lines"),
     )
     img_labels, label_index = set_finding_func(
@@ -55,6 +58,7 @@ def find_trenches(
         if setwise:
             angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
                 img_masked,
+                peak_func=peak_func,
                 diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
             )
         trench_sets[label] = find_trench_ends(
@@ -65,11 +69,12 @@ def find_trenches(
             rho_max,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
+        trench_sets[label]["trench_set"] = label
         if anchor_info is not None:
-            anchor_info.columns = [("info", col) for col in anchor_info.columns]
             trench_sets[label] = trench_sets[label].join(anchor_info, how="left")
             if reindex:
+                # TODO: what is the purpose of reindexing?
                 trench_sets[label].reset_index(drop=True, inplace=True)
-    trenches_df = pd.concat(trench_sets)
-    trenches_df.index.names = ["trench_set", "trench"]
+    trenches_df = pd.concat(trench_sets.values())
+    trenches_df.reset_index(drop=True, inplace=True)
     return trenches_df

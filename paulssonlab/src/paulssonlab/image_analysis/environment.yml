@@ -23,8 +23,8 @@ dependencies:
   - numpy-indexed
   - pandas
   - panel=0.12.7
-  - peakutils
   - pyarrow
+  - pytables
   - python-lmdb
   - qgrid
   - scikit-image

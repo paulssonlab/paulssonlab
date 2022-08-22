@@ -3,11 +3,55 @@ import pandas as pd
 import holoviews as hv
 import scipy.signal
 import scipy.ndimage
+import warnings
+
+
+def find_peaks(
+    profile,
+    prominence=0.2,
+    min_distance=10,
+    prominence_wlen=None,
+    detrend_window=200,
+    diagnostics=None,
+):
+    if prominence_wlen is None:
+        prominence_wlen = 5 * min_distance
+    minimum = scipy.ndimage.minimum_filter1d(profile, detrend_window, mode="constant")
+    maximum = scipy.ndimage.maximum_filter1d(profile, detrend_window, mode="constant")
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            "invalid value encountered in true_divide",
+        )
+        profile_detrended = (profile - minimum) / (maximum - minimum)
+    # TODO: which properties do we want to calculate?
+    idxs, properties = scipy.signal.find_peaks(
+        profile_detrended,
+        distance=min_distance,
+        height=(None, None),
+        prominence=prominence,
+        wlen=prominence_wlen,
+        width=(None, None),
+    )
+    if diagnostics is not None:
+        points = hv.Scatter((idxs, profile[idxs])).options(size=5, color="cyan")
+        points_detrended = hv.Scatter((idxs, profile_detrended[idxs])).options(
+            size=5, color="cyan"
+        )
+        diagnostics["profile_detrended"] = (
+            hv.Curve(profile)
+            * hv.Curve(minimum).opts(color="red")
+            * hv.Curve(maximum).opts(color="green")
+            * points
+        )
+        diagnostics["peaks"] = hv.Curve(profile_detrended) * points_detrended
+    info = pd.DataFrame(properties)
+    return idxs, info
 
 
 def find_periodic_peaks(
     profile,
-    refine=True,
+    refine=1,  # TODO: choose better default?
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
@@ -77,4 +121,5 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
+    # TODO: use scipy.signal.peak_widths to calculate peak widths
     return refined_idxs, info

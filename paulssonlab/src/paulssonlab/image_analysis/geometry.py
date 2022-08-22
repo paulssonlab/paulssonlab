@@ -35,11 +35,20 @@ def linear_mix(x, y, s):
     return (1 - s) * x + s * y
 
 
-def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
+def get_trench_bbox(top, bottom, width, trench_idx, x_lim, y_lim):
+    half_width = int(np.ceil(width / 2))
+    offset = np.array([half_width, 0])
+    return np.vstack((top[trench_idx] - offset, bottom[trench_idx] + offset))
+
+
+# TODO: first and last trenches are broken
+def get_periodic_trench_bbox(top, bottom, trench_idx, x_lim, y_lim, overlap=0):
+    trench_points = (top, bottom)
     # separation=0 is the narrowest trench, separation=1 includes neighboring trench midlines
     separation = 0.5 + overlap
-    # trench_points[0][trench_idx], trench_points[1][trench_idx]
-    num_trenches = min(len(trench_points[0]), len(trench_points[1]))
+    if len(top) != len(bottom):
+        raise ValueError("top and bottom should have equal lengths")
+    num_trenches = len(top)
     if num_trenches <= 1:
         raise ValueError("need at least two trenches to get bboxes")
     if not 0 <= trench_idx < num_trenches:
@@ -54,6 +63,8 @@ def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
             np.int_
         )  # TODO: should we round or truncate? here and below?
         x_prev = crop_point(x_prev, x_lim, y_lim)
+        # if trench_idx == 60:
+        #     print("i", i, x_prev)
         points.append(x_prev)
         if trench_idx + 1 == num_trenches:
             x_next = 2 * trench_points[i][-1] - trench_points[i][-2]
@@ -63,5 +74,10 @@ def get_trench_bbox(trench_points, trench_idx, x_lim, y_lim, overlap=0):
             np.int_
         )
         x_next = crop_point(x_next, x_lim, y_lim)
+        # if trench_idx == 60:
+        #     print("i", i, x_next)
         points.append(x_next)
+    # if trench_idx == 60:
+    #     print("bbox", bounding_box(points))
+    #     0 / 0
     return bounding_box(points)

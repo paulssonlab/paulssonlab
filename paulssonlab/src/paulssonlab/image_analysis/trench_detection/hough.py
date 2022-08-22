@@ -4,13 +4,12 @@ import scipy
 import skimage
 import skimage.morphology
 import skimage.segmentation
-from itertools import zip_longest
+from itertools import zip_longest, repeat
 import holoviews as hv
 import holoviews.operation.datashader as datashader
 
 # TODO: fix imports
 from ..misc.holoborodko_diff import holo_diff
-import peakutils
 from .geometry import edge_point, coords_along
 from .peaks import find_periodic_peaks
 from ..util import getitem_if_not_none
@@ -41,15 +40,11 @@ def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
     return anchors
 
 
-def find_peaks(profile, threshold=0.2, min_dist=5, diagnostics=None):
-    idxs = peakutils.indexes(profile, thres=threshold, min_dist=min_dist)
-    return idxs, None
-
-
 def find_periodic_lines(
     img,
     theta=None,
     smooth=4,
+    threshold_quantile=0.75,
     upscale=None,
     hough_func=hough_line_intensity,
     peak_func=find_periodic_peaks,
@@ -57,7 +52,11 @@ def find_periodic_lines(
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
-    h, theta, rho = hough_func(img, theta=theta)
+    if threshold_quantile is not None:
+        img_thresh = img * (img > np.percentile(img, threshold_quantile * 100))
+    else:
+        img_thresh = img
+    h, theta, rho = hough_func(img_thresh, theta=theta)
     diff_h = np.diff(h.astype(np.int_), axis=1)  # TODO: is diff necessary??
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
     if smooth:
@@ -70,6 +69,7 @@ def find_periodic_lines(
     angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
+        diagnostics["thresholded_image"] = RevImage(img_thresh)
         # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1])) # TODO: arrow/parquet nested column
         diagnostics["angle_range_min"] = np.rad2deg(theta[0])
         diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
@@ -102,7 +102,8 @@ def find_periodic_lines(
     assert rho_min <= rho[idx_max] <= rho_max
     trimmed_profile = profile[idx_min : idx_max + 1]
     trimmed_rho = rho[idx_min : idx_max + 1]
-    trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
+    if diagnostics is not None:
+        trimmed_profile_plot = hv.Curve((trimmed_rho, trimmed_profile))
     if upscale:
         interpolated_func = scipy.interpolate.interp1d(
             trimmed_rho, trimmed_profile, kind="cubic", copy=False, assume_sorted=True
@@ -111,9 +112,10 @@ def find_periodic_lines(
             trimmed_rho[0], trimmed_rho[-1], len(trimmed_rho) * upscale
         )
         interpolated_profile = interpolated_func(interpolated_rho)
-        trimmed_profile_plot *= hv.Curve(
-            (interpolated_rho, interpolated_profile)
-        ).options(color="cyan")
+        if diagnostics is not None:
+            trimmed_profile_plot *= hv.Curve(
+                (interpolated_rho, interpolated_profile)
+            ).options(color="cyan")
     else:
         interpolated_profile = trimmed_profile
     if diagnostics is not None:
@@ -141,13 +143,29 @@ def find_periodic_lines(
     return angle, anchor_rho, rho_min, rho_max, info
 
 
-def find_trench_lines(img, window=np.deg2rad(10), diagnostics=None):
-    angle1, *_ = find_periodic_lines(
-        img, diagnostics=getitem_if_not_none(diagnostics, "hough_1")
-    )
-    res2 = find_periodic_lines(
-        img,
-        theta=np.linspace(angle1 - window, angle1 + window, 200),
-        diagnostics=getitem_if_not_none(diagnostics, "hough_2"),
-    )
-    return res2
+def find_trench_lines(
+    img, max_angle=np.deg2rad(10), num_angles=400, diagnostics=None, **kwargs
+):
+    # TODO: can probably reduce sampling here in one or both hough calls
+    if not isinstance(max_angle, (tuple, list)):
+        max_angle_iter = [max_angle]
+    else:
+        max_angle_iter = max_angle
+    if not isinstance(num_angles, (tuple, list)):
+        num_angles_iter = [num_angles]
+    else:
+        num_angles_iter = num_angles
+    angle = 0
+    res = None
+    for hough_iter, (max_angle, num_angles) in enumerate(
+        zip(max_angle_iter, num_angles_iter)
+    ):
+        theta = np.linspace(angle - max_angle, angle + max_angle, num_angles)
+        res = find_periodic_lines(
+            img,
+            theta=theta,
+            **kwargs,
+            diagnostics=getitem_if_not_none(diagnostics, f"hough_{hough_iter}"),
+        )
+        angle = res[0]
+    return res

@@ -9,7 +9,6 @@ import sklearn.cluster
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
 from ..misc.holoborodko_diff import holo_diff
-import peakutils
 from .refinement import get_trench_line_profiles
 from ..image import (
     gaussian_box_approximation,
@@ -18,6 +17,7 @@ from ..image import (
 )
 from ..ui import RevImage
 from ..util import getitem_if_not_none
+from paulssonlab.util.numeric import silent_nanquantile
 
 
 def _standardize_cluster_labels(X, fit):
@@ -49,7 +49,6 @@ def drop_rare_labels(labels):
     total = sum(counter)
     good_labels = []
     for label, count in counter.iteritems():
-        print(count / total)
         if count / total > 0.01:
             good_labels.append(label)
     return good_labels
@@ -87,18 +86,18 @@ def find_trench_sets_by_cutting(
     profiles, stacked_points, _ = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
         stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
             stacked_profile, smooth
         )
     else:
         stacked_profile_smooth = stacked_profile
-    threshold_value = np.nanquantile(stacked_profile_smooth, threshold)
+    threshold_value = silent_nanquantile(stacked_profile_smooth, threshold)
     profile_mask = stacked_profile_smooth > threshold_value
     if min_length:
         skimage.morphology.remove_small_objects(
-            profile_mask, min_size=min_length, in_place=True
+            profile_mask, min_size=min_length, out=profile_mask
         )
     profile_labels = skimage.measure.label(profile_mask)
     endpoints = []
@@ -175,13 +174,13 @@ def find_trench_sets_by_diff_cutting(
     profile_quantile=0.95,
     min_length=50,
     smooth=10,
-    threshold=0.7,
+    prominence=0.5,
     diagnostics=None,
 ):
     profiles, _, _ = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
         stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
             stacked_profile, smooth
@@ -190,11 +189,18 @@ def find_trench_sets_by_diff_cutting(
         stacked_profile_smooth = stacked_profile
     stacked_profile_diff = holo_diff(1, stacked_profile_smooth)
     stacked_profile_diff[np.isnan(stacked_profile_diff)] = 0
-    start_idxs = peakutils.indexes(
-        stacked_profile_diff, thres=threshold, min_dist=min_length
+    abs_prominence = np.abs(stacked_profile_diff).max() * prominence
+    stacked_profile_diff_pos = np.clip(stacked_profile_diff, 0, None)
+    stacked_profile_diff_neg = np.clip(-stacked_profile_diff, 0, None)
+    start_idxs = scipy.signal.find_peaks(
+        stacked_profile_diff_pos,
+        distance=min_length,
+        prominence=abs_prominence,
     )
-    stop_idxs = peakutils.indexes(
-        -stacked_profile_diff, thres=threshold, min_dist=min_length
+    stop_idxs = scipy.signal.find_peaks(
+        stacked_profile_diff_neg,
+        distance=min_length,
+        prominence=abs_prominence,
     )
     if diagnostics is not None:
         diagnostics["profile_quantile"] = profile_quantile
@@ -283,7 +289,7 @@ def binarize_trench_image(
         diagnostics["num_components"] = num_components
     cleaned_components = components.copy()
     skimage.morphology.remove_small_objects(
-        cleaned_components, min_size=min_component_size, in_place=True
+        cleaned_components, min_size=min_component_size, out=cleaned_components
     )
     remove_large_objects(cleaned_components, max_component_size, in_place=True)
     cleaned_components, _, inverse_map = skimage.segmentation.relabel_sequential(
@@ -296,7 +302,7 @@ def binarize_trench_image(
     normalized_img = normalize_componentwise(
         img_highpass,
         cleaned_components,
-        label_index=np.arange(num_cleaned_components) + 1,
+        label_index=np.arange(num_cleaned_components) + 1,  # TODO: is this right?
     )  # TODO: check arange
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)

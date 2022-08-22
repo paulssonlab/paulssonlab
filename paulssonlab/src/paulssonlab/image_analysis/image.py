@@ -52,7 +52,8 @@ def hough_line_intensity(img, theta=None):
     return accumulator, theta, rho
 
 
-@numba.jit(nopython=True)
+# TODO: fastmath doesn't seem to do anything; could also try parallel=True
+@numba.njit
 def _hough_line_intensity(accumulator, img, theta, diagonal):
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
@@ -67,6 +68,7 @@ def _hough_line_intensity(accumulator, img, theta, diagonal):
                 accumulator[rho, k] += img[i, j]
 
 
+# TODO: take out kwarg instead of in_place, to conform with skimage.morphology.remove_small_objects
 def remove_large_objects(labeled_img, max_size, in_place=False):
     if not in_place:
         labeled_img = labeled_img.copy()
@@ -77,30 +79,57 @@ def remove_large_objects(labeled_img, max_size, in_place=False):
     return labeled_img
 
 
+# TODO: I think weighted=True is useless, it might do the opposite of what you want...
 def normalize_componentwise(
     img,
     img_labels,
+    ensure_nonnegative=True,
     weighted=False,
     label_index=None,
+    inverse_label_map=None,
     dilation=5,
     in_place=False,
     dtype=np.float32,
 ):
     if not in_place:
         img = img.astype(dtype).copy()
+    if ensure_nonnegative:
+        img -= np.nanmin(img)
     if label_index is None:
         label_index = np.unique(img_labels)
+        # remove background
+        if label_index[0] == 0:
+            label_index = label_index[1:]
+    if inverse_label_map is None:
+        inverse_label_map = np.zeros(label_index.max(), dtype=np.uint16)
+        for idx, label in enumerate(label_index):
+            inverse_label_map[label - 1] = idx
     maxes = scipy.ndimage.maximum(img, labels=img_labels, index=label_index)
     if weighted:
-        median = np.median(maxes[1:])  # exclude background from median
+        median = np.nanmedian(maxes[~np.isinf(maxes)])
+        # if any scales are inf, that means that there are no pixels with that label
+        # so won't matter in _normalize_componentwise
+        scale = np.minimum(maxes / median, 1)
+    else:
+        with np.errstate(divide="ignore"):
+            scale = 1 / maxes
     img_labels = repeat_apply(skimage.morphology.dilation, dilation)(img_labels)
     img[img_labels == 0] = 0
-    for idx, label in enumerate(label_index):
-        mask = img_labels == label
-        if weighted:
-            img[mask] *= min(maxes[idx] / median, 1)
-        else:
-            img[mask] /= maxes[idx]
+    return _normalize_componentwise(img, img_labels, inverse_label_map, scale)
+
+
+@numba.njit
+def _normalize_componentwise(
+    img,
+    img_labels,
+    inverse_label_map,
+    scale,
+):
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            if img_labels[i, j] == 0:
+                continue
+            img[i, j] *= scale[inverse_label_map[img_labels[i, j] - 1]]
     return img
 
 

@@ -7,6 +7,7 @@ from ..ui import RevImage
 from ..workflow import points_dataframe
 from .hough import trench_anchors
 from .geometry import edge_point, coords_along
+from paulssonlab.util.numeric import silent_nanquantile
 
 
 def get_trench_line_profiles(
@@ -59,9 +60,7 @@ def get_trench_line_profiles(
         padded_line_points.append(padded_points)
     if diagnostics is not None:
         # TODO: make hv.Path??
-        diagnostics["profiles"] = hv.Overlay.from_values(
-            [hv.Curve(tp) for tp in padded_profiles]
-        )
+        diagnostics["profiles"] = hv.Overlay([hv.Curve(tp) for tp in padded_profiles])
     if diagnostics is not None:
         lines_plot = hv.Path(
             [[points[0], points[-1]] for points in line_points]
@@ -98,7 +97,7 @@ def find_trench_ends(
     profiles, stacked_points, anchor_idx = get_trench_line_profiles(
         img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
     )
-    stacked_profile = np.nanpercentile(profiles, profile_quantile * 100, axis=0)
+    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     stacked_profile_diff = holo_diff(1, stacked_profile)
     # using np.nanargmax/min because we might have an all-nan axis
     top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)
@@ -136,9 +135,13 @@ def find_trench_ends(
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )
     trench_index = np.arange(len(mask))[mask]
-    df_columns = {
-        "top": points_dataframe(top_endpoints, index=trench_index),
-        "bottom": points_dataframe(bottom_endpoints, index=trench_index),
-    }
-    df = pd.concat(df_columns, axis=1)
+    df = pd.DataFrame(
+        {
+            "top_x": top_endpoints[:, 0],
+            "top_y": top_endpoints[:, 1],
+            "bottom_x": bottom_endpoints[:, 0],
+            "bottom_y": bottom_endpoints[:, 1],
+        },
+        index=trench_index,
+    )
     return df
