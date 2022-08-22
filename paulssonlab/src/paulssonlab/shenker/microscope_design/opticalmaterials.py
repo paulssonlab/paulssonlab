@@ -1,18 +1,23 @@
-import numpy as np
+# import numpy as np
+import jax
+from jax import numpy as np
 import pandas as pd
-from cytoolz import partial
-from scipy.interpolate import interp1d
+
+# from cytoolz import partial
+from jax.tree_util import Partial
+from scipy.interpolate import InterpolatedUnivariateSpline
 import zipfile
 import yaml
 import os
 import io
+
+# NOTE: wavelengths are in µm!
 
 # https://github.com/quartiq/rayopt/blob/master/rayopt/rii.py
 # and
 # https://github.com/quartiq/rayopt/blob/master/rayopt/material.py
 # were used as reference for the refractiveindex.info database format
 # and refractive index formulae
-
 
 # TODO: needs testing
 def n_schott(c, w):
@@ -170,12 +175,22 @@ RII_FORMULAS = {
 }
 
 
-def get_n(material, interpolation="linear"):
+def _interpolate(x, y):
+    func = InterpolatedUnivariateSpline(x, y)
+    return func, func.derivative()
+
+
+def get_n(material, nanometers=False):
     for formula_name, formula_func in RII_FORMULAS.items():
         data = material["DATA"].get(formula_name, None)
         if data is not None:
-            n_func = partial(formula_func, data["coefficients"])
-            return n_func
+            n_microns_func = Partial(formula_func, data["coefficients"])
+            if nanometers:
+                n_func = lambda w: n_microns_func(w / 1e3)
+            else:
+                n_func = n_microns_func
+            grad_n_func = np.vectorize(jax.grad(n_func))
+            return n_func, grad_n_func
     data = material["DATA"].get("tabulated n", None)
     if data is None:
         data = material["DATA"].get("tabulated nk", None)
@@ -184,12 +199,13 @@ def get_n(material, interpolation="linear"):
             f"material {material['name']} missing refractive index coefficients and tabulated data"
         )
     table = data["data"]
-    return interp1d(
-        table.index.values, table["n"].values, kind=interpolation, copy=False
-    )
+    wavelengths = table.index.values
+    if nanometers:
+        wavelengths *= 1e3
+    return _interpolate(wavelengths, table["n"].values)
 
 
-def get_k(material, interpolation="linear"):
+def get_k(material, nanometers=False):
     data = material["DATA"].get("tabulated k", None)
     if data is None:
         data = material["DATA"].get("tabulated nk", None)
@@ -198,9 +214,10 @@ def get_k(material, interpolation="linear"):
             f"material {material['name']} missing extinction coefficient tabulated data"
         )
     table = data["data"]
-    return interp1d(
-        table.index.values, table["k"].values, kind=interpolation, copy=False
-    )
+    wavelengths = table.index.values
+    if nanometers:
+        wavelengths *= 1e3
+    return _interpolate(wavelengths, table["k"].values)
 
 
 def _parse_rii_material(material):
@@ -271,7 +288,9 @@ def parse_rii_catalog(filename):
     return catalog
 
 
-def transmittance(wavelength, k, thickness, n=None, reflections=None):
+def transmittance(wavelength, k, thickness, n=None, reflections=None, nanometers=False):
+    if nanometers:
+        raise NotImplementedError
     if reflections not in (None, "single", "multiple"):
         raise ValueError("reflections must be one of: None, single, multiple")
     if reflections == "multiple" and n is None:

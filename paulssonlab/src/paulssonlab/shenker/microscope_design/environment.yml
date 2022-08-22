@@ -1,6 +1,5 @@
 name: microscope_design
 channels:
-  - pyviz
   - conda-forge
   - defaults
 dependencies:
