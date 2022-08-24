@@ -28,7 +28,7 @@ def _type2s_with_spacer(site, cut5, cut3, overhang_length):
         raise ValueError(
             f"expecting an overhang of length {cut3 - cut5}, instead got {overhang_length}"
         )
-    seq = site + random_bases(cut5)
+    seq = site + random_bases(cut5, seed=site)
     return seq
 
 
@@ -40,10 +40,11 @@ def golden_gate_placeholder(
     num_random_bases=6,
     random_flanks=True,
 ):
-    seq = (
-        overhang1
-        + reverse_complement(type2s_with_spacer(inner_enzyme, len(overhang1)))
-        + random_bases(2 * num_random_bases)
+    seq = overhang1 + reverse_complement(
+        type2s_with_spacer(inner_enzyme, len(overhang1))
+    )
+    seq += (
+        random_bases(2 * num_random_bases, seed=seq)
         + type2s_with_spacer(inner_enzyme, len(overhang2))
         + overhang2
     )
@@ -54,5 +55,6 @@ def golden_gate_placeholder(
             + reverse_complement(type2s_with_spacer(outer_enzyme, len(overhang2)))
         )
         if random_flanks:
-            seq = random_bases(num_random_bases) + seq + random_bases(num_random_bases)
+            seq = random_bases(num_random_bases, seed=seq) + seq
+            seq = seq + random_bases(num_random_bases, seed=seq)
     return seq
