@@ -362,6 +362,11 @@ def part_entry_to_seq(entry):
 
 
 def re_digest_part(seq, enzyme):
+    ###### TODO ######
+    if isinstance(seq, str) or not seq.circular:
+        frags = re_digest(seq, enzyme)
+        return assemble(frags[1:-1], method="goldengate")
+    ##################
     # TODO: this doesn't handle the case where there is a cut site in the backbone
     # not sure there's a general way to pick out the intended part in that case
     frags = re_digest(seq, enzyme)
