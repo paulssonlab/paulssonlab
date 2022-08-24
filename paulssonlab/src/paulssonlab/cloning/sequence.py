@@ -1087,13 +1087,22 @@ def find_subsequence(template, product, min_score=10):
     return (site.seq1_start, site.seq1_stop, head, tail)
 
 
-def _amplicon_location(template, primer1, primer2, min_score=10):
+def _amplicon_location(template, primer1, primer2, min_score=None):
+    if min_score is None:
+        min_score1 = len(primer1)
+        min_score2 = len(primer2)
+    else:
+        try:
+            min_score1, min_score2 = min_score
+        except:
+            min_score1 = min_score
+            min_score2 = min_score
     template, primer1, primer2 = ensure_dsseqrecords(
         template, primer1, primer2, allow_nones=True
     )
     both_sites = []
     sites1 = enumerate_primer_binding_sites(
-        template, primer1, reverse_complement=None, min_score=min_score
+        template, primer1, reverse_complement=None, min_score=min_score1
     )
     if len(sites1) != 1:
         raise ValueError(
@@ -1113,7 +1122,7 @@ def _amplicon_location(template, primer1, primer2, min_score=10):
             template,
             primer2,
             reverse_complement=(sites1[0][0] == 1),
-            min_score=min_score,
+            min_score=min_score2,
         )
         if len(sites2) != 1:
             raise ValueError(
@@ -1131,11 +1140,13 @@ def _amplicon_location(template, primer1, primer2, min_score=10):
         return loc1, loc2, site1.score, site2.score
 
 
-def amplicon_location(template, primer1, primer2, min_score=10):
+def amplicon_location(template, primer1, primer2, min_score=None):
     template, primer1, primer2 = ensure_dsseqrecords(
         template, primer1, primer2, allow_nones=True
     )
-    loc1, loc2, _, _ = _amplicon_location(template, primer1, primer2)
+    loc1, loc2, _, _ = _amplicon_location(
+        template, primer1, primer2, min_score=min_score
+    )
     return loc1, loc2
 
 
@@ -1145,7 +1156,9 @@ def pcr(template, primer1, primer2=None, min_score=10):
     )
     if primer2 is None and template.circular:
         raise ValueError("cannot PCR a circular template with a single primer")
-    loc1, loc2, len1, len2 = _amplicon_location(template, primer1, primer2)
+    loc1, loc2, len1, len2 = _amplicon_location(
+        template, primer1, primer2, min_score=min_score
+    )
     amplicon = template.slice(
         loc1, loc2, annotation_start=loc1 - len1, annotation_stop=loc2 + len2
     )
