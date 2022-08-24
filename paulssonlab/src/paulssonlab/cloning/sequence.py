@@ -551,7 +551,7 @@ class DsSeqRecord(SeqRecord):
             raise ValueError(f"invalid index: {index}")
 
     def __add__(self, other):
-        if isinstance(other, Seq):
+        if isinstance(other, (Seq, str)):
             other = self.__class__(other)
         if self.circular:
             raise ValueError("cannot append to a circular sequence")
@@ -593,7 +593,7 @@ class DsSeqRecord(SeqRecord):
         return new
 
     def __radd__(self, other):
-        if isinstance(other, Seq):
+        if isinstance(other, (Seq, str)):
             other = self.__class__(other)
         return other.__add__(self)
 
