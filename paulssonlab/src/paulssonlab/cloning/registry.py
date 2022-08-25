@@ -267,20 +267,7 @@ class SheetClient(GDriveClient):
                 self[id_] = new_row
         return id_
 
-    def commit(self, clobber_existing=True, append_only=True, formulae=True):
-        """
-        Parameters
-        ----------
-        clobber_existing : bool, optional
-            If a local row shares a key with an existing remote row, remote row values will be
-            preserved when local row is missing column keys unless clobber_existing is True.
-        append_only : bool, optional
-            Ensures that when set to False.
-        formulae : bool, optional
-            If True, any formula values from the first non-header row will be copied (with their
-            row number changed) to any new rows.
-
-        """
+    def commit(self):
         rows_to_update = {}
         rows_to_append = []
         # we need to do this to handle IDs without sequential numeric indices (e.g., part names)
