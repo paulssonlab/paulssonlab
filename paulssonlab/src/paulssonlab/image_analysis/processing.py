@@ -10,11 +10,11 @@ from numcodecs import Blosc
 # import wrapt # TODO
 # from decorator import decorator
 import functools
+from tqdm.auto import tqdm
 from .workflow import get_nd2_frame
 from .data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
 from .util import (
     get_one,
-    tqdm_auto,
     flatten_dict,
     unflatten_dict,
     mapping_values_are_dict,
@@ -37,7 +37,7 @@ zarrify = partial(
 #     t.start()
 #     t.join()
 
-# def iterate_over_groupby(columns, progress_bar=tqdm_auto):
+# def iterate_over_groupby(columns, progress_bar=tqdm):
 #     # TODO
 #     @wrapt.decorator
 #     def wrapper(wrapped, instance, args, kwargs):
@@ -54,7 +54,7 @@ zarrify = partial(
 #     return wrapper
 
 
-def iterate_over_groupby(columns, progress_bar=None):  # tqdm_auto):
+def iterate_over_groupby(columns, progress_bar=None):  # tqdm):
     def get_wrapper(wrapped):
         @functools.wraps(wrapped)
         def wrapper(*args, **kwargs):
