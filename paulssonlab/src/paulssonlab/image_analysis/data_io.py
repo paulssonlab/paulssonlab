@@ -6,7 +6,8 @@ import json
 import io
 import os
 import shutil
-from .util import grouper, tqdm_auto
+from tqdm.auto import tqdm
+from .util import grouper
 
 DEFAULT_ROW_GROUP_SIZE = 1_000_000
 
@@ -106,7 +107,7 @@ def read_parquet(
     categories=None,
     length=None,
     strings_to_categories=True,
-    progress_bar=tqdm_auto,
+    progress_bar=tqdm,
 ):
     reader = pq.ParquetFile(source)
     tables = []
@@ -148,7 +149,7 @@ def sort_arrow_to_parquet(
     parquet_filename=None,
     length=None,
     row_group_size=DEFAULT_ROW_GROUP_SIZE,
-    progress_bar=tqdm_auto,
+    progress_bar=tqdm,
     sort_within_batch=False,
 ):
     if parquet_filename is None:

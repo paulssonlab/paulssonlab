@@ -4,7 +4,8 @@
 # import skimage
 # from functools import partial
 # from geometry import get_image_limits
-# from util import tqdm_auto, map_collections, iterate_get_collection_value
+# from util import tqdm, map_collections, iterate_get_collection_value
+# from tqdm.auto import tqdm
 
 # def trenchwise_apply(img_stack, trench_set_points, trench_idx, func, channel_slice=slice(None), time_slice=slice(None)):
 #     x_lim, y_lim = get_img_limits(img_stack.shape[-2:])
@@ -16,7 +17,7 @@
 #     res = func(thumb_stack)
 #     return res
 
-# def trenchwise_map(img_stack, trench_points, func, progress_bar=tqdm_auto, preload=True, **kwargs):
+# def trenchwise_map(img_stack, trench_points, func, progress_bar=tqdm, preload=True, **kwargs):
 #     if preload:
 #         img_stack = (img_stack.oindex if isinstance(img_stack, zarr.Array) else img_stack)[kwargs.get('channel_slice', slice(None)),kwargs.get('time_slice', slice(None)),:,:]
 #         del kwargs['channel_slice']
@@ -32,7 +33,7 @@
 #     else:
 #         return obj
 
-# def positionwise_trenchwise_map(img_group, trench_points_pos, func, positions=None, progress_bar=tqdm_auto, **kwargs):
+# def positionwise_trenchwise_map(img_group, trench_points_pos, func, positions=None, progress_bar=tqdm, **kwargs):
 #     if positions is None:
 #         positions = trench_points_pos.keys()
 #     obj = {pos: trenchwise_map(img_group[pos], trench_points_pos[pos], func, progress_bar=lambda x: x, **kwargs)
