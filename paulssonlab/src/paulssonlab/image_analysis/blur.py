@@ -7,6 +7,7 @@ import numba
 # - https://github.com/bfraboni/FastGaussianBlur
 # - http://blog.ivank.net/fastest-gaussian-blur.html
 # - https://dsp.stackexchange.com/questions/50576/fastest-available-algorithm-to-blur-an-image-low-pass-filter
+# - https://github.com/pelson/antigrain/blob/64c9125e2b350a422c08d7fa8fff023400ad3f9f/agg-2.4/include/agg_blur.h
 
 
 def box_blur_params(sigma, n):

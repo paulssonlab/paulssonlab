@@ -3,10 +3,14 @@ import pandas as pd
 import scipy
 import skimage.morphology
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
-from .util import repeat_apply
 import numba
 from cytoolz import compose
 import warnings
+from paulssonlab.image_analysis.blur import scipy_box_blur
+from paulssonlab.image_analysis.util import repeat_apply
+
+gaussian_box_blur = scipy_box_blur
+del scipy_box_blur
 
 
 def quantize(img, bits, random=True):
