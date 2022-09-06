@@ -19,7 +19,7 @@ from paulssonlab.image_analysis.workflow import (
     get_filename_image_limits,
     get_nd2_frame,
 )
-from paulssonlab.image_analysis.blur import numba_stack_blur
+from paulssonlab.image_analysis.blur import scipy_box_blur
 
 # TODO: move to paulssonlab.util
 def get_delayed(delayed):
@@ -133,6 +133,7 @@ def mosaic_frame(
     scale=1,
     output_dims=(1024, 1024),
     anti_aliasing=True,
+    max_gaussian_sigma=4,
     scaling_funcs=None,
     delayed=False,
     dtype=np.float32,
@@ -164,20 +165,22 @@ def mosaic_frame(
                 if scaling_funcs:
                     img = delayed(scaling_funcs[channel])(img)
                 if anti_aliasing:
-                    # taken from skimage.transform.resize
-                    # TODO: fix fudge factor
-                    anti_aliasing_sigma = max(0, (1 / scale - 1) / 2) * 2
-                    img = delayed(ndi.gaussian_filter)(
-                        img,
-                        (anti_aliasing_sigma, anti_aliasing_sigma),
-                        mode="nearest",
-                    )
-                    # TODO: why is stack blur slower?
-                    # img = delayed(numba_stack_blur)(
-                    #     img,
-                    #     int(np.ceil(anti_aliasing_sigma)),
-                    #     mode="nearest",
-                    # )
+                    # taken from skimage.transform.resize, with an added factor of 1/4
+                    # (because original formula gave sigmas that were too large)
+                    # this was not based on any well-founded heuristic
+                    # SEE: https://github.com/scikit-image/scikit-image/pull/2802
+                    anti_aliasing_sigma = max(0, (frame_transform.scale - 1) / 8)
+                    if anti_aliasing_sigma > 0:
+                        if anti_aliasing_sigma <= max_gaussian_sigma:
+                            blur_func = ndi.gaussian_filter
+                        else:
+                            # TODO: use stack blur instead?
+                            blur_func = scipy_box_blur
+                        img = delayed(blur_func)(
+                            img,
+                            anti_aliasing_sigma,
+                            mode="nearest",
+                        )
                 img = delayed(warp)(
                     img, frame_transform, output_shape=output_dims[::-1], order=1
                 )
