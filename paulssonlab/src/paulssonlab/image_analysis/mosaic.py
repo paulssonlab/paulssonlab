@@ -5,6 +5,7 @@ import dask.array as da
 import scipy.ndimage as ndi
 import skimage
 from skimage.transform import SimilarityTransform, warp
+from PIL import Image, ImageDraw, ImageFont
 import nd2reader
 import av
 import numba
@@ -196,6 +197,62 @@ def mosaic_frame(
     return output_img
 
 
+def _composite_rgba(rgb, rgba):
+    alpha = rgba[:, :, -1, np.newaxis]
+    return alpha * rgb + (1 - alpha) * rgba[:, :, :-1]
+
+
+def square_overlay(
+    frame,
+    timepoint,
+    scale,
+    unit_scale=80,
+    unit=1,
+    unit_width=0.5,
+    unit_noun=("cell", "cells"),
+    factor=10,
+    caption_position="inset",
+    font=None,
+    font_size=60,
+    text_padding=20,
+    line_width=3,
+    color=(1, 1, 1),
+):
+    color = (*np.array(color) * 255, 0)
+    img = Image.new("RGBA", frame.shape[:-1], (0, 0, 0, 255))
+    draw = ImageDraw.Draw(img)
+    min_dim = min(*frame.shape[:-1])
+    V = (min_dim / scale) ** 2
+    U = (min_dim * unit_width) ** 2 / (unit * unit_scale**2)
+    n = np.floor((np.log(V) - np.log(U)) / np.log(factor))
+    count = factor**n
+    width = scale / min_dim * np.sqrt(U * count)
+    half_width_px = min_dim * width / 2
+    center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
+    delta = np.array([half_width_px, -half_width_px])
+    draw.rectangle(
+        [tuple(center - delta), tuple(center + delta)], outline=color, width=line_width
+    )
+    match caption_position:
+        case "inset":
+            if count == 1:
+                noun = unit_noun[0]
+            else:
+                noun = unit_noun[1]
+            caption = f"{int(count)} {noun}"
+            scaled_font_size = int(np.ceil(font_size * width))
+            text_padding = np.array([text_padding, -scaled_font_size - text_padding])
+            draw.text(
+                tuple(center - delta + text_padding),
+                caption,
+                font=font.font_variant(size=scaled_font_size),
+                fill=color,
+            )
+        case _:
+            raise ValueError("caption_position not recognized")
+    return _composite_rgba(frame, np.asarray(img) / 255)
+
+
 def mosaic_animate_scale(
     filename,
     scale=1,
@@ -207,6 +264,7 @@ def mosaic_animate_scale(
     channels=None,
     channel_to_color=None,
     scaling_funcs=None,
+    overlay_func=None,
     delayed=True,
     progress_bar=tqdm,
 ):
@@ -214,6 +272,14 @@ def mosaic_animate_scale(
         raise ValueError("must specify channels")
     if channel_to_color is None:
         raise ValueError("must specify channel_to_color")
+    if overlay_func:
+
+        def frame_func(*args, timepoint=None, scale=None, **kwargs):
+            frame = mosaic_frame(*args, timepoint=timepoint, scale=scale, **kwargs)
+            return delayed(overlay_func)(frame, timepoint, scale)
+
+    else:
+        frame_func = mosaic_frame
     delayed = get_delayed(delayed)
     nd2 = nd2reader.ND2Reader(filename)
     nd2s = {filename: nd2 for filename in (filename,)}
@@ -236,14 +302,15 @@ def mosaic_animate_scale(
     else:
         if timepoints is None:
             timepoints = it.cycle(range(nd2.sizes["t"]))
+    colors = [channel_to_color[channel] for channel in channels]
     ts_iter = list(zip(timepoints, scale))
     if progress_bar is not None:
         ts_iter = progress_bar(ts_iter)
     animation = [
-        mosaic_frame(
+        frame_func(
             get_frame_func,
             channels,
-            [channel_to_color[channel] for channel in channels],
+            colors,
             positions,
             input_dims,
             timepoint=t,
