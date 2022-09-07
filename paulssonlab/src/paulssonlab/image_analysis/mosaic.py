@@ -206,50 +206,74 @@ def square_overlay(
     frame,
     timepoint,
     scale,
-    unit_scale=80,
-    unit=1,
-    unit_width=0.5,
-    unit_noun=("cell", "cells"),
+    min_scale=80,
+    min_n=0,
+    min_width=0.5,
+    max_scale=0.1,
+    max_n=5,
+    max_width=0.9,
+    noun=("cell", "cells"),
     factor=10,
-    caption_position="inset",
     font=None,
     font_size=60,
     text_padding=20,
     line_width=3,
     color=(1, 1, 1),
+    alpha_width=60,
+    alpha_transition=10,
+    text_alpha_transition=5,
 ):
-    color = (*np.array(color) * 255, 0)
     img = Image.new("RGBA", frame.shape[:-1], (0, 0, 0, 255))
     draw = ImageDraw.Draw(img)
     min_dim = min(*frame.shape[:-1])
     V = (min_dim / scale) ** 2
-    U = (min_dim * unit_width) ** 2 / (unit * unit_scale**2)
-    n = np.floor((np.log(V) - np.log(U)) / np.log(factor))
-    count = factor**n
-    width = scale / min_dim * np.sqrt(U * count)
-    half_width_px = min_dim * width / 2
-    center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
-    delta = np.array([half_width_px, -half_width_px])
-    draw.rectangle(
-        [tuple(center - delta), tuple(center + delta)], outline=color, width=line_width
-    )
-    match caption_position:
-        case "inset":
-            if count == 1:
-                noun = unit_noun[0]
-            else:
-                noun = unit_noun[1]
-            caption = f"{int(count)} {noun}"
-            scaled_font_size = int(np.ceil(font_size * width))
-            text_padding = np.array([text_padding, -scaled_font_size - text_padding])
+    # min_U, max_U are the number of pixels
+    # min_U = (min_dim * min_width) ** 2 / (factor**min_n * min_scale**2)
+    # max_U = (min_dim * max_width) ** 2 / (factor**max_n * max_scale**2)
+    min_U = (min_dim * min_width) ** 2 / min_scale**2
+    max_U = (min_dim * max_width) ** 2 / max_scale**2
+    # calculate fit_factor so that squares at min_scale and max_scale
+    # result in counts of factor**min_n, factor**max_n, respectively
+    fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
+    viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
+    print(min_U, max_U, fit_factor, viewport_n)
+    for n in range(min_n, viewport_n + 1):
+        count = factor**n
+        width = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
+        half_width_px = min_dim * width / 2
+        alpha = 1 - 1 / (1 + np.exp(-(half_width_px - alpha_width) / alpha_transition))
+        if alpha > 0.95:
+            continue
+        rgba_color = (*np.array(color) * 255, int(np.ceil(alpha * 255)))
+        print(count, width, rgba_color)
+        # print(half_width_px, alpha)
+        center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
+        delta = np.array([half_width_px, -half_width_px])
+        draw.rectangle(
+            [tuple(center - delta), tuple(center + delta)],
+            outline=rgba_color,
+            width=line_width,
+        )
+        caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
+        scaled_font_size = int(np.ceil(font_size * width))
+        text_padding_ary = np.array([text_padding, -scaled_font_size - text_padding])
+        if width >= alpha_width:
+            text_alpha = alpha
+        else:
+            text_alpha = 1 - 1 / (
+                1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
+            )
+        if text_alpha > 0.95:
+            continue
+        text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
+        print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
+        if scaled_font_size > 10:
             draw.text(
-                tuple(center - delta + text_padding),
+                tuple(center - delta + text_padding_ary),
                 caption,
                 font=font.font_variant(size=scaled_font_size),
-                fill=color,
+                fill=text_rgba_color,
             )
-        case _:
-            raise ValueError("caption_position not recognized")
     return _composite_rgba(frame, np.asarray(img) / 255)
 
 
