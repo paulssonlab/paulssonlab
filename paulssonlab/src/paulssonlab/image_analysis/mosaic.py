@@ -6,6 +6,7 @@ import scipy.ndimage as ndi
 import skimage
 from skimage.transform import SimilarityTransform, warp
 from PIL import Image, ImageDraw, ImageFont
+import cv2
 import nd2reader
 import av
 import numba
@@ -78,18 +79,24 @@ def scale_around_center(scale, center):
     )
 
 
+def fixed_aspect_scale(input_width, input_height, output_width, output_height):
+    width_ratio = output_width / input_width
+    height_ratio = output_height / input_height
+    scale = min(width_ratio, height_ratio)
+    return scale
+
+
 @cache
 def fit_output_transform(input_width, input_height, output_width, output_height):
-    width_ratio = input_width / output_width
-    height_ratio = input_height / output_height
-    scale = max(width_ratio, height_ratio)
-    x = -(output_width - input_width / scale) / 2
-    y = -(output_height - input_height / scale) / 2
+    scale = fixed_aspect_scale(input_width, input_height, output_width, output_height)
+    x = -(output_width - input_width * scale) / 2
+    y = -(output_height - input_height * scale) / 2
+    print("!!", input_width, input_height, output_width, output_height, scale, x, y)
     return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
 
 
 @cache
-def fit_output_and_scale_transform(
+def transform_to_viewport(
     input_width,
     input_height,
     output_width,
@@ -98,19 +105,13 @@ def fit_output_and_scale_transform(
     center_y,
     output_corner_x,
     output_corner_y,
-    scale,
 ):
-    transform = (
-        fit_output_transform(input_width, input_height, output_width, output_height)
-        + scale_around_center(1 / scale, (input_width / 2, input_height / 2))
-        + SimilarityTransform(
-            translation=(
-                center_x - input_width / 2,
-                center_y - input_height / 2,
-            )
+    transform = SimilarityTransform(
+        translation=(
+            center_x - input_width / 2,
+            center_y - input_height / 2,
         )
-        + SimilarityTransform(translation=(output_corner_x, output_corner_y))
-    )
+    ) + SimilarityTransform(translation=(output_corner_x, output_corner_y))
     input_ul = transform.inverse((0, 0))[0]
     # TODO: off-by-one?
     input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
@@ -118,6 +119,7 @@ def fit_output_and_scale_transform(
     # TODO: off-by-one?
     output_lr = (output_width - 1, output_height - 1)
     visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
+    print("INPUT", input_ul, input_lr, input_ul - input_lr, "VIS", visible)
     return transform, visible
 
 
@@ -133,7 +135,6 @@ def mosaic_frame(
     offset=None,
     scale=1,
     output_dims=(1024, 1024),
-    anti_aliasing=True,
     max_gaussian_sigma=4,
     scaling_funcs=None,
     delayed=False,
@@ -151,42 +152,45 @@ def mosaic_frame(
     if offset is not None:
         center += np.array(offset)
     all_channel_imgs = [[] for _ in range(len(channels))]
+    positions = positions[50:90]
+    input_scale = fixed_aspect_scale(
+        *input_dims, output_dims[0] * scale, output_dims[1] * scale
+    )
+    rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.int_)
     for (filename, pos_num), position in positions.iterrows():
-        frame_transform, visible = fit_output_and_scale_transform(
-            *input_dims,
+        if (position["x_idx"] + position["y_idx"]) % 2 == 0:
+            continue
+        frame_transform, visible = transform_to_viewport(
+            *rescaled_input_dims,
             *output_dims,
-            *center,
-            -input_dims[0] * position["x_idx"],
-            -input_dims[1] * position["y_idx"],
-            scale,
+            *(center * input_scale),
+            -input_dims[0] * position["x_idx"] * input_scale,
+            -input_dims[1] * position["y_idx"] * input_scale,
         )
         if visible:
             for channel, channel_imgs in zip(channels, all_channel_imgs):
                 img = delayed(get_frame_func)(pos_num, channel, timepoint)
                 if scaling_funcs:
                     img = delayed(scaling_funcs[channel])(img)
-                if anti_aliasing:
-                    # taken from skimage.transform.resize, with an added factor of 1/4
-                    # (because original formula gave sigmas that were too large)
-                    # this was not based on any well-founded heuristic
-                    # SEE: https://github.com/scikit-image/scikit-image/pull/2802
-                    anti_aliasing_sigma = max(0, (frame_transform.scale - 1) / 8)
-                    if anti_aliasing_sigma > 0:
-                        if anti_aliasing_sigma <= max_gaussian_sigma:
-                            blur_func = ndi.gaussian_filter
-                        else:
-                            # TODO: use stack blur instead?
-                            blur_func = scipy_box_blur
-                        img = delayed(blur_func)(
-                            img,
-                            anti_aliasing_sigma,
-                            mode="nearest",
-                        )
-                img = delayed(warp)(
-                    img, frame_transform, output_shape=output_dims[::-1], order=1
+                img = delayed(cv2.resize)(
+                    img, rescaled_input_dims, interpolation=cv2.INTER_AREA
+                )
+                # img = delayed(warp)(
+                #     img, frame_transform, output_shape=output_dims[::-1], order=1
+                # )
+                # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
+                # so we resize first, then translate
+                img = delayed(cv2.warpAffine)(
+                    img,
+                    frame_transform.params[:2, :],
+                    output_dims[::-1],
+                    # flags=cv2.INTER_AREA + cv2.WARP_INVERSE_MAP,
+                    flags=cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP,
                 )
                 img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
                 channel_imgs.append(img)
+    if not all_channel_imgs:
+        raise ValueError("no positions visible")
     channel_composite_imgs = [
         da.stack(channel_imgs).sum(axis=0) for channel_imgs in all_channel_imgs
     ]
@@ -257,17 +261,18 @@ def square_overlay(
         caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
         scaled_font_size = int(np.ceil(font_size * width))
         text_padding_ary = np.array([text_padding, -scaled_font_size - text_padding])
-        if width >= alpha_width:
-            text_alpha = alpha
-        else:
-            text_alpha = 1 - 1 / (
-                1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
-            )
-        if text_alpha > 0.95:
-            continue
-        text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
+        # if width >= alpha_width:
+        #     text_alpha = alpha
+        # else:
+        #     text_alpha = 1 - 1 / (
+        #         1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
+        #     )
+        # if text_alpha > 0.95:
+        #     continue
+        # text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
+        text_rgba_color = rgba_color
         print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
-        if scaled_font_size > 10:
+        if scaled_font_size > 3:
             draw.text(
                 tuple(center - delta + text_padding_ary),
                 caption,

@@ -23,6 +23,7 @@ dependencies:
   - numpy-indexed
   - pandas
   - panel=0.12.7
+  - py-opencv
   - pyarrow
   - pytables
   - python-lmdb
