@@ -86,16 +86,60 @@ def fixed_aspect_scale(input_width, input_height, output_width, output_height):
     return scale
 
 
-@cache
+# @cache
 def fit_output_transform(input_width, input_height, output_width, output_height):
     scale = fixed_aspect_scale(input_width, input_height, output_width, output_height)
     x = -(output_width - input_width * scale) / 2
     y = -(output_height - input_height * scale) / 2
-    print("!!", input_width, input_height, output_width, output_height, scale, x, y)
-    return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
+    # print("!!", input_width, input_height, output_width, output_height, scale, x, y)
+    return SimilarityTransform(translation=(x, y)) + SimilarityTransform(
+        scale=1 / scale
+    )
 
 
-@cache
+# @cache
+# def fit_output_transform(input_width, input_height, output_width, output_height):
+#     width_ratio = input_width / output_width
+#     height_ratio = input_height / output_height
+#     scale = max(width_ratio, height_ratio)
+#     x = -(output_width - input_width / scale) / 2
+#     y = -(output_height - input_height / scale) / 2
+#     return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
+
+# @cache
+def fit_output_and_scale_transform(
+    input_width,
+    input_height,
+    output_width,
+    output_height,
+    center_x,
+    center_y,
+    output_corner_x,
+    output_corner_y,
+    scale,
+):
+    transform = (
+        fit_output_transform(input_width, input_height, output_width, output_height)
+        + scale_around_center(1 / scale, (input_width / 2, input_height / 2))
+        + SimilarityTransform(
+            translation=(
+                center_x - input_width / 2,
+                center_y - input_height / 2,
+            )
+        )
+        + SimilarityTransform(translation=(output_corner_x, output_corner_y))
+    )
+    input_ul = transform.inverse((0, 0))[0]
+    # TODO: off-by-one?
+    input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
+    output_ul = (0, 0)
+    # TODO: off-by-one?
+    output_lr = (output_width - 1, output_height - 1)
+    visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
+    return transform, visible
+
+
+# @cache
 def transform_to_viewport(
     input_width,
     input_height,
@@ -108,10 +152,12 @@ def transform_to_viewport(
 ):
     transform = SimilarityTransform(
         translation=(
-            center_x - input_width / 2,
-            center_y - input_height / 2,
+            # center_x - input_width / 2 + output_corner_x,
+            # center_y - input_height / 2 + output_corner_y,
+            center_x - output_width / 2 + output_corner_x,
+            center_y - output_height / 2 + output_corner_y,
         )
-    ) + SimilarityTransform(translation=(output_corner_x, output_corner_y))
+    )
     input_ul = transform.inverse((0, 0))[0]
     # TODO: off-by-one?
     input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
@@ -119,7 +165,15 @@ def transform_to_viewport(
     # TODO: off-by-one?
     output_lr = (output_width - 1, output_height - 1)
     visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
-    print("INPUT", input_ul, input_lr, input_ul - input_lr, "VIS", visible)
+    print(
+        ">",
+        transform.scale,
+        transform.translation,
+        visible,
+        input_ul,
+        input_lr,
+        input_ul - input_lr,
+    )
     return transform, visible
 
 
@@ -160,6 +214,21 @@ def mosaic_frame(
     for (filename, pos_num), position in positions.iterrows():
         if (position["x_idx"] + position["y_idx"]) % 2 == 0:
             continue
+        frame_transform_orig, visible_orig = fit_output_and_scale_transform(
+            *input_dims,
+            *output_dims,
+            *center,
+            -input_dims[0] * position["x_idx"],
+            -input_dims[1] * position["y_idx"],
+            scale,
+        )
+        # frame_transform, visible = transform_to_viewport(
+        #     *rescaled_input_dims,
+        #     *output_dims,
+        #     *(center * input_scale),
+        #     -input_dims[0] * position["x_idx"] * input_scale,
+        #     -input_dims[1] * position["y_idx"] * input_scale,
+        # )
         frame_transform, visible = transform_to_viewport(
             *rescaled_input_dims,
             *output_dims,
@@ -167,7 +236,14 @@ def mosaic_frame(
             -input_dims[0] * position["x_idx"] * input_scale,
             -input_dims[1] * position["y_idx"] * input_scale,
         )
-        if visible:
+        print(
+            "ORIG",
+            frame_transform_orig.translation,
+            frame_transform_orig.scale,
+            visible_orig,
+        )
+        print("NEW", frame_transform.translation, frame_transform.scale, visible)
+        if visible_orig:  # TODO
             for channel, channel_imgs in zip(channels, all_channel_imgs):
                 img = delayed(get_frame_func)(pos_num, channel, timepoint)
                 if scaling_funcs:
@@ -176,7 +252,7 @@ def mosaic_frame(
                     img, rescaled_input_dims, interpolation=cv2.INTER_AREA
                 )
                 # img = delayed(warp)(
-                #     img, frame_transform, output_shape=output_dims[::-1], order=1
+                #     img, frame_transform_orig, output_shape=output_dims[::-1], order=1
                 # )
                 # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
                 # so we resize first, then translate
@@ -185,10 +261,12 @@ def mosaic_frame(
                     frame_transform.params[:2, :],
                     output_dims[::-1],
                     # flags=cv2.INTER_AREA + cv2.WARP_INVERSE_MAP,
-                    flags=cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP,
+                    flags=(cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP),
                 )
+                img = delayed(np.clip)(img, 0, 1)  # LANCZOS4 outputs values beyond 0..1
                 img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
                 channel_imgs.append(img)
+            # break
     if not all_channel_imgs:
         raise ValueError("no positions visible")
     channel_composite_imgs = [
@@ -240,7 +318,7 @@ def square_overlay(
     # result in counts of factor**min_n, factor**max_n, respectively
     fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
     viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
-    print(min_U, max_U, fit_factor, viewport_n)
+    # print(min_U, max_U, fit_factor, viewport_n)
     for n in range(min_n, viewport_n + 1):
         count = factor**n
         width = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
@@ -249,7 +327,7 @@ def square_overlay(
         if alpha > 0.95:
             continue
         rgba_color = (*np.array(color) * 255, int(np.ceil(alpha * 255)))
-        print(count, width, rgba_color)
+        # print(count, width, rgba_color)
         # print(half_width_px, alpha)
         center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
         delta = np.array([half_width_px, -half_width_px])
@@ -271,7 +349,7 @@ def square_overlay(
         #     continue
         # text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
         text_rgba_color = rgba_color
-        print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
+        # print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
         if scaled_font_size > 3:
             draw.text(
                 tuple(center - delta + text_padding_ary),
