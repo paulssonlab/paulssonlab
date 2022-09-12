@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw, ImageFont
 import cv2
 import nd2reader
 import av
-import numba
 import itertools as it
 from functools import cache
 from numbers import Number
@@ -38,7 +37,6 @@ def colorize(imgs, hexcolors, scale=True):
     return _colorize(imgs, colors, scale=scale)
 
 
-# @numba.njit
 def _colorize(channel_imgs, colors, scale=True):
     if len(channel_imgs) != len(colors):
         raise ValueError("expecting equal numbers of channels and colors")
@@ -86,60 +84,7 @@ def fixed_aspect_scale(input_width, input_height, output_width, output_height):
     return scale
 
 
-# @cache
-def fit_output_transform(input_width, input_height, output_width, output_height):
-    scale = fixed_aspect_scale(input_width, input_height, output_width, output_height)
-    x = -(output_width - input_width * scale) / 2
-    y = -(output_height - input_height * scale) / 2
-    # print("!!", input_width, input_height, output_width, output_height, scale, x, y)
-    return SimilarityTransform(translation=(x, y)) + SimilarityTransform(
-        scale=1 / scale
-    )
-
-
-# @cache
-# def fit_output_transform(input_width, input_height, output_width, output_height):
-#     width_ratio = input_width / output_width
-#     height_ratio = input_height / output_height
-#     scale = max(width_ratio, height_ratio)
-#     x = -(output_width - input_width / scale) / 2
-#     y = -(output_height - input_height / scale) / 2
-#     return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
-
-# @cache
-def fit_output_and_scale_transform(
-    input_width,
-    input_height,
-    output_width,
-    output_height,
-    center_x,
-    center_y,
-    output_corner_x,
-    output_corner_y,
-    scale,
-):
-    transform = (
-        fit_output_transform(input_width, input_height, output_width, output_height)
-        + scale_around_center(1 / scale, (input_width / 2, input_height / 2))
-        + SimilarityTransform(
-            translation=(
-                center_x - input_width / 2,
-                center_y - input_height / 2,
-            )
-        )
-        + SimilarityTransform(translation=(output_corner_x, output_corner_y))
-    )
-    input_ul = transform.inverse((0, 0))[0]
-    # TODO: off-by-one?
-    input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
-    output_ul = (0, 0)
-    # TODO: off-by-one?
-    output_lr = (output_width - 1, output_height - 1)
-    visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
-    return transform, visible
-
-
-# @cache
+@cache
 def transform_to_viewport(
     input_width,
     input_height,
@@ -152,8 +97,6 @@ def transform_to_viewport(
 ):
     transform = SimilarityTransform(
         translation=(
-            # center_x - input_width / 2 + output_corner_x,
-            # center_y - input_height / 2 + output_corner_y,
             center_x - output_width / 2 + output_corner_x,
             center_y - output_height / 2 + output_corner_y,
         )
@@ -165,15 +108,6 @@ def transform_to_viewport(
     # TODO: off-by-one?
     output_lr = (output_width - 1, output_height - 1)
     visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
-    print(
-        ">",
-        transform.scale,
-        transform.translation,
-        visible,
-        input_ul,
-        input_lr,
-        input_ul - input_lr,
-    )
     return transform, visible
 
 
@@ -206,29 +140,11 @@ def mosaic_frame(
     if offset is not None:
         center += np.array(offset)
     all_channel_imgs = [[] for _ in range(len(channels))]
-    positions = positions[50:90]
     input_scale = fixed_aspect_scale(
         *input_dims, output_dims[0] * scale, output_dims[1] * scale
     )
     rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.int_)
     for (filename, pos_num), position in positions.iterrows():
-        if (position["x_idx"] + position["y_idx"]) % 2 == 0:
-            continue
-        frame_transform_orig, visible_orig = fit_output_and_scale_transform(
-            *input_dims,
-            *output_dims,
-            *center,
-            -input_dims[0] * position["x_idx"],
-            -input_dims[1] * position["y_idx"],
-            scale,
-        )
-        # frame_transform, visible = transform_to_viewport(
-        #     *rescaled_input_dims,
-        #     *output_dims,
-        #     *(center * input_scale),
-        #     -input_dims[0] * position["x_idx"] * input_scale,
-        #     -input_dims[1] * position["y_idx"] * input_scale,
-        # )
         frame_transform, visible = transform_to_viewport(
             *rescaled_input_dims,
             *output_dims,
@@ -236,14 +152,7 @@ def mosaic_frame(
             -input_dims[0] * position["x_idx"] * input_scale,
             -input_dims[1] * position["y_idx"] * input_scale,
         )
-        print(
-            "ORIG",
-            frame_transform_orig.translation,
-            frame_transform_orig.scale,
-            visible_orig,
-        )
-        print("NEW", frame_transform.translation, frame_transform.scale, visible)
-        if visible_orig:  # TODO
+        if visible:
             for channel, channel_imgs in zip(channels, all_channel_imgs):
                 img = delayed(get_frame_func)(pos_num, channel, timepoint)
                 if scaling_funcs:
@@ -266,7 +175,6 @@ def mosaic_frame(
                 img = delayed(np.clip)(img, 0, 1)  # LANCZOS4 outputs values beyond 0..1
                 img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
                 channel_imgs.append(img)
-            # break
     if not all_channel_imgs:
         raise ValueError("no positions visible")
     channel_composite_imgs = [
