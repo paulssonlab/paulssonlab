@@ -1,12 +1,16 @@
 import numpy as np
 from matplotlib.colors import hex2color
 import dask
+import dask.array as da
 import scipy.ndimage as ndi
 import skimage
 from skimage.transform import SimilarityTransform, warp
+from PIL import Image, ImageDraw, ImageFont
 import nd2reader
 import av
+import numba
 import itertools as it
+from functools import cache
 from numbers import Number
 from cytoolz import partial
 from tqdm.auto import tqdm
@@ -16,7 +20,7 @@ from paulssonlab.image_analysis.workflow import (
     get_filename_image_limits,
     get_nd2_frame,
 )
-from paulssonlab.image_analysis.image import gaussian_box_blur
+from paulssonlab.image_analysis.blur import scipy_box_blur
 
 # TODO: move to paulssonlab.util
 def get_delayed(delayed):
@@ -28,12 +32,13 @@ def get_delayed(delayed):
         return delayed
 
 
-def composite_channels(imgs, hexcolors, scale=True):
+def colorize(imgs, hexcolors, scale=True):
     colors = [hex2color(hexcolor) for hexcolor in hexcolors]
-    return _composite_channels(imgs, colors, scale=scale)
+    return _colorize(imgs, colors, scale=scale)
 
 
-def _composite_channels(channel_imgs, colors, scale=True):
+# @numba.njit
+def _colorize(channel_imgs, colors, scale=True):
     if len(channel_imgs) != len(colors):
         raise ValueError("expecting equal numbers of channels and colors")
     num_channels = len(channel_imgs)
@@ -47,41 +52,14 @@ def _composite_channels(channel_imgs, colors, scale=True):
     else:
         scaled_imgs = channel_imgs
     imgs_to_combine = [
-        scaled_imgs[i][:, :, np.newaxis] * np.array(colors[i])
-        for i in range(num_channels)
+        scaled_img[:, :, np.newaxis] * np.array(color)
+        for scaled_img, color in zip(scaled_imgs, colors)
     ]
     if not len(imgs_to_combine):
-        imgs_to_combine = [np.ones(colored_imgs[0].shape)]  # white placeholder
+        return np.ones(channel_imgs[0].shape)  # white placeholder
     img = imgs_to_combine[0]
     for img2 in imgs_to_combine[1:]:
         img = 1 - (1 - img) * (1 - img2)
-    return img
-
-
-def colorized_frame(
-    get_frame_func,
-    filename,
-    channels,
-    channel_to_color,
-    *,
-    t=0,
-    v=0,
-    scaling_funcs=None,
-):
-    if channels is None:
-        raise ValueError("must specify channels")
-    imgs = [get_frame_func(filename, v, channel, t) for channel in channels]
-    if scaling_funcs:
-        for idx in range(len(channels)):
-            channel = channels[idx]
-            if channel not in scaling_funcs:
-                raise ValueError(f"missing scaling_func for {channel}")
-            imgs[idx] = scaling_funcs[channel](imgs[idx])
-    img = composite_channels(
-        imgs,
-        [channel_to_color[channel] for channel in channels],
-        scale=(not scaling_funcs),
-    )
     return img
 
 
@@ -100,7 +78,8 @@ def scale_around_center(scale, center):
     )
 
 
-def output_transformation(input_width, input_height, output_width, output_height):
+@cache
+def fit_output_transform(input_width, input_height, output_width, output_height):
     width_ratio = input_width / output_width
     height_ratio = input_height / output_height
     scale = max(width_ratio, height_ratio)
@@ -109,10 +88,45 @@ def output_transformation(input_width, input_height, output_width, output_height
     return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
 
 
+@cache
+def fit_output_and_scale_transform(
+    input_width,
+    input_height,
+    output_width,
+    output_height,
+    center_x,
+    center_y,
+    output_corner_x,
+    output_corner_y,
+    scale,
+):
+    transform = (
+        fit_output_transform(input_width, input_height, output_width, output_height)
+        + scale_around_center(1 / scale, (input_width / 2, input_height / 2))
+        + SimilarityTransform(
+            translation=(
+                center_x - input_width / 2,
+                center_y - input_height / 2,
+            )
+        )
+        + SimilarityTransform(translation=(output_corner_x, output_corner_y))
+    )
+    input_ul = transform.inverse((0, 0))[0]
+    # TODO: off-by-one?
+    input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
+    output_ul = (0, 0)
+    # TODO: off-by-one?
+    output_lr = (output_width - 1, output_height - 1)
+    visible = rectangles_intersect(input_ul, input_lr, output_ul, output_lr)
+    return transform, visible
+
+
 def mosaic_frame(
     get_frame_func,
+    channels,
+    colors,
     positions,
-    image_dims,
+    input_dims,
     *,
     timepoint=None,
     center=None,
@@ -120,54 +134,147 @@ def mosaic_frame(
     scale=1,
     output_dims=(1024, 1024),
     anti_aliasing=True,
+    max_gaussian_sigma=4,
+    scaling_funcs=None,
     delayed=False,
+    dtype=np.float32,
 ):
     delayed = get_delayed(delayed)
+    if len(channels) != len(colors):
+        raise ValueError("number of channels and colors must be equal")
     if center is not None and offset is not None:
         raise ValueError("can only specify at most one of center, offset")
     if center is None:
         columns = positions["x_idx"].max() - positions["x_idx"].min() + 1
         rows = positions["y_idx"].max() - positions["y_idx"].min() + 1
-        center = np.array([image_dims[0] * columns / 2, image_dims[1] * rows / 2])
+        center = np.array([input_dims[0] * columns / 2, input_dims[1] * rows / 2])
     if offset is not None:
         center += np.array(offset)
-    viewport_transform = output_transformation(*image_dims, *output_dims)
-    output_img = delayed(np.zeros)((output_dims[1], output_dims[0], 3))
-    viewport_ul = (0, 0)
-    viewport_lr = (output_dims[0] - 1, output_dims[1] - 1)  # TODO: off-by-one?
+    all_channel_imgs = [[] for _ in range(len(channels))]
     for (filename, pos_num), position in positions.iterrows():
-        frame_corner = (
-            -image_dims[0] * position["x_idx"],
-            -image_dims[1] * position["y_idx"],
+        frame_transform, visible = fit_output_and_scale_transform(
+            *input_dims,
+            *output_dims,
+            *center,
+            -input_dims[0] * position["x_idx"],
+            -input_dims[1] * position["y_idx"],
+            scale,
         )
-        frame_transform = (
-            output_transformation(*image_dims, *output_dims)
-            + scale_around_center(1 / scale, (image_dims[0] / 2, image_dims[1] / 2))
-            + SimilarityTransform(
-                translation=(
-                    center[0] - image_dims[0] / 2,
-                    center[1] - image_dims[1] / 2,
-                )
-            )
-            + SimilarityTransform(translation=frame_corner)
-        )
-        frame_ul = frame_transform.inverse((0, 0))[0]
-        frame_lr = frame_transform.inverse((image_dims[0] - 1, image_dims[1] - 1))[0]
-        visible = rectangles_intersect(viewport_ul, viewport_lr, frame_ul, frame_lr)
         if visible:
-            img = delayed(get_frame_func)(t=timepoint, v=pos_num)
-            if anti_aliasing:
-                # taken from skimage.transform.resize
-                anti_aliasing_sigma = (
-                    max(0, (1 / scale - 1) / 2) * 2
-                )  # TODO: fix fudge factor
-                img = delayed(ndi.gaussian_filter)(
-                    img, (anti_aliasing_sigma, anti_aliasing_sigma, 0), mode="constant"
+            for channel, channel_imgs in zip(channels, all_channel_imgs):
+                img = delayed(get_frame_func)(pos_num, channel, timepoint)
+                if scaling_funcs:
+                    img = delayed(scaling_funcs[channel])(img)
+                if anti_aliasing:
+                    # taken from skimage.transform.resize, with an added factor of 1/4
+                    # (because original formula gave sigmas that were too large)
+                    # this was not based on any well-founded heuristic
+                    # SEE: https://github.com/scikit-image/scikit-image/pull/2802
+                    anti_aliasing_sigma = max(0, (frame_transform.scale - 1) / 8)
+                    if anti_aliasing_sigma > 0:
+                        if anti_aliasing_sigma <= max_gaussian_sigma:
+                            blur_func = ndi.gaussian_filter
+                        else:
+                            # TODO: use stack blur instead?
+                            blur_func = scipy_box_blur
+                        img = delayed(blur_func)(
+                            img,
+                            anti_aliasing_sigma,
+                            mode="nearest",
+                        )
+                img = delayed(warp)(
+                    img, frame_transform, output_shape=output_dims[::-1], order=1
                 )
-            output_img += delayed(warp)(
-                img, frame_transform, output_shape=output_dims[::-1], order=3
-            )
+                img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
+                channel_imgs.append(img)
+    channel_composite_imgs = [
+        da.stack(channel_imgs).sum(axis=0) for channel_imgs in all_channel_imgs
+    ]
+    # TODO: implement delayed=False without dask.array? or just call .compute?
+    output_img = delayed(colorize)(
+        channel_composite_imgs, colors, scale=(not scaling_funcs)
+    )
     return output_img
+
+
+def _composite_rgba(rgb, rgba):
+    alpha = rgba[:, :, -1, np.newaxis]
+    return alpha * rgb + (1 - alpha) * rgba[:, :, :-1]
+
+
+def square_overlay(
+    frame,
+    timepoint,
+    scale,
+    min_scale=80,
+    min_n=0,
+    min_width=0.5,
+    max_scale=0.1,
+    max_n=5,
+    max_width=0.9,
+    noun=("cell", "cells"),
+    factor=10,
+    font=None,
+    font_size=60,
+    text_padding=20,
+    line_width=3,
+    color=(1, 1, 1),
+    alpha_width=60,
+    alpha_transition=10,
+    text_alpha_transition=5,
+):
+    img = Image.new("RGBA", frame.shape[:-1], (0, 0, 0, 255))
+    draw = ImageDraw.Draw(img)
+    min_dim = min(*frame.shape[:-1])
+    V = (min_dim / scale) ** 2
+    # min_U, max_U are the number of pixels
+    # min_U = (min_dim * min_width) ** 2 / (factor**min_n * min_scale**2)
+    # max_U = (min_dim * max_width) ** 2 / (factor**max_n * max_scale**2)
+    min_U = (min_dim * min_width) ** 2 / min_scale**2
+    max_U = (min_dim * max_width) ** 2 / max_scale**2
+    # calculate fit_factor so that squares at min_scale and max_scale
+    # result in counts of factor**min_n, factor**max_n, respectively
+    fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
+    viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
+    print(min_U, max_U, fit_factor, viewport_n)
+    for n in range(min_n, viewport_n + 1):
+        count = factor**n
+        width = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
+        half_width_px = min_dim * width / 2
+        alpha = 1 - 1 / (1 + np.exp(-(half_width_px - alpha_width) / alpha_transition))
+        if alpha > 0.95:
+            continue
+        rgba_color = (*np.array(color) * 255, int(np.ceil(alpha * 255)))
+        print(count, width, rgba_color)
+        # print(half_width_px, alpha)
+        center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
+        delta = np.array([half_width_px, -half_width_px])
+        draw.rectangle(
+            [tuple(center - delta), tuple(center + delta)],
+            outline=rgba_color,
+            width=line_width,
+        )
+        caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
+        scaled_font_size = int(np.ceil(font_size * width))
+        text_padding_ary = np.array([text_padding, -scaled_font_size - text_padding])
+        if width >= alpha_width:
+            text_alpha = alpha
+        else:
+            text_alpha = 1 - 1 / (
+                1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
+            )
+        if text_alpha > 0.95:
+            continue
+        text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
+        print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
+        if scaled_font_size > 10:
+            draw.text(
+                tuple(center - delta + text_padding_ary),
+                caption,
+                font=font.font_variant(size=scaled_font_size),
+                fill=text_rgba_color,
+            )
+    return _composite_rgba(frame, np.asarray(img) / 255)
 
 
 def mosaic_animate_scale(
@@ -178,44 +285,36 @@ def mosaic_animate_scale(
     offset=None,
     width=1024,
     height=1024,
-    # frame_rate=1, #TODO
     channels=None,
     channel_to_color=None,
     scaling_funcs=None,
+    overlay_func=None,
     delayed=True,
     progress_bar=tqdm,
-    # ignore_exceptions=True,
 ):
     if channels is None:
         raise ValueError("must specify channels")
     if channel_to_color is None:
         raise ValueError("must specify channel_to_color")
+    if overlay_func:
+
+        def frame_func(*args, timepoint=None, scale=None, **kwargs):
+            frame = mosaic_frame(*args, timepoint=timepoint, scale=scale, **kwargs)
+            return delayed(overlay_func)(frame, timepoint, scale)
+
+    else:
+        frame_func = mosaic_frame
     delayed = get_delayed(delayed)
-    # TODO
-    # if ignore_exceptions:
-    #     excepts_get_nd2_frame = excepts(Exception, get_nd2_frame)
-    #     excepts_segmentation_func = excepts(Exception, segmentation_func)
-    #     excepts_measure = excepts(Exception, measure)
-    # else:
-    #     excepts_get_nd2_frame = get_nd2_frame
-    #     excepts_segmentation_func = segmentation_func
-    #     excepts_measure = measure
     nd2 = nd2reader.ND2Reader(filename)
     nd2s = {filename: nd2 for filename in (filename,)}
     metadata = {
         nd2_filename: parse_nd2_metadata(nd2) for nd2_filename, nd2 in nd2s.items()
     }
     positions = get_position_metadata(metadata)
-    # TODO
-    # small_positions = positions[(positions["y_idx"] < 3) & (positions["x_idx"] < 3)]
     image_limits = get_filename_image_limits(metadata)
     get_frame_func = partial(
-        colorized_frame,
         get_nd2_frame,
         filename,
-        channels,
-        channel_to_color,
-        scaling_funcs=scaling_funcs,
     )
     input_dims = (
         image_limits[filename][0][1] + 1,
@@ -227,18 +326,22 @@ def mosaic_animate_scale(
     else:
         if timepoints is None:
             timepoints = it.cycle(range(nd2.sizes["t"]))
+    colors = [channel_to_color[channel] for channel in channels]
     ts_iter = list(zip(timepoints, scale))
     if progress_bar is not None:
         ts_iter = progress_bar(ts_iter)
     animation = [
-        mosaic_frame(
+        frame_func(
             get_frame_func,
+            channels,
+            colors,
             positions,
             input_dims,
             timepoint=t,
             scale=s,
             center=center,
             offset=offset,
+            scaling_funcs=scaling_funcs,
             delayed=delayed,
         )
         for t, s in ts_iter
@@ -255,11 +358,9 @@ def get_intensity_extrema(nd2, channels, v=0, step=10):
             img = nd2.get_frame_2D(v=v, t=t, c=nd2.metadata["channels"].index(channel))
             if min_value == -1:
                 min_value = img.min()
-                # max_value = img.max()
                 max_value = np.percentile(img, 99.9)
             else:
                 min_value = min(min_value, img.min())
-                # max_value = max(max_value, img.max())
                 max_value = max(max_value, np.percentile(img, 99.9))
         extrema[channel] = (min_value, max_value)
     return extrema
@@ -270,14 +371,9 @@ def get_scaling_funcs(extrema):
     for channel, (min_value, max_value) in extrema.items():
         # careful! there's an unfortunate late-binding issue
         # SEE: https://stackoverflow.com/questions/1107210/python-create-function-in-a-loop-capturing-the-loop-variable
-        # TODO: this should be a single clip...
-        scaling_funcs[
-            channel
-        ] = lambda x, min_value=min_value, max_value=max_value: np.clip(
-            (np.clip(x, min_value, max_value) - min_value) / (max_value - min_value),
-            0,
-            1,
-        )
+        scaling_funcs[channel] = lambda x, min_value=min_value, max_value=max_value: (
+            np.clip(x, min_value, max_value) - min_value
+        ) / (max_value - min_value)
     return scaling_funcs
 
 

@@ -7,6 +7,7 @@ import numba
 # - https://github.com/bfraboni/FastGaussianBlur
 # - http://blog.ivank.net/fastest-gaussian-blur.html
 # - https://dsp.stackexchange.com/questions/50576/fastest-available-algorithm-to-blur-an-image-low-pass-filter
+# - https://github.com/pelson/antigrain/blob/64c9125e2b350a422c08d7fa8fff023400ad3f9f/agg-2.4/include/agg_blur.h
 
 
 def box_blur_params(sigma, n):
@@ -21,37 +22,39 @@ def box_blur_params(sigma, n):
 
 
 # FROM: Kovesi, Peter. 2010. Fast Almost-Gaussian Filtering.
-def scipy_box_blur_2d(ary, sigma, n=3, mode="nearest"):
+def scipy_box_blur_2d(ary, sigma, n=3, mode="nearest", cval=0, output=None):
     m, w_l, w_u = box_blur_params(sigma, n)
     for i in range(m):
-        ary = ndi.filters.uniform_filter(ary, w_l, mode=mode)
+        ary = ndi.filters.uniform_filter(ary, w_l, mode=mode, cval=cval, output=output)
     for i in range(n - m):
-        ary = ndi.filters.uniform_filter(ary, w_u, mode=mode)
+        ary = ndi.filters.uniform_filter(ary, w_u, mode=mode, cval=cval, output=output)
     return ary
 
 
-def _box_blur(filter_1d, ary, sigma, n, mode="nearest"):
+def _box_blur(filter_1d, ary, sigma, n, mode="nearest", cval=0, output=None):
     m, w_l, w_u = box_blur_params(sigma, n)
     for i in range(m):
-        ary = filter_1d(ary, w_l, mode=mode)
+        ary = filter_1d(ary, w_l, mode=mode, cval=0, output=None)
     for i in range(n - m):
-        ary = filter_1d(ary, w_u, mode=mode)
+        ary = filter_1d(ary, w_u, mode=mode, cval=0, output=None)
     # SEE https://stackoverflow.com/a/62523103 for how to do transpose in place
     # this would save memory, but is 10x slower
     # see also fastremap.transpose (https://github.com/seung-lab/fastremap)
     # turns out that it's faster to avoid copy (physical transpose) here and below
     ary = ary.transpose()
     for i in range(m):
-        ary = filter_1d(ary, w_l, mode=mode)
+        ary = filter_1d(ary, w_l, mode=mode, cval=0, output=None)
     for i in range(n - m):
-        ary = filter_1d(ary, w_u, mode=mode)
+        ary = filter_1d(ary, w_u, mode=mode, cval=0, output=None)
     ary = ary.transpose()
     return ary
 
 
 # same as scipy_box_blur_2d but does all horizontal passes first, then all vertical passes
-def scipy_box_blur(ary, sigma, n=3, mode="nearest"):
-    return _box_blur(ndi.filters.uniform_filter1d, ary, sigma, n, mode=mode)
+def scipy_box_blur(ary, sigma, n=3, mode="nearest", cval=0, output=None):
+    return _box_blur(
+        ndi.filters.uniform_filter1d, ary, sigma, n, mode=mode, cval=cval, output=output
+    )
 
 
 def _numba_uniform_filter1d(ary, w, mode="nearest"):
