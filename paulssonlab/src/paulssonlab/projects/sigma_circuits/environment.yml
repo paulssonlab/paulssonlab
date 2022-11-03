@@ -1,15 +1,11 @@
 name: sigma_circuits
 channels:
-  - pyviz
-  - bokeh
   - conda-forge
   - defaults
 dependencies:
   - astropy
   - black
-  - bokeh
   - cachetools
-  - click
   - cytoolz
   - dask
   - dask-image
@@ -23,7 +19,6 @@ dependencies:
   - jupyterlab_code_formatter
   - matplotlib
   - nd2reader
-  - nodejs
   - numpy
   - pandas
   - panel

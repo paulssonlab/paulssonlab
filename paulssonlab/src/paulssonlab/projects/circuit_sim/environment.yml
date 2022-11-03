@@ -1,6 +1,5 @@
 name: circuit_sim
 channels:
-  - pyviz
   - conda-forge
   - defaults
 dependencies:
@@ -9,11 +8,10 @@ dependencies:
   - holoviews
   - hvplot
   - ipywidgets
+  - julia
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - nodejs
   - numpy
   - pandas
   - pip
-  - pre-commit
