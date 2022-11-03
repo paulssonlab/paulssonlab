@@ -144,7 +144,7 @@ def send_eaton_fish(root_dir, pattern, axis_order="tvc", slices={}, delayed=True
         }
         yield msg
     for key, filename in filenames:
-        frame = delayed(get_eaton_fish_frame)(filename)
+        image = delayed(get_eaton_fish_frame)(filename)
         coords = dict(zip(axis_order, key))
         image_metadata = {
             "dummy_metadata": 0,
