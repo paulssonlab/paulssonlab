@@ -24,6 +24,13 @@ def get_nd2_frame(filename, position, channel_idx, t):
     return ary
 
 
+def _select_indices(idxs, slice_):
+    if isinstance(slice_, slice):
+        return idxs[slice_]
+    else:
+        return slice_
+
+
 # TODO: random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
 # (better for testing)
 def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
@@ -33,7 +40,9 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
         delayed = lambda func, **kwargs: func
     nd2 = nd2reader.ND2Reader(filename)
     iterators = [
-        np.arange(nd2.sizes.get(axis_name, 1))[slices.get(axis_name, slice(None))]
+        _select_indices(
+            np.arange(nd2.sizes.get(axis_name, 1)), slices.get(axis_name, slice(None))
+        )
         for axis_name in axis_order
     ]
     iterator = product(*iterators)
@@ -68,12 +77,6 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
 
 
 def _slice_directory_keys(keys, slices):
-    def _select_indices(idxs, slice_):
-        if isinstance(slice_, slice):
-            return idxs[slice_]
-        else:
-            return slice_
-
     idxs = tuple(map(np.unique, zip(*keys)))
     selected_idxs = tuple(map(_select_indices, idxs, slices))
     for key in sorted(keys):
