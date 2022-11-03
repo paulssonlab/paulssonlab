@@ -10,16 +10,17 @@ from paulssonlab.io.metadata import parse_nd2_metadata
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
-def _get_nd2_reader(filename, memmap=False, **kwargs):
-    return nd2reader.ND2Reader(filename, memmap=memmap, **kwargs)
+def _get_nd2_reader(filename, **kwargs):
+    # TODO: removed memmap flag
+    return nd2reader.ND2Reader(filename, **kwargs)
 
 
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 
 
-def get_nd2_frame(filename, position, channel_idx, t, memmap=False):
-    reader = get_nd2_reader(filename, memmap=memmap)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+def get_nd2_frame(filename, position, channel_idx, t):
+    reader = get_nd2_reader(filename)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
     return ary
 
 
