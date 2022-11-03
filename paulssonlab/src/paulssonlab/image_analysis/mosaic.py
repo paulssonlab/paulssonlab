@@ -213,20 +213,19 @@ def square_overlay(
     alpha_transition=10,
     text_alpha_transition=5,
 ):
-    img = Image.new("RGBA", frame.shape[:-1], (0, 0, 0, 255))
+    img = Image.new("RGBA", frame.shape[:-1:][::-1], (0, 0, 0, 255))
     draw = ImageDraw.Draw(img)
+    font2 = cv2.freetype.createFreeType2()
+    font2.loadFontData(fontFileName="fira/FiraSans-Medium.ttf", id=0)
     min_dim = min(*frame.shape[:-1])
     V = (min_dim / scale) ** 2
     # min_U, max_U are the number of pixels
-    # min_U = (min_dim * min_width) ** 2 / (factor**min_n * min_scale**2)
-    # max_U = (min_dim * max_width) ** 2 / (factor**max_n * max_scale**2)
     min_U = (min_dim * min_width) ** 2 / min_scale**2
     max_U = (min_dim * max_width) ** 2 / max_scale**2
     # calculate fit_factor so that squares at min_scale and max_scale
     # result in counts of factor**min_n, factor**max_n, respectively
     fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
     viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
-    # print(min_U, max_U, fit_factor, viewport_n)
     for n in range(min_n, viewport_n + 1):
         count = factor**n
         width = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
@@ -234,14 +233,12 @@ def square_overlay(
         alpha = 1 - 1 / (1 + np.exp(-(half_width_px - alpha_width) / alpha_transition))
         if alpha > 0.95:
             continue
-        rgba_color = (*np.array(color) * 255, int(np.ceil(alpha * 255)))
-        # print(count, width, rgba_color)
-        # print(half_width_px, alpha)
+        rgba_color = np.array((*np.array(color) * 255, int(np.ceil(alpha * 255))))
         center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
         delta = np.array([half_width_px, -half_width_px])
         draw.rectangle(
             [tuple(center - delta), tuple(center + delta)],
-            outline=rgba_color,
+            outline=tuple(rgba_color),
             width=line_width,
         )
         caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
@@ -263,9 +260,38 @@ def square_overlay(
                 tuple(center - delta + text_padding_ary),
                 caption,
                 font=font.font_variant(size=scaled_font_size),
-                fill=text_rgba_color,
+                fill=tuple(text_rgba_color),
             )
-    return _composite_rgba(frame, np.asarray(img) / 255)
+            ####
+            text_img = np.zeros((*frame.shape[:-1], 3), dtype=np.uint8)
+            font2.putText(
+                img=text_img,
+                text="abc",
+                org=(15, 55),  # tuple(center - delta + text_padding_ary)
+                fontHeight=100.5,
+                color=(255, 255, 255),
+                thickness=-1,
+                line_type=cv2.LINE_AA,
+                bottomLeftOrigin=False,
+            )
+            text_ary = (
+                text_img[:, :, 0, np.newaxis]
+                * text_rgba_color[np.newaxis, np.newaxis, :]
+            )
+            text_ary = np.concatenate(
+                (text_img, np.sqrt((text_img**2).sum(axis=-1) / 3)[:, :, np.newaxis]),
+                axis=-1,
+            )
+            # text_ary[:, :, 3] = 255 - text_ary[:, :, 3]
+            # text_ary = text_img[:, :, 0]
+            # img.paste(
+            #     Image.fromarray(
+            #         text_ary,
+            #         "RGBA",
+            #     )
+            # )
+            ####
+    return _composite_rgba(frame, np.asarray(text_ary) / 255)
 
 
 def mosaic_animate_scale(
