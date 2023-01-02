@@ -283,7 +283,7 @@ class SheetClient(GDriveClient):
         rows_to_update = {}
         rows_to_append = []
         # we need to do this to handle IDs without sequential numeric indices (e.g., part names)
-        sorter = lambda x: excepts(ValueError, parse_id)(x) or (None, x)
+        sorter = lambda x: excepts(ValueError, parse_id)(x) or ("", x)
         for key in sorted(self.local.keys(), key=sorter):
             row = self.local[key]
             row_with_id = {**row, self.id_column_name: key}
