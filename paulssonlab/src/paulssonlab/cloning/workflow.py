@@ -14,10 +14,13 @@ from paulssonlab.cloning.sequence import (
     smoosh_sequences,
     find_homologous_ends,
     find_aligned_subsequence,
+    find_subsequence,
     DsSeqRecord,
     reverse_complement,
     assemble,
+    pcr,
 )
+from paulssonlab.cloning.primers import iter_primers, PrimerPair
 from paulssonlab.cloning.commands.parser import expr_list_parser
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.api.addgene import get_addgene
@@ -363,9 +366,9 @@ def part_entry_to_seq(entry):
 
 def re_digest_part(seq, enzyme):
     ###### TODO ######
-    if isinstance(seq, str) or not seq.circular:
-        frags = re_digest(seq, enzyme)
-        return assemble(frags[1:-1], method="goldengate")
+    # if isinstance(seq, str) or not seq.circular:
+    #     frags = re_digest(seq, enzyme)
+    #     return assemble(frags[1:-1], method="goldengate")
     ##################
     # TODO: this doesn't handle the case where there is a cut site in the backbone
     # not sure there's a general way to pick out the intended part in that case
@@ -568,3 +571,188 @@ def print_sequence_clusters(
             print_sequence_clusters(
                 cluster, length=new_length, indent_level=indent_level + 2
             )
+
+
+def upsert_unique_seq(client, row, overwrite=True):
+    id_ = client.find_id(row, apply={"Sequence": normalize_seq})
+    if id_ is None:
+        id_ = client.upsert(row, apply={"Name": None}, overwrite=overwrite)
+    return id_
+
+
+def insert_cds_part_flank(
+    part_name,
+    source_part_name,
+    flank,
+    oligo_name,
+    part_type,
+    part_enzyme,
+    descriptions,
+    base_rows,
+    registry,
+    oligos,
+    plasmids,
+    plasmid_maps,
+    strains,
+    fragments,
+    part_types,
+    stop_location="downstream",
+    location="downstream",
+    tm_binding=60,
+    tm_homology=55,
+    min_mfe=None,
+    overwrite=True,
+):
+    if location != "downstream":
+        raise NotImplementedError
+    if stop_location not in ["upstream", "downstream", "remove"]:
+        raise ValueError("stop_location must be one of: upstream, downstream, remove")
+    source_part = registry.get(source_part_name)
+    source_part_seq = source_part["_seq"]
+    source_cds_start, source_cds_stop = find_coding_sequence(source_part_seq)
+    if stop_location == "downstream":
+        # want to insert flank before stop codon
+        # source_cds_stop -= 3
+        pass
+    elif stop_location == "upstream":
+        pass
+    elif stop_location == "remove":
+        pass
+    source_plasmid_id = get_source_plasmid(registry, source_part["Usage"])
+    source_plasmid_seq = registry.get(source_plasmid_id)["_seq"]
+    source_part_start, source_part_stop, _, _ = find_subsequence(
+        source_plasmid_seq, source_part_seq, min_score=len(source_part_seq)
+    )
+    start = source_part_start + source_cds_start
+    stop = source_part_stop - (len(source_part_seq) - source_cds_stop)
+    downstream_overhang_start = source_part_stop - len(
+        source_part["Downstream overhang"]
+    )
+    # we want 5' end of forward primer binding site to start with the downstream overhang
+    # ("aggt" for CDS parts)
+    source_plasmid_seq_forward = normalize_seq(
+        source_plasmid_seq.reindex(downstream_overhang_start)
+    )
+    source_plasmid_seq_reverse = normalize_seq(
+        source_plasmid_seq.reindex(stop).reverse_complement()
+    )
+    # TODO
+    # assert tag_overhangs[1] == source_plasmid_seq_forward[: len(tag_overhangs[1])]
+    homology = next(
+        iter_primers(
+            source_plasmid_seq_forward,
+            min_tm=tm_homology,
+            min_mfe=min_mfe,
+            anchor="5prime",
+            gc_clamp=False,
+        )
+    )
+    forward_primer = next(
+        iter_primers(
+            source_plasmid_seq_forward,
+            min_length=len(homology),
+            min_tm=tm_binding,
+            min_mfe=min_mfe,
+            anchor="5prime",
+        )
+    )
+    overhang = reverse_complement(flank + homology.binding)
+    reverse_primer = next(
+        iter_primers(
+            source_plasmid_seq_reverse,
+            overhang=overhang,
+            min_tm=tm_binding,
+            min_mfe=min_mfe,
+            anchor="5prime",
+        )
+    )
+    plasmid_seq = pcr(
+        source_plasmid_seq, str(forward_primer), str(reverse_primer)
+    ).assemble(method="gibson")
+    print(normalize_seq(plasmid_seq))
+    0 / 0
+    assert plasmid_seq.circular
+    # oligos
+    oligo_description = descriptions.get("oligo", "").format(
+        part_name=part_name,
+        source_part_name=source_part_name,
+        source_plasmid_id=source_plasmid_id,
+    )
+    oligo_base = base_rows.get("oligo", {})
+    forward_primer_id = upsert_unique_seq(
+        oligos,
+        {
+            **oligo_base,
+            "Name": f"{oligo_name}_f",
+            "Sequence": normalize_seq_upper(forward_primer),
+            "Description": oligo_description,
+        },
+        overwrite=overwrite,
+    )
+    reverse_primer_id = upsert_unique_seq(
+        oligos,
+        {
+            **oligo_base,
+            "Name": f"{oligo_name}_r",
+            "Sequence": normalize_seq_upper(reverse_primer),
+            "Description": oligo_description,
+        },
+        overwrite=overwrite,
+    )
+    # plasmid
+    plasmid_description = descriptions.get("plasmid", "").format(
+        part_name=part_name,
+        source_part_name=source_part_name,
+        source_plasmid_id=source_plasmid_id,
+        forward_primer_id=forward_primer_id,
+        reverse_primer_id=reverse_primer_id,
+    )
+    # TODO: check that this command actually works
+    plasmid_command = (
+        f"@Gib({source_plasmid_id}<{forward_primer_id},{reverse_primer_id}>)"
+    )
+    plasmid_row = {
+        **base_rows.get("plasmid", {}),
+        "Command": plasmid_command,
+        "Names": part_name,
+        "Description": plasmid_description,
+        "Size": len(plasmid_seq),
+    }
+    plasmid_id = plasmids.upsert(
+        plasmid_row, key_columns=["Names"], clear=True, overwrite=overwrite
+    )
+    plasmid_maps[plasmid_id] = plasmid_seq
+    # strain
+    strain_row = {
+        **base_rows.get("strain", {}),
+        "Names": part_name,
+        "Plasmids": plasmid_id,
+    }
+    strains.upsert(strain_row, key_columns=["Names"], clear=True, overwrite=overwrite)
+    # fragment
+    usage = f"{plasmid_id}/{part_enzyme}"
+    fragment_description = descriptions.get("fragment", "").format(
+        part_name=part_name,
+        source_part_name=source_part_name,
+        source_plasmid_id=source_plasmid_id,
+        forward_primer_id=forward_primer_id,
+        reverse_primer_id=reverse_primer_id,
+    )
+    part_overhangs = overhangs_for(part_types[part_type])
+    part_seq = re_digest_part(plasmid_seq, part_enzyme).seq_lower()
+    fragment_row = {
+        **base_rows.get("fragment", {}),
+        "Name": part_name,
+        "Description": fragment_description,
+        "Sequence": part_seq,
+        "Usage": usage,
+        "Type": part_type,
+        "Upstream overhang": part_overhangs[0],
+        "Downstream overhang": part_overhangs[1],
+    }
+    fragments.upsert(
+        fragment_row,
+        key_columns=["Name"],
+        clear=True,
+        overwrite=overwrite,
+    )
