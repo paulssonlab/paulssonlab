@@ -26,10 +26,9 @@ from paulssonlab.cloning.workflow import (
     rename_ids,
     part_entry_to_seq,
     re_digest_part,
-    is_bases,
     ID_REGEX,
 )
-from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq, is_bases
 from paulssonlab.cloning.commands.semantics import (
     eval_expr,
     eval_command,
@@ -227,7 +226,7 @@ class SheetClient(GDriveClient):
 
         Missing keys in rows are interpreted as empty strings.
         """
-        if not key_columns:
+        if not key_columns and not apply:
             key_columns = [k for k in row.keys()]
         key_columns = list(set(key_columns) | apply.keys())
         if not key_columns:
@@ -257,7 +256,7 @@ class SheetClient(GDriveClient):
         else:
             return self[id_]
 
-    def upsert(self, row, key_columns=[], apply={}, overwrite=True, clear=False):
+    def upsert(self, row, key_columns=[], apply={}, overwrite=True, clear=True):
         if not key_columns and not apply:
             # should be equivalent to but faster than:
             # key_columns = [self.id_column_name]
