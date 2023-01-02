@@ -6,8 +6,9 @@ from paulssonlab.cloning.sequence import (
     reverse_complement,
     enumerate_primer_binding_sites,
     get_seq,
+    smoosh_and_trim_flanks,
+    normalize_seq,
 )
-from paulssonlab.cloning.workflow import smoosh_and_trim_flanks, normalize_seq
 import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
 from paulssonlab.util import any_not_none, format_number

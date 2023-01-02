@@ -1,6 +1,7 @@
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
+import re
 from math import ceil
 from numbers import Integral
 from cytoolz import partial
@@ -1194,3 +1195,76 @@ def anneal(a, b, min_score=6):
         upstream_overhang=upstream_overhang,
         downstream_overhang=downstream_overhang,
     )
+
+
+def is_bases(s):
+    return re.match(r"^[atcgrymkswbdhvn]+$", s, re.IGNORECASE) is not None
+
+
+def normalize_seq(seq):
+    return str(get_seq(seq)).lower()
+
+
+def normalize_seq_upper(seq):
+    return str(get_seq(seq)).upper()
+
+
+def concatenate_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            upstream = upstream_flank + upstream
+            downstream = downstream + downstream_flank
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    return upstream, downstream
+
+
+def smoosh_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            if lower:
+                upstream_flank = upstream_flank.lower()
+                downstream_flank = downstream_flank.lower()
+            upstream = smoosh_sequences(upstream_flank, upstream)
+            downstream = smoosh_sequences(downstream, downstream_flank)
+    return upstream, downstream
+
+
+def smoosh_and_trim_flanks(seq, flanks, lower=True):
+    if lower:
+        seq = seq.lower()
+    upstream_overlap = find_homologous_ends(flanks[0], seq)
+    downstream_overlap = find_homologous_ends(seq, flanks[1])
+    return (
+        flanks[0][: len(flanks[0]) - upstream_overlap],
+        flanks[1][downstream_overlap:],
+    )
+
+
+# TODO: update the above to normalize similarly?
+def smoosh_and_normalize_sequences(*seqs):
+    seqs = [normalize_seq(seq) for seq in seqs]
+    return smoosh_sequences(*seqs)
+
+
+def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
+    seq_str = str(get_seq(seq)).lower()
+    start = seq_str.find(prefix)
+    first_stop = find_aligned_subsequence(
+        seq_str[start:], 3, lambda s: s in suffix, last=False
+    )
+    if first_stop is None:
+        raise ValueError(f"could not find aligned suffix {suffix}")
+    last_stop = find_aligned_subsequence(
+        seq_str[start:], 3, lambda s: s in suffix, last=True
+    )
+    # stop is indexed from start, see call to find_aligned_subsequence above
+    before_stops = first_stop + start
+    after_stops = last_stop + start + 3
+    return start, before_stops, after_stops
