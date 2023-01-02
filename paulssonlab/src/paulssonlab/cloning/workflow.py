@@ -438,14 +438,10 @@ def smoosh_and_normalize_sequences(*seqs):
 def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
     seq_str = str(get_seq(seq)).lower()
     start = seq_str.find(prefix)
-    stop = -1
-    for suffix_ in suffix:
-        new_stop = find_aligned_subsequence(seq_str[start:], suffix_, last=True)
-        if new_stop is not None:
-            new_stop += len(suffix_)
-            if new_stop > stop:
-                stop = new_stop
-    if stop == -1:
+    stop = find_aligned_subsequence(
+        seq_str[start:], 3, lambda s: s in suffix, last=True
+    )
+    if stop is None:
         raise ValueError(f"could not find aligned suffix {suffix}")
     # stop is indexed from start, see call to find_aligned_subsequence above
     stop += start

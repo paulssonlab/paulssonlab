@@ -854,13 +854,12 @@ def _smoosh_sequences(a, b, max_overlap=None):
         return a + b
 
 
-def find_aligned_subsequence(seq, subseq, last=False):
-    period = len(subseq)
+def find_aligned_subsequence(seq, period, condition, last=False):
     idxs = range(int(ceil(len(seq) / period)))
     if last:
         idxs = reversed(idxs)
     for i in idxs:
-        if seq[i * period : (i + 1) * period] == subseq:
+        if condition(seq[i * period : (i + 1) * period]):
             return i * period
     return None
 
