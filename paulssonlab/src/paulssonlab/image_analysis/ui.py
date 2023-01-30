@@ -9,7 +9,6 @@ from holoviews.operation import datashader
 from IPython.display import display, clear_output, HTML
 from holoviews.streams import Stream, param, Selection1D
 from matplotlib.colors import hex2color
-import qgrid
 from collections.abc import Mapping, Sequence
 import numbers
 from functools import partial, reduce
@@ -257,6 +256,8 @@ def resize_qgrid_header(widget, height):
 
 
 def show_grid(df, header_height=100, stream=None, **kwargs):
+    import qgrid
+
     qg = qgrid.show_grid(
         df,
         grid_options={

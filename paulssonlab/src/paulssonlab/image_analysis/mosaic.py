@@ -6,9 +6,9 @@ import scipy.ndimage as ndi
 import skimage
 from skimage.transform import SimilarityTransform, warp
 from PIL import Image, ImageDraw, ImageFont
+import cv2
 import nd2reader
 import av
-import numba
 import itertools as it
 from functools import cache
 from numbers import Number
@@ -37,7 +37,6 @@ def colorize(imgs, hexcolors, scale=True):
     return _colorize(imgs, colors, scale=scale)
 
 
-# @numba.njit
 def _colorize(channel_imgs, colors, scale=True):
     if len(channel_imgs) != len(colors):
         raise ValueError("expecting equal numbers of channels and colors")
@@ -78,18 +77,15 @@ def scale_around_center(scale, center):
     )
 
 
-@cache
-def fit_output_transform(input_width, input_height, output_width, output_height):
-    width_ratio = input_width / output_width
-    height_ratio = input_height / output_height
-    scale = max(width_ratio, height_ratio)
-    x = -(output_width - input_width / scale) / 2
-    y = -(output_height - input_height / scale) / 2
-    return SimilarityTransform(translation=(x, y)) + SimilarityTransform(scale=scale)
+def fixed_aspect_scale(input_width, input_height, output_width, output_height):
+    width_ratio = output_width / input_width
+    height_ratio = output_height / input_height
+    scale = min(width_ratio, height_ratio)
+    return scale
 
 
 @cache
-def fit_output_and_scale_transform(
+def transform_to_viewport(
     input_width,
     input_height,
     output_width,
@@ -98,18 +94,12 @@ def fit_output_and_scale_transform(
     center_y,
     output_corner_x,
     output_corner_y,
-    scale,
 ):
-    transform = (
-        fit_output_transform(input_width, input_height, output_width, output_height)
-        + scale_around_center(1 / scale, (input_width / 2, input_height / 2))
-        + SimilarityTransform(
-            translation=(
-                center_x - input_width / 2,
-                center_y - input_height / 2,
-            )
+    transform = SimilarityTransform(
+        translation=(
+            center_x - output_width / 2 + output_corner_x,
+            center_y - output_height / 2 + output_corner_y,
         )
-        + SimilarityTransform(translation=(output_corner_x, output_corner_y))
     )
     input_ul = transform.inverse((0, 0))[0]
     # TODO: off-by-one?
@@ -133,7 +123,6 @@ def mosaic_frame(
     offset=None,
     scale=1,
     output_dims=(1024, 1024),
-    anti_aliasing=True,
     max_gaussian_sigma=4,
     scaling_funcs=None,
     delayed=False,
@@ -151,42 +140,43 @@ def mosaic_frame(
     if offset is not None:
         center += np.array(offset)
     all_channel_imgs = [[] for _ in range(len(channels))]
+    input_scale = fixed_aspect_scale(
+        *input_dims, output_dims[0] * scale, output_dims[1] * scale
+    )
+    rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.int_)
     for (filename, pos_num), position in positions.iterrows():
-        frame_transform, visible = fit_output_and_scale_transform(
-            *input_dims,
+        frame_transform, visible = transform_to_viewport(
+            *rescaled_input_dims,
             *output_dims,
-            *center,
-            -input_dims[0] * position["x_idx"],
-            -input_dims[1] * position["y_idx"],
-            scale,
+            *(center * input_scale),
+            -input_dims[0] * position["x_idx"] * input_scale,
+            -input_dims[1] * position["y_idx"] * input_scale,
         )
         if visible:
             for channel, channel_imgs in zip(channels, all_channel_imgs):
                 img = delayed(get_frame_func)(pos_num, channel, timepoint)
                 if scaling_funcs:
                     img = delayed(scaling_funcs[channel])(img)
-                if anti_aliasing:
-                    # taken from skimage.transform.resize, with an added factor of 1/4
-                    # (because original formula gave sigmas that were too large)
-                    # this was not based on any well-founded heuristic
-                    # SEE: https://github.com/scikit-image/scikit-image/pull/2802
-                    anti_aliasing_sigma = max(0, (frame_transform.scale - 1) / 8)
-                    if anti_aliasing_sigma > 0:
-                        if anti_aliasing_sigma <= max_gaussian_sigma:
-                            blur_func = ndi.gaussian_filter
-                        else:
-                            # TODO: use stack blur instead?
-                            blur_func = scipy_box_blur
-                        img = delayed(blur_func)(
-                            img,
-                            anti_aliasing_sigma,
-                            mode="nearest",
-                        )
-                img = delayed(warp)(
-                    img, frame_transform, output_shape=output_dims[::-1], order=1
+                img = delayed(cv2.resize)(
+                    img, rescaled_input_dims, interpolation=cv2.INTER_AREA
                 )
+                # img = delayed(warp)(
+                #     img, frame_transform_orig, output_shape=output_dims[::-1], order=1
+                # )
+                # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
+                # so we resize first, then translate
+                img = delayed(cv2.warpAffine)(
+                    img,
+                    frame_transform.params[:2, :],
+                    output_dims[::-1],
+                    # flags=cv2.INTER_AREA + cv2.WARP_INVERSE_MAP,
+                    flags=(cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP),
+                )
+                img = delayed(np.clip)(img, 0, 1)  # LANCZOS4 outputs values beyond 0..1
                 img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
                 channel_imgs.append(img)
+    if not all_channel_imgs:
+        raise ValueError("no positions visible")
     channel_composite_imgs = [
         da.stack(channel_imgs).sum(axis=0) for channel_imgs in all_channel_imgs
     ]
@@ -223,20 +213,19 @@ def square_overlay(
     alpha_transition=10,
     text_alpha_transition=5,
 ):
-    img = Image.new("RGBA", frame.shape[:-1], (0, 0, 0, 255))
+    img = Image.new("RGBA", frame.shape[:-1:][::-1], (0, 0, 0, 255))
     draw = ImageDraw.Draw(img)
+    font2 = cv2.freetype.createFreeType2()
+    font2.loadFontData(fontFileName="fira/FiraSans-Medium.ttf", id=0)
     min_dim = min(*frame.shape[:-1])
     V = (min_dim / scale) ** 2
     # min_U, max_U are the number of pixels
-    # min_U = (min_dim * min_width) ** 2 / (factor**min_n * min_scale**2)
-    # max_U = (min_dim * max_width) ** 2 / (factor**max_n * max_scale**2)
     min_U = (min_dim * min_width) ** 2 / min_scale**2
     max_U = (min_dim * max_width) ** 2 / max_scale**2
     # calculate fit_factor so that squares at min_scale and max_scale
     # result in counts of factor**min_n, factor**max_n, respectively
     fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
     viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
-    print(min_U, max_U, fit_factor, viewport_n)
     for n in range(min_n, viewport_n + 1):
         count = factor**n
         width = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
@@ -244,37 +233,65 @@ def square_overlay(
         alpha = 1 - 1 / (1 + np.exp(-(half_width_px - alpha_width) / alpha_transition))
         if alpha > 0.95:
             continue
-        rgba_color = (*np.array(color) * 255, int(np.ceil(alpha * 255)))
-        print(count, width, rgba_color)
-        # print(half_width_px, alpha)
+        rgba_color = np.array((*np.array(color) * 255, int(np.ceil(alpha * 255))))
         center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
         delta = np.array([half_width_px, -half_width_px])
         draw.rectangle(
             [tuple(center - delta), tuple(center + delta)],
-            outline=rgba_color,
+            outline=tuple(rgba_color),
             width=line_width,
         )
         caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
         scaled_font_size = int(np.ceil(font_size * width))
         text_padding_ary = np.array([text_padding, -scaled_font_size - text_padding])
-        if width >= alpha_width:
-            text_alpha = alpha
-        else:
-            text_alpha = 1 - 1 / (
-                1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
-            )
-        if text_alpha > 0.95:
-            continue
-        text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
-        print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
-        if scaled_font_size > 10:
+        # if width >= alpha_width:
+        #     text_alpha = alpha
+        # else:
+        #     text_alpha = 1 - 1 / (
+        #         1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
+        #     )
+        # if text_alpha > 0.95:
+        #     continue
+        # text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
+        text_rgba_color = rgba_color
+        # print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
+        if scaled_font_size > 3:
             draw.text(
                 tuple(center - delta + text_padding_ary),
                 caption,
                 font=font.font_variant(size=scaled_font_size),
-                fill=text_rgba_color,
+                fill=tuple(text_rgba_color),
             )
-    return _composite_rgba(frame, np.asarray(img) / 255)
+            ####
+            text_img = np.zeros((*frame.shape[:-1], 3), dtype=np.uint8)
+            font2.putText(
+                img=text_img,
+                text="abc",
+                org=(15, 55),  # tuple(center - delta + text_padding_ary)
+                fontHeight=100.5,
+                color=(255, 255, 255),
+                thickness=-1,
+                line_type=cv2.LINE_AA,
+                bottomLeftOrigin=False,
+            )
+            text_ary = (
+                text_img[:, :, 0, np.newaxis]
+                * text_rgba_color[np.newaxis, np.newaxis, :]
+            )
+            text_ary = np.concatenate(
+                (text_img, np.sqrt((text_img**2).sum(axis=-1) / 3)[:, :, np.newaxis]),
+                axis=-1,
+            )
+            # text_ary[:, :, 3] = 255 - text_ary[:, :, 3]
+            # text_ary = text_img[:, :, 0]
+            # img.paste(
+            #     Image.fromarray(
+            #         text_ary,
+            #         "RGBA",
+            #     )
+            # )
+            ####
+    return _composite_rgba(frame, np.asarray(text_ary) / 255)
 
 
 def mosaic_animate_scale(
