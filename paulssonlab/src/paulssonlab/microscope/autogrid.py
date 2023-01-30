@@ -46,7 +46,9 @@ def export_grid(rows, columns, delta_y, z, pfs_offset, preamble_elements):
     return ET.ElementTree(variant)
 
 
-def autogrid_from_corners(input_xml, x_step, y_step):
+def autogrid_from_corners(input_xml, x_step, y_step, num_rows):
+    if y_step is not None and num_rows is not None:
+        raise ValueError("expecting either y_step or num_rows but not both")
     input_positions = []
     preamble_elements = []
     for e in input_xml.findall("./no_name/*"):
@@ -63,9 +65,10 @@ def autogrid_from_corners(input_xml, x_step, y_step):
     # use z, pfs_offset from upper_left corner position
     z = upper_left["z"]
     pfs_offset = upper_left["pfs_offset"]
-    # TODO: use the corners and x_step, y_step to come up with rows, columns (using np.arange)
-    # (this is the actual math part of setting up the grid)
-    rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
+    if num_rows is not None:
+        rows = np.linspace(upper_left["y"], lower_left["y"], num_rows)
+    else:
+        rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
     columns = np.arange(upper_left["x"], upper_right["x"], -x_step)
     # delta_y is the increment in y every time you move to the next column
     slope = (upper_right["y"] - upper_left["y"]) / (upper_right["x"] - upper_left["x"])
@@ -82,11 +85,14 @@ def cli():
 @click.argument("input", type=click.File("r", encoding="utf-16"))
 # @click.argument("output", type=click.File("w", encoding="utf-16"))
 @click.argument("output", type=click.Path())
-@click.option("--x", type=float, required=True)  # these are given in µm
-@click.option("--y", type=float, required=True)
-def from_corners(input, output, x, y):
+@click.option("--x", type=float)  # these are given in µm
+@click.option("--y", type=float)
+@click.option("--rows", type=int)
+def from_corners(input, output, x, y, rows):
+    if y is not None and rows is not None:
+        click.error("Expecting exactly one of --y and --rows")
     input_xml = ET.parse(input, parser=ET.XMLParser(encoding="utf-16"))
-    output_xml = autogrid_from_corners(input_xml, x, y)
+    output_xml = autogrid_from_corners(input_xml, x, y, rows)
     # this should write a UTF-16LE with BOM under windows
     # SEE: https://peter.bloomfield.online/why-python-3-doesnt-write-the-unicode-bom/
     output_xml.write(output, encoding="utf-16")
