@@ -46,9 +46,11 @@ def export_grid(rows, columns, delta_y, z, pfs_offset, preamble_elements):
     return ET.ElementTree(variant)
 
 
-def autogrid_from_corners(input_xml, x_step, y_step, num_rows):
+def autogrid_from_corners(input_xml, x_step, y_step, num_rows, skip_rows):
     if y_step is not None and num_rows is not None:
         raise ValueError("expecting either y_step or num_rows but not both")
+    if y_step is not None and skip_rows:
+        raise ValueError("skip_rows must not be given if y_step is given")
     input_positions = []
     preamble_elements = []
     for e in input_xml.findall("./no_name/*"):
@@ -67,6 +69,8 @@ def autogrid_from_corners(input_xml, x_step, y_step, num_rows):
     pfs_offset = upper_left["pfs_offset"]
     if num_rows is not None:
         rows = np.linspace(upper_left["y"], lower_left["y"], num_rows)
+        if skip_rows:
+            rows = rows[:: skip_rows + 1]
     else:
         rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
     columns = np.arange(upper_left["x"], upper_right["x"], -x_step)
@@ -88,9 +92,12 @@ def cli():
 @click.option("--x", type=float)  # these are given in µm
 @click.option("--y", type=float)
 @click.option("--rows", type=int)
-def from_corners(input, output, x, y, rows):
+@click.option("--skip-rows", type=int, default=0)
+def from_corners(input, output, x, y, rows, skip_rows):
     if y is not None and rows is not None:
         click.error("Expecting exactly one of --y and --rows")
+    if y is not None and skip_rows:
+        click.error("--skip-rows cannot be specified if --y is given")
     input_xml = ET.parse(input, parser=ET.XMLParser(encoding="utf-16"))
     output_xml = autogrid_from_corners(input_xml, x, y, rows)
     # this should write a UTF-16LE with BOM under windows
