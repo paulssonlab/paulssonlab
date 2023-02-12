@@ -156,8 +156,8 @@ class DsSeqRecord(SeqRecord):
         circular=None,
         upstream_overhang=None,
         downstream_overhang=None,
-        upstream_inward_cut=None,
-        downstream_inward_cut=None,
+        upstream_cut_direction=None,
+        downstream_cut_direction=None,
         id=None,
         name=None,
         description=None,
@@ -186,15 +186,15 @@ class DsSeqRecord(SeqRecord):
                     if downstream_overhang is not None
                     else seq.downstream_overhang
                 )
-                upstream_inward_cut = (
-                    upstream_inward_cut
-                    if upstream_inward_cut is not None
-                    else seq.upstream_inward_cut
+                upstream_cut_direction = (
+                    upstream_cut_direction
+                    if upstream_cut_direction is not None
+                    else seq.upstream_cut_direction
                 )
-                downstream_inward_cut = (
-                    downstream_inward_cut
-                    if downstream_inward_cut is not None
-                    else seq.downstream_inward_cut
+                downstream_cut_direction = (
+                    downstream_cut_direction
+                    if downstream_cut_direction is not None
+                    else seq.downstream_cut_direction
                 )
             # need to grab the actual sequence
             seq = seq.seq
@@ -222,8 +222,8 @@ class DsSeqRecord(SeqRecord):
             downstream_overhang = 0
         self.upstream_overhang = upstream_overhang or 0
         self.downstream_overhang = downstream_overhang or 0
-        self.upstream_inward_cut = upstream_inward_cut
-        self.downstream_inward_cut = downstream_inward_cut
+        self.upstream_cut_direction = upstream_cut_direction
+        self.downstream_cut_direction = downstream_cut_direction
 
     def __bool__(self):
         return bool(len(self))
@@ -300,7 +300,7 @@ class DsSeqRecord(SeqRecord):
             )
         seq = self[: len(self) - abs(self.downstream_overhang)]
         seq.upstream_overhang = 0
-        seq.upstream_inward_cut = None
+        seq.upstream_cut_direction = None
         seq.circular = True
         return seq
 
@@ -394,8 +394,8 @@ class DsSeqRecord(SeqRecord):
             super().reverse_complement(**kwargs),
             upstream_overhang=-self.downstream_overhang,
             downstream_overhang=-self.upstream_overhang,
-            upstream_inward_cut=self.downstream_inward_cut,
-            downstream_inward_cut=self.upstream_inward_cut,
+            upstream_cut_direction=self.downstream_cut_direction,
+            downstream_cut_direction=self.upstream_cut_direction,
         )
 
     def lower(self):
@@ -417,10 +417,10 @@ class DsSeqRecord(SeqRecord):
         new = self.__class__(self)
         if ends in ("both", "upstream"):
             new.upstream_overhang = 0
-            new.upstream_inward_cut = None
+            new.upstream_cut_direction = None
         if ends in ("both", "downstream"):
             new.downstream_overhang = 0
-            new.downstream_inward_cut = None
+            new.downstream_cut_direction = None
         return new
 
     def trim_overhangs(self, ends="both"):
@@ -517,9 +517,9 @@ class DsSeqRecord(SeqRecord):
                 abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
             if start == 0:
-                new_seq.upstream_inward_cut = self.upstream_inward_cut
+                new_seq.upstream_cut_direction = self.upstream_cut_direction
             if stop == len(self):
-                new_seq.downstream_inward_cut = self.downstream_inward_cut
+                new_seq.downstream_cut_direction = self.downstream_cut_direction
             # copy features
             features = []
             for feature in self.features:
@@ -574,8 +574,8 @@ class DsSeqRecord(SeqRecord):
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
             downstream_overhang=other.downstream_overhang,
-            upstream_inward_cut=self.upstream_inward_cut,
-            downstream_inward_cut=other.downstream_inward_cut,
+            upstream_cut_direction=self.upstream_cut_direction,
+            downstream_cut_direction=other.downstream_cut_direction,
         )
         length = len(self)
         new.features = _join_features(self.features, other.features, length)
@@ -611,7 +611,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
-            f" upstream_inward_cut={self.upstream_inward_cut}, downstream_inward_cut={self.downstream_inward_cut},"
+            f" upstream_cut_direction={self.upstream_cut_direction}, downstream_cut_direction={self.downstream_cut_direction},"
             f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )

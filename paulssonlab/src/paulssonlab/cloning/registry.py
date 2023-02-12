@@ -25,7 +25,6 @@ from paulssonlab.cloning.workflow import (
     parse_id,
     rename_ids,
     part_entry_to_seq,
-    re_digest_part,
     ID_REGEX,
 )
 from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq, is_bases

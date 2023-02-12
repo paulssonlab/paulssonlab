@@ -16,6 +16,7 @@ from paulssonlab.cloning.sequence import (
     smoosh_sequences,
     find_homologous_ends,
     find_aligned_subsequence,
+    find_coding_sequence,
     find_subsequence,
     DsSeqRecord,
     reverse_complement,
@@ -24,7 +25,7 @@ from paulssonlab.cloning.sequence import (
 )
 from paulssonlab.cloning.primers import iter_primers, PrimerPair
 from paulssonlab.cloning.commands.parser import expr_list_parser
-from paulssonlab.cloning.enzyme import re_digest
+from paulssonlab.cloning.enzyme import re_digest, CutDirection
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
     list_drive,
@@ -368,9 +369,9 @@ def part_entry_to_seq(entry):
 
 def re_digest_part(seq, enzyme):
     ###### TODO ######
-    # if isinstance(seq, str) or not seq.circular:
-    #     frags = re_digest(seq, enzyme)
-    #     return assemble(frags[1:-1], method="goldengate")
+    if isinstance(seq, str) or not seq.circular:
+        frags = re_digest(seq, enzyme)
+        return assemble(frags[1:-1], method="goldengate")
     ##################
     # TODO: this doesn't handle the case where there is a cut site in the backbone
     # not sure there's a general way to pick out the intended part in that case
@@ -381,7 +382,9 @@ def re_digest_part(seq, enzyme):
         f
         for f in frags
         if not (
-            f.upstream_inward_cut is not True and f.downstream_inward_cut is not True
+            f.upstream_cut_direction in (CutDirection.UPSTREAM, CutDirection.BOTH)
+            and f.downstream_cut_direction
+            not in (CutDirection.UPSTREAM, CutDirection.BOTH)
         )
     ]
     if len(non_backbone) == 0:
@@ -517,7 +520,6 @@ def insert_cds_part_flank(
     part_name,
     source_part_name,
     flank,
-    oligo_name,
     part_type,
     part_enzyme,
     descriptions,
@@ -551,7 +553,8 @@ def insert_cds_part_flank(
         source_cds_after_stops,
     ) = find_coding_sequence(source_part_seq)
     source_plasmid_id = get_source_plasmid(registry, source_part["Usage"])
-    source_plasmid_seq = registry.get(source_plasmid_id)["_seq"]
+    source_plasmid_row = registry.get(source_plasmid_id)
+    source_plasmid_seq = source_plasmid_row["_seq"]
     source_part_start, source_part_stop, _, _ = find_subsequence(
         source_plasmid_seq, source_part_seq, min_score=len(source_part_seq)
     )
@@ -575,44 +578,56 @@ def insert_cds_part_flank(
         source_plasmid_seq.reindex(stop_reverse).reverse_complement()
     )
     # TODO
-    # assert tag_overhangs[1] == source_plasmid_seq_forward[: len(tag_overhangs[1])]
     if flank_primer == "reverse":
-        homology = next(
-            iter_primers(
-                source_plasmid_seq_forward,
-                min_tm=tm_homology,
-                min_mfe=min_mfe,
-                anchor="5prime",
-                gc_clamp=False,
-            )
-        )
-        forward_primer = next(
-            iter_primers(
-                source_plasmid_seq_forward,
-                min_length=len(homology),
-                min_tm=tm_binding,
-                min_mfe=min_mfe,
-                anchor="5prime",
-            )
-        )
-        overhang = reverse_complement(flank + homology.binding)
-        reverse_primer = next(
-            iter_primers(
-                source_plasmid_seq_reverse,
-                overhang=overhang,
-                min_tm=tm_binding,
-                min_mfe=min_mfe,
-                anchor="5prime",
-            )
-        )
+        non_overhang_plasmid_seq = source_plasmid_seq_forward
+        overhang_plasmid_seq = source_plasmid_seq_reverse
     elif flank_primer == "forward":
-        pass
+        non_overhang_plasmid_seq = source_plasmid_seq_reverse
+        overhang_plasmid_seq = source_plasmid_seq_forward
+    else:
+        raise NotImplementedError
+    homology = next(
+        iter_primers(
+            non_overhang_plasmid_seq,
+            min_tm=tm_homology,
+            min_mfe=min_mfe,
+            anchor="5prime",
+            gc_clamp=False,
+        )
+    )
+    non_overhang_primer = next(
+        iter_primers(
+            non_overhang_plasmid_seq,
+            min_length=len(homology),
+            min_tm=tm_binding,
+            min_mfe=min_mfe,
+            anchor="5prime",
+        )
+    )
+    overhang = reverse_complement(flank + homology.binding)
+    overhang_primer = next(
+        iter_primers(
+            overhang_plasmid_seq,
+            overhang=overhang,
+            min_tm=tm_binding,
+            min_mfe=min_mfe,
+            anchor="5prime",
+        )
+    )
+    if flank_primer == "reverse":
+        forward_primer = non_overhang_primer
+        reverse_primer = overhang_primer
+    elif flank_primer == "forward":
+        forward_primer = overhang_primer
+        reverse_primer = non_overhang_primer
+    else:
+        raise NotImplementedError
     plasmid_seq = pcr(
         source_plasmid_seq, str(forward_primer), str(reverse_primer)
     ).assemble(method="gibson")
+    assert plasmid_seq.circular
     print(normalize_seq(plasmid_seq))
     0 / 0
-    assert plasmid_seq.circular
     # oligos
     oligo_description = descriptions.get("oligo", "").format(
         part_name=part_name,
@@ -624,7 +639,7 @@ def insert_cds_part_flank(
         oligos,
         {
             **oligo_base,
-            "Name": f"{oligo_name}_f",
+            "Name": f"{part_name}_f",
             "Sequence": normalize_seq_upper(forward_primer),
             "Description": oligo_description,
         },
@@ -634,7 +649,7 @@ def insert_cds_part_flank(
         oligos,
         {
             **oligo_base,
-            "Name": f"{oligo_name}_r",
+            "Name": f"{part_name}_r",
             "Sequence": normalize_seq_upper(reverse_primer),
             "Description": oligo_description,
         },
@@ -653,6 +668,9 @@ def insert_cds_part_flank(
         f"@Gib({source_plasmid_id}<{forward_primer_id},{reverse_primer_id}>)"
     )
     plasmid_row = {
+        "Origin": source_plasmid_row["Origin"],
+        "Marker": source_plasmid_row["Marker"],
+        "Reference": source_plasmid_row["Reference"],
         **base_rows.get("plasmid", {}),
         "Command": plasmid_command,
         "Names": part_name,
@@ -665,6 +683,7 @@ def insert_cds_part_flank(
     plasmid_maps[plasmid_id] = plasmid_seq
     # strain
     strain_row = {
+        "Marker": source_plasmid_row["Marker"],
         **base_rows.get("strain", {}),
         "Names": part_name,
         "Plasmids": plasmid_id,
