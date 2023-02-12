@@ -29,6 +29,7 @@ dependencies:
   - nodejs
   - numpy
   - pandas
+  - parasail
   - pip
   - pip:
       - benchlingapi
