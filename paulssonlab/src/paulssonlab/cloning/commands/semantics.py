@@ -1,12 +1,12 @@
 import Bio.Restriction
+from tatsu.ast import AST
 from paulssonlab.cloning.commands.parser import (
     expr_parser,
     expr_list_parser,
     command_parser,
 )
 from paulssonlab.cloning.sequence import anneal, pcr, assemble
-from paulssonlab.cloning.workflow import re_digest_part
-from tatsu.ast import AST
+from paulssonlab.cloning.enzyme import re_digest
 
 EXPR_PRIORITY = ["digest", "pcr"]
 
@@ -110,9 +110,21 @@ def eval_command(s, get_func):
     return _eval_command(ast, get_func)
 
 
+def _get_seqs(args):
+    if not isinstance(args, list):
+        args = [args]
+    seqs = []
+    for arg in args:
+        if "_seqs" in arg:
+            seqs.extend(arg["_seqs"])
+        else:
+            seqs.append(arg["_seq"])
+    return seqs
+
+
 def cmd_goldengate(args, dest=None, ctx=None):
     # dest_id = ctx.get_id(dest, "tus")
-    seqs = [arg["_seq"] for arg in args]
+    seqs = _get_seqs(args)
     product = assemble(seqs, method="goldengate")
     # res = {"_seq": product, "_dest": dest_id}
     res = {"_seq": product}
@@ -120,7 +132,7 @@ def cmd_goldengate(args, dest=None, ctx=None):
 
 
 def cmd_gib(args, dest=None, ctx=None):
-    seqs = [arg["_seq"] for arg in args]
+    seqs = _get_seqs(args)
     if len(seqs) == 1:
         # special case to circularize single sequences
         product = seqs[0].assemble(method="gibson")
@@ -150,11 +162,18 @@ def cmd_digest(args, dest=None, ctx=None):
     if len(args) != 2:
         raise ValueError("@Digest expecting exactly three arguments: input, enzyme")
     input_, enzyme_name = args
+    print("!!!", enzyme_name)
     if not hasattr(Bio.Restriction, enzyme_name):
         raise ValueError(f"unknown enzyme '{enzyme_name}'")
     enzyme = getattr(Bio.Restriction, enzyme_name)
-    product = re_digest_part(input_["_seq"], enzyme)
-    res = {"_seq": product}
+    print("input>", input_)
+    seqs = _get_seqs(input_)
+    products = []
+    for seq in seqs:
+        products.extend(re_digest(seq, enzyme))
+    # product = re_digest_part(input_["_seq"], enzyme)
+    product = None  # TODO
+    res = {"_seq": product, "_seqs": products}
     return res
 
 
