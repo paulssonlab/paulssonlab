@@ -16,6 +16,8 @@ MIMETYPE_TO_EXTENSION = {
     "chemical/seq-na-genbank": ("gbk", "gb"),
     "chemical/seq-na-fasta": ("fasta",),
     "application/vnd.dna": ("dna",),
+    # SEE: https://wiki.debian.org/DebianMedMIME
+    "application/vnd.appliedbiosystems.abif": ("ab1",),
     "text/plain": ("txt",),
     None: (None,),  # bypass extension handling for None values
 }
@@ -23,23 +25,6 @@ EXTENSION_TO_MIMETYPE = {}
 for mimetype, exts in MIMETYPE_TO_EXTENSION.items():
     for ext in exts:
         EXTENSION_TO_MIMETYPE[ext] = mimetype
-
-# def read_sequence(data, filename=None):
-#     buf = io.StringIO(data)
-#     if filename is None or filename.endswith("gb") or filename.endswith("gbk"):
-#         seq = SeqIO.read(buf, "genbank")
-#     elif filename.endswith("dna"):
-#         seq = SeqIO.read(buf, "snapgene")
-#     else:
-#         raise ValueError(f"unknown extension: {filename}")
-#     molecule_type = seq.annotations["molecule_type"]
-#     if molecule_type == "ds-DNA":
-#         seq = DsSeqRecord(seq)
-#     else:
-#         raise NotImplementedError(
-#             f"cannot import genbank molecule_type: '{molecule_type}'"
-#         )
-#     return seq
 
 
 def value_to_bytes(value):
@@ -73,6 +58,9 @@ def bytes_to_value(bytes_, mimetype):
     elif mimetype == "chemical/seq-na-fasta":
         buf = io.StringIO(bytes_.decode())
         return SeqIO.read(buf, "fasta")
+    elif mimetype == "application/vnd.appliedbiosystems.abif":
+        buf = io.BytesIO(bytes_)
+        return SeqIO.read(buf, "abi")
     elif mimetype == "text/plain":
         return bytes_.decode()
     raise ValueError(f"cannot convert mimetype {mimetype} from bytes")
