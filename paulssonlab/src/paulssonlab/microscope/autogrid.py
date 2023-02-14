@@ -58,21 +58,28 @@ def autogrid_from_corners(input_xml, x_step, y_step, num_rows, skip_rows):
             preamble_elements.append(e)
         else:
             input_positions.append(parse_position(e))
-    if len(input_positions) != 4:
-        raise ValueError("expecting four corners")
-    upper_left = input_positions[0]
-    upper_right = input_positions[1]
-    lower_right = input_positions[2]
-    lower_left = input_positions[3]
-    # use z, pfs_offset from upper_left corner position
-    z = upper_left["z"]
-    pfs_offset = upper_left["pfs_offset"]
-    if num_rows is not None:
-        rows = np.linspace(upper_left["y"], lower_left["y"], num_rows)
-        if skip_rows:
-            rows = rows[:: skip_rows + 1]
+    if num_rows == 1:
+        if len(input_positions) != 2:
+            raise ValueError("expecting two end points (for a single row)")
+        upper_left = input_positions[0]
+        upper_right = input_positions[1]
+        rows = [upper_left["y"]]
     else:
-        rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
+        if len(input_positions) != 4:
+            raise ValueError("expecting four corners")
+        upper_left = input_positions[0]
+        upper_right = input_positions[1]
+        lower_right = input_positions[2]
+        lower_left = input_positions[3]
+        # use z, pfs_offset from upper_left corner position
+        z = upper_left["z"]
+        pfs_offset = upper_left["pfs_offset"]
+        if num_rows is not None:
+            rows = np.linspace(upper_left["y"], lower_left["y"], num_rows)
+            if skip_rows:
+                rows = rows[:: skip_rows + 1]
+        else:
+            rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
     columns = np.arange(upper_left["x"], upper_right["x"], -x_step)
     # delta_y is the increment in y every time you move to the next column
     slope = (upper_right["y"] - upper_left["y"]) / (upper_right["x"] - upper_left["x"])
