@@ -24,11 +24,13 @@ dependencies:
   - matplotlib
   - natsort
   - nbformat
+  - networkx
   - nextflow
   - nf-core
   - nodejs
   - numpy
   - pandas
+  - parasail
   - pip
   - pip:
       - benchlingapi

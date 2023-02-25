@@ -25,11 +25,9 @@ from paulssonlab.cloning.workflow import (
     parse_id,
     rename_ids,
     part_entry_to_seq,
-    re_digest_part,
-    is_bases,
     ID_REGEX,
 )
-from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq, is_bases
 from paulssonlab.cloning.commands.semantics import (
     eval_expr,
     eval_command,
@@ -222,12 +220,12 @@ class SheetClient(GDriveClient):
         self[id_] = row
         return id_
 
-    def find_id(self, row, key_columns=None, apply={}):
+    def find_id(self, row, key_columns=[], apply={}):
         """None values in apply is equivalent to the identity function.
 
         Missing keys in rows are interpreted as empty strings.
         """
-        if key_columns is None:
+        if not key_columns and not apply:
             key_columns = [k for k in row.keys()]
         key_columns = list(set(key_columns) | apply.keys())
         if not key_columns:
@@ -250,20 +248,32 @@ class SheetClient(GDriveClient):
             return id_
         return None
 
-    def find(self, row, key_columns=[]):
-        id_ = self.find_id(row, key_columns=None)
+    def find(self, row, key_columns=[], apply={}):
+        id_ = self.find_id(row, key_columns=key_columns, apply=apply)
         if id_ is None:
             return None
         else:
             return self[id_]
 
-    def upsert(self, row, key_columns=[], apply={}, overwrite=False):
-        id_ = self.find_id(row, key_columns=key_columns, apply=apply)
+    def upsert(self, row, key_columns=[], apply={}, overwrite=True, clear=True):
+        if not key_columns and not apply:
+            # should be equivalent to but faster than:
+            # key_columns = [self.id_column_name]
+            id_ = row.get(self.id_column_name)
+            if not id_:
+                raise ValueError(
+                    "key_columns or apply must be specified unless row includes '{}'"
+                )
+        else:
+            id_ = self.find_id(row, key_columns=key_columns, apply=apply)
         if id_ is None:
             id_ = self.append(row)
         else:
             if overwrite:
-                new_row = dissoc({**self[id_], **row}, self.id_column_name)
+                new_row = row
+                if not clear:
+                    new_row = {**self[id_], **new_row}
+                new_row = dissoc(new_row, self.id_column_name)
                 self[id_] = new_row
         return id_
 
@@ -271,7 +281,7 @@ class SheetClient(GDriveClient):
         rows_to_update = {}
         rows_to_append = []
         # we need to do this to handle IDs without sequential numeric indices (e.g., part names)
-        sorter = lambda x: excepts(ValueError, parse_id)(x) or (None, x)
+        sorter = lambda x: excepts(ValueError, parse_id)(x) or ("", x)
         for key in sorted(self.local.keys(), key=sorter):
             row = self.local[key]
             row_with_id = {**row, self.id_column_name: key}

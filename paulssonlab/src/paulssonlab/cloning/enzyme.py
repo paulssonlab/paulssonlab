@@ -1,14 +1,37 @@
 import re
 from typing import NamedTuple
+from enum import Enum
 import Bio.Restriction
+
+
+class CutDirection(Enum):
+    UPSTREAM = 1
+    DOWNSTREAM = 2
+    BOTH = 3
+
+    def __add__(self, other):
+        if (self == self.UPSTREAM and other == self.DOWNSTREAM) or (
+            self == self.DOWNSTREAM and other == self.UPSTREAM
+        ):
+            return self.BOTH
+        else:
+            raise ValueError(f"cannot combine {self} and {other}")
+
+    def reverse(self):
+        if self == self.BOTH:
+            return self
+        elif self == self.UPSTREAM:
+            return self.DOWNSTREAM
+        elif self == self.DOWNSTREAM:
+            return self.UPSTREAM
+        else:
+            raise ValueError(f"cannot reverse {self}")
 
 
 class CutSite(NamedTuple):
     cut5: int
     cut3: int
-    cut_upstream: bool
-    recognition_upstream: int
-    recognition_downstream: int
+    cut_direction: bool
 
 
 def _re_search(seq, enzyme, circular=None):
@@ -21,17 +44,25 @@ def _re_search(seq, enzyme, circular=None):
     )
     if circular:
         seq = seq + seq[: enzyme.size - 1]
-    re_sites = [(i.start(), i.group(1) is not None) for i in re.finditer(compsite, seq)]
+    re_sites = [
+        (
+            i.start(),
+            CutDirection.UPSTREAM
+            if i.group(1) is not None
+            else CutDirection.DOWNSTREAM,
+        )
+        for i in re.finditer(compsite, seq)
+    ]
     return re_sites
 
 
 def _re_search_cuts(binding_locs, enzyme, length):
     cuts = {}
-    for loc, cut_upstream in binding_locs:
+    for loc, cut_direction in binding_locs:
         for cut5, cut3 in ((enzyme.fst5, enzyme.fst3), (enzyme.scd5, enzyme.scd3)):
             if cut5 is None and cut3 is None:
                 continue
-            if cut_upstream:
+            if cut_direction == CutDirection.UPSTREAM:
                 if cut5 is not None:
                     cut5_loc = loc + cut5
                 else:
@@ -40,7 +71,7 @@ def _re_search_cuts(binding_locs, enzyme, length):
                     cut3_loc = loc + enzyme.size + cut3
                 else:
                     cut3_loc = None
-            else:
+            elif cut_direction == CutDirection.DOWNSTREAM:
                 if cut3 is not None:
                     cut5_loc = loc - cut3
                 else:
@@ -49,14 +80,15 @@ def _re_search_cuts(binding_locs, enzyme, length):
                     cut3_loc = loc + enzyme.size - cut5
                 else:
                     cut3_loc = None
-            binding_upstream = 0
-            binding_downstream = 0
-            cut = CutSite(
-                cut5_loc, cut3_loc, cut_upstream, binding_upstream, binding_downstream
-            )
+            else:
+                raise ValueError(f"not expecting cut direction {cut_direction}")
+            cut = CutSite(cut5_loc, cut3_loc, cut_direction)
             key = (cut5_loc % length, cut3_loc % length)
             # uniquify
-            if key not in cuts:
+            if key in cuts:
+                old_cut = cuts[key]
+                old_cut.cut_direction += cut_direction
+            else:
                 cuts[key] = cut
     return list(cuts.values())
 
@@ -77,11 +109,11 @@ def _re_digest(seq, cuts):
     for cut in cuts:
         frags, new_offset = seq.cut(cut.cut5 - offset, cut.cut3 - offset)
         if len(frags) == 1:
-            frags[0].upstream_inward_cut = cut.cut_upstream
-            frags[0].downstream_inward_cut = not cut.cut_upstream
+            frags[0].upstream_cut_direction = cut.cut_direction
+            frags[0].downstream_cut_direction = cut.cut_direction.reverse()
         elif len(frags) == 2:
-            frags[0].downstream_inward_cut = not cut.cut_upstream
-            frags[1].upstream_inward_cut = cut.cut_upstream
+            frags[0].downstream_cut_direction = cut.cut_direction.reverse()
+            frags[1].upstream_cut_direction = cut.cut_direction
         else:
             raise NotImplementedError
         seqs.extend(frags[:-1])

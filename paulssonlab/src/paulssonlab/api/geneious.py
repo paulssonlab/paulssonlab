@@ -1,5 +1,4 @@
-from paulssonlab.cloning.sequence import DsSeqRecord
-from paulssonlab.cloning.workflow import normalize_seq_upper
+from paulssonlab.cloning.sequence import DsSeqRecord, normalize_seq_upper
 from paulssonlab.cloning.primers import Primer
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord

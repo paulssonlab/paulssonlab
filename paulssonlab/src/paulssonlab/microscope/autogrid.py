@@ -46,30 +46,55 @@ def export_grid(rows, columns, delta_y, z, pfs_offset, preamble_elements):
     return ET.ElementTree(variant)
 
 
-def autogrid_from_corners(input_xml, x_step, y_step):
+def autogrid_from_corners(input_xml, x_step, y_step, num_rows, skip_rows, keep_pfs):
+    if y_step is not None and num_rows is not None:
+        raise ValueError("expecting either y_step or num_rows but not both")
+    if y_step is not None and skip_rows:
+        raise ValueError("skip_rows must not be given if y_step is given")
     input_positions = []
     preamble_elements = []
+    if not keep_pfs:
+        preamble_elements.append(
+            ET.SubElement(position, "bIncludeZ", runtype="bool", value="false")
+        )
+        preamble_elements.append(
+            ET.SubElement(position, "bPFSEnabled", runtype="bool", value="true")
+        )
     for e in input_xml.findall("./no_name/*"):
         if e.tag in ("bIncludeZ", "bPFSEnabled"):
-            preamble_elements.append(e)
+            if keep_pfs:
+                preamble_elements.append(e)
         else:
             input_positions.append(parse_position(e))
-    if len(input_positions) != 4:
-        raise ValueError("expecting four corners")
-    upper_left = input_positions[0]
-    upper_right = input_positions[1]
-    lower_right = input_positions[2]
-    lower_left = input_positions[3]
-    # use z, pfs_offset from upper_left corner position
-    z = upper_left["z"]
-    pfs_offset = upper_left["pfs_offset"]
-    # TODO: use the corners and x_step, y_step to come up with rows, columns (using np.arange)
-    # (this is the actual math part of setting up the grid)
-    rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
+    if num_rows == 1:
+        if len(input_positions) != 2:
+            raise ValueError("expecting two end points (for a single row)")
+        upper_left = input_positions[0]
+        upper_right = input_positions[1]
+        rows = [upper_left["y"]]
+    else:
+        if len(input_positions) != 4:
+            raise ValueError("expecting four corners")
+        upper_left = input_positions[0]
+        upper_right = input_positions[1]
+        lower_right = input_positions[2]
+        lower_left = input_positions[3]
+        if num_rows is not None:
+            rows = np.linspace(upper_left["y"], lower_left["y"], num_rows)
+            if skip_rows:
+                rows = rows[:: skip_rows + 1]
+        else:
+            rows = np.arange(upper_left["y"], lower_left["y"], -y_step)
     columns = np.arange(upper_left["x"], upper_right["x"], -x_step)
     # delta_y is the increment in y every time you move to the next column
     slope = (upper_right["y"] - upper_left["y"]) / (upper_right["x"] - upper_left["x"])
     delta_y = -slope * x_step
+    # use z, pfs_offset from upper_left corner position
+    z = upper_left["z"]
+    if keep_pfs:
+        pfs_offset = upper_left["pfs_offset"]
+    else:
+        pfs_offset = -1
     return export_grid(rows, columns, delta_y, z, pfs_offset, preamble_elements)
 
 
@@ -82,11 +107,18 @@ def cli():
 @click.argument("input", type=click.File("r", encoding="utf-16"))
 # @click.argument("output", type=click.File("w", encoding="utf-16"))
 @click.argument("output", type=click.Path())
-@click.option("--x", type=float, required=True)  # these are given in µm
-@click.option("--y", type=float, required=True)
-def from_corners(input, output, x, y):
+@click.option("--x", type=float)  # these are given in µm
+@click.option("--y", type=float)
+@click.option("--rows", type=int)
+@click.option("--skip-rows", type=int, default=0)
+@click.option("--keep-pfs/--reset-pfs", type=bool, default=False)
+def from_corners(input, output, x, y, rows, skip_rows, keep_pfs):
+    if y is not None and rows is not None:
+        click.error("Expecting exactly one of --y and --rows")
+    if y is not None and skip_rows:
+        click.error("--skip-rows cannot be specified if --y is given")
     input_xml = ET.parse(input, parser=ET.XMLParser(encoding="utf-16"))
-    output_xml = autogrid_from_corners(input_xml, x, y)
+    output_xml = autogrid_from_corners(input_xml, x, y, rows, skip_rows, keep_pfs)
     # this should write a UTF-16LE with BOM under windows
     # SEE: https://peter.bloomfield.online/why-python-3-doesnt-write-the-unicode-bom/
     output_xml.write(output, encoding="utf-16")

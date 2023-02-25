@@ -1,6 +1,5 @@
 import dnachisel as dc
 from Bio.Seq import Seq
-from .util import enzymes_to_names
 
 
 def dnachisel_constraints_for_twist(
@@ -48,7 +47,7 @@ def dnachisel_constraints_for_twist(
     # constraints.append(dc.AvoidHairpins(stem_size=20, hairpin_window=200))
     # TWIST: We check both strands to ensure they don’t contain the enzyme cut sites you asked us to avoid creating
     if avoid_enzymes:
-        for enzyme in enzymes_to_names(avoid_enzymes):
+        for enzyme in avoid_enzymes:
             constraints.append(dc.AvoidPattern(f"{enzyme}_site", location=cds_location))
     # TWIST: We avoid introduction of promoter sequences internal to expression sequences by avoiding the creation of strong sigma70 binding sites
     # TODO: this shouldn't be too hard, but we skip for now

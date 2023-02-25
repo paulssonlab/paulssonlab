@@ -1,6 +1,8 @@
+import networkx as nx
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
+import re
 from math import ceil
 from numbers import Integral
 from cytoolz import partial
@@ -155,8 +157,8 @@ class DsSeqRecord(SeqRecord):
         circular=None,
         upstream_overhang=None,
         downstream_overhang=None,
-        upstream_inward_cut=None,
-        downstream_inward_cut=None,
+        upstream_cut_direction=None,
+        downstream_cut_direction=None,
         id=None,
         name=None,
         description=None,
@@ -185,15 +187,15 @@ class DsSeqRecord(SeqRecord):
                     if downstream_overhang is not None
                     else seq.downstream_overhang
                 )
-                upstream_inward_cut = (
-                    upstream_inward_cut
-                    if upstream_inward_cut is not None
-                    else seq.upstream_inward_cut
+                upstream_cut_direction = (
+                    upstream_cut_direction
+                    if upstream_cut_direction is not None
+                    else seq.upstream_cut_direction
                 )
-                downstream_inward_cut = (
-                    downstream_inward_cut
-                    if downstream_inward_cut is not None
-                    else seq.downstream_inward_cut
+                downstream_cut_direction = (
+                    downstream_cut_direction
+                    if downstream_cut_direction is not None
+                    else seq.downstream_cut_direction
                 )
             # need to grab the actual sequence
             seq = seq.seq
@@ -221,8 +223,8 @@ class DsSeqRecord(SeqRecord):
             downstream_overhang = 0
         self.upstream_overhang = upstream_overhang or 0
         self.downstream_overhang = downstream_overhang or 0
-        self.upstream_inward_cut = upstream_inward_cut
-        self.downstream_inward_cut = downstream_inward_cut
+        self.upstream_cut_direction = upstream_cut_direction
+        self.downstream_cut_direction = downstream_cut_direction
 
     def __bool__(self):
         return bool(len(self))
@@ -299,7 +301,7 @@ class DsSeqRecord(SeqRecord):
             )
         seq = self[: len(self) - abs(self.downstream_overhang)]
         seq.upstream_overhang = 0
-        seq.upstream_inward_cut = None
+        seq.upstream_cut_direction = None
         seq.circular = True
         return seq
 
@@ -393,8 +395,8 @@ class DsSeqRecord(SeqRecord):
             super().reverse_complement(**kwargs),
             upstream_overhang=-self.downstream_overhang,
             downstream_overhang=-self.upstream_overhang,
-            upstream_inward_cut=self.downstream_inward_cut,
-            downstream_inward_cut=self.upstream_inward_cut,
+            upstream_cut_direction=self.downstream_cut_direction,
+            downstream_cut_direction=self.upstream_cut_direction,
         )
 
     def lower(self):
@@ -416,10 +418,10 @@ class DsSeqRecord(SeqRecord):
         new = self.__class__(self)
         if ends in ("both", "upstream"):
             new.upstream_overhang = 0
-            new.upstream_inward_cut = None
+            new.upstream_cut_direction = None
         if ends in ("both", "downstream"):
             new.downstream_overhang = 0
-            new.downstream_inward_cut = None
+            new.downstream_cut_direction = None
         return new
 
     def trim_overhangs(self, ends="both"):
@@ -516,9 +518,9 @@ class DsSeqRecord(SeqRecord):
                 abs(self.downstream_overhang) - (len(self) - stop), 0
             ) * sign(self.downstream_overhang)
             if start == 0:
-                new_seq.upstream_inward_cut = self.upstream_inward_cut
+                new_seq.upstream_cut_direction = self.upstream_cut_direction
             if stop == len(self):
-                new_seq.downstream_inward_cut = self.downstream_inward_cut
+                new_seq.downstream_cut_direction = self.downstream_cut_direction
             # copy features
             features = []
             for feature in self.features:
@@ -573,8 +575,8 @@ class DsSeqRecord(SeqRecord):
             self.seq + other.seq,
             upstream_overhang=self.upstream_overhang,
             downstream_overhang=other.downstream_overhang,
-            upstream_inward_cut=self.upstream_inward_cut,
-            downstream_inward_cut=other.downstream_inward_cut,
+            upstream_cut_direction=self.upstream_cut_direction,
+            downstream_cut_direction=other.downstream_cut_direction,
         )
         length = len(self)
         new.features = _join_features(self.features, other.features, length)
@@ -610,7 +612,7 @@ class DsSeqRecord(SeqRecord):
         return (
             f"{self.__class__.__name__}(seq={self.seq!r},"
             f" upstream_overhang={self.upstream_overhang}, downstream_overhang={self.downstream_overhang},"
-            f" upstream_inward_cut={self.upstream_inward_cut}, downstream_inward_cut={self.downstream_inward_cut},"
+            f" upstream_cut_direction={self.upstream_cut_direction}, downstream_cut_direction={self.downstream_cut_direction},"
             f" circular={self.circular!r}, id={self.id!r},"
             f" name={self.name!r}, description={self.description!r})"
         )
@@ -671,6 +673,41 @@ def assemble(seqs, **kwargs):
         product = DsSeqRecord(product)
     for seq in seqs[1:]:
         product = product.assemble(seq, **kwargs)
+    return product
+
+
+def _assembly_graph(seqs, **kwargs):
+    graph = nx.DiGraph()
+    for idx1 in range(len(seqs)):
+        for idx2 in range(len(seqs)):
+            product, score = seqs[idx1]._assemble(seqs[idx2], **kwargs)
+            if score > 0:
+                graph.add_edge(idx1, idx2)
+    return graph
+
+
+def assembly_graph(seqs, **kwargs):
+    seqs = ensure_dsseqrecords(*seqs)
+    return _assembly_graph(seqs, **kwargs)
+
+
+def assemble_circular(seqs, **kwargs):
+    seqs = ensure_dsseqrecords(*seqs)
+    graph = _assembly_graph(seqs, **kwargs)
+    cycles = list(nx.simple_cycles(graph))
+    if len(cycles) == 0:
+        raise ValueError("cannot circularize")
+    elif len(cycles) > 1:
+        raise ValueError("circular assembly not unique")
+    cycle = cycles[0]
+    product = seqs[cycle[0]]
+    for idx in cycle[1:]:
+        product, score = product._assemble(seqs[idx], **kwargs)
+        assert score > 0
+    # you must explicitly circularize if you want to
+    # ligate blunt ends
+    product, score = product._assemble(None, **kwargs)
+    assert score > 0
     return product
 
 
@@ -854,13 +891,12 @@ def _smoosh_sequences(a, b, max_overlap=None):
         return a + b
 
 
-def find_aligned_subsequence(seq, subseq, last=False):
-    period = len(subseq)
+def find_aligned_subsequence(seq, period, condition, last=False):
     idxs = range(int(ceil(len(seq) / period)))
     if last:
         idxs = reversed(idxs)
     for i in idxs:
-        if seq[i * period : (i + 1) * period] == subseq:
+        if condition(seq[i * period : (i + 1) * period]):
             return i * period
     return None
 
@@ -1195,3 +1231,76 @@ def anneal(a, b, min_score=6):
         upstream_overhang=upstream_overhang,
         downstream_overhang=downstream_overhang,
     )
+
+
+def is_bases(s):
+    return re.match(r"^[atcgrymkswbdhvn]+$", s, re.IGNORECASE) is not None
+
+
+def normalize_seq(seq):
+    return str(get_seq(seq)).lower()
+
+
+def normalize_seq_upper(seq):
+    return str(get_seq(seq)).upper()
+
+
+def concatenate_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            upstream = upstream_flank + upstream
+            downstream = downstream + downstream_flank
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    return upstream, downstream
+
+
+def smoosh_flanks(*flanks, lower=True):
+    upstream, downstream = flanks[0]
+    if lower:
+        upstream = upstream.lower()
+        downstream = downstream.lower()
+    if len(flanks) >= 1:
+        for upstream_flank, downstream_flank in flanks[1:]:
+            if lower:
+                upstream_flank = upstream_flank.lower()
+                downstream_flank = downstream_flank.lower()
+            upstream = smoosh_sequences(upstream_flank, upstream)
+            downstream = smoosh_sequences(downstream, downstream_flank)
+    return upstream, downstream
+
+
+def smoosh_and_trim_flanks(seq, flanks, lower=True):
+    if lower:
+        seq = seq.lower()
+    upstream_overlap = find_homologous_ends(flanks[0], seq)
+    downstream_overlap = find_homologous_ends(seq, flanks[1])
+    return (
+        flanks[0][: len(flanks[0]) - upstream_overlap],
+        flanks[1][downstream_overlap:],
+    )
+
+
+# TODO: update the above to normalize similarly?
+def smoosh_and_normalize_sequences(*seqs):
+    seqs = [normalize_seq(seq) for seq in seqs]
+    return smoosh_sequences(*seqs)
+
+
+def find_coding_sequence(seq, prefix="atg", suffix=["taa", "tga", "tag"]):
+    seq_str = str(get_seq(seq)).lower()
+    start = seq_str.find(prefix)
+    first_stop = find_aligned_subsequence(
+        seq_str[start:], 3, lambda s: s in suffix, last=False
+    )
+    if first_stop is None:
+        raise ValueError(f"could not find aligned suffix {suffix}")
+    last_stop = find_aligned_subsequence(
+        seq_str[start:], 3, lambda s: s in suffix, last=True
+    )
+    # stop is indexed from start, see call to find_aligned_subsequence above
+    before_stops = first_stop + start
+    after_stops = last_stop + start + 3
+    return start, before_stops, after_stops
