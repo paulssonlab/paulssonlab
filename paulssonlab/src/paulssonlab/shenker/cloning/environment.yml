@@ -24,6 +24,7 @@ dependencies:
   - matplotlib
   - natsort
   - nbformat
+  - networkx
   - nextflow
   - nf-core
   - nodejs

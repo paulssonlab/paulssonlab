@@ -1,3 +1,4 @@
+import networkx as nx
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
@@ -672,6 +673,41 @@ def assemble(seqs, **kwargs):
         product = DsSeqRecord(product)
     for seq in seqs[1:]:
         product = product.assemble(seq, **kwargs)
+    return product
+
+
+def _assembly_graph(seqs, **kwargs):
+    graph = nx.DiGraph()
+    for idx1 in range(len(seqs)):
+        for idx2 in range(len(seqs)):
+            product, score = seqs[idx1]._assemble(seqs[idx2], **kwargs)
+            if score > 0:
+                graph.add_edge(idx1, idx2)
+    return graph
+
+
+def assembly_graph(seqs, **kwargs):
+    seqs = ensure_dsseqrecords(*seqs)
+    return _assembly_graph(seqs, **kwargs)
+
+
+def assemble_circular(seqs, **kwargs):
+    seqs = ensure_dsseqrecords(*seqs)
+    graph = _assembly_graph(seqs, **kwargs)
+    cycles = list(nx.simple_cycles(graph))
+    if len(cycles) == 0:
+        raise ValueError("cannot circularize")
+    elif len(cycles) > 1:
+        raise ValueError("circular assembly not unique")
+    cycle = cycles[0]
+    product = seqs[cycle[0]]
+    for idx in cycle[1:]:
+        product, score = product._assemble(seqs[idx], **kwargs)
+        assert score > 0
+    # you must explicitly circularize if you want to
+    # ligate blunt ends
+    product, score = product._assemble(None, **kwargs)
+    assert score > 0
     return product
 
 

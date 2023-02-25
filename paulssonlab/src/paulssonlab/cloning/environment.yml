@@ -20,6 +20,7 @@ dependencies:
   - mafft
   - natsort
   - nbformat
+  - networkx
   - nextflow
   - nf-core
   - nodejs
