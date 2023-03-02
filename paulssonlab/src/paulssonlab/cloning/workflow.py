@@ -428,8 +428,11 @@ def cluster_sequences_by_prefix(d, start_index=0, num_subseqs=None, max_length=N
     seqs = list(d.values())
     if num_subseqs is None:
         num_subseqs = min(len(seq) for seq in seqs)
+    _max_length = max(len(subseq) for seq in seqs for subseq in seq[:num_subseqs])
     if max_length is None:
-        max_length = max(len(subseq) for seq in seqs for subseq in seq[:num_subseqs])
+        max_length = _max_length
+    else:
+        max_length = min(_max_length, max_length)
     mismatch = False
     for idx in range(max_length):
         for subseq_idx in range(num_subseqs):
@@ -447,12 +450,25 @@ def cluster_sequences_by_prefix(d, start_index=0, num_subseqs=None, max_length=N
     )
     if idx > start_index:
         if idx == max_length:
-            values = tuple(d.keys())
+            values = {
+                "_leaves": tuple(d.keys()),
+                "_size": len(d),
+                "_seq": tuple(
+                    seqs[0][subseq_idx][:max_length]
+                    for subseq_idx in range(num_subseqs)
+                ),
+            }
         else:
             values = cluster_sequences_by_prefix(
                 d, start_index=idx, num_subseqs=num_subseqs, max_length=max_length
             )
-        res = {common_key: values, "_size": len(d)}
+        res = {
+            common_key: values,
+            "_size": len(d),
+            "_seq": tuple(
+                seqs[0][subseq_idx][:start_index] for subseq_idx in range(num_subseqs)
+            ),
+        }
         return res
     else:
         clusters = {}
@@ -464,7 +480,13 @@ def cluster_sequences_by_prefix(d, start_index=0, num_subseqs=None, max_length=N
             clusters.setdefault(key, {})
             clusters[key][name] = seq
         res = ChainMap(
-            {"_size": len(d)},
+            {
+                "_size": len(d),
+                "_seq": tuple(
+                    seqs[0][subseq_idx][:start_index]
+                    for subseq_idx in range(num_subseqs)
+                ),
+            },
             *[
                 cluster_sequences_by_prefix(
                     cluster,
@@ -479,23 +501,31 @@ def cluster_sequences_by_prefix(d, start_index=0, num_subseqs=None, max_length=N
 
 
 def print_sequence_clusters(
-    clusters, length=0, indent_level=0, extra_indent=4, wrap_width=100
+    clusters,
+    indent_level=0,
+    extra_indent=4,
+    wrap_width=100,
+    metrics=None,
 ):
     indent_str = " " * indent_level
     for key, cluster in clusters.items():
-        if key == "_size":
+        if key in ("_size", "_seq"):
             continue
         segment = "/".join(key)
-        if isinstance(cluster, tuple):
-            num_seqs = len(cluster)
+        num_seqs = cluster["_size"]
+        length = len(cluster["_seq"][0])
+        if metrics:
+            metrics_str = ", " + ", ".join(
+                format_str.format(*metric(*cluster["_seq"]))
+                for format_str, metric in metrics.items()
+            )
         else:
-            num_seqs = cluster["_size"]
-        new_length = length + len(key[0])
-        print(f"{indent_str}{segment} ({new_length}nt x {num_seqs}):")
-        if isinstance(cluster, tuple):
+            metrics_str = ""
+        print(f"{indent_str}{segment} ({length}nt x {num_seqs}{metrics_str}):")
+        if "_leaves" in cluster:
             print(
                 textwrap.fill(
-                    ", ".join(cluster),
+                    ", ".join(cluster["_leaves"]),
                     width=wrap_width,
                     initial_indent=" " * (indent_level + extra_indent),
                     subsequent_indent=" " * (indent_level + extra_indent),
@@ -505,7 +535,11 @@ def print_sequence_clusters(
             print()
         else:
             print_sequence_clusters(
-                cluster, length=new_length, indent_level=indent_level + 2
+                cluster,
+                indent_level=indent_level + 2,
+                extra_indent=extra_indent,
+                wrap_width=wrap_width,
+                metrics=metrics,
             )
 
 
