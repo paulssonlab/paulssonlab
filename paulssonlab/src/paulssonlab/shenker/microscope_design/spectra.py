@@ -2,89 +2,37 @@ import pandas as pd
 import holoviews as hv
 import param
 import requests
-from requests_html import HTMLSession
 from IPython.display import display
-import io
-import re
-import paulssonlab.shenker.microscope_design.util as util
+from paulssonlab.api.fpbase import (
+    get_fpbase_spectrum as _get_fpbase_spectrum,
+    get_fpbase_protein_spectra as _get_fpbase_protein_spectra,
+)
+from paulssonlab.api.semrock import get_semrock_spectra as _get_semrock_spectra
+from paulssonlab.shenker.microscope_design.util import interpolate_dataframe
 
 
 def get_fpbase_spectrum(id_, bins=None):
-    df = pd.read_csv(
-        f"https://www.fpbase.org/spectra_csv/?q={id_}", index_col="wavelength"
-    ).squeeze()
+    df = _get_fpbase_spectrum(id_)
     if bins is not None:
-        df = util.interpolate_dataframe(df, bins)
+        df = interpolate_dataframe(df, bins)
     return df
 
 
 def get_fpbase_protein_spectra(bins=None):
-    fpbase_entries = requests.get("https://www.fpbase.org/api/proteins/spectra/").json()
-    fps = {}
-    for fpbase_entry in fpbase_entries:
-        fp = {}
-        spectra = []
-        for spectrum_type in fpbase_entry["spectra"]:
-            state_name = re.sub(r"^default_", "", spectrum_type["state"])
-            for k, v in spectrum_type.items():
-                if k == "state":
-                    continue
-                elif k == "data":
-                    spectra.append(
-                        pd.DataFrame(v, columns=["wavelength", state_name]).set_index(
-                            "wavelength"
-                        )
-                    )
-                else:
-                    fp[f"{state_name}_{k}"] = v
-        df = pd.concat(spectra, axis=1)
-        if bins is not None:
-            df = util.interpolate_dataframe(df, bins)
-        fp["spectra"] = df
-        fps[fpbase_entry["name"]] = fp
+    fps = _get_fpbase_protein_spectra()
+    if bins is not None:
+        for fp in fps.values():
+            fp["spectra"] = interpolate_dataframe(fp["spectra"], bins)
     return fps
 
 
 def get_semrock_spectra(urls, bins=None):
-    if isinstance(urls, str):
-        urls = [urls]
-    session = HTMLSession()
-    spectra = {}
-    for url in urls:
-        html = session.get(url).html
-        catalog_numbers = [
-            a.text for a in html.find("#resultsView .cartSection > h1 > a")
-        ]
-        for catalog_number in catalog_numbers:
-            spectrum_number = "-".join(catalog_number.split("-")[:2]).replace("/", "_")
-            name = f"Semrock {spectrum_number}"
-            spectrum_urls = [
-                f"https://www.semrock.com/_ProductData/Spectra/{spectrum_number}_Spectrum.txt",
-                f"https://www.semrock.com/_ProductData/Spectra/{spectrum_number}_DesignSpectrum.txt",
-            ]
-            spectrum = None
-            for spectrum_url in spectrum_urls:
-                res = session.get(spectrum_url)
-                if not res.ok:
-                    continue
-                lines = io.StringIO(
-                    "\n".join(
-                        [l for l in res.text.split("\n") if not l.startswith("---")]
-                    )
-                )
-                spectrum = pd.read_csv(
-                    lines,
-                    sep="\t",
-                    skiprows=4,
-                    names=["wavelength", spectrum_number],
-                    index_col=0,
-                ).squeeze()
-                break
-            if spectrum is None:
-                raise ValueError(f"could not find spectrum for '{spectrum_number}'")
-            if bins is not None:
-                spectrum = util.interpolate_dataframe(spectrum, bins)
-            spectra[name] = spectrum
+    spectra = _get_semrock_spectra(urls)
+    if bins is not None:
+        spectra = {
+            name: interpolate_dataframe(spectrum, bins)
+            for name, spectrum in spectra.items()
+        }
     return spectra
 
 
