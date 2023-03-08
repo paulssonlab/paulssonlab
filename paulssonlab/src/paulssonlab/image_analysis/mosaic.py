@@ -138,7 +138,6 @@ def mosaic_frame(
     rotation=None,
     scale=1,
     output_dims=(1024, 1024),
-    max_gaussian_sigma=4,
     scaling_funcs=None,
     delayed=False,
     dtype=np.float32,
