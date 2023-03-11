@@ -1,14 +1,27 @@
 import pandas as pd
 import re
+from cytoolz import dissoc
 import requests
 
 
-def get_fpbase_spectrum(id_, bins=None):
+def get_fpbase_proteins(**params):
+    fpbase_entries = requests.get(
+        "https://www.fpbase.org/api/proteins/", params={**params, "format": "json"}
+    ).json()
+    fps = {}
+    for fpbase_entry in fpbase_entries:
+        fp = dissoc(fpbase_entry, "name")
+        fp["states"] = {
+            state["name"]: dissoc(state, "name") for state in fpbase_entry["states"]
+        }
+        fps[fpbase_entry["name"]] = fp
+    return fps
+
+
+def get_fpbase_spectrum(id_):
     df = pd.read_csv(
         f"https://www.fpbase.org/spectra_csv/?q={id_}", index_col="wavelength"
     ).squeeze()
-    if bins is not None:
-        df = util.interpolate_dataframe(df, bins)
     return df
 
 
