@@ -2,7 +2,7 @@ import numpy as np
 from scipy.special import binom
 import scipy.spatial
 import freetype
-import gdspy as g
+import gdstk as g
 from geometry import Cell
 from util import memoize, make_hashable
 from functools import reduce, partial
@@ -72,7 +72,7 @@ def render_character(char, face=DEFAULT_FACE, points_per_segment=POINTS_PER_SEGM
             # close last segment with first point
             segments[-1].append(points[0])
         polygon_segments = []
-        # do not repeat last point, gdspy auto-closes polygons (linking last and first point)
+        # do not repeat last point, gdstk auto-closes polygons (linking last and first point)
         for segment in segments:
             if len(segment) == 2:
                 polygon_segments.append((segment[0],))
@@ -200,7 +200,7 @@ def Text(
             datatype=datatype,
         )
         cells.append(
-            g.CellReference(
+            g.Reference(
                 char_cell, position + offset, rotation=0, magnification=magnification
             )
         )

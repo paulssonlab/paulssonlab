@@ -1,28 +1,27 @@
 import numpy as np
-import gdspy
-from gdspy import Polygon, boolean, Rectangle
+import gdstk
 from functools import partial
 from paulssonlab.shenker.snakenbake.util import get_uuid
 
-MAX_POINTS = 2000  # LayoutEditor uses 8191
-ROUND_TOLERANCE = 0.3
+ELLIPSE_TOLERANCE = 0.3
 
 
 def Cell(name):
     if name != "main":
         name = f"{name}-{get_uuid()}"
-    return gdspy.Cell(name, exclude_from_current=True)
+    return gdstk.Cell(name)
 
 
-Round = partial(gdspy.Round, tolerance=ROUND_TOLERANCE, max_points=MAX_POINTS)
-boolean = partial(boolean, max_points=MAX_POINTS)
+ellipse = partial(gdstk.ellipse, tolerance=ELLIPSE_TOLERANCE)
 
 
 def flatten_or_merge(cell, flatten=False, merge=False, layer=None):
     if flatten or merge:
         cell.flatten()
     if merge:
-        cell.polygons = [boolean(cell.polygons, None, "or", layer=layer)]
+        polygons = gdstk.boolean(cell.polygons, [], "or", layer=layer)
+        cell.remove(*cell.polygons)
+        cell.add(*polygons)
     return cell
 
 
@@ -42,7 +41,7 @@ def cross(length, thickness, **kwargs):
         (-half_thickness, length),
         (half_thickness, length),
     ]
-    return Polygon(points, **kwargs)
+    return gdstk.Polygon(points, **kwargs)
 
 
 def l_shape(height, width, thickness, **kwargs):
@@ -55,22 +54,22 @@ def l_shape(height, width, thickness, **kwargs):
         (width - half_thickness, -height),
         (-half_thickness, -height),
     ]
-    return Polygon(points, **kwargs)
+    return gdstk.Polygon(points, **kwargs)
 
 
 def qr_target(outer_thickness, margin, inner_width, layer=None):
     hole_x = margin + inner_width / 2
     outer_x = hole_x + outer_thickness
     half_inner_width = inner_width / 2
-    outer = Rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
-    hole = Rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
-    outer = boolean(outer, hole, "not", layer=layer)
-    inner = Rectangle(
+    outer = rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
+    hole = rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
+    outer = gdstk.boolean(outer, hole, "not", layer=layer)
+    inner = rectangle(
         (-half_inner_width, -half_inner_width),
         (half_inner_width, half_inner_width),
         layer=layer,
     )
-    return boolean(outer, inner, "or", layer=layer)
+    return gdstk.boolean(outer, inner, "or", layer=layer)
 
 
 def polygon_orientation(polygon):
@@ -135,7 +134,7 @@ def mirror_refs(refs, axis="x"):
         factor[1] = -1
     for ref in refs:
         if x:
-            ref.rotation += 180
+            ref.rotation += np.deg2rad(180)
             ref.x_reflection = not ref.x_reflection
         if y:
             raise NotImplementedError

@@ -4,7 +4,7 @@ import numpy as np
 import toolz
 import cytoolz
 from cytoolz import partial, compose
-import gdspy
+import gdstk
 import matplotlib.pyplot as plt
 import shortuuid
 
@@ -28,9 +28,11 @@ def plot_cell(cell, exclude=(2,)):
     plt.axes().set_aspect("equal", "datalim")
 
 
-def write_gds(main_cell, filename, unit=1.0e-6, precision=1.0e-9):
-    cells = [main_cell] + list(main_cell.get_dependencies(True))
-    gdspy.write_gds(filename, cells=cells, unit=unit, precision=precision)
+def write_gds(main_cell, filename, unit=1.0e-6, precision=1.0e-9, max_points=199):
+    cells = [main_cell] + list(main_cell.dependencies(True))
+    lib = gdstk.Library(unit=unit, precision=precision)
+    lib.add(*cells)
+    lib.write_gds(filename, max_points)
 
 
 def strip_units(x):

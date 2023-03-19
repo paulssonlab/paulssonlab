@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.optimize as optimize
 from itertools import count
-import gdspy
+import gdstk
 from geometry import Cell
 from util import get_uuid
 
@@ -135,7 +135,7 @@ def draw_grid_overlay(
     for fov_name, fov_layer in zip(fov_dims.keys(), count(layer)):
         fov_dim = fov_dims[fov_name]
         grid_metadata_fov = grid_metadata[fov_name]
-        fov_rect = gdspy.Rectangle((0, 0), (fov_dim[0], -fov_dim[1]), layer=fov_layer)
+        fov_rect = gdstk.rectangle((0, 0), (fov_dim[0], -fov_dim[1]), layer=fov_layer)
         if center_margins:
             rotation_center = (fov_dim[0] / 2, -fov_dim[1] / 2)
         else:
@@ -157,15 +157,16 @@ def draw_grid_overlay(
             else:
                 margin_offset = 0
             chip_cell.add(
-                gdspy.CellArray(
+                gdstk.Reference(
                     fov_cell,
-                    grid_metadata_fov["grid_width"],
-                    (grid_metadata_fov["grid_height"] - (idx + 1)) // len(offsets) + 1,
-                    (fov_dim[0], -total_offset),
                     (
                         chip_metadata["fov_origin_x"],
                         chip_metadata["fov_origin_y"] + margin_offset + y,
                     ),
+                    columns=grid_metadata_fov["grid_width"],
+                    rows=(grid_metadata_fov["grid_height"] - (idx + 1)) // len(offsets)
+                    + 1,
+                    spacing=(fov_dim[0], -total_offset),
                 )
             )
             y -= offset

@@ -9,6 +9,7 @@ dependencies:
   - cytoolz
   - freetype
   - freetype-py
+  - gdstk
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
@@ -16,11 +17,5 @@ dependencies:
   - numpy
   - pandas
   - pint
-  - pip
-  - pip:
-      - gdspy
-      - docformatter
-  - pip
-  - pre-commit
   - scipy
   - shortuuid

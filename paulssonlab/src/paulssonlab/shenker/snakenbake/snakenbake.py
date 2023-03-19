@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 import numpy as np
-import gdspy as g
-from gdspy import CellReference, CellArray, Rectangle
+import gdstk as g
+from gdstk import Reference, rectangle, boolean
 from geometry import (
     Cell,
-    Round,
+    ellipse,
     cross,
     qr_target,
-    boolean,
     mirror,
     mirror_refs,
     align,
@@ -23,6 +22,7 @@ from cytoolz import compose
 from itertools import product
 import numbers
 
+CURVE_TOLERANCE = 0.2
 REFERENCE_LAYER = 0
 TRENCH_LAYER = 1
 FEEDING_CHANNEL_LAYER = 2
@@ -45,11 +45,11 @@ def Text(
         pass
     elif angle == -np.pi / 2:
         for ref in objs:
-            ref.rotation += 90
+            ref.rotation += np.deg2rad(90)
             ref.origin[:] = ref.origin[::-1] * np.array([-1, 1])
     elif angle == np.pi / 2:
         for ref in objs:
-            ref.rotation -= 90
+            ref.rotation -= np.deg2rad(90)
             ref.origin[:] = ref.origin[::-1] * np.array([1, -1])
     else:
         raise NotImplementedError
@@ -161,7 +161,7 @@ def manifold_snake(
     tick_period=25,
     tick_text_size=None,
     tick_labels=False,
-    draw_trenches=True,
+    trenches=True,
     flatten_feeding_channel=False,
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
@@ -303,11 +303,11 @@ def manifold_snake(
     # manifolds
     if manifold_round_radius:
         rounded_corner = Cell(f"Snake-round-{name}")
-        rounded_curve = g.Curve(0, 0, tolerance=0.2)
-        rounded_curve.v(manifold_round_radius)
+        rounded_curve = g.Curve((0, 0), tolerance=CURVE_TOLERANCE)
+        rounded_curve.vertical(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
         rounded_corner.add(
-            g.Polygon(rounded_curve.get_points(), layer=feeding_channel_layer)
+            g.Polygon(rounded_curve.points(), layer=feeding_channel_layer)
         )
     for idx in range(len(manifold_split_cum) - 1):
         for flip in (1, -1):
@@ -334,7 +334,7 @@ def manifold_snake(
                 )
                 manifold_bend_angles = (0, -flip * np.pi)
             elif manifold_input_style == "bend-out":
-                wf_base_rotation = 90
+                wf_base_rotation = np.deg2rad(90)
                 wf_x_reflection = False
                 port_x = -dims[0] / 2 + port_margin + port_radius
                 manifold_input_bend_x = port_x + port_radius + manifold_input_margin
@@ -347,7 +347,7 @@ def manifold_snake(
                 )
                 manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
             elif manifold_input_style == "bend-in":
-                wf_base_rotation = 90
+                wf_base_rotation = np.deg2rad(90)
                 wf_x_reflection = False
                 manifold_left_x = -dims[0] / 2 + border_margin
                 manifold_input_bend_x = (
@@ -368,7 +368,7 @@ def manifold_snake(
             )
             if port:
                 snake_manifold_cell.add(
-                    Round(
+                    ellipse(
                         (-flip * port_x, port_y),
                         port_radius,
                         layer=feeding_channel_layer,
@@ -382,15 +382,15 @@ def manifold_snake(
                     orientations=port_wayfinder_orientations,
                 )
                 snake_manifold_cell.add(
-                    CellReference(
+                    Reference(
                         wf,
                         (-flip * port_x, port_y),
-                        rotation=wf_base_rotation + 90 * flip,
+                        rotation=wf_base_rotation + np.deg2rad(90 * flip),
                         x_reflection=wf_x_reflection,
                     )
                 )
             snake_manifold_cell.add(
-                Round(
+                ellipse(
                     (-flip * manifold_input_bend_x, manifold_input_bend_y),
                     manifold_bend_radius + manifold_width,
                     inner_radius=manifold_bend_radius,
@@ -401,7 +401,7 @@ def manifold_snake(
             )
             if manifold_input_style in ("bend-out", "bend-in"):
                 snake_manifold_cell.add(
-                    Rectangle(
+                    rectangle(
                         (-flip * port_x, port_y + manifold_width / 2),
                         (-flip * manifold_input_bend_x, port_y - manifold_width / 2),
                         layer=feeding_channel_layer,
@@ -409,7 +409,7 @@ def manifold_snake(
                 )
             elif manifold_input_style == "u-turn":
                 snake_manifold_cell.add(
-                    Rectangle(
+                    rectangle(
                         (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
                         (-flip * (port_x + manifold_width / 2), port_y),
                         layer=feeding_channel_layer,
@@ -417,7 +417,7 @@ def manifold_snake(
                 )
             # manifold bend margin
             snake_manifold_cell.add(
-                Rectangle(
+                rectangle(
                     (-flip * manifold_left_x, manifold_input_bend_y),
                     (-flip * (manifold_left_x + manifold_width), manifold_top_y),
                     layer=feeding_channel_layer,
@@ -425,7 +425,7 @@ def manifold_snake(
             )
             # manifold
             snake_manifold_cell.add(
-                Rectangle(
+                rectangle(
                     (-flip * manifold_left_x, manifold_top_y),
                     (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
                     layer=feeding_channel_layer,
@@ -434,29 +434,29 @@ def manifold_snake(
             if manifold_round_radius:
                 for y in manifold_lane_ys[:-1]:
                     snake_manifold_cell.add(
-                        CellReference(
+                        Reference(
                             rounded_corner,
                             (
                                 -flip * (manifold_left_x + manifold_width),
                                 y + flip * feeding_channel_width / 2,
                             ),
-                            rotation=90 * (3 + flip),
+                            rotation=np.deg2rad(90 * (3 + flip)),
                         )
                     )
                 for y in manifold_lane_ys:
                     snake_manifold_cell.add(
-                        CellReference(
+                        Reference(
                             rounded_corner,
                             (
                                 -flip * (manifold_left_x + manifold_width),
                                 y - flip * feeding_channel_width / 2,
                             ),
-                            rotation=90 * (4 + flip),
+                            rotation=np.deg2rad(90 * (4 + flip)),
                         )
                     )
             for y in manifold_lane_ys:
                 snake_manifold_cell.add(
-                    g.Rectangle(
+                    g.rectangle(
                         (
                             -flip * (manifold_left_x + manifold_width),
                             y + feeding_channel_width / 2,
@@ -470,7 +470,7 @@ def manifold_snake(
                 )
             manifold_taper_angle = np.pi * (1 / 2 - flip)
             snake_fc_cell.add(
-                Round(
+                ellipse(
                     (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
                     manifold_width,
                     initial_angle=manifold_taper_angle,
@@ -478,7 +478,7 @@ def manifold_snake(
                     layer=feeding_channel_layer,
                 )
             )
-            snake_fc_cell.add(CellReference(snake_manifold_cell, (0, 0)))
+            snake_fc_cell.add(Reference(snake_manifold_cell, (0, 0)))
     flatten_or_merge(
         snake_fc_cell,
         flatten=flatten_feeding_channel,
@@ -486,9 +486,9 @@ def manifold_snake(
         layer=feeding_channel_layer,
     )
     y_offset = (bottom_margin - top_margin) / 2
-    snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
+    snake_cell.add(Reference(snake_fc_cell, (0, y_offset)))
     # trenches
-    if draw_trenches:
+    if trenches:
         snake_trenches_cell = _snake_trenches(
             trench_width=trench_width,
             trench_spacing=trench_spacing,
@@ -515,7 +515,7 @@ def manifold_snake(
             name=name,
             layer=TRENCH_LAYER,
         )
-        snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
+        snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
     metadata = {
         k: v
         for k, v in locals().items()
@@ -580,7 +580,7 @@ def snake(
     tick_period=25,
     tick_text_size=None,
     tick_labels=False,
-    draw_trenches=True,
+    trenches=True,
     flatten_feeding_channel=False,
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
@@ -647,7 +647,7 @@ def snake(
         Font size (in microns) of the trench tick numbering.
     tick_labels : bool, optional
         Whether to label every tick mark with the trench number.
-    draw_trenches : bool, optional
+    trenches : bool, optional
         Whether to output trenches or not.
     flatten_feeding_channel : bool, optional
         If False, each bend or straight section of a feeding channel will be specified
@@ -768,8 +768,8 @@ def snake(
         layer=feeding_channel_layer,
     )
     y_offset = (bottom_margin - top_margin) / 2
-    snake_cell.add(CellReference(snake_fc_cell, (0, y_offset)))
-    if draw_trenches:
+    snake_cell.add(Reference(snake_fc_cell, (0, y_offset)))
+    if trenches:
         snake_trenches_cell = _snake_trenches(
             trench_width=trench_width,
             trench_spacing=trench_spacing,
@@ -796,7 +796,7 @@ def snake(
             name=name,
             layer=TRENCH_LAYER,
         )
-        snake_cell.add(CellReference(snake_trenches_cell, (0, y_offset)))
+        snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
     return snake_cell, metadata
 
 
@@ -822,10 +822,10 @@ def _snake_feeding_channel(
     inner_snake_bend_radius = effective_trench_length
     outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
     lane_cell = Cell(f"Lane-{name}")
-    lane_fc = Rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
+    lane_fc = rectangle(-lane_fc_dims / 2, lane_fc_dims / 2, layer=layer)
     lane_cell.add(lane_fc)
     bend_cell = Cell(f"Feeding Channel Bend-{name}")
-    bend = Round(
+    bend = ellipse(
         (0, 0),
         outer_snake_bend_radius,
         inner_radius=inner_snake_bend_radius,
@@ -836,9 +836,9 @@ def _snake_feeding_channel(
     bend_cell.add(bend)
     port_cell = Cell(f"Feeding Channel Port-{name}")
     if port and port_radius:
-        port = Round((port_offset, 0), port_radius, layer=layer)
+        port = ellipse((port_offset, 0), port_radius, layer=layer)
         port_cell.add(port)
-    port_fc = Rectangle(
+    port_fc = rectangle(
         (0, -feeding_channel_width / 2),
         (port_offset, feeding_channel_width / 2),
         layer=layer,
@@ -851,7 +851,7 @@ def _snake_feeding_channel(
             width=port_wayfinder_width,
             orientations=("right", "top", "bottom"),
         )
-        port_cell.add(CellReference(wf, (port_offset, 0)))
+        port_cell.add(Reference(wf, (port_offset, 0)))
     max_lanes = sum(split) + gap_lanes * (len(split) - 1)
     last_lane_y = ((max_lanes - 1) * lane_height) / 2
     lane_ys = np.linspace(last_lane_y, -last_lane_y, max_lanes)
@@ -873,29 +873,27 @@ def _snake_feeding_channel(
     left_bend_lanes = right_bend_lanes + 1
     snake_fc_cell = Cell(f"Snake Feeding Channel-{name}")
     for y in lane_ys:
-        snake_fc_cell.add(CellReference(lane_cell, (0, y)))
+        snake_fc_cell.add(Reference(lane_cell, (0, y)))
     for lane in right_bend_lanes:
         snake_fc_cell.add(
-            CellReference(
-                bend_cell, (lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2)
-            )
+            Reference(bend_cell, (lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2))
         )
     for lane in left_bend_lanes:
         snake_fc_cell.add(
-            CellReference(
+            Reference(
                 bend_cell,
                 (-lane_fc_dims[0] / 2, lane_ys[lane] - lane_height / 2),
-                rotation=180,
+                rotation=np.deg2rad(180),
             )
         )
     for lane in right_port_lanes:
-        snake_fc_cell.add(
-            CellReference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane]))
-        )
+        snake_fc_cell.add(Reference(port_cell, (lane_fc_dims[0] / 2, lane_ys[lane])))
     for lane in left_port_lanes:
         snake_fc_cell.add(
-            CellReference(
-                port_cell, (-lane_fc_dims[0] / 2, lane_ys[lane]), rotation=180
+            Reference(
+                port_cell,
+                (-lane_fc_dims[0] / 2, lane_ys[lane]),
+                rotation=np.deg2rad(180),
             )
         )
     return snake_fc_cell, lane_ys
@@ -915,11 +913,11 @@ def _barcode(
     if zero_symbol is None:
         zero_symbol = g.Polygon([(1 / 2, -1 / 2), (1 / 2, 1 / 2), (-1 / 2, -1 / 2)])
     elif zero_symbol is not False:
-        zero_symbol = gdspy.copy(zero_symbol)
+        zero_symbol = gdstk.copy(zero_symbol)
     if one_symbol is None:
-        one_symbol = g.Rectangle((-1 / 2, -1 / 2), (1 / 2, 1 / 2))
+        one_symbol = g.rectangle((-1 / 2, -1 / 2), (1 / 2, 1 / 2))
     elif one_symbol is not False:
-        one_symbol = gdspy.copy(one_symbol)
+        one_symbol = gdstk.copy(one_symbol)
     for symbol in (zero_symbol, one_symbol):
         if symbol is False:
             continue
@@ -992,7 +990,7 @@ def _snake_trenches(
     snake_trenches_cell = Cell(f"Snake Trenches-{name}")
     trench_cell = Cell(f"Trench-{name}")
     trench_cell.add(
-        Rectangle(
+        rectangle(
             (-trench_width / 2, -trench_fc_overlap),
             (trench_width / 2, trench_length),
             layer=layer,
@@ -1001,7 +999,7 @@ def _snake_trenches(
     tick_cell = Cell(f"Tick-{name}")
     if ticks:
         tick_cell.add(
-            Rectangle(
+            rectangle(
                 (-trench_width / 2, tick_margin - trench_gap / 2),
                 (trench_width / 2, tick_margin - trench_gap / 2 + tick_length),
                 layer=layer,
@@ -1011,7 +1009,7 @@ def _snake_trenches(
         mark_halfwidth = (2 * mark_size + mark_spacing) / 2
         tick_cell.add(
             # TODO: include just the inner part of the QR target
-            Rectangle(
+            rectangle(
                 (-mark_halfwidth, -mark_halfwidth), (mark_halfwidth, mark_halfwidth)
             )
             # qr_target(
@@ -1037,29 +1035,29 @@ def _snake_trenches(
             )
             if uniform_lane_ys:
                 snake_trenches_cell.add(
-                    CellArray(
+                    Reference(
                         chip_barcode,
-                        num_ticks,
-                        len(lane_ys),
-                        (
-                            tick_period * (trench_width + trench_spacing),
-                            lane_ys_diff[0],
-                        ),
                         (
                             trench_xs[0] + chip_barcode_margin,
                             lane_ys[0] + lane_gap_offset_y,
+                        ),
+                        column=num_ticks,
+                        rows=len(lane_ys),
+                        spacing=(
+                            tick_period * (trench_width + trench_spacing),
+                            lane_ys_diff[0],
                         ),
                     )
                 )
             else:
                 for y in lane_ys:
                     snake_trenches_cell.add(
-                        CellArray(
+                        Reference(
                             chip_barcode,
-                            num_ticks,
-                            1,
-                            (tick_period * (trench_width + trench_spacing), 0),
                             (trench_xs[0] + row_barcode_margin, y + lane_gap_offset_y),
+                            columns=num_ticks,
+                            rows=1,
+                            spacing=(tick_period * (trench_width + trench_spacing), 0),
                         )
                     )
         for tick_idx, x in enumerate(tick_xs):
@@ -1076,50 +1074,50 @@ def _snake_trenches(
             )
             if uniform_lane_ys:
                 snake_trenches_cell.add(
-                    CellArray(
+                    Reference(
                         column_barcode,
-                        1,
-                        len(lane_ys),
-                        (0, lane_ys_diff[0]),
                         (x + column_barcode_margin, lane_ys[0] + lane_gap_offset_y),
+                        columns=1,
+                        rows=len(lane_ys),
+                        spacing=(0, lane_ys_diff[0]),
                     )
                 )
             else:
                 for y in lane_ys:
                     snake_trenches_cell.add(
-                        CellReference(
+                        Reference(
                             column_barcode,
                             (x + column_barcode_margin, y + lane_gap_offset_y),
                         )
                     )
     for lane_idx, y in enumerate(lane_ys):
         snake_trenches_cell.add(
-            CellArray(
+            Reference(
                 trench_cell,
-                trenches_per_set,
-                1,
-                (trench_width + trench_spacing, 0),
                 (trench_xs[0], y + feeding_channel_width / 2),
+                columns=trenches_per_set,
+                rows=1,
+                spacing=(trench_width + trench_spacing, 0),
             )
         )
         snake_trenches_cell.add(
-            CellArray(
+            Reference(
                 trench_cell,
-                trenches_per_set,
-                1,
-                (trench_width + trench_spacing, 0),
                 (trench_xs[0], y - feeding_channel_width / 2),
+                columns=trenches_per_set,
+                rows=1,
+                spacing=(trench_width + trench_spacing, 0),
                 x_reflection=True,
             )
         )
         if ticks or registration_marks or registration_mark_barcodes:
             snake_trenches_cell.add(
-                CellArray(
+                Reference(
                     tick_cell,
-                    num_ticks,
-                    1,
-                    (tick_period * (trench_width + trench_spacing), 0),
                     (trench_xs[0], y + lane_gap_offset_y),
+                    columns=num_ticks,
+                    rows=1,
+                    spacing=(tick_period * (trench_width + trench_spacing), 0),
                 )
             )
             if registration_mark_barcodes:
@@ -1135,12 +1133,12 @@ def _snake_trenches(
                     layer=layer,
                 )
                 snake_trenches_cell.add(
-                    CellArray(
+                    Reference(
                         row_barcode,
-                        num_ticks,
-                        1,
-                        (tick_period * (trench_width + trench_spacing), 0),
                         (trench_xs[0] + row_barcode_margin, y + lane_gap_offset_y),
+                        columns=num_ticks,
+                        rows=1,
+                        spacing=(tick_period * (trench_width + trench_spacing), 0),
                     )
                 )
         if tick_labels:
@@ -1186,7 +1184,7 @@ def wayfinder(
     wayfinder_cell = Cell("Wayfinder")
     for vertical_flip in vertical_flips:
         wayfinder_cell.add(
-            Rectangle(
+            rectangle(
                 (-width / 2, vertical_flip * radius),
                 (width / 2, vertical_flip * (radius + length)),
                 layer=layer,
@@ -1194,7 +1192,7 @@ def wayfinder(
         )
     for horizontal_flip in horizontal_flips:
         wayfinder_cell.add(
-            Rectangle(
+            rectangle(
                 (horizontal_flip * radius, -width / 2),
                 (horizontal_flip * (radius + length), width / 2),
                 layer=layer,
@@ -1238,11 +1236,13 @@ def profilometry_marks(
     profilometry_cell = Cell("Profilometry Marks")
     mark_cells = {layer: Cell(f"Profilometry Mark Layer {layer}") for layer in layers}
     for i, (layer, cell) in enumerate(mark_cells.items()):
-        cell.add(Rectangle(dims, -dims / 2, layer=layer))
+        cell.add(rectangle(dims, -dims / 2, layer=layer))
         origin = -grid_dims / 2 + (i - (len(mark_cells) - 1) / 2) * np.array(
             [grid_dims[0], 0]
         )
-        profilometry_cell.add(CellArray(cell, columns, rows, dims * 2, origin))
+        profilometry_cell.add(
+            Reference(cell, origin, columns=columns, rows=rows, spacing=dims * 2)
+        )
         if text:
             profilometry_cell.add(
                 Text(
@@ -1276,10 +1276,10 @@ def alignment_cross(length=1e3, thickness=6, layer=TRENCH_LAYER):
     alignment_cell = Cell("Alignment Cross")
     alignment_cell.add(cross(length, thickness, layer=layer))
     alignment_cell.add(
-        Rectangle((-3 * length, -length), (-2 * length, length), layer=layer)
+        rectangle((-3 * length, -length), (-2 * length, length), layer=layer)
     )
     alignment_cell.add(
-        Rectangle((2 * length, -length), (3 * length, length), layer=layer)
+        rectangle((2 * length, -length), (3 * length, length), layer=layer)
     )
     return alignment_cell
 
@@ -1319,11 +1319,11 @@ def mask_alignment_cross(
     offset_unit = 2 * length + cross_spacing
     box_length = offset_unit * (num_crosses + 1)
     box_corner = np.array([box_length, box_length])
-    outer_box = Rectangle(-(box_corner + thickness), box_corner + thickness)
-    inner_box = Rectangle(-box_corner, box_corner)
+    outer_box = rectangle(-(box_corner + thickness), box_corner + thickness)
+    inner_box = rectangle(-box_corner, box_corner)
     box = boolean(outer_box, inner_box, "not", layer=top_layer)
     cross_box_corner = np.array([length, length])
-    base_cross_box = Rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
+    base_cross_box = rectangle(-cross_box_corner, cross_box_corner, layer=bottom_layer)
     base_cross = cross(length, thickness, layer=top_layer)
     base_cross_box = boolean(base_cross_box, base_cross, "not", layer=bottom_layer)
     alignment_cell.add(base_cross_box)
@@ -1398,10 +1398,10 @@ def wafer(
         raise Exception("must provide maximum chip dimension")
     main_cell = Cell("main")
     square_corner = np.array([diameter, diameter]) * 1.2 / 2
-    square = Rectangle(-square_corner, square_corner, layer=reference_layer)
-    circle = Round((0, 0), diameter / 2)
+    square = rectangle(-square_corner, square_corner, layer=reference_layer)
+    circle = ellipse((0, 0), diameter / 2)
     wafer_outline = boolean(square, circle, "not", layer=reference_layer)
-    main_cell.add(wafer_outline)
+    main_cell.add(*wafer_outline)
     horizontal_chip_spacing = chip_dims[0] + chip_margin
     vertical_chip_spacing = chip_dims[1] + chip_margin
     vertical_spacings = (-1, 0, 1)
@@ -1415,7 +1415,7 @@ def wafer(
     ):
         x = horizontal_chip_spacing * horizontal / 2
         y = vertical_chip_spacing * vertical  # * 2 / 3
-        main_cell.add(CellReference(chip, (x, y)))
+        main_cell.add(Reference(chip, (x, y)))
     chip_area = np.array(
         (
             len(horizontal_spacings) * chip_dims[0]
@@ -1428,12 +1428,12 @@ def wafer(
     profilometry_cell = profilometry_marks(
         layers=(feeding_channel_layer, trench_layer), text=text
     )
-    profilometry_bbox = profilometry_cell.get_bounding_box()
+    profilometry_bbox = np.array(profilometry_cell.bounding_box())
     profilometry_spacing = np.array(
         [chip_area[0] + 2 * np.abs(profilometry_bbox[:, 0]).max(), 0]
     )
     main_cell.add(
-        CellReference(
+        Reference(
             profilometry_cell,
             np.array(
                 (-chip_area[0] / 2 - profilometry_bbox[:, 0].max() - chip_margin, 0)
@@ -1441,7 +1441,7 @@ def wafer(
         )
     )
     main_cell.add(
-        CellReference(
+        Reference(
             profilometry_cell,
             np.array(
                 (chip_area[0] / 2 - profilometry_bbox[:, 0].min() + chip_margin, 0)
@@ -1459,28 +1459,34 @@ def wafer(
     if mask:
         vertical_alignment_spacing = np.array([0, alignment_mark_position * 2])
         main_cell.add(
-            CellArray(
+            Reference(
                 alignment_cell,
-                1,
-                2,
-                vertical_alignment_spacing,
                 -vertical_alignment_spacing / 2,
+                columns=1,
+                rows=2,
+                spacing=vertical_alignment_spacing,
             )
         )
         horizontal_alignment_spacing = np.array([alignment_mark_position * 2, 0])
         main_cell.add(
-            CellArray(
+            Reference(
                 alignment_cell,
-                2,
-                1,
-                horizontal_alignment_spacing,
                 -horizontal_alignment_spacing / 2,
+                columns=2,
+                rows=1,
+                spacing=horizontal_alignment_spacing,
             )
         )
     else:
         alignment_spacing = np.array([0, alignment_mark_position * 2])
         main_cell.add(
-            CellArray(alignment_cell, 1, 2, alignment_spacing, -alignment_spacing / 2)
+            Reference(
+                alignment_cell,
+                -alignment_spacing / 2,
+                columns=1,
+                rows=2,
+                spacing=alignment_spacing,
+            )
         )
     if text:
         if mask:
@@ -1584,8 +1590,8 @@ def chip(
     if metadata is not None:
         metadata[name] = md  # TODO: this won't work with memoization!!!
     chip_cell = Cell(f"Chip-{name}")
-    chip_cell.add(outline(dims, layer=feeding_channel_layer))
-    chip_cell.add(CellReference(design_cell, (0, 0)))
+    chip_cell.add(*outline(dims, layer=feeding_channel_layer))
+    chip_cell.add(Reference(design_cell, (0, 0)))
     return chip_cell
 
 
@@ -1607,7 +1613,7 @@ def outline(dims, thickness=0.15e3, layer=FEEDING_CHANNEL_LAYER):
     outline
         GDS cell containing the outline.
     """
-    outline_inner = Rectangle(-dims / 2, dims / 2)
-    outline_outer = Rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
+    outline_inner = rectangle(-dims / 2, dims / 2)
+    outline_outer = rectangle(-(dims + thickness) / 2, (dims + thickness) / 2)
     outline = boolean(outline_outer, outline_inner, "not", layer=layer)
     return outline
