@@ -1,7 +1,7 @@
 import numpy as np
 import gdstk
 from functools import partial
-from paulssonlab.shenker.snakenbake.util import get_uuid
+from paulssonlab.shenker.snakenbake.util import get_uuid, get_polygons
 
 ELLIPSE_TOLERANCE = 0.3
 
@@ -88,7 +88,7 @@ def polygon_orientation(polygon):
 
 
 def get_bounding_box(polygons):
-    all_points = np.concatenate(polygons).transpose()
+    all_points = np.concatenate([p.points for p in polygons]).transpose()
     bbox = np.array(
         (
             (all_points[0].min(), all_points[1].min()),
@@ -147,7 +147,7 @@ def align(polygons, position=(0, 0), alignment="left"):
     bbox = get_bounding_box(polygons)
     if alignment == "left":
         offset = np.array([bbox[1, 0], 0])
-    elif alignment == "centered":
+    elif alignment == "center":
         offset = np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
     elif alignment == "right":
         offset = np.array([bbox[0, 0], 0])
@@ -161,19 +161,16 @@ def align(polygons, position=(0, 0), alignment="left"):
 
 def align_refs(refs, position=(0, 0), alignment="left"):
     position = np.array(position)
-    polygons = sum([ref.get_polygons() for ref in refs], [])
+    polygons = get_polygons(refs)
     bbox = get_bounding_box(polygons)
     if alignment == "right":
         offset = -np.array([bbox[1, 0], 0])
-    elif alignment == "centered":
+    elif alignment == "center":
         offset = -np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
     elif alignment == "left":
         offset = -np.array([bbox[0, 0], 0])
     else:
         raise NotImplementedError
-    # position = np.array(position) + offset
-    # polygons[:] = [position + factor*poly for poly in polygons]
-    # return polygons
     for ref in refs:
-        ref.origin += position + offset
+        ref.origin = np.array(ref.origin) + position + offset
     return refs
