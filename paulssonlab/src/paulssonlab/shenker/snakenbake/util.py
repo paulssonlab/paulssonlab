@@ -4,6 +4,7 @@ import numpy as np
 import toolz
 import cytoolz
 from cytoolz import partial, compose
+from collections.abc import Iterable
 import gdstk
 import matplotlib.pyplot as plt
 import shortuuid
@@ -11,15 +12,21 @@ import shortuuid
 get_uuid = partial(shortuuid.random, length=4)
 
 
-def plot_cell(polys, exclude=(2,)):
-    plt.figure(figsize=(10, 5), dpi=300)
-    plt.axes().set_aspect("equal", "datalim")
+def get_polygons(polys):
     if hasattr(polys, "get_polygons"):
-        polys = polys.get_polygons()
+        return polys.get_polygons()
     elif hasattr(polys, "points"):
-        polys = [polys]
+        return [polys]
+    elif isinstance(polys, Iterable):
+        return sum((get_polygons(p) for p in polys), [])
     else:
         raise NotImplementedError
+
+
+def show(polys, exclude=(2,)):
+    polys = get_polygons(polys)
+    plt.figure(figsize=(10, 5), dpi=300)
+    plt.axes().set_aspect("equal", "datalim")
     for poly in polys:
         plt.fill(*poly.points.T, lw=0.5, ec="k", fc=(1, 0, 0, 0.5))
 
