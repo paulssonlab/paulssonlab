@@ -181,6 +181,13 @@ def manifold_snake(
         tick_font_size = tick_length * 2
     if manifold_round_radius is True:
         manifold_round_radius = feeding_channel_width
+    if manifold_bend_margin is True:
+        manifold_bend_margin = manifold_round_radius
+    if manifold_round_radius > manifold_bend_margin:
+        # TODO: eliminate this constraint by improving implementation of manifold_round_radius
+        raise ValueError(
+            "manifold_bend_margin needs to be at least manifold_round_radius"
+        )
     # define some dimensions
     effective_trench_length = trench_length + trench_gap / 2
     inner_snake_bend_radius = effective_trench_length
