@@ -1,5 +1,6 @@
 import numpy as np
 import gdstk
+from matplotlib.path import Path
 from functools import partial
 from paulssonlab.shenker.snakenbake.util import get_uuid, get_polygons
 
@@ -174,3 +175,64 @@ def align_refs(refs, position=(0, 0), alignment="left"):
     for ref in refs:
         ref.origin = np.array(ref.origin) + position + offset
     return refs
+
+
+# FROM: https://heitzmann.github.io/g/how-tos.html#system-fonts
+def from_matplotlib_path(path, layer=0, datatype=0, tolerance=0.1):
+    precision = 0.1 * tolerance
+    x_max = None
+    polys = []
+    for points, code in path.iter_segments():
+        if code == path.MOVETO:
+            c = gdstk.Curve(points, tolerance=tolerance)
+        elif code == path.LINETO:
+            c.segment(points.reshape(points.size // 2, 2))
+        elif code == path.CURVE3:
+            c.quadratic(points.reshape(points.size // 2, 2))
+        elif code == path.CURVE4:
+            c.cubic(points.reshape(points.size // 2, 2))
+        elif code == path.CLOSEPOLY:
+            pts = c.points()
+            if pts.size > 0:
+                poly = gdstk.Polygon(pts, layer=layer, datatype=datatype)
+                if x_max is not None and pts[:, 0].min() < x_max:
+                    i = len(polys) - 1
+                    while i >= 0:
+                        if polys[i].contain_any(*poly.points):
+                            p = polys.pop(i)
+                            poly = gdstk.boolean(
+                                p,
+                                poly,
+                                "xor",
+                                precision,
+                                layer=layer,
+                                datatype=datatype,
+                            )[0]
+                            break
+                        elif poly.contain_any(*polys[i].points):
+                            p = polys.pop(i)
+                            poly = gdstk.boolean(
+                                p,
+                                poly,
+                                "xor",
+                                precision,
+                                layer=layer,
+                                datatype=datatype,
+                            )[0]
+                        i -= 1
+                x_max_new = poly.points[:, 0].max()
+                if x_max is None:
+                    x_max = x_max_new
+                else:
+                    x_max = max(x_max, x_max_new)
+                polys.append(poly)
+    return polys
+
+
+def from_matplotlib_path_codes(verts, codes, tolerance=0.1, layer=0, datatype=0):
+    return from_matplotlib_path(
+        Path(verts, codes, closed=False),
+        tolerance=tolerance,
+        layer=layer,
+        datatype=datatype,
+    )

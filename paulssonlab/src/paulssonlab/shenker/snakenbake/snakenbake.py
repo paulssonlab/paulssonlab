@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
-import gdstk as g
-from gdstk import Reference, rectangle, boolean
+import gdstk
+from gdstk import Reference, rectangle, boolean, Curve, Polygon
 from geometry import (
     Cell,
     ellipse,
@@ -13,8 +13,8 @@ from geometry import (
     align_refs,
     flatten_or_merge,
 )
-from text import Text as _Text
-from util import make_odd, memoize, plot_cell, write_gds, get_uuid
+from text import text as _text
+from util import make_odd, memoize, get_uuid, write_gds
 import hamming
 import bitarray.util
 from functools import partial
@@ -29,8 +29,8 @@ FEEDING_CHANNEL_LAYER = 2
 DEFAULT_DIMS = np.array([23e3, 13e3])
 
 
-def Text(
-    text,
+def text(
+    s,
     size,
     position=(0, 0),
     alignment="left",
@@ -38,7 +38,7 @@ def Text(
     angle=0,
     **kwargs,
 ):
-    objs = _Text(text, size, position=(0, 0), **kwargs)
+    objs = _text(s, size, position=(0, 0), **kwargs)
     if prerotate_alignment is not None:
         objs = align_refs(objs, position=(0, 0), alignment=prerotate_alignment)
     if angle == 0:
@@ -46,11 +46,11 @@ def Text(
     elif angle == -np.pi / 2:
         for ref in objs:
             ref.rotation += np.deg2rad(90)
-            ref.origin[:] = ref.origin[::-1] * np.array([-1, 1])
+            ref.origin = np.array(ref.origin)[::-1] * np.array([-1, 1])
     elif angle == np.pi / 2:
         for ref in objs:
             ref.rotation -= np.deg2rad(90)
-            ref.origin[:] = ref.origin[::-1] * np.array([1, -1])
+            ref.origin = np.array(ref.origin)[::-1] * np.array([1, -1])
     else:
         raise NotImplementedError
     objs = align_refs(objs, position=position, alignment=alignment)
@@ -159,7 +159,7 @@ def manifold_snake(
     tick_length=5,
     tick_margin=5,
     tick_period=25,
-    tick_text_size=None,
+    tick_font_size=None,
     tick_labels=False,
     trenches=True,
     flatten_feeding_channel=False,
@@ -167,7 +167,7 @@ def manifold_snake(
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
     name=None,
-    label_text_size=600,
+    label_font_size=600,
     label_margin=100,
     label=True,
 ):
@@ -177,8 +177,8 @@ def manifold_snake(
         name = get_uuid()
     if trench_fc_overlap is None:
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
-    if tick_text_size is None:
-        tick_text_size = tick_length * 2
+    if tick_font_size is None:
+        tick_font_size = tick_length * 2
     if manifold_round_radius is True:
         manifold_round_radius = feeding_channel_width
     # define some dimensions
@@ -227,7 +227,7 @@ def manifold_snake(
     bottom_margin = top_margin
     if label:
         # only make room for label text if necessary
-        total_label_margin = 2 * label_margin + label_text_size
+        total_label_margin = 2 * label_margin + label_font_size
         top_margin = max(top_margin, total_label_margin)
     lane_fc_dims = np.array(
         [
@@ -274,14 +274,14 @@ def manifold_snake(
     # root cell
     snake_cell = Cell(f"Snake-{name}")
     # label text
-    text_position = (0, dims[1] / 2 - label_margin - label_text_size)
+    label_position = (0, dims[1] / 2 - label_margin - label_font_size)
     if label:
         snake_cell.add(
-            Text(
+            *text(
                 name,
-                label_text_size,
-                position=text_position,
-                alignment="centered",
+                label_font_size,
+                position=label_position,
+                alignment="center",
                 layer=feeding_channel_layer,
             )
         )
@@ -303,12 +303,10 @@ def manifold_snake(
     # manifolds
     if manifold_round_radius:
         rounded_corner = Cell(f"Snake-round-{name}")
-        rounded_curve = g.Curve((0, 0), tolerance=CURVE_TOLERANCE)
+        rounded_curve = Curve((0, 0), tolerance=CURVE_TOLERANCE)
         rounded_curve.vertical(manifold_round_radius)
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
-        rounded_corner.add(
-            g.Polygon(rounded_curve.points(), layer=feeding_channel_layer)
-        )
+        rounded_corner.add(Polygon(rounded_curve.points(), layer=feeding_channel_layer))
     for idx in range(len(manifold_split_cum) - 1):
         for flip in (1, -1):
             snake_manifold_cell = Cell(
@@ -456,7 +454,7 @@ def manifold_snake(
                     )
             for y in manifold_lane_ys:
                 snake_manifold_cell.add(
-                    g.rectangle(
+                    rectangle(
                         (
                             -flip * (manifold_left_x + manifold_width),
                             y + feeding_channel_width / 2,
@@ -509,7 +507,7 @@ def manifold_snake(
             tick_margin=tick_margin,
             tick_length=tick_length,
             tick_period=tick_period,
-            tick_text_size=tick_text_size,
+            tick_font_size=tick_font_size,
             trench_xs=trench_xs,
             lane_ys=lane_ys,
             name=name,
@@ -578,14 +576,14 @@ def snake(
     tick_length=5,
     tick_margin=5,
     tick_period=25,
-    tick_text_size=None,
+    tick_font_size=None,
     tick_labels=False,
     trenches=True,
     flatten_feeding_channel=False,
     merge_feeding_channel=True,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
-    label_text_size=600,
+    label_font_size=600,
     label_margin=100,
     label=True,
     name=None,
@@ -643,7 +641,7 @@ def snake(
         Distance (in microns) between the dead end of a trench and the tick marks.
     tick_period : int, optional
         Number of trenches between tick marks.
-    tick_text_size : None, optional
+    tick_font_size : None, optional
         Font size (in microns) of the trench tick numbering.
     tick_labels : bool, optional
         Whether to label every tick mark with the trench number.
@@ -677,8 +675,8 @@ def snake(
         name = get_uuid()
     if trench_fc_overlap is None:
         trench_fc_overlap = min(trench_length, feeding_channel_width / 3)
-    if tick_text_size is None:
-        tick_text_size = tick_length * 2
+    if tick_font_size is None:
+        tick_font_size = tick_length * 2
     effective_trench_length = trench_length + trench_gap / 2
     inner_snake_bend_radius = effective_trench_length
     outer_snake_bend_radius = feeding_channel_width + inner_snake_bend_radius
@@ -688,7 +686,7 @@ def snake(
     bottom_margin = top_margin
     if label:
         # only make room for label text if necessary
-        total_label_margin = 2 * label_margin + label_text_size
+        total_label_margin = 2 * label_margin + label_font_size
         top_margin = max(top_margin, total_label_margin)
     horizontal_margin = port_margin + 2 * port_radius + port_input_margin
     lane_fc_dims = np.array(
@@ -732,14 +730,14 @@ def snake(
     metadata["snake_length"] = snake_length
     snake_cell = Cell(f"Snake-{name}")
     # label text
-    text_position = (0, dims[1] / 2 - label_margin - label_text_size)
+    label_position = (0, dims[1] / 2 - label_margin - label_font_size)
     if label:
         snake_cell.add(
-            Text(
+            *text(
                 name,
-                label_text_size,
-                position=text_position,
-                alignment="centered",
+                label_font_size,
+                position=label_position,
+                alignment="center",
                 layer=feeding_channel_layer,
             )
         )
@@ -790,7 +788,7 @@ def snake(
             tick_margin=tick_margin,
             tick_length=tick_length,
             tick_period=tick_period,
-            tick_text_size=tick_text_size,
+            tick_font_size=tick_font_size,
             trench_xs=trench_xs,
             lane_ys=lane_ys,
             name=name,
@@ -911,11 +909,11 @@ def _barcode(
     layer=None,
 ):
     if zero_symbol is None:
-        zero_symbol = g.Polygon([(1 / 2, -1 / 2), (1 / 2, 1 / 2), (-1 / 2, -1 / 2)])
+        zero_symbol = Polygon([(1 / 2, -1 / 2), (1 / 2, 1 / 2), (-1 / 2, -1 / 2)])
     elif zero_symbol is not False:
         zero_symbol = gdstk.copy(zero_symbol)
     if one_symbol is None:
-        one_symbol = g.rectangle((-1 / 2, -1 / 2), (1 / 2, 1 / 2))
+        one_symbol = rectangle((-1 / 2, -1 / 2), (1 / 2, 1 / 2))
     elif one_symbol is not False:
         one_symbol = gdstk.copy(one_symbol)
     for symbol in (zero_symbol, one_symbol):
@@ -944,10 +942,10 @@ def _barcode(
             idx = row + rows * column
             if ary2[idx]:
                 if one_symbol is not False:
-                    cell.add(g.copy(one_symbol, x, y))
+                    cell.add(gdstk.copy(one_symbol, x, y))
             else:
                 if zero_symbol is not False:
-                    cell.add(g.copy(zero_symbol, x, y))
+                    cell.add(gdstk.copy(zero_symbol, x, y))
     return cell
 
 
@@ -971,7 +969,7 @@ def _snake_trenches(
     tick_margin,
     tick_length,
     tick_period,
-    tick_text_size,
+    tick_font_size,
     trench_xs,
     lane_ys,
     name,
@@ -1147,9 +1145,9 @@ def _snake_trenches(
                     lane_idx * 2 * trenches_per_set + 2 * tick_idx * tick_period + 1
                 )
                 snake_trenches_cell.add(
-                    Text(
+                    *text(
                         str(tick_idx),
-                        tick_text_size,
+                        tick_font_size,
                         (
                             x + 2 * trench_width,
                             y + feeding_channel_width / 2 + trench_length + tick_margin,
@@ -1207,7 +1205,7 @@ def profilometry_marks(
     columns=3,
     rows=3,
     layers=(FEEDING_CHANNEL_LAYER, TRENCH_LAYER),
-    text=True,
+    label=True,
 ):
     """Generates a grid of rectangular profilometry targets.
 
@@ -1222,7 +1220,7 @@ def profilometry_marks(
         Number of rows.
     layers : int, optional
         Layer number.
-    text : bool, optional
+    label : bool, optional
         If True, the layer number is written next to the corresponding targets.
 
     Returns
@@ -1243,9 +1241,9 @@ def profilometry_marks(
         profilometry_cell.add(
             Reference(cell, origin, columns=columns, rows=rows, spacing=dims * 2)
         )
-        if text:
+        if label:
             profilometry_cell.add(
-                Text(
+                *text(
                     str(layer),
                     dims[1],
                     origin - np.array([0, 2 * dims[1]]),
@@ -1332,24 +1330,24 @@ def mask_alignment_cross(
         offset_vector = np.array(offset_unit_vector) * offset_unit
         for num_offsets in range(1, num_crosses + 1):
             offset = offset_vector * num_offsets
-            alignment_cell.add(g.copy(base_cross_box, *offset))
-            alignment_cell.add(g.copy(base_cross, *offset))
+            alignment_cell.add(gdstk.copy(base_cross_box, *offset))
+            alignment_cell.add(gdstk.copy(base_cross, *offset))
     alignment_cell.add(box)
     return alignment_cell
 
 
 def wafer(
     chips,
-    text_right=None,
-    text_left=None,
+    label_right=None,
+    label_left=None,
     diameter=76.2e3,
     chip_dims=None,
     chip_margin=1.2e3,
     alignment_mark_position=None,
-    alignment_text_size=1000,
-    right_text_size=2000,
-    left_text_size=1300,
-    text=True,
+    alignment_font_size=1000,
+    right_font_size=2000,
+    left_font_size=1300,
+    label=True,
     mask=False,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
@@ -1361,9 +1359,9 @@ def wafer(
     ----------
     chips : List
         List of GDS cells containing chips.
-    text_right : str
+    label_right : str
         Text to write on right side of wafer.
-    text_left : str
+    label_left : str
         Text to write on left side of wafer.
     diameter : float, optional
         Diameter of wafer (in microns).
@@ -1373,14 +1371,14 @@ def wafer(
         Description
     alignment_mark_position : float, optional
         Distance (in microns) between both alignment marks.
-    alignment_text_size : float, optional
+    alignment_font_size : float, optional
         Size (in microns) of label text for alignment marks.
-    right_text_size : float, optional
+    right_font_size : float, optional
         Size (in microns) of text.
-    left_text_size : float, optional
+    left_font_size : float, optional
         Size (in microns) of text.
-    text : bool, optional
-        If true, label the wafer with `text_right` and `text_left`. If mask is true, additionally label the
+    label : bool, optional
+        If true, label the wafer with `label_right` and `label_left`. If mask is true, additionally label the
         masks with `name` and the layer number outside of the wafer area.
     mask : bool, optional
         If true, mask aligner-compatible alignment crosses are generated. If false,
@@ -1426,7 +1424,7 @@ def wafer(
     )
     chip_area_corner = chip_area / 2
     profilometry_cell = profilometry_marks(
-        layers=(feeding_channel_layer, trench_layer), text=text
+        layers=(feeding_channel_layer, trench_layer), label=label
     )
     profilometry_bbox = np.array(profilometry_cell.bounding_box())
     profilometry_spacing = np.array(
@@ -1488,58 +1486,58 @@ def wafer(
                 spacing=alignment_spacing,
             )
         )
-    if text:
+    if label:
         if mask:
-            mask_text_padding = 30e2
-            fc_text_position = corner - mask_text_padding
-            trench_text_position = fc_text_position * np.array([-1, 1])
+            mask_label_padding = 30e2
+            fc_label_position = corner - mask_label_padding
+            trench_label_position = fc_label_position * np.array([-1, 1])
             main_cell.add(
-                Text(
-                    "FC layer\n" + text_right,
-                    label_text_size,
-                    position=fc_text_position,
+                *text(
+                    "FC layer\n" + label_right,
+                    label_font_size,
+                    position=fc_label_position,
                     alignment="right",
                     layer=feeding_channel_layer,
                 )
             )
             main_cell.add(
-                Text(
-                    "trench layer\n" + text_right,
-                    label_text_size,
-                    position=trench_text_position,
+                *text(
+                    "trench layer\n" + label_right,
+                    label_font_size,
+                    position=trench_label_position,
                     alignment="left",
                     layer=trench_layer,
                 )
             )
         else:
-            text_right_x = (
+            label_right_x = (
                 chip_area_corner[0]
                 + np.abs(profilometry_bbox[1, 0] - profilometry_bbox[0, 0])
                 + 2 * chip_margin
             )
-            text_right_position = (text_right_x, 0)
-            if text_right:
+            label_right_position = (label_right_x, 0)
+            if label_right:
                 main_cell.add(
-                    Text(
-                        text_right,
-                        right_text_size,
-                        position=text_right_position,
+                    *text(
+                        label_right,
+                        right_font_size,
+                        position=label_right_position,
                         angle=np.pi / 2,
                         alignment="left",
-                        prerotate_alignment="centered",
+                        prerotate_alignment="center",
                         layer=feeding_channel_layer,
                     )
                 )
-            text_left_position = (-text_right_x, 0)
-            if text_left:
+            label_left_position = (-label_right_x, 0)
+            if label_left:
                 main_cell.add(
-                    Text(
-                        text_left,
-                        left_text_size,
-                        position=text_left_position,
+                    *text(
+                        label_left,
+                        left_font_size,
+                        position=label_left_position,
                         angle=-np.pi / 2,
                         alignment="right",
-                        prerotate_alignment="centered",
+                        prerotate_alignment="center",
                         layer=feeding_channel_layer,
                     )
                 )
@@ -1565,9 +1563,9 @@ def chip(
         Human-readable label, will be written on the top edge of the chip.
     design_func : function, optional
         Function which will return a GDS cell containing the chip design.
-    label_text_size : float, optional
-        Text size (in microns) of the label text.
-    text : bool, optional
+    label_font_size : float, optional
+        Font size (in microns) of the label text.
+    label : bool, optional
         If True, a label is written along the top edge of the chip.
     feeding_channel_layer : int, optional
         Feeding channel layer number.
