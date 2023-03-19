@@ -11,21 +11,17 @@ import shortuuid
 get_uuid = partial(shortuuid.random, length=4)
 
 
-def plot_cell(cell, exclude=(2,)):
-    # FROM: https://github.com/heitzmann/gdspy/issues/42
-    if hasattr(cell, "get_polygons"):
-        poly_dict = cell.get_polygons(by_spec=True)
-    else:
-        poly_dict = {
-            l_d: [p] for l_d, p in zip(zip(cell.layers, cell.datatypes), cell.polygons)
-        }
-    plt.figure(figsize=(40, 20))
-    for layer_datatype, polys in poly_dict.items():
-        if layer_datatype[0] in exclude:
-            continue
-        for poly in polys:
-            plt.fill(*poly.T, lw=0.5, ec="k", fc=(1, 0, 0, 0.5))
+def plot_cell(polys, exclude=(2,)):
+    plt.figure(figsize=(10, 5), dpi=300)
     plt.axes().set_aspect("equal", "datalim")
+    if hasattr(polys, "get_polygons"):
+        polys = polys.get_polygons()
+    elif hasattr(polys, "points"):
+        polys = [polys]
+    else:
+        raise NotImplementedError
+    for poly in polys:
+        plt.fill(*poly.points.T, lw=0.5, ec="k", fc=(1, 0, 0, 0.5))
 
 
 def write_gds(main_cell, filename, unit=1.0e-6, precision=1.0e-9, max_points=199):
