@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib.colors import hex2color
 import dask
 import dask.array as da
+import distributed
 import scipy.ndimage as ndi
 import skimage
 from skimage.transform import SimilarityTransform, warp
@@ -77,6 +78,16 @@ def scale_around_center(scale, center):
     )
 
 
+def rotate_around_center(rotation, width, height):
+    # FROM: https://stackoverflow.com/a/36045144
+    center = (np.array([width, height]) - 1) / 2
+    return (
+        SimilarityTransform(translation=-center)
+        + SimilarityTransform(rotation=rotation)
+        + SimilarityTransform(translation=center)
+    )
+
+
 def fixed_aspect_scale(input_width, input_height, output_width, output_height):
     width_ratio = output_width / input_width
     height_ratio = output_height / input_height
@@ -94,13 +105,16 @@ def transform_to_viewport(
     center_y,
     output_corner_x,
     output_corner_y,
+    rotation=None,
 ):
-    transform = SimilarityTransform(
+    translation = SimilarityTransform(
         translation=(
             center_x - output_width / 2 + output_corner_x,
             center_y - output_height / 2 + output_corner_y,
-        )
+        ),
     )
+    rotation = rotate_around_center(rotation, output_width, output_height)
+    transform = translation + rotation
     input_ul = transform.inverse((0, 0))[0]
     # TODO: off-by-one?
     input_lr = transform.inverse((input_width - 1, input_height - 1))[0]
@@ -121,6 +135,7 @@ def mosaic_frame(
     timepoint=None,
     center=None,
     offset=None,
+    rotation=None,
     scale=1,
     output_dims=(1024, 1024),
     max_gaussian_sigma=4,
@@ -151,6 +166,7 @@ def mosaic_frame(
             *(center * input_scale),
             -input_dims[0] * position["x_idx"] * input_scale,
             -input_dims[1] * position["y_idx"] * input_scale,
+            rotation=rotation,
         )
         if visible:
             for channel, channel_imgs in zip(channels, all_channel_imgs):
@@ -164,11 +180,11 @@ def mosaic_frame(
                 #     img, frame_transform_orig, output_shape=output_dims[::-1], order=1
                 # )
                 # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
-                # so we resize first, then translate
+                # so we resize first, then translate/rotate
                 img = delayed(cv2.warpAffine)(
                     img,
                     frame_transform.params[:2, :],
-                    output_dims[::-1],
+                    output_dims,
                     # flags=cv2.INTER_AREA + cv2.WARP_INVERSE_MAP,
                     flags=(cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP),
                 )
@@ -300,12 +316,13 @@ def mosaic_animate_scale(
     timepoints=None,
     center=None,
     offset=None,
-    width=1024,
-    height=1024,
+    rotation=None,
+    output_dims=(1024, 1024),
     channels=None,
     channel_to_color=None,
     scaling_funcs=None,
     overlay_func=None,
+    positions_func=None,
     delayed=True,
     progress_bar=tqdm,
 ):
@@ -328,6 +345,10 @@ def mosaic_animate_scale(
         nd2_filename: parse_nd2_metadata(nd2) for nd2_filename, nd2 in nd2s.items()
     }
     positions = get_position_metadata(metadata)
+    if positions_func is not None:
+        positions = positions_func(positions)
+    if callable(rotation):
+        rotation = rotation(positions)
     image_limits = get_filename_image_limits(metadata)
     get_frame_func = partial(
         get_nd2_frame,
@@ -358,7 +379,9 @@ def mosaic_animate_scale(
             scale=s,
             center=center,
             offset=offset,
+            rotation=rotation,
             scaling_funcs=scaling_funcs,
+            output_dims=output_dims,
             delayed=delayed,
         )
         for t, s in ts_iter
@@ -394,16 +417,27 @@ def get_scaling_funcs(extrema):
     return scaling_funcs
 
 
-def export_video(ary, filename, fps=30, codec="h264", crf=22, tune="stillimage"):
-    with av.open(filename, mode="w") as container:
+def export_video(
+    ary, filename, fps=30, codec="h264", crf=22, tune="stillimage", progress_bar=tqdm
+):
+    with av.open(str(filename), mode="w") as container:
         stream = container.add_stream(
             codec, rate=fps, options={"crf": str(crf), "tune": tune}
         )
-        stream.width = ary[0].shape[1]
-        stream.height = ary[0].shape[0]
-        stream.pix_fmt = "yuv420p"
-        for idx in range(len(ary)):
-            img = np.round(255 * ary[idx]).astype(np.uint8)
+        initialized = False
+        idxs = range(len(ary))
+        if progress_bar is not None:
+            idxs = progress_bar(idxs)
+        for idx in idxs:
+            img = ary[idx]
+            if isinstance(img, distributed.Future):
+                img = img.result()
+            if not initialized:
+                stream.width = img.shape[1]
+                stream.height = img.shape[0]
+                stream.pix_fmt = "yuv420p"
+                initialized = True
+            img = np.round(255 * img).astype(np.uint8)
             img = np.clip(img, 0, 255)
             frame = av.VideoFrame.from_ndarray(img, format="rgb24")
             for packet in stream.encode(frame):

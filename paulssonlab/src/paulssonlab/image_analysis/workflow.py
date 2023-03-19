@@ -102,8 +102,8 @@ ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**8, getsizeof=sys.getsizeof)
 
 # def _get_nd2_reader(filename, **kwargs):
-def _get_nd2_reader(filename, memmap=False, **kwargs):
-    return nd2reader.ND2Reader(filename, memmap=memmap, **kwargs)
+def _get_nd2_reader(filename, **kwargs):
+    return nd2reader.ND2Reader(filename, **kwargs)
 
 
 # get_nd2_reader = _get_nd2_reader
@@ -112,10 +112,10 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 # get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
-def get_nd2_frame(filename, position, channel, t, memmap=False):
-    reader = get_nd2_reader(filename, memmap=memmap)
+def get_nd2_frame(filename, position, channel, t):
+    reader = get_nd2_reader(filename)
     channel_idx = reader.metadata["channels"].index(channel)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t, memmap=memmap)
+    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
     return ary
 
 
@@ -168,7 +168,7 @@ def _get_nd2_frame_list(sizes, channels):
 
 
 def get_nd2_frame_list(filenames):
-    nd2s = {filename: get_nd2_reader(filename, memmap=False) for filename in filenames}
+    nd2s = {filename: get_nd2_reader(filename) for filename in filenames}
     sizes = {filename: nd2.sizes for filename, nd2 in nd2s.items()}
     metadata = {filename: parse_nd2_metadata(nd2) for filename, nd2 in nd2s.items()}
     parsed_metadata = {filename: nd2.metadata for filename, nd2 in nd2s.items()}

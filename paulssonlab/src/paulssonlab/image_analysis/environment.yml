@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - black
   - bokeh
   - cachetools
   - click
@@ -15,6 +16,7 @@ dependencies:
   - ipython
   - ipywidgets
   - jupyterlab
+  - jupyterlab_code_formatter
   - matplotlib
   - numba
   - numcodecs

@@ -6,6 +6,7 @@ import cachetools
 from tqdm.auto import tqdm
 from cytoolz import excepts
 from itertools import product
+from numbers import Integral
 from paulssonlab.io.metadata import parse_nd2_metadata
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
@@ -19,15 +20,19 @@ def _get_nd2_reader(filename, **kwargs):
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 
 
-def get_nd2_frame(filename, position, channel_idx, t):
+def get_nd2_frame(filename, position, channel_num, t):
     reader = get_nd2_reader(filename)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    ary = reader.get_frame_2D(v=position, c=channel_num, t=t)
     return ary
 
 
 def _select_indices(idxs, slice_):
-    if isinstance(slice_, slice):
+    if slice_ is None:
+        return idxs
+    elif isinstance(slice_, slice):
         return idxs[slice_]
+    elif isinstance(slice_, Integral):
+        return idxs[:slice_]
     else:
         return slice_
 
@@ -197,34 +202,166 @@ def send_hdf5(filename, delayed=True):
                     yield msg
 
 
-def convert_nd2_to_hdf5(nd2_filename, hdf5_filename, slices):
+def convert_nd2_to_hdf5(
+    nd2_filename,
+    hdf5_path,
+    file_axes=["t", "fov"],
+    dataset_axes=["channel"],
+    slice_axes=None,
+    chunks=dict(
+        z=None,
+        t=5,
+        channel_idx=1,
+        fov=1,
+        height=None,
+        width=None,
+    ),
+    slices={},
+):
+    file_and_dataset_axes = set(file_axes) | set(dataset_axes)
+    unknown_axes = file_and_dataset_axes - set(
+        ["t", "fov", "channel", "channel_num", "z"]
+    )
+    if unknown_axes:
+        raise ValueError(f"unknown axes: {', '.join(unknown_axes)}")
+    if slice_axes is None:
+        slice_axes = []
+        if not set(["fov", "fov_idx"]) & file_and_dataset_axes:
+            slice_axes.append("fov_idx")
+        if not set(["t", "t_idx"]) & file_and_dataset_axes:
+            slice_axes.append("t_idx")
+        if not set(["channel", "channel_num"]) & file_and_dataset_axes:
+            slice_axes.append("channel_idx")
+        if "z" not in file_and_dataset_axes:
+            slice_axes.append("z_idx")
+    # the keys given to dataset_shape_func and dataset_chunks_func
+    # have keys named channel, t (not channel_idx, t_idx)
+    dataset_creation_axes = [axis.split("_")[0] for axis in slice_axes]
+    hdf5_filename = str(hdf5_path)
+    if file_axes:
+        hdf5_filename += "_".join([f"{a}={{{a}}}" for a in file_axes])
+    if not (
+        hdf5_filename.lower().endswith(".hdf5") or hdf5_filename.lower().endswith(".h5")
+    ):
+        hdf5_filename += r".hdf5"
+    filename_func = lambda key: hdf5_filename.format(
+        **{axis: v for axis, v in key.items() if axis in file_axes}
+    )
+    dataset_func = lambda key: "/".join(f"{axis}={key[axis]}" for axis in dataset_axes)
+    slice_func = lambda key: (
+        *(key[axis] for axis in slice_axes),
+        slice(None),
+        slice(None),
+    )
+    dataset_shape_func = lambda key: (
+        *(len(key[axis]) for axis in dataset_creation_axes),
+        key["height"],
+        key["width"],
+    )
+    dataset_chunks_func = lambda key: tuple(
+        dataset_shape_func(key)[axis_idx]
+        if chunks[axis] is None
+        else min(chunks[axis], dataset_shape_func(key)[axis_idx])
+        for axis_idx, axis in enumerate([*dataset_creation_axes, "height", "width"])
+    )
+    _convert_nd2_to_hdf5(
+        nd2_filename,
+        filename_func,
+        dataset_func,
+        slice_func,
+        dataset_shape_func,
+        dataset_chunks_func,
+        slices=slices,
+    )
+
+
+def _convert_nd2_to_hdf5(
+    nd2_filename,
+    filename_func,
+    dataset_func,
+    slice_func,
+    dataset_shape_func,
+    dataset_chunks_func,
+    slices={},
+):
+    if "channel" in slices and "channel_num" in slices:
+        raise ValueError("cannot specify both channel and channel_num slices")
     nd2 = nd2reader.ND2Reader(nd2_filename)
+    nd2_channels = nd2.metadata["channels"]
     frame = nd2.get_frame_2D()
     dtype = frame.dtype
     shape = frame.shape
     del frame
-    if "c" in slices and not isinstance(slices["c"], slice):
-        slices["c"] = [nd2.metadata["channels"].index(c) for c in slices["c"]]
-    channel_idxs = _select_indices(
-        np.arange(nd2.sizes.get("c", 1)), slices.get("c", slice(None))
+    if "channel" in slices:
+        channel_slices = slices["channel"]
+        if isinstance(channel_slices, slice):
+            slices["channel_num"] = slice(
+                nd2_channels.index(channel_slices.start),
+                nd2_channels.index(channel_slices.stop),
+                channel_slices.step,
+            )
+        else:
+            slices["channel_num"] = [nd2_channels.index(c) for c in channel_slices]
+    channel_nums = _select_indices(
+        np.arange(nd2.sizes.get("c", 1)), slices.get("channel_num", slice(None))
     )
     fovs = _select_indices(
-        np.arange(nd2.sizes.get("v", 1)), slices.get("v", slice(None))
+        np.arange(nd2.sizes.get("v", 1)), slices.get("fov", slice(None))
     )
     zs = _select_indices(np.arange(nd2.sizes.get("z", 1)), slices.get("z", slice(None)))
     ts = _select_indices(np.arange(nd2.sizes.get("t", 1)), slices.get("t", slice(None)))
-    with h5py.File(hdf5_filename, "a") as f:
-        for channel_idx in tqdm(channel_idxs, desc="c", leave=None):
-            channel = nd2.metadata["channels"][channel_idx]
-            for fov in tqdm(fovs, desc="v", leave=None):
-                ary = f.create_dataset(
-                    f"{channel}/{fov}",
-                    shape=(len(zs), len(ts), *shape),
-                    chunks=(1, 5, *shape),
-                    dtype=dtype,
-                )
+    hdf5_files = {}
+    try:
+        for channel_idx, channel_num in enumerate(
+            tqdm(channel_nums, desc="c", leave=None)
+        ):
+            channel = nd2_channels[channel_idx]
+            for fov_idx, fov in enumerate(tqdm(fovs, desc="v", leave=None)):
                 for z_idx, z in enumerate(tqdm(zs, desc="z", leave=None)):
                     for t_idx, t in enumerate(tqdm(ts, desc="t", leave=None)):
-                        ary[z_idx, t_idx, :, :] = nd2.get_frame_2D(
-                            c=channel_idx, v=fov, z=z, t=t
+                        key = dict(
+                            fov=fov,
+                            fov_idx=fov_idx,
+                            channel=channel,
+                            channel_num=channel_num,
+                            channel_idx=channel_idx,
+                            z=z,
+                            z_idx=z_idx,
+                            t=t,
+                            t_idx=t_idx,
                         )
+                        frame = nd2.get_frame_2D(c=channel_num, v=fov, z=z, t=t)
+                        hdf5_filename = filename_func(key)
+                        hdf5_file = hdf5_files.get(hdf5_filename)
+                        if hdf5_file is None:
+                            hdf5_file = hdf5_files[hdf5_filename] = h5py.File(
+                                hdf5_filename, "a"
+                            )
+                        dataset_path = dataset_func(key)
+                        if dataset_path not in hdf5_file:
+                            dataset_key = dict(
+                                # this key is called channel, not channel_nums
+                                # for naming consistency in the key that is
+                                # passed to dataset_shape_func and
+                                # dataset_chunks_func
+                                channel=channel_nums,
+                                fov=fovs,
+                                z=zs,
+                                t=ts,
+                                height=shape[0],
+                                width=shape[1],
+                            )
+                            dataset_shape = dataset_shape_func(dataset_key)
+                            dataset_chunks = dataset_chunks_func(dataset_key)
+                            hdf5_file.create_dataset(
+                                dataset_path,
+                                shape=dataset_shape,
+                                chunks=dataset_chunks,
+                                dtype=dtype,
+                            )
+                        slice_ = slice_func(key)
+                        hdf5_file[dataset_path][slice_] = frame
+
+    finally:
+        for hdf5_file in hdf5_files.values():
+            hdf5_file.close()
