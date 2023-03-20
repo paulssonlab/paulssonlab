@@ -258,19 +258,31 @@ def manifold_snake(
             if remainder > 0:
                 snake_split += (remainder,)
     snake_split = _compute_lane_split(snake_split, max_lanes)
-    num_lanes = np.sum(snake_split)
-    # manifold split
-    num_manifolds = 1  # TODO!!!
+    num_snakes = len(snake_split)
     snake_split_cum = np.concatenate(((0,), np.cumsum(snake_split)))
-    left_port_lanes = snake_split_cum[1:] - 1
-    right_port_lanes = snake_split_cum[:-1]
-    lanes_per_input = int(len(snake_split) // num_manifolds)
-    manifold_split = (lanes_per_input,) * num_manifolds
-    remainder = len(snake_split) % num_manifolds
-    if remainder > 0:
-        manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
-    manifold_split = np.array(manifold_split)
+    if np.isscalar(manifold_split):
+        num_manifolds = manifold_split
+        lanes_per_input = int(num_snakes // num_manifolds)
+        manifold_split = (lanes_per_input,) * num_manifolds
+        remainder = num_snakes % num_manifolds
+        if remainder > 0:
+            manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
+        manifold_split = np.array(manifold_split)
+    else:
+        if np.sum(manifold_split) != num_snakes:
+            raise ValueError(
+                f"manifold_split must sum to {num_snakes} (total number of snakes)"
+            )
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
+    num_lanes = np.sum(snake_split)
+    lanes_per_input = np.array(
+        [
+            snake_split[
+                manifold_split_cum[:-1][idx] : manifold_split_cum[1:][idx]
+            ].sum()
+            for idx in range(len(manifold_split_cum) - 1)
+        ]
+    )
     # define trench parameters
     trench_xs = np.arange(
         -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
@@ -279,6 +291,7 @@ def manifold_snake(
     )
     trenches_per_set = len(trench_xs)
     num_trenches = trenches_per_set * 2 * num_lanes
+    trenches_per_input = trenches_per_set * 2 * lanes_per_input
     # root cell
     snake_cell = Cell(f"Snake-{name}")
     # label text
@@ -308,35 +321,43 @@ def manifold_snake(
         port_wayfinder_width=None,
         layer=feeding_channel_layer,
     )
-    # for each manifold:
-    snake_manifold_cell = _manifold(
-        name=name,
-        dims=dims,
-        lane_fc_dims=lane_fc_dims,
-        effective_trench_length=effective_trench_length,
-        lane_ys=lane_ys,
-        left_port_lanes=left_port_lanes,
-        right_port_lanes=right_port_lanes,
-        manifold_split_cum=manifold_split_cum,
-        feeding_channel_width=feeding_channel_width,
-        manifold_width=manifold_width,
-        manifold_input_margin=manifold_input_margin,
-        manifold_bend_margin=manifold_bend_margin,
-        manifold_bend_radius=manifold_bend_radius,
-        manifold_round_radius=manifold_round_radius,
-        manifold_input_style=manifold_input_style,
-        port_margin=port_margin,
-        port_radius=port_radius,
-        port=port,
-        port_wayfinder=port_wayfinder,
-        port_wayfinder_margin=port_wayfinder_margin,
-        port_wayfinder_length=port_wayfinder_length,
-        port_wayfinder_width=port_wayfinder_width,
-        port_wayfinder_orientations=port_wayfinder_orientations,
-        feeding_channel_layer=feeding_channel_layer,
-    )
-    snake_fc_cell.add(Reference(snake_manifold_cell, (0, 0)))
-    ######
+    # manifolds
+    # TODO: move translation here (lane_ys should start at 0, subsetted to input)
+    # TODO: rotational symmetry?
+    for idx in range(len(manifold_split_cum) - 1):
+        left_port_lanes = snake_split_cum[:-1][
+            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
+        ]
+        right_port_lanes = (snake_split_cum[1:] - 1)[
+            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
+        ]
+        snake_manifold_cell = _manifold(
+            name=name,
+            dims=dims,
+            lane_fc_dims=lane_fc_dims,
+            effective_trench_length=effective_trench_length,
+            lane_ys=lane_ys,
+            left_port_lanes=left_port_lanes,
+            right_port_lanes=right_port_lanes,
+            manifold_split_cum=manifold_split_cum,
+            feeding_channel_width=feeding_channel_width,
+            manifold_width=manifold_width,
+            manifold_input_margin=manifold_input_margin,
+            manifold_bend_margin=manifold_bend_margin,
+            manifold_bend_radius=manifold_bend_radius,
+            manifold_round_radius=manifold_round_radius,
+            manifold_input_style=manifold_input_style,
+            port_margin=port_margin,
+            port_radius=port_radius,
+            port=port,
+            port_wayfinder=port_wayfinder,
+            port_wayfinder_margin=port_wayfinder_margin,
+            port_wayfinder_length=port_wayfinder_length,
+            port_wayfinder_width=port_wayfinder_width,
+            port_wayfinder_orientations=port_wayfinder_orientations,
+            feeding_channel_layer=feeding_channel_layer,
+        )
+        snake_fc_cell.add(Reference(snake_manifold_cell, (0, 0)))
     flatten_or_merge(
         snake_fc_cell,
         flatten=flatten_feeding_channel,
@@ -381,7 +402,9 @@ def manifold_snake(
         in (
             "num_lanes",
             "trenches_per_set",
+            "lanes_per_input",
             "num_trenches",
+            "trenches_per_input",
             "feeding_channel_width",
             "trench_gap",
             "trench_length",
@@ -566,6 +589,8 @@ def snake(
     )
     trenches_per_set = len(trench_xs)
     num_trenches = trenches_per_set * 2 * num_lanes
+    lanes_per_input = np.array([num_lanes])
+    trenches_per_input = np.array([num_trenches])
     metadata = {
         k: v
         for k, v in locals().items()
@@ -573,7 +598,9 @@ def snake(
         in (
             "num_lanes",
             "trenches_per_set",
+            "lanes_per_input",
             "num_trenches",
+            "trenches_per_input",
             "split",
             "feeding_channel_width",
             "trench_gap",
@@ -793,173 +820,171 @@ def _manifold(
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
         rounded_corner.add(Polygon(rounded_curve.points(), layer=feeding_channel_layer))
     manifold_cell = Cell(f"Snake-Manifold-{name}")
-    for idx in range(len(manifold_split_cum) - 1):
-        for flip in (1, -1):
-            port_lanes = right_port_lanes if flip == -1 else left_port_lanes
-            manifold_lane_ys = lane_ys[
-                port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
-            ][::-flip]
-            manifold_input_bend_y = manifold_lane_ys[0] - flip * (
-                feeding_channel_width / 2 + manifold_bend_margin
+    for flip in (1, -1):
+        port_lanes = left_port_lanes if flip == -1 else right_port_lanes
+        # manifold_lane_ys = lane_ys[
+        #     port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
+        # ][::-flip]
+        manifold_lane_ys = lane_ys[port_lanes][::-flip]
+        manifold_input_bend_y = manifold_lane_ys[0] - flip * (
+            feeding_channel_width / 2 + manifold_bend_margin
+        )
+        if manifold_input_style == "u-turn":
+            wf_base_rotation = 0
+            wf_x_reflection = True
+            port_x = -dims[0] / 2 + port_margin + port_radius
+            manifold_input_bend_x = port_x + manifold_width / 2 + manifold_bend_radius
+            manifold_left_x = manifold_input_bend_x + manifold_bend_radius
+            port_y = manifold_input_bend_y + flip * (
+                manifold_input_margin + port_radius
             )
-            if manifold_input_style == "u-turn":
-                wf_base_rotation = 0
-                wf_x_reflection = True
-                port_x = -dims[0] / 2 + port_margin + port_radius
-                manifold_input_bend_x = (
-                    port_x + manifold_width / 2 + manifold_bend_radius
-                )
-                manifold_left_x = manifold_input_bend_x + manifold_bend_radius
-                port_y = manifold_input_bend_y + flip * (
-                    manifold_input_margin + port_radius
-                )
-                manifold_bend_angles = (0, -flip * np.pi)
-            elif manifold_input_style == "bend-out":
-                wf_base_rotation = np.deg2rad(90)
-                wf_x_reflection = False
-                port_x = -dims[0] / 2 + port_margin + port_radius
-                manifold_input_bend_x = port_x + port_radius + manifold_input_margin
-                manifold_left_x = manifold_input_bend_x + manifold_bend_radius
-                port_y = manifold_lane_ys[0] - flip * (
-                    feeding_channel_width / 2
-                    + manifold_bend_margin
-                    + manifold_bend_radius
-                    + manifold_width / 2
-                )
-                manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
-            elif manifold_input_style == "bend-in":
-                wf_base_rotation = np.deg2rad(90)
-                wf_x_reflection = False
-                manifold_left_x = -dims[0] / 2 + border_margin
-                manifold_input_bend_x = (
-                    manifold_left_x + manifold_width + manifold_bend_radius
-                )
-                port_x = manifold_input_bend_x + manifold_input_margin + port_radius
-                # TODO: + top_margin?
-                port_y = manifold_lane_ys[0] - flip * (
-                    feeding_channel_width / 2
-                    + manifold_bend_margin
-                    + manifold_bend_radius
-                    + manifold_width / 2
-                )
-                manifold_bend_angles = (flip + np.array([3, 2])) / 2 * np.pi
-            manifold_top_y = manifold_lane_ys[0] - flip * feeding_channel_width / 2
-            manifold_taper_y = manifold_lane_ys[-1] + flip * (
-                feeding_channel_width / 2 - manifold_width
+            manifold_bend_angles = (0, -flip * np.pi)
+        elif manifold_input_style == "bend-out":
+            wf_base_rotation = np.deg2rad(90)
+            wf_x_reflection = False
+            port_x = -dims[0] / 2 + port_margin + port_radius
+            manifold_input_bend_x = port_x + port_radius + manifold_input_margin
+            manifold_left_x = manifold_input_bend_x + manifold_bend_radius
+            port_y = manifold_lane_ys[0] - flip * (
+                feeding_channel_width / 2
+                + manifold_bend_margin
+                + manifold_bend_radius
+                + manifold_width / 2
             )
-            if port:
-                snake_manifold_cell.add(
-                    ellipse(
-                        (-flip * port_x, port_y),
-                        port_radius,
-                        layer=feeding_channel_layer,
-                    )
+            manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
+        elif manifold_input_style == "bend-in":
+            wf_base_rotation = np.deg2rad(90)
+            wf_x_reflection = False
+            manifold_left_x = -dims[0] / 2 + border_margin
+            manifold_input_bend_x = (
+                manifold_left_x + manifold_width + manifold_bend_radius
+            )
+            port_x = manifold_input_bend_x + manifold_input_margin + port_radius
+            # TODO: + top_margin?
+            port_y = manifold_lane_ys[0] - flip * (
+                feeding_channel_width / 2
+                + manifold_bend_margin
+                + manifold_bend_radius
+                + manifold_width / 2
+            )
+            manifold_bend_angles = (flip + np.array([3, 2])) / 2 * np.pi
+        manifold_top_y = manifold_lane_ys[0] - flip * feeding_channel_width / 2
+        manifold_taper_y = manifold_lane_ys[-1] + flip * (
+            feeding_channel_width / 2 - manifold_width
+        )
+        if port:
+            snake_manifold_cell.add(
+                ellipse(
+                    (-flip * port_x, port_y),
+                    port_radius,
+                    layer=feeding_channel_layer,
                 )
-            if port_wayfinder:
-                wf = wayfinder(
-                    radius=port_radius + port_wayfinder_margin,
-                    length=port_wayfinder_length,
-                    width=port_wayfinder_width,
-                    orientations=port_wayfinder_orientations,
+            )
+        if port_wayfinder:
+            wf = wayfinder(
+                radius=port_radius + port_wayfinder_margin,
+                length=port_wayfinder_length,
+                width=port_wayfinder_width,
+                orientations=port_wayfinder_orientations,
+            )
+            manifold_cell.add(
+                Reference(
+                    wf,
+                    (-flip * port_x, port_y),
+                    rotation=wf_base_rotation + np.deg2rad(90 * flip),
+                    x_reflection=wf_x_reflection,
                 )
+            )
+        manifold_cell.add(
+            ellipse(
+                (-flip * manifold_input_bend_x, manifold_input_bend_y),
+                manifold_bend_radius + manifold_width,
+                inner_radius=manifold_bend_radius,
+                initial_angle=manifold_bend_angles[0],
+                final_angle=manifold_bend_angles[1],
+                layer=feeding_channel_layer,
+            )
+        )
+        if manifold_input_style in ("bend-out", "bend-in"):
+            manifold_cell.add(
+                rectangle(
+                    (-flip * port_x, port_y + manifold_width / 2),
+                    (-flip * manifold_input_bend_x, port_y - manifold_width / 2),
+                    layer=feeding_channel_layer,
+                )
+            )
+        elif manifold_input_style == "u-turn":
+            manifold_cell.add(
+                rectangle(
+                    (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
+                    (-flip * (port_x + manifold_width / 2), port_y),
+                    layer=feeding_channel_layer,
+                )
+            )
+        # manifold bend margin
+        manifold_cell.add(
+            rectangle(
+                (-flip * manifold_left_x, manifold_input_bend_y),
+                (-flip * (manifold_left_x + manifold_width), manifold_top_y),
+                layer=feeding_channel_layer,
+            )
+        )
+        # manifold
+        manifold_cell.add(
+            rectangle(
+                (-flip * manifold_left_x, manifold_top_y),
+                (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
+                layer=feeding_channel_layer,
+            )
+        )
+        if manifold_round_radius:
+            for y in manifold_lane_ys[:-1]:
                 manifold_cell.add(
                     Reference(
-                        wf,
-                        (-flip * port_x, port_y),
-                        rotation=wf_base_rotation + np.deg2rad(90 * flip),
-                        x_reflection=wf_x_reflection,
-                    )
-                )
-            manifold_cell.add(
-                ellipse(
-                    (-flip * manifold_input_bend_x, manifold_input_bend_y),
-                    manifold_bend_radius + manifold_width,
-                    inner_radius=manifold_bend_radius,
-                    initial_angle=manifold_bend_angles[0],
-                    final_angle=manifold_bend_angles[1],
-                    layer=feeding_channel_layer,
-                )
-            )
-            if manifold_input_style in ("bend-out", "bend-in"):
-                manifold_cell.add(
-                    rectangle(
-                        (-flip * port_x, port_y + manifold_width / 2),
-                        (-flip * manifold_input_bend_x, port_y - manifold_width / 2),
-                        layer=feeding_channel_layer,
-                    )
-                )
-            elif manifold_input_style == "u-turn":
-                manifold_cell.add(
-                    rectangle(
-                        (-flip * (port_x - manifold_width / 2), manifold_input_bend_y),
-                        (-flip * (port_x + manifold_width / 2), port_y),
-                        layer=feeding_channel_layer,
-                    )
-                )
-            # manifold bend margin
-            manifold_cell.add(
-                rectangle(
-                    (-flip * manifold_left_x, manifold_input_bend_y),
-                    (-flip * (manifold_left_x + manifold_width), manifold_top_y),
-                    layer=feeding_channel_layer,
-                )
-            )
-            # manifold
-            manifold_cell.add(
-                rectangle(
-                    (-flip * manifold_left_x, manifold_top_y),
-                    (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
-                    layer=feeding_channel_layer,
-                )
-            )
-            if manifold_round_radius:
-                for y in manifold_lane_ys[:-1]:
-                    manifold_cell.add(
-                        Reference(
-                            rounded_corner,
-                            (
-                                -flip * (manifold_left_x + manifold_width),
-                                y + flip * feeding_channel_width / 2,
-                            ),
-                            rotation=np.deg2rad(90 * (3 + flip)),
-                        )
-                    )
-                for y in manifold_lane_ys:
-                    manifold_cell.add(
-                        Reference(
-                            rounded_corner,
-                            (
-                                -flip * (manifold_left_x + manifold_width),
-                                y - flip * feeding_channel_width / 2,
-                            ),
-                            rotation=np.deg2rad(90 * (4 + flip)),
-                        )
-                    )
-            for y in manifold_lane_ys:
-                manifold_cell.add(
-                    rectangle(
+                        rounded_corner,
                         (
                             -flip * (manifold_left_x + manifold_width),
-                            y + feeding_channel_width / 2,
+                            y + flip * feeding_channel_width / 2,
                         ),
-                        (
-                            -flip * (-lane_fc_dims[0] / 2 - outer_snake_bend_radius),
-                            y - feeding_channel_width / 2,
-                        ),
-                        layer=feeding_channel_layer,
+                        rotation=np.deg2rad(90 * (3 + flip)),
                     )
                 )
-            manifold_taper_angle = np.pi * (1 / 2 - flip)
+            for y in manifold_lane_ys:
+                manifold_cell.add(
+                    Reference(
+                        rounded_corner,
+                        (
+                            -flip * (manifold_left_x + manifold_width),
+                            y - flip * feeding_channel_width / 2,
+                        ),
+                        rotation=np.deg2rad(90 * (4 + flip)),
+                    )
+                )
+        for y in manifold_lane_ys:
             manifold_cell.add(
-                ellipse(
-                    (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
-                    manifold_width,
-                    initial_angle=manifold_taper_angle,
-                    final_angle=manifold_taper_angle + flip * np.pi,
+                rectangle(
+                    (
+                        -flip * (manifold_left_x + manifold_width),
+                        y + feeding_channel_width / 2,
+                    ),
+                    (
+                        -flip * (-lane_fc_dims[0] / 2 - outer_snake_bend_radius),
+                        y - feeding_channel_width / 2,
+                    ),
                     layer=feeding_channel_layer,
                 )
             )
-        return manifold_cell
+        manifold_taper_angle = np.pi * (1 / 2 - flip)
+        manifold_cell.add(
+            ellipse(
+                (-flip * (manifold_left_x + manifold_width), manifold_taper_y),
+                manifold_width,
+                initial_angle=manifold_taper_angle,
+                final_angle=manifold_taper_angle + flip * np.pi,
+                layer=feeding_channel_layer,
+            )
+        )
+    return manifold_cell
 
 
 @memoize
@@ -1070,15 +1095,22 @@ def _snake_trenches(
         )
     elif registration_marks:
         mark_halfwidth = (2 * mark_size + mark_spacing) / 2
-        tick_cell.add(
-            # TODO: include just the inner part of the QR target
-            rectangle(
-                (-mark_halfwidth, -mark_halfwidth), (mark_halfwidth, mark_halfwidth)
+        if registration_marks == "qr":
+            tick_cell.add(
+                *qr_target(
+                    mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
+                )
             )
-            # qr_target(
-            #     mark_size, mark_spacing, 2 * mark_size + mark_spacing, layer=layer
-            # )
-        )
+        elif registration == "box" or registration_marks is True:
+            tick_cell.add(
+                *rectangle(
+                    (-mark_halfwidth, -mark_halfwidth),
+                    (mark_halfwidth, mark_halfwidth),
+                    layer=layer,
+                )
+            )
+        else:
+            raise ValueError(f"unknown registration_marks style {registration_marks}")
     tick_xs = trench_xs[::tick_period]
     num_ticks = len(tick_xs)
     if registration_mark_barcodes:

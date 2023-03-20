@@ -62,10 +62,10 @@ def qr_target(outer_thickness, margin, inner_width, layer=None):
     hole_x = margin + inner_width / 2
     outer_x = hole_x + outer_thickness
     half_inner_width = inner_width / 2
-    outer = rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
-    hole = rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
+    outer = gdstk.rectangle((-outer_x, -outer_x), (outer_x, outer_x), layer=layer)
+    hole = gdstk.rectangle((-hole_x, -hole_x), (hole_x, hole_x), layer=layer)
     outer = gdstk.boolean(outer, hole, "not", layer=layer)
-    inner = rectangle(
+    inner = gdstk.rectangle(
         (-half_inner_width, -half_inner_width),
         (half_inner_width, half_inner_width),
         layer=layer,
