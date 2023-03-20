@@ -248,7 +248,7 @@ def manifold_snake(
     if lanes_per_snake:
         if lanes_per_snake <= 0 or lanes_per_snake % 2 == 0:
             raise ValueError("lanes_per_snake must be positive and odd")
-        if snake_split:
+        if snake_split is not None:
             raise ValueError("cannot specify both snake_split and lanes_per_snake")
         snake_split = (lanes_per_snake,) * int(max_lanes // lanes_per_snake)
         if add_remainder:
@@ -331,33 +331,50 @@ def manifold_snake(
         right_port_lanes = (snake_split_cum[1:] - 1)[
             manifold_split_cum[idx] : manifold_split_cum[idx + 1]
         ]
-        snake_manifold_cell = _manifold(
-            name=name,
-            dims=dims,
-            lane_fc_dims=lane_fc_dims,
-            effective_trench_length=effective_trench_length,
-            lane_ys=lane_ys,
-            left_port_lanes=left_port_lanes,
-            right_port_lanes=right_port_lanes,
-            manifold_split_cum=manifold_split_cum,
-            feeding_channel_width=feeding_channel_width,
-            manifold_width=manifold_width,
-            manifold_input_margin=manifold_input_margin,
-            manifold_bend_margin=manifold_bend_margin,
-            manifold_bend_radius=manifold_bend_radius,
-            manifold_round_radius=manifold_round_radius,
-            manifold_input_style=manifold_input_style,
-            port_margin=port_margin,
-            port_radius=port_radius,
-            port=port,
-            port_wayfinder=port_wayfinder,
-            port_wayfinder_margin=port_wayfinder_margin,
-            port_wayfinder_length=port_wayfinder_length,
-            port_wayfinder_width=port_wayfinder_width,
-            port_wayfinder_orientations=port_wayfinder_orientations,
-            feeding_channel_layer=feeding_channel_layer,
-        )
-        snake_fc_cell.add(Reference(snake_manifold_cell, (0, 0)))
+        for flip in (1, -1):
+            port_lanes = left_port_lanes if flip == -1 else right_port_lanes
+            # manifold_lane_ys = lane_ys[
+            #     port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
+            # ][::-flip]
+            manifold_lane_ys = lane_ys[port_lanes]
+            manifold_y = manifold_lane_ys[::flip][0]
+            manifold_lane_ys0 = manifold_lane_ys - manifold_y
+            snake_manifold_cell = _manifold(
+                name=name,
+                dims=dims,
+                lane_fc_dims=lane_fc_dims,
+                effective_trench_length=effective_trench_length,
+                manifold_lane_ys=manifold_lane_ys0,
+                manifold_split_cum=manifold_split_cum,
+                feeding_channel_width=feeding_channel_width,
+                manifold_width=manifold_width,
+                manifold_input_margin=manifold_input_margin,
+                manifold_bend_margin=manifold_bend_margin,
+                manifold_bend_radius=manifold_bend_radius,
+                manifold_round_radius=manifold_round_radius,
+                manifold_input_style=manifold_input_style,
+                port_margin=port_margin,
+                port_radius=port_radius,
+                port=port,
+                port_wayfinder=port_wayfinder,
+                port_wayfinder_margin=port_wayfinder_margin,
+                port_wayfinder_length=port_wayfinder_length,
+                port_wayfinder_width=port_wayfinder_width,
+                port_wayfinder_orientations=port_wayfinder_orientations,
+                feeding_channel_layer=feeding_channel_layer,
+            )
+            if flip == -1:
+                snake_fc_cell.add(Reference(snake_manifold_cell, (0, manifold_y)))
+            else:
+                # continue
+                snake_fc_cell.add(
+                    Reference(
+                        snake_manifold_cell,
+                        (0, manifold_lane_ys[::flip][-1] + 2 * manifold_y),
+                        rotation=np.pi,
+                        x_reflection=False,
+                    )
+                )
     flatten_or_merge(
         snake_fc_cell,
         flatten=flatten_feeding_channel,
@@ -790,9 +807,7 @@ def _manifold(
     dims,
     lane_fc_dims,
     effective_trench_length,
-    lane_ys,
-    left_port_lanes,
-    right_port_lanes,
+    manifold_lane_ys,
     manifold_split_cum,
     feeding_channel_width,
     manifold_width,
@@ -820,12 +835,7 @@ def _manifold(
         rounded_curve.arc(manifold_round_radius, 0, -1 / 2 * np.pi, 0)
         rounded_corner.add(Polygon(rounded_curve.points(), layer=feeding_channel_layer))
     manifold_cell = Cell(f"Snake-Manifold-{name}")
-    for flip in (1, -1):
-        port_lanes = left_port_lanes if flip == -1 else right_port_lanes
-        # manifold_lane_ys = lane_ys[
-        #     port_lanes[manifold_split_cum[idx] : manifold_split_cum[idx + 1]]
-        # ][::-flip]
-        manifold_lane_ys = lane_ys[port_lanes][::-flip]
+    for flip in (-1,):
         manifold_input_bend_y = manifold_lane_ys[0] - flip * (
             feeding_channel_width / 2 + manifold_bend_margin
         )
