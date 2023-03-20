@@ -139,6 +139,7 @@ def manifold_snake(
     trench_margin=0.5e3,
     trench_gap=20,
     trench_spacing=2,
+    manifold_trench_params=None,
     feeding_channel_width=90,
     port_radius=200,
     port=False,
@@ -273,6 +274,7 @@ def manifold_snake(
             raise ValueError(
                 f"manifold_split must sum to {num_snakes} (total number of snakes)"
             )
+    num_manifolds = len(manifold_split)
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
     num_lanes = np.sum(snake_split)
     lanes_per_input = np.array(
@@ -283,15 +285,14 @@ def manifold_snake(
             for idx in range(len(manifold_split_cum) - 1)
         ]
     )
-    # define trench parameters
-    trench_xs = np.arange(
-        -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
-        (lane_fc_dims[0] - trench_margin - trench_width) / 2,
-        trench_width + trench_spacing,
-    )
-    trenches_per_set = len(trench_xs)
-    num_trenches = trenches_per_set * 2 * num_lanes
-    trenches_per_input = trenches_per_set * 2 * lanes_per_input
+    # allow different sets of trench parameters
+    if manifold_trench_params is not None:
+        if len(manifold_trench_params) != len(manifold_split):
+            raise ValueError(
+                f"manifold_trench_params should have the same length as the number of manifolds {num_manifolds}"
+            )
+    else:
+        manifold_trench_params = [dict() for _ in range(num_manifolds)]
     # root cell
     snake_cell = Cell(f"Snake-{name}")
     # label text
@@ -366,33 +367,52 @@ def manifold_snake(
     snake_cell.add(Reference(snake_fc_cell, (0, y_offset)))
     # trenches
     if trenches:
-        snake_trenches_cell = _snake_trenches(
-            trench_width=trench_width,
-            trench_spacing=trench_spacing,
-            trench_length=trench_length,
-            trench_gap=trench_gap,
-            trench_fc_overlap=trench_fc_overlap,
-            feeding_channel_width=feeding_channel_width,
-            registration_marks=registration_marks,
-            registration_mark_barcodes=registration_mark_barcodes,
-            barcode_num_bits=barcode_num_bits,
-            barcode_rows=barcode_rows,
-            barcode_columns=barcode_columns,
-            mark_size=mark_size,
-            mark_spacing=mark_spacing,
-            chip_id=chip_id,
-            ticks=ticks,
-            tick_labels=tick_labels,
-            tick_margin=tick_margin,
-            tick_length=tick_length,
-            tick_period=tick_period,
-            tick_font_size=tick_font_size,
-            trench_xs=trench_xs,
-            lane_ys=lane_ys,
-            name=name,
-            layer=TRENCH_LAYER,
-        )
-        snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
+        trench_active_width = lane_fc_dims[0] - trench_margin - trench_width
+        trench_xs = []
+        for idx in range(num_manifolds):
+            trench_name = f"{name}-T{idx}"
+            trench_lane_ys = lane_ys[
+                snake_split_cum[manifold_split_cum[idx]] : snake_split_cum[
+                    manifold_split_cum[idx + 1]
+                ]
+            ]
+            snake_trenches_cell, manifold_trench_xs = _snake_trenches(
+                **{
+                    **dict(
+                        trench_active_width=trench_active_width,
+                        trench_width=trench_width,
+                        trench_spacing=trench_spacing,
+                        trench_length=trench_length,
+                        trench_gap=trench_gap,
+                        trench_fc_overlap=trench_fc_overlap,
+                        feeding_channel_width=feeding_channel_width,
+                        registration_marks=registration_marks,
+                        registration_mark_barcodes=registration_mark_barcodes,
+                        barcode_num_bits=barcode_num_bits,
+                        barcode_rows=barcode_rows,
+                        barcode_columns=barcode_columns,
+                        mark_size=mark_size,
+                        mark_spacing=mark_spacing,
+                        chip_id=chip_id,
+                        ticks=ticks,
+                        tick_labels=tick_labels,
+                        tick_margin=tick_margin,
+                        tick_length=tick_length,
+                        tick_period=tick_period,
+                        tick_font_size=tick_font_size,
+                        lane_ys=trench_lane_ys,
+                        name=trench_name,
+                        layer=trench_layer,
+                    ),
+                    **manifold_trench_params[idx],
+                }
+            )
+            trench_xs.append(manifold_trench_xs)
+            snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
+    trenches_per_set = np.array([len(xs) for xs in trench_xs])
+    trenches_per_input = trenches_per_set * 2 * lanes_per_input
+    num_trenches = trenches_per_input.sum()
+    lane_length = lane_fc_dims[0]
     metadata = {
         k: v
         for k, v in locals().items()
@@ -415,12 +435,14 @@ def manifold_snake(
             "manifold_split_cum",
             "left_port_lanes",
             "right_port_lanes",
+            "trench_xs",
+            "lane_length",
         )
     }
-    metadata["lane_length"] = lane_fc_dims[0]
-    metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
-    metadata["trench_xs"] = trench_xs
-    metadata["fov_origin_x"] = trench_xs[0] - trench_width / 2
+    metadata["lane_with_trenches_length"] = np.array(
+        [xs[-1] - xs[0] + trench_width for xs in trench_xs]
+    )
+    metadata["fov_origin_x"] = np.array([xs[0] - trench_width / 2 for xs in trench_xs])
     metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
     return snake_cell, metadata
 
@@ -580,39 +602,8 @@ def snake(
     max_lanes = int((dims[1] - top_margin - bottom_margin) // lane_height)
     split = _compute_lane_split(split, max_lanes, gap_lanes=gap_lanes)
     num_lanes = np.sum(split)
-    trench_xs = np.arange(
-        -(lane_fc_dims[0] - trench_margin - trench_width) / 2,
-        (lane_fc_dims[0] - trench_margin - trench_width) / 2,
-        trench_width + trench_spacing,
-    )
-    trenches_per_set = len(trench_xs)
-    num_trenches = trenches_per_set * 2 * num_lanes
     lanes_per_input = np.array([num_lanes])
     trenches_per_input = np.array([num_trenches])
-    metadata = {
-        k: v
-        for k, v in locals().items()
-        if k
-        in (
-            "num_lanes",
-            "trenches_per_set",
-            "lanes_per_input",
-            "num_trenches",
-            "trenches_per_input",
-            "split",
-            "feeding_channel_width",
-            "trench_gap",
-            "trench_length",
-        )
-    }
-    lane_length = lane_fc_dims[0]
-    metadata["lane_length"] = lane_length
-    metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
-    metadata["trench_xs"] = trench_xs
-    metadata["fov_origin_x"] = trench_xs[0] - trench_width / 2
-    metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
-    snake_length = split * lane_length
-    metadata["snake_length"] = snake_length
     snake_cell = Cell(f"Snake-{name}")
     # label text
     label_position = (0, dims[1] / 2 - label_margin - label_font_size)
@@ -653,7 +644,9 @@ def snake(
     y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(Reference(snake_fc_cell, (0, y_offset)))
     if trenches:
-        snake_trenches_cell = _snake_trenches(
+        trench_active_width = lane_fc_dims[0] - trench_margin - trench_width
+        snake_trenches_cell, trench_xs = _snake_trenches(
+            trench_active_width=trench_active_width,
             trench_width=trench_width,
             trench_spacing=trench_spacing,
             trench_length=trench_length,
@@ -677,9 +670,35 @@ def snake(
             trench_xs=trench_xs,
             lane_ys=lane_ys,
             name=name,
-            layer=TRENCH_LAYER,
+            layer=trench_layer,
         )
+        trenches_per_set = len(trench_xs)
+        num_trenches = trenches_per_set * 2 * num_lanes
         snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
+    lane_length = lane_fc_dims[0]
+    metadata = {
+        k: v
+        for k, v in locals().items()
+        if k
+        in (
+            "num_lanes",
+            "trenches_per_set",
+            "lanes_per_input",
+            "num_trenches",
+            "trenches_per_input",
+            "split",
+            "feeding_channel_width",
+            "trench_gap",
+            "trench_length",
+            "trench_xs",
+            "lane_length",
+        )
+    }
+    metadata["lane_with_trenches_length"] = trench_xs[-1] - trench_xs[0] + trench_width
+    metadata["fov_origin_x"] = trench_xs[0] - trench_width / 2
+    metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
+    snake_length = split * lane_length
+    metadata["snake_length"] = snake_length
     return snake_cell, metadata
 
 
@@ -782,7 +801,6 @@ def _snake_feeding_channel(
     return snake_fc_cell, lane_ys
 
 
-# @memoize # TODO!!!
 def _manifold(
     name,
     dims,
@@ -1035,6 +1053,7 @@ def _barcode(
 
 
 def _snake_trenches(
+    trench_active_width,
     trench_width,
     trench_spacing,
     trench_length,
@@ -1055,13 +1074,18 @@ def _snake_trenches(
     tick_length,
     tick_period,
     tick_font_size,
-    trench_xs,
     lane_ys,
     name,
     layer=TRENCH_LAYER,
 ):
     if ticks and (registration_marks or registration_mark_barcodes):
         raise ValueError("cannot draw both ticks and registration marks")
+    trench_xs = np.arange(
+        -trench_active_width / 2,
+        trench_active_width / 2,
+        trench_width + trench_spacing,
+    )
+    trenches_per_set = len(trench_xs)
     lane_gap_offset_y = feeding_channel_width / 2 + trench_length + trench_gap / 2
     mark_pitch = mark_size + mark_spacing
     column_barcode_margin = (
@@ -1247,7 +1271,7 @@ def _snake_trenches(
                         layer=layer,
                     )
                 )
-    return snake_trenches_cell
+    return snake_trenches_cell, trench_xs
 
 
 @memoize
