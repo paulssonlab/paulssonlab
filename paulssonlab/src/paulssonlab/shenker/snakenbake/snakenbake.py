@@ -266,9 +266,10 @@ def manifold_snake(
         lanes_per_input = int(num_snakes // num_manifolds)
         manifold_split = (lanes_per_input,) * num_manifolds
         remainder = num_snakes % num_manifolds
-        if remainder > 0:
-            manifold_split = (*manifold_split[:-1], manifold_split[-1] + remainder)
         manifold_split = np.array(manifold_split)
+        if remainder > 0:
+            # evenly distribute remainder starting from top input
+            manifold_split[:remainder] += 1
     else:
         if np.sum(manifold_split) != num_snakes:
             raise ValueError(
