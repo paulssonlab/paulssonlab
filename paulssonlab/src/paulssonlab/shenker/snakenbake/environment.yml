@@ -7,8 +7,6 @@ dependencies:
   - black
   - cachetools
   - cytoolz
-  - freetype
-  - freetype-py
   - gdstk
   - jupyterlab
   - jupyterlab_code_formatter
