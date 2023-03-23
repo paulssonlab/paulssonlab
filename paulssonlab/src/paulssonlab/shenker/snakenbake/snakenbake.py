@@ -152,7 +152,7 @@ def manifold_snake(
     port_wayfinder_margin=400,
     port_wayfinder_length=200,
     port_wayfinder_width=100,
-    port_wayfinder_orientations=("right", "top", "bottom"),
+    port_wayfinder_orientations=("left", "top", "bottom"),
     registration_marks=False,
     registration_mark_barcodes=False,
     barcode_num_bits=11,
@@ -763,7 +763,7 @@ def _snake_feeding_channel(
             radius=port_radius + port_wayfinder_margin,
             length=port_wayfinder_length,
             width=port_wayfinder_width,
-            orientations=("right", "top", "bottom"),
+            orientations=("left", "top", "bottom"),
         )
         port_cell.add(Reference(wf, (port_offset, 0)))
     max_lanes = sum(split) + gap_lanes * (len(split) - 1)
