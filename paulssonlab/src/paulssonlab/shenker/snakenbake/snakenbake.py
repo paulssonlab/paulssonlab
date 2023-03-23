@@ -10,7 +10,6 @@ from geometry import (
     mirror,
     mirror_refs,
     align,
-    align_refs,
     flatten_or_merge,
 )
 from text import text as _text
@@ -33,14 +32,15 @@ def text(
     s,
     size,
     position=(0, 0),
-    alignment="left",
+    horizontal_alignment=None,
+    vertical_alignment=None,
     prerotate_alignment=None,
     angle=0,
     **kwargs,
 ):
     objs = _text(s, size, position=(0, 0), **kwargs)
     if prerotate_alignment is not None:
-        objs = align_refs(objs, position=(0, 0), alignment=prerotate_alignment)
+        objs = align(objs, position=(0, 0), horizontal=prerotate_alignment)
     if angle == 0:
         pass
     elif angle == -np.pi / 2:
@@ -53,7 +53,12 @@ def text(
             ref.origin = np.array(ref.origin)[::-1] * np.array([1, -1])
     else:
         raise NotImplementedError
-    objs = align_refs(objs, position=position, alignment=alignment)
+    objs = align(
+        objs,
+        position=position,
+        horizontal=horizontal_alignment,
+        vertical=vertical_alignment,
+    )
     return objs
 
 
@@ -304,7 +309,7 @@ def manifold_snake(
                 name,
                 label_font_size,
                 position=label_position,
-                alignment="center",
+                horizontal_alignment="center",
                 layer=feeding_channel_layer,
             )
         )
@@ -564,6 +569,12 @@ def snake(
         Feeding channel layer number.
     trench_layer : int, optional
         Trench layer number.
+    label_font_size : float, optional
+        Font size (in microns) of the label text.
+    label_margin : float, optional
+        Distance between the top edge of chip and the top of the label text.
+    label : bool, optional
+        If True, a label is written along the top edge of the chip.
     name : str, optional
         Unique identifier used for cell names. If None is given, an alphanumeric UUID
         will be generated.
@@ -614,7 +625,7 @@ def snake(
                 name,
                 label_font_size,
                 position=label_position,
-                alignment="center",
+                horizontal_alignment="center",
                 layer=feeding_channel_layer,
             )
         )
@@ -1613,7 +1624,7 @@ def wafer(
                     "FC layer\n" + label_right,
                     label_font_size,
                     position=fc_label_position,
-                    alignment="right",
+                    horizontal_alignment="right",
                     layer=feeding_channel_layer,
                 )
             )
@@ -1622,7 +1633,7 @@ def wafer(
                     "trench layer\n" + label_right,
                     label_font_size,
                     position=trench_label_position,
-                    alignment="left",
+                    horizontal_alignment="left",
                     layer=trench_layer,
                 )
             )
@@ -1640,7 +1651,7 @@ def wafer(
                         right_font_size,
                         position=label_right_position,
                         angle=np.pi / 2,
-                        alignment="left",
+                        horizontal_alignment="left",
                         prerotate_alignment="center",
                         layer=feeding_channel_layer,
                     )
@@ -1653,7 +1664,7 @@ def wafer(
                         left_font_size,
                         position=label_left_position,
                         angle=-np.pi / 2,
-                        alignment="right",
+                        horizontal_alignment="right",
                         prerotate_alignment="center",
                         layer=feeding_channel_layer,
                     )
@@ -1664,6 +1675,12 @@ def wafer(
 def chip(
     name,
     design_func=snake,
+    ul_corner_label=None,
+    ur_corner_label=None,
+    ll_corner_label=None,
+    lr_corner_label=None,
+    corner_label_font_size=2000,
+    corner_label_margin=400,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
     metadata=None,
@@ -1680,10 +1697,16 @@ def chip(
         Human-readable label, will be written on the top edge of the chip.
     design_func : function, optional
         Function which will return a GDS cell containing the chip design.
-    label_font_size : float, optional
-        Font size (in microns) of the label text.
-    label : bool, optional
-        If True, a label is written along the top edge of the chip.
+    ul_corner_label : str, optional
+        Label to put in the upper left corner of the chip.
+    ur_corner_label : str, optional
+        Label to put in the upper right corner of the chip.
+    ll_corner_label : str, optional
+        Label to put in the lower left corner of the chip.
+    lr_corner_label : str, optional
+        Label to put in the lower right corner of the chip.
+    corner_label_font_size : float, optional
+        Font size for corner labels (in µm).
     feeding_channel_layer : int, optional
         Feeding channel layer number.
     trench_layer : int, optional
@@ -1706,6 +1729,52 @@ def chip(
         metadata[name] = md  # TODO: this won't work with memoization!!!
     chip_cell = Cell(f"Chip-{name}")
     chip_cell.add(*outline(dims, layer=feeding_channel_layer))
+    corner_x = dims[0] / 2 - corner_label_margin
+    corner_y = dims[1] / 2 - corner_label_margin
+    if ul_corner_label:
+        chip_cell.add(
+            *text(
+                ul_corner_label,
+                corner_label_font_size,
+                (-corner_x, corner_y),
+                horizontal_alignment="left",
+                vertical_alignment="top",
+                layer=feeding_channel_layer,
+            )
+        )
+    if ur_corner_label:
+        chip_cell.add(
+            *text(
+                ur_corner_label,
+                corner_label_font_size,
+                (corner_x, corner_y),
+                horizontal_alignment="right",
+                vertical_alignment="top",
+                layer=feeding_channel_layer,
+            )
+        )
+    if ll_corner_label:
+        chip_cell.add(
+            *text(
+                ll_corner_label,
+                corner_label_font_size,
+                (-corner_x, -corner_y),
+                horizontal_alignment="left",
+                vertical_alignment="bottom",
+                layer=feeding_channel_layer,
+            )
+        )
+    if lr_corner_label:
+        chip_cell.add(
+            *text(
+                lr_corner_label,
+                corner_label_font_size,
+                (corner_x, -corner_y),
+                horizontal_alignment="right",
+                vertical_alignment="bottom",
+                layer=feeding_channel_layer,
+            )
+        )
     chip_cell.add(Reference(design_cell, (0, 0)))
     return chip_cell
 

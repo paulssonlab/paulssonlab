@@ -143,38 +143,41 @@ def mirror_refs(refs, axis="x"):
     return refs
 
 
-# TODO: right/left switched
-def align(polygons, position=(0, 0), alignment="left"):
-    bbox = get_bounding_box(polygons)
-    if alignment == "left":
-        offset = np.array([bbox[1, 0], 0])
-    elif alignment == "center":
-        offset = np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
-    elif alignment == "right":
-        offset = np.array([bbox[0, 0], 0])
-    else:
-        raise NotImplementedError
-    factor = np.array([-1, 1])
-    position = np.array(position) + offset
-    polygons[:] = [position + factor * poly for poly in polygons]
-    return polygons
-
-
-def align_refs(refs, position=(0, 0), alignment="left"):
+def align(objs, position=(0, 0), horizontal="left", vertical=None):
     position = np.array(position)
-    polygons = get_polygons(refs)
+    polygons = get_polygons(objs)
     bbox = get_bounding_box(polygons)
-    if alignment == "right":
-        offset = -np.array([bbox[1, 0], 0])
-    elif alignment == "center":
-        offset = -np.array([(bbox[0, 0] + bbox[1, 0]) / 2, 0])
-    elif alignment == "left":
-        offset = -np.array([bbox[0, 0], 0])
+    if horizontal == "right":
+        offset_x = -bbox[1, 0]
+    elif horizontal == "center":
+        offset_x = -(bbox[0, 0] + bbox[1, 0]) / 2
+    elif horizontal == "left":
+        offset_x = -bbox[0, 0]
+    elif horizontal is None:
+        offset_x = 0
     else:
-        raise NotImplementedError
-    for ref in refs:
-        ref.origin = np.array(ref.origin) + position + offset
-    return refs
+        raise ValueError("horizontal must be one of: right, center, left, None")
+    if vertical == "top":
+        offset_y = -bbox[1, 1]
+    elif vertical == "center":
+        offset_y = -(bbox[0, 1] + bbox[1, 1]) / 2
+    elif vertical == "bottom":
+        offset_y = -bbox[0, 1]
+    elif vertical is None:
+        offset_y = 0
+    else:
+        raise ValueError("vertical must be one of: top, center, bottom, None")
+    offset = np.array([offset_x, offset_y])
+    for obj in objs:
+        if hasattr(obj, "origin"):
+            obj.origin = np.array(obj.origin) + position + offset
+        else:
+            # TODO: for gdstk.Polygon, etc. we want something like:
+            # factor = np.array([-1, 1])
+            # position = np.array(position) + offset
+            # polygons[:] = [position + factor * poly for poly in polygons]
+            raise NotImplementedError
+    return objs
 
 
 # FROM: https://heitzmann.github.io/g/how-tos.html#system-fonts
