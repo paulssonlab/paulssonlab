@@ -1682,7 +1682,7 @@ def chip(
     ur_corner_label=None,
     ll_corner_label=None,
     lr_corner_label=None,
-    corner_label_font_size=2000,
+    corner_label_font_size=1500,
     corner_label_margin=400,
     feeding_channel_layer=FEEDING_CHANNEL_LAYER,
     trench_layer=TRENCH_LAYER,
