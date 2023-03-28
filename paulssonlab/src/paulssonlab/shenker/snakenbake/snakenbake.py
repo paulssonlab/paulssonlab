@@ -371,6 +371,9 @@ def manifold_snake(
     )
     y_offset = (bottom_margin - top_margin) / 2
     snake_cell.add(Reference(snake_fc_cell, (0, y_offset)))
+    # add y_offset to lane_ys so they are absolute, all remaining geometry shouldn't
+    # need to correct for y_offset
+    lane_ys += y_offset
     # trenches
     if trenches:
         trench_active_width = lane_fc_dims[0] - trench_margin - trench_width
@@ -414,7 +417,7 @@ def manifold_snake(
                 }
             )
             trench_xs.append(manifold_trench_xs)
-            snake_cell.add(Reference(snake_trenches_cell, (0, y_offset)))
+            snake_cell.add(Reference(snake_trenches_cell, (0, 0)))
     trenches_per_set = np.array([len(xs) for xs in trench_xs])
     trenches_per_input = trenches_per_set * 2 * lanes_per_input
     num_trenches = trenches_per_input.sum()
@@ -439,16 +442,20 @@ def manifold_snake(
             "snake_split_cum",
             "manifold_split",
             "manifold_split_cum",
-            "left_port_lanes",
-            "right_port_lanes",
             "trench_xs",
             "lane_length",
         )
     }
-    metadata["lane_with_trenches_length"] = np.array(
+    # TODO:
+    lane_with_trenches_length = np.array(
         [xs[-1] - xs[0] + trench_width for xs in trench_xs]
     )
-    metadata["fov_origin_x"] = np.array([xs[0] - trench_width / 2 for xs in trench_xs])
+    fov_origin_x = np.array([xs[0] - trench_width / 2 for xs in trench_xs])
+    selected_trench_region = np.argmax(lane_with_trenches_length)
+    metadata["lane_with_trenches_length"] = lane_with_trenches_length[
+        selected_trench_region
+    ]
+    metadata["fov_origin_x"] = fov_origin_x[selected_trench_region]
     metadata["fov_origin_y"] = lane_ys[0] + feeding_channel_width / 2 + trench_length
     return snake_cell, metadata
 
@@ -855,8 +862,7 @@ def _manifold(
             feeding_channel_width / 2 + manifold_bend_margin
         )
         if manifold_input_style == "u-turn":
-            wf_base_rotation = 0
-            wf_x_reflection = True
+            wf_base_rotation = np.pi
             port_x = -dims[0] / 2 + port_margin + port_radius
             manifold_input_bend_x = port_x + manifold_width / 2 + manifold_bend_radius
             manifold_left_x = manifold_input_bend_x + manifold_bend_radius
@@ -865,8 +871,7 @@ def _manifold(
             )
             manifold_bend_angles = (0, -flip * np.pi)
         elif manifold_input_style == "bend-out":
-            wf_base_rotation = np.deg2rad(90)
-            wf_x_reflection = False
+            wf_base_rotation = np.pi / 2
             port_x = -dims[0] / 2 + port_margin + port_radius
             manifold_input_bend_x = port_x + port_radius + manifold_input_margin
             manifold_left_x = manifold_input_bend_x + manifold_bend_radius
@@ -878,8 +883,7 @@ def _manifold(
             )
             manifold_bend_angles = (flip + np.array([1, 2])) / 2 * np.pi
         elif manifold_input_style == "bend-in":
-            wf_base_rotation = np.deg2rad(90)
-            wf_x_reflection = False
+            wf_base_rotation = np.pi / 2
             manifold_left_x = -dims[0] / 2 + border_margin
             manifold_input_bend_x = (
                 manifold_left_x + manifold_width + manifold_bend_radius
@@ -917,7 +921,6 @@ def _manifold(
                     wf,
                     (-flip * port_x, port_y),
                     rotation=wf_base_rotation + np.deg2rad(90 * flip),
-                    x_reflection=wf_x_reflection,
                 )
             )
         manifold_cell.add(
