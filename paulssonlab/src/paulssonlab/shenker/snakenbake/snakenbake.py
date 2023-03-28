@@ -295,7 +295,7 @@ def manifold_snake(
     if manifold_trench_params is not None:
         if len(manifold_trench_params) != len(manifold_split):
             raise ValueError(
-                f"manifold_trench_params should have the same length as the number of manifolds {num_manifolds}"
+                f"manifold_trench_params should have the same length as the number of manifolds ({num_manifolds})"
             )
     else:
         manifold_trench_params = [dict() for _ in range(num_manifolds)]
