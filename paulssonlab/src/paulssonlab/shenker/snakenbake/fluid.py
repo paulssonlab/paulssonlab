@@ -52,7 +52,10 @@ def resistance(height, width):
     where `Q` is the volumetric flow rate and `delta_P` is the pressure drop
     along the channel).
 
-    To derive, start with the mean velocity `v = delta_P * (h/2)**2 * (1/3 - 64*eps/np.pi**5*np.tanh(np.pi/2/eps))` (from [^1]) where `eps = h/w`, `h <= w`, and `c=h/2`. Then use that `Q = v * w * h` and `R = delta_P / Q`. For the simplified expression, see [^2].
+    To derive, start with the mean velocity
+    `v = delta_P * (h/2)**2 * (1/3 - 64*eps/np.pi**5*np.tanh(np.pi/2/eps))`
+    (from [^1]) where `eps = h/w`, `h <= w`, and `c=h/2`. Then use that
+    `Q = v * w * h` and `R = delta_P / Q`. For the simplified expression, see [^2].
 
     [^1]: Bahrami, M., Yovanovich, M. M., & Culham, J. R. (2006). Pressure drop of fully-developed, laminar flow in microchannels of arbitrary cross-section.
     [^2]: https://www.elveflow.com/microfluidic-reviews/microfluidic-flow-control/flow-control-in-microfluidics-device/
@@ -74,6 +77,10 @@ def resistance(height, width):
     return 1 / Q
 
 
+def bend_resistance(height, width, inner_radius, angle):
+    return 0
+
+
 def ladder_flow_rates(R_snake, R_left, R_right, N=None):
     for ary, inc in ((R_snake, 0), (R_left, 1), (R_right, 1)):
         if not np.isscalar(ary):
@@ -84,8 +91,8 @@ def ladder_flow_rates(R_snake, R_left, R_right, N=None):
     if N is None:
         raise ValueError("ladder size must be specified if resistances are scalars")
     R_snake = _ensure_array(R_snake, N)
-    R_left = _ensure_array(R_left, N)
-    R_right = _ensure_array(R_right, N)
+    R_left = _ensure_array(R_left, N - 1)
+    R_right = _ensure_array(R_right, N - 1)
     A = np.zeros((N, N))
     b = np.zeros(N)
     b[0] = 1
@@ -101,32 +108,42 @@ def ladder_flow_rates(R_snake, R_left, R_right, N=None):
 
 def manifold_flow_rates(
     feeding_channel_height=None,
-    split=None,
-    split_cum=None,
+    snake_split=None,
     manifold_split=None,
     manifold_split_cum=None,
-    left_port_lanes=None,
-    right_port_lanes=None,
     lane_length=None,
     manifold_width=None,
     feeding_channel_width=None,
+    inner_snake_bend_radius=None,
     lane_ys=None,
     **kwargs,
 ):
-    split_cum = np.concatenate(((0,), np.cumsum(split)))
+    snake_split_cum = np.concatenate(((0,), np.cumsum(snake_split)))
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
     results = []
-    for manifold in range(len(manifold_split)):
+    for idx in range(len(manifold_split_cum) - 1):
         selected_lanes = slice(
-            manifold_split_cum[manifold], manifold_split_cum[manifold + 1]
+            snake_split_cum[manifold_split_cum[idx]],
+            snake_split_cum[manifold_split_cum[idx + 1]],
         )
-        lanes_per_snake = split[selected_lanes]
-        left_segment_lengths = -np.diff(lane_ys[left_port_lanes[selected_lanes]])
-        right_segment_lengths = -np.diff(lane_ys[right_port_lanes[selected_lanes]])
-        R_snake = (
-            lanes_per_snake
-            * lane_length
-            * resistance(feeding_channel_height, feeding_channel_width)
+        lanes_per_snake = snake_split[
+            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
+        ]
+        left_port_lanes = snake_split_cum[:-1][
+            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
+        ]
+        right_port_lanes = (snake_split_cum[1:] - 1)[
+            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
+        ]
+        left_segment_lengths = -np.diff(lane_ys[left_port_lanes])
+        right_segment_lengths = -np.diff(lane_ys[right_port_lanes])
+        R_snake = lanes_per_snake * lane_length * resistance(
+            feeding_channel_height, feeding_channel_width
+        ) + (lanes_per_snake - 1) * bend_resistance(
+            feeding_channel_height,
+            feeding_channel_width,
+            inner_snake_bend_radius,
+            np.pi,
         )
         R_left = left_segment_lengths * resistance(
             feeding_channel_height, manifold_width
@@ -187,10 +204,8 @@ def snake_resistance(
     if "manifold_split" in metadata:
         res = manifold_flow_rates(feeding_channel_height, **metadata)
         # TODO: until pint implements np.array, we need to explicitly deal with dimensioned quantities
-        Rs = pint.Quantity.from_sequence([r["R"] for r in res])
-        # Rs = np.array([r['R'] for r in res])
-        # scale by number of snakes per manifold, so we only need to multiply by the flow rate through a single snake
-        R = Rs * np.asarray(metadata["manifold_split"])
+        R = pint.Quantity.from_sequence([r["R"] for r in res])
+        # R = np.array([r['R'] for r in res])
         if return_extra:
             flow_nonuniformity = np.array([r["q"].min() / r["q"].max() for r in res])
             extra = {"flow_nonuniformity": flow_nonuniformity}
