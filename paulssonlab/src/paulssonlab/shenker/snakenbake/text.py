@@ -2,8 +2,12 @@ import numpy as np
 import gdstk
 from matplotlib.font_manager import FontProperties
 from matplotlib.textpath import TextToPath
-from geometry import Cell, from_matplotlib_path, from_matplotlib_path_codes
-from util import memoize
+from paulssonlab.shenker.snakenbake.geometry import (
+    Cell,
+    from_matplotlib_path,
+    from_matplotlib_path_codes,
+)
+from paulssonlab.shenker.snakenbake.util import memoize
 
 
 @memoize

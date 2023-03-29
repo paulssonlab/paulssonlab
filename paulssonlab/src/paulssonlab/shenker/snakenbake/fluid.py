@@ -1,5 +1,5 @@
 import numpy as np
-from util import strip_units
+from paulssonlab.shenker.snakenbake.util import strip_units
 import pint
 
 
