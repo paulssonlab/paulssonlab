@@ -2,8 +2,8 @@ import numpy as np
 import scipy.optimize as optimize
 from itertools import count
 import gdstk
-from paulssonlab.shenker.snakenbake.geometry import Cell
-from paulssonlab.shenker.snakenbake.util import get_uuid
+from paulssonlab.microfluidics_design.geometry import Cell
+from paulssonlab.microfluidics_design.util import get_uuid
 
 FOV_LAYER = 10
 

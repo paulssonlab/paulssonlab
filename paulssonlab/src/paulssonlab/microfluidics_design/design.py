@@ -2,7 +2,7 @@
 import numpy as np
 import gdstk
 from gdstk import Reference, rectangle, boolean, Curve, Polygon
-from paulssonlab.shenker.snakenbake.geometry import (
+from paulssonlab.microfluidics_design.geometry import (
     Cell,
     ellipse,
     cross,
@@ -12,9 +12,9 @@ from paulssonlab.shenker.snakenbake.geometry import (
     align,
     flatten_or_merge,
 )
-from paulssonlab.shenker.snakenbake.text import text as _text
-from paulssonlab.shenker.snakenbake.util import make_odd, memoize, get_uuid, write_gds
-import paulssonlab.shenker.snakenbake.hamming as hamming
+from paulssonlab.microfluidics_design.text import text as _text
+from paulssonlab.microfluidics_design.util import make_odd, memoize, get_uuid, write_gds
+import paulssonlab.microfluidics_design.hamming as hamming
 import bitarray.util
 from functools import partial
 from cytoolz import compose

@@ -2,7 +2,7 @@ import numpy as np
 import gdstk
 from matplotlib.path import Path
 from functools import partial
-from paulssonlab.shenker.snakenbake.util import get_uuid, get_polygons
+from paulssonlab.microfluidics_design.util import get_uuid, get_polygons
 
 ELLIPSE_TOLERANCE = 0.3
 

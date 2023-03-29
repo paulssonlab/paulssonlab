@@ -2,12 +2,12 @@ import numpy as np
 import gdstk
 from matplotlib.font_manager import FontProperties
 from matplotlib.textpath import TextToPath
-from paulssonlab.shenker.snakenbake.geometry import (
+from paulssonlab.microfluidics_design.geometry import (
     Cell,
     from_matplotlib_path,
     from_matplotlib_path_codes,
 )
-from paulssonlab.shenker.snakenbake.util import memoize
+from paulssonlab.microfluidics_design.util import memoize
 
 
 @memoize
