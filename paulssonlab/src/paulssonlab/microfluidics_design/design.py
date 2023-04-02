@@ -1287,12 +1287,15 @@ def _snake_trenches(
                         layer=layer,
                     )
                 )
-    origin_x = trench_xs[0] - trench_width / 2
-    origin_y = lane_ys[0] + feeding_channel_width / 2 + trench_length
     trench_span = trench_xs[-1] - trench_xs[0] + trench_width
+    ul_x = trench_xs[0] - trench_width / 2
+    ul_y = lane_ys[0] + feeding_channel_width / 2 + trench_length
+    lr_x = ul_x + trench_span
+    lr_y = lane_ys[-1] - feeding_channel_width / 2 - trench_length
     trench_info = {
-        "origin": np.array([origin_x, origin_y]),
-        "region_lengths": [
+        "ul": np.array([ul_x, ul_y]),
+        "lr": np.array([lr_x, lr_y]),
+        "region_heights": [
             trench_length,
             feeding_channel_width,
             trench_length,
