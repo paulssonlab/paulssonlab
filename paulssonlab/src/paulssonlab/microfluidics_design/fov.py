@@ -1,11 +1,14 @@
 import numpy as np
+import pandas as pd
 import scipy.optimize as optimize
-from itertools import count, cycle, islice, product, accumulate
+from itertools import count, cycle, islice, product, accumulate, takewhile
 import operator
 import networkx as nx
 import gdstk
 from paulssonlab.microfluidics_design.geometry import Cell
-from paulssonlab.microfluidics_design.util import get_uuid
+from paulssonlab.microfluidics_design.design import text
+from paulssonlab.microfluidics_design.util import get_uuid, memoize
+from paulssonlab.util import sign
 
 FOV_LAYER = 10
 
@@ -54,14 +57,24 @@ def fov_plot(ys, fov_height, region_heights, bar_height=2, bar_spacing=1):
 def get_fov_plot_ys(fov_grid, num=4):
     return list(
         islice(
-            accumulate(
-                cycle(fov_grid["offsets_y"]),
-                operator.add,
-                initial=fov_grid["origin_y"],
+            get_fov_positions(
+                fov_grid["origin_y"],
+                fov_grid["offsets_y"],
             ),
             num,
         )
     )
+
+
+def get_fov_positions(origin, offsets, max=None):
+    xs = accumulate(
+        cycle(offsets),
+        operator.add,
+        initial=origin,
+    )
+    if max is not None:
+        xs = takewhile(lambda x: x * sign(offsets[0]) <= max * sign(offsets[0]), xs)
+    return xs
 
 
 def fov_plot_offsets(fov_grids, fov_height, region_heights, num=4, **kwargs):
@@ -121,9 +134,6 @@ def get_fov_packings(fov_height, region_heights):
         total_margin = min(top_exterior_margin, bottom_interior_margin) + min(
             top_interior_margin, bottom_exterior_margin
         )
-        # num_active = (
-        #     top_idx - bottom_idx + len(region_heights) * int(fov_height // total_height)
-        # )
         num_active = int(
             (top_idx - bottom_idx) % len(region_heights) / 2
             + len(region_heights) / 2 * fov_height // total_height
@@ -185,7 +195,7 @@ def _get_fov_graph(packings, total_height):
     return graph
 
 
-def get_fov_grids(
+def get_fov_grids_y(
     fov_height,
     region_heights,
     center_margins=True,
@@ -204,70 +214,45 @@ def get_fov_grids(
     fov_grids = []
     for cycle_ in nx.simple_cycles(graph):
         for start_idx in range(len(cycle_)):
-            # offsets_y = []
-            # if center_margins:
-            #     margin_offset = packings_map[cycle_[start_idx]]["total_margin"] / 2
-            # else:
-            #     margin_offset = 0
-            # origin_y = (
-            #     packings_map[cycle_[start_idx]]["top_interior_active"]
-            #     - margin_offset % total_height
-            # )
-            # for y in [
-            #     *cycle_[(start_idx + 1) % len(cycle_) :],
-            #     *cycle_[: (start_idx + 1) % len(cycle_)],
-            # ]:
-            # y = origin_y
             y_prev = None
             offsets_y = []
+            permuted_cycle = cycle_[start_idx:] + cycle_[:start_idx]
+            margin = np.array([packings_map[y]["total_margin"] for y in permuted_cycle])
+            num_active = np.array(
+                [packings_map[y]["num_active"] for y in permuted_cycle]
+            )
             for idx, y in enumerate(
                 islice(cycle(cycle_), start_idx, start_idx + len(cycle_) + 1)
             ):
                 if idx == 0:
-                    origin_y = y + packings_map[y]["total_margin"] / 2
+                    origin_y = y
+                    if center_margins:
+                        origin_y += packings_map[y]["total_margin"] / 2
                 else:
-                    # offset_y = (
-                    #     packings_map[y_prev]["bottom_interior_active"]
-                    #     - y_prev
-                    #     + packings_map[y]["top_exterior_margin"]
-                    #     - packings_map[y_prev]["total_margin"] / 2
-                    #     + packings_map[y]["total_margin"] / 2
-                    # )
                     offset_y = (
                         packings_map[y_prev]["bottom_interior_active"]
                         - y_prev
-                        # - y_prev
-                        # + packings_map[y]["top_exterior_active"]
                         + packings_map[y]["top_exterior_margin"]
-                        # + y
-                        - packings_map[y_prev]["total_margin"] / 2
-                        + packings_map[y]["total_margin"] / 2
-                        # - packings_map[y]["total_margin"] / 2
                     )
+                    if center_margins:
+                        offset_y += (
+                            packings_map[y]["total_margin"] / 2
+                            - packings_map[y_prev]["total_margin"] / 2
+                        )
                     offsets_y.append(offset_y)
-                # if center_margins:
-                #     margin_offset = packings_map[cycle_[start_idx]]["total_margin"] / 2
-                # else:
-                #     margin_offset = 0
-                # margin_offset = 0
-                # new_y = (
-                #     packings_map[y]["top_interior_active"]
-                #     - margin_offset % total_height
-                # )
-                # offset_y = new_y - old_y
-                # offsets_y.append(offset_y)
-                # old_y = new_y
                 y_prev = y
             fov_grids.append(
                 {
                     "origin_y": origin_y,
                     "offsets_y": offsets_y,
+                    "margin": margin,
+                    "num_active": num_active,
                 }
             )
     return fov_grids
 
 
-def get_fov_grids_df(fov_dims, metadata, fov_overlap=None, skip=None):
+def get_fov_grids(fov_dims, metadata, center_margins=True, fov_overlap=None, skip=None):
     if fov_overlap is None:
         fov_overlap = np.array([0, 0])
     else:
@@ -275,50 +260,168 @@ def get_fov_grids_df(fov_dims, metadata, fov_overlap=None, skip=None):
             fov_overlap = np.array([fov_overlap, fov_overlap])
     grid_metadata = {}
     for fov_name, fov_dim in fov_dims.items():
+        grid_metadata[fov_name] = {}
         for region_name, trench_md in metadata["trench_info"].items():
             region_heights = trench_md["region_heights"]
-            fov_grids = get_fov_grids(
-                fov_dim,
+            fov_grids = get_fov_grids_y(
+                fov_dim[1],
                 trench_md["region_heights"],
-                trench_md["origin"],
-                trench_md["trench_span"],
-                fov_overlap=fov_overlap,
+                center_margins=center_margins,
                 skip=skip,
             )
+            # TODO: fov_overlap
+            grid_metadata[fov_name][region_name] = []
             for fov_grid in fov_grids:
-                # grid_height = int(np.ceil(metadata["num_lanes"] * 2 / trench_sets_per_fov))
-                # max_filled_height = np.max(filled_heights)
-                # margin = fov_dim[1] - max_filled_height
-                # margin_frac = margin / fov_dim[1]
                 offsets_x = [fov_dim[0] - fov_overlap[0]]
-                angle_tol = np.rad2deg(rectangle_rotation_angle(fov_dim, margin))
+                offsets_y = -np.array(fov_grid["offsets_y"])
+                ul = trench_md["ul"] + np.array([0, fov_grid["origin_y"]])
+                lr = trench_md["lr"]  # - fov_dim
+                xs = get_fov_positions(ul[0], offsets_x, max=lr[0])
+                # TODO
+                ys = get_fov_positions(ul[1], offsets_y, max=lr[1])
+                # ys = get_fov_positions(lr[1], offsets_y, max=ul[1])
+                columns = len(list(xs))
+                rows = len(list(ys))
+                grid_dim = np.array([columns, rows])
+                margin = fov_grid["margin"]
+                min_margin = margin.min()
+                margin_frac = min_margin / fov_dim[1]
+                angle_tol = np.rad2deg(rectangle_rotation_angle(fov_dim, min_margin))
                 num_trenches_per_fov = 0
-                grid_metadata[fov_name][region_name] = {
-                    "fov_name": fov_name,
-                    "fov_width": fov_dim[0],
-                    "fov_height": fov_dim[1],
-                    "fov_area": np.product(fov_dim),
-                    "rows": grid_dim[1],
-                    "columns": grid_dim[0],
-                    "num_fovs": np.product(grid_dim),
-                    # "trench_sets_per_fov": trench_sets_per_fov,
-                    # "offsets": offsets,
-                    # "filled_heights": filled_heights,
-                    # "max_filled_heights": max_filled_height,
-                    # "margin": margin,
-                    # "margin_frac": margin_frac,
-                    "angle_tol": angle_tol,  # NOTE: this is in degrees
-                    "skip_first": skip_first,
-                }
+                trench_sets = fov_grid["num_active"]
+                grid_metadata[fov_name][region_name].append(
+                    {
+                        "fov_name": fov_name,
+                        "fov_width": fov_dim[0],
+                        "fov_height": fov_dim[1],
+                        "rows": grid_dim[1],
+                        "columns": grid_dim[0],
+                        "num_fovs": np.product(grid_dim),
+                        "trench_sets": trench_sets,
+                        "mean_trench_sets": trench_sets.mean(),
+                        "ul": ul,
+                        "lr": lr,
+                        "offsets_x": offsets_x,
+                        "offsets_y": offsets_y,
+                        "margin": margin,
+                        "min_margin": min_margin,
+                        "margin_frac": margin_frac,
+                        "angle_tol": angle_tol,  # NOTE: this is in degrees
+                        "skip": skip,
+                    }
+                )
     return grid_metadata
+
+
+def get_fov_grids_df(
+    fov_dims, metadata, center_margins=True, fov_overlap=None, skip=None
+):
+    grids = get_fov_grids(
+        fov_dims,
+        metadata,
+        center_margins=center_margins,
+        fov_overlap=fov_overlap,
+        skip=skip,
+    )
+    return pd.concat(
+        {
+            fov_name: pd.concat(
+                {
+                    region: pd.DataFrame(
+                        region_grids,
+                    ).rename_axis("grid_variant")
+                    for region, region_grids in fov_grids.items()
+                },
+                names=["region"],
+            )
+            for fov_name, fov_grids in grids.items()
+        },
+        names=["fov_name"],
+    )
+
+
+@memoize
+def draw_fov_cell(name, width, height, angle=None, layer=FOV_LAYER):
+    fov_rect = gdstk.rectangle((0, 0), (width, -height), layer=layer)
+    # TODO
+    # if center_margins:
+    #     rotation_center = (fov_dim[0] / 2, -fov_dim[1] / 2)
+    # else:
+    #     rotation_center = (0, 0)
+    rotation_center = (0, 0)
+    if angle:
+        fov_rect = fov_rect.rotate(angle, rotation_center)
+    fov_cell = Cell(f"FOV-{name}")
+    fov_cell.add(fov_rect)
+    return fov_cell
 
 
 def draw_fov_grid(
     chip_cell,
     chip_metadata,
+    fov_grid_df,
+    rotate=False,
+    label=True,
+    label_font_size=120,
+    label_margin=200,
+    layer=FOV_LAYER,
+):
+    for _, region_grid_df in fov_grid_df.groupby("region"):
+        ul = None
+        for idx, (key, row) in enumerate(region_grid_df.iterrows()):
+            if ul is None:
+                ul = row["ul"]
+            fov_layer = layer + idx
+            if label:
+                label_text = " ".join(
+                    f"{k}:{v}" for k, v in zip(fov_grid_df.index.names, key)
+                )
+                label_anchor = ul + np.array([-label_margin, -idx * label_font_size])
+                chip_cell.add(
+                    *text(
+                        label_text,
+                        label_font_size,
+                        label_anchor,
+                        horizontal_alignment="right",
+                        layer=fov_layer,
+                    )
+                )
+            xs = list(
+                get_fov_positions(row["ul"][0], row["offsets_x"], max=row["lr"][0])
+            )
+            ys = list(
+                get_fov_positions(row["ul"][1], row["offsets_y"], max=row["lr"][1])
+            )
+            if rotate:
+                angle = np.deg2rad(row["angle_tol"])
+            else:
+                angle = None
+            fov_cell = draw_fov_cell(
+                row["fov_name"],
+                row["fov_width"],
+                row["fov_height"],
+                angle=angle,
+                layer=fov_layer,
+            )
+            for y in ys[:2]:
+                for x in xs:
+                    chip_cell.add(
+                        gdstk.Reference(
+                            fov_cell,
+                            (
+                                x,
+                                y,
+                            ),
+                        )
+                    )
+            return
+
+
+def draw_fov_grid_old(
+    chip_cell,
+    chip_metadata,
     fov_dims,
     grid_metadata,
-    center_margins=True,
     rotate=False,
     layer=FOV_LAYER,
 ):
@@ -326,6 +429,7 @@ def draw_fov_grid(
         fov_dim = fov_dims[fov_name]
         grid_metadata_fov = grid_metadata[fov_name]
         fov_rect = gdstk.rectangle((0, 0), (fov_dim[0], -fov_dim[1]), layer=fov_layer)
+        # TODO
         if center_margins:
             rotation_center = (fov_dim[0] / 2, -fov_dim[1] / 2)
         else:
