@@ -12,6 +12,7 @@ dependencies:
   - jupyterlab_code_formatter
   - matplotlib
   - nbformat
+  - networkx
   - numpy
   - pandas
   - pint
