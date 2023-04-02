@@ -1,4 +1,5 @@
 import numpy as np
+from collections.abc import Mapping
 from paulssonlab.microfluidics_design.util import strip_units
 import pint
 
@@ -110,33 +111,23 @@ def manifold_flow_rates(
     feeding_channel_height=None,
     snake_split=None,
     manifold_split=None,
-    manifold_split_cum=None,
-    lane_length=None,
-    manifold_width=None,
-    feeding_channel_width=None,
-    inner_snake_bend_radius=None,
-    lane_ys=None,
+    input_info=None,
     **kwargs,
 ):
     snake_split_cum = np.concatenate(((0,), np.cumsum(snake_split)))
     manifold_split_cum = np.concatenate(((0,), np.cumsum(manifold_split)))
-    results = []
-    for idx in range(len(manifold_split_cum) - 1):
-        selected_lanes = slice(
-            snake_split_cum[manifold_split_cum[idx]],
-            snake_split_cum[manifold_split_cum[idx + 1]],
-        )
-        lanes_per_snake = snake_split[
-            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
-        ]
-        left_port_lanes = snake_split_cum[:-1][
-            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
-        ]
-        right_port_lanes = (snake_split_cum[1:] - 1)[
-            manifold_split_cum[idx] : manifold_split_cum[idx + 1]
-        ]
-        left_segment_lengths = -np.diff(lane_ys[left_port_lanes])
-        right_segment_lengths = -np.diff(lane_ys[right_port_lanes])
+    results = {}
+    for input_name, input_md in input_info.items():
+        lane_length = input_md["lane_length"]
+        manifold_width = input_md["manifold_width"]
+        feeding_channel_width = input_md["feeding_channel_width"]
+        inner_snake_bend_radius = input_md["inner_snake_bend_radius"]
+        left_port_lane_ys = input_md["left_port_lane_ys"]
+        right_port_lane_ys = input_md["right_port_lane_ys"]
+        lane_ys = input_md["lane_ys"]
+        lanes_per_snake = input_md["lanes_per_snake"]
+        left_segment_lengths = -np.diff(left_port_lane_ys)
+        right_segment_lengths = -np.diff(right_port_lane_ys)
         R_snake = lanes_per_snake * lane_length * resistance(
             feeding_channel_height, feeding_channel_width
         ) + (lanes_per_snake - 1) * bend_resistance(
@@ -154,10 +145,15 @@ def manifold_flow_rates(
         q = ladder_flow_rates(
             strip_units(R_snake), strip_units(R_left), strip_units(R_right)
         )
+        # TODO: is this correct?
         R = ((1 - np.cumsum(q))[:-1] * R_left).sum() + q[-1] * R_snake[-1]
-        results.append(
-            {"R_snake": R_snake, "R_left": R_left, "R_right": R_right, "q": q, "R": R}
-        )
+        results[input_name] = {
+            "R_snake": R_snake,
+            "R_left": R_left,
+            "R_right": R_right,
+            "q": q,
+            "R": R,
+        }
     return results
 
 
@@ -167,22 +163,31 @@ def _metadata_to_units(metadata, length_unit):
         **{
             k: metadata[k] * length_unit
             for k in (
-                "snake_length",
                 "lane_length",
-                "manifold_width",
                 "feeding_channel_width",
+                "manifold_width",
+                "inner_snake_bend_radius",
                 "lane_ys",
+                "left_port_lane_ys",
+                "right_port_lane_ys",
             )
             if k in metadata and metadata[k] is not None
+        },
+        **{
+            k: _metadata_to_units(metadata[k], length_unit)
+            for k in metadata
+            if isinstance(metadata[k], Mapping)
         },
     }
     return metadata
 
 
-def snake_resistance(
-    feeding_channel_height, metadata, length_unit=None, return_extra=False
+def snake_flow(
+    feeding_channel_height,
+    metadata,
+    length_unit=None,
 ):
-    """Summary. Scaled by volumetric flow rate.
+    """Summary.
 
     Parameters
     ----------
@@ -201,21 +206,18 @@ def snake_resistance(
     if length_unit is None:
         length_unit = 1
     metadata = _metadata_to_units(metadata, length_unit)
+    res = {}
     if "manifold_split" in metadata:
-        res = manifold_flow_rates(feeding_channel_height, **metadata)
-        # TODO: until pint implements np.array, we need to explicitly deal with dimensioned quantities
-        R = pint.Quantity.from_sequence([r["R"] for r in res])
-        # R = np.array([r['R'] for r in res])
-        if return_extra:
-            flow_nonuniformity = np.array([r["q"].min() / r["q"].max() for r in res])
-            extra = {"flow_nonuniformity": flow_nonuniformity}
+        flow_info = manifold_flow_rates(feeding_channel_height, **metadata)
+        for input_name, input_flow in flow_info.items():
+            q = input_flow["q"]
+            flow_nonuniformity = q.min() / q.max()
+            res[input_name] = {**input_flow, "flow_nonuniformity": flow_nonuniformity}
 
     else:
-        R = metadata["snake_length"] * resistance(
-            feeding_channel_height, metadata["feeding_channel_width"]
-        )
-        extra = {}
-    if return_extra:
-        return R, extra
-    else:
-        return R
+        for input_name, input_md in metadata["input_info"].items():
+            R = input_md["snake_length"] * resistance(
+                feeding_channel_height, input_md["feeding_channel_width"]
+            )
+            res[input_name] = {"R": R}
+    return res
