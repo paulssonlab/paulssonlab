@@ -274,12 +274,10 @@ def get_fov_grids(fov_dims, metadata, center_margins=True, fov_overlap=None, ski
             for fov_grid in fov_grids:
                 offsets_x = [fov_dim[0] - fov_overlap[0]]
                 offsets_y = -np.array(fov_grid["offsets_y"])
-                ul = trench_md["ul"] + np.array([0, fov_grid["origin_y"]])
+                ul = trench_md["ul"] + np.array([0, -fov_grid["origin_y"]])
                 lr = trench_md["lr"]  # - fov_dim
                 xs = get_fov_positions(ul[0], offsets_x, max=lr[0])
-                # TODO
                 ys = get_fov_positions(ul[1], offsets_y, max=lr[1])
-                # ys = get_fov_positions(lr[1], offsets_y, max=ul[1])
                 columns = len(list(xs))
                 rows = len(list(ys))
                 grid_dim = np.array([columns, rows])
@@ -287,7 +285,6 @@ def get_fov_grids(fov_dims, metadata, center_margins=True, fov_overlap=None, ski
                 min_margin = margin.min()
                 margin_frac = min_margin / fov_dim[1]
                 angle_tol = np.rad2deg(rectangle_rotation_angle(fov_dim, min_margin))
-                num_trenches_per_fov = 0
                 trench_sets = fov_grid["num_active"]
                 grid_metadata[fov_name][region_name].append(
                     {
@@ -341,14 +338,14 @@ def get_fov_grids_df(
 
 
 @memoize
-def draw_fov_cell(name, width, height, angle=None, layer=FOV_LAYER):
+def draw_fov_cell(
+    name, width, height, center_margins=True, angle=None, layer=FOV_LAYER
+):
     fov_rect = gdstk.rectangle((0, 0), (width, -height), layer=layer)
-    # TODO
-    # if center_margins:
-    #     rotation_center = (fov_dim[0] / 2, -fov_dim[1] / 2)
-    # else:
-    #     rotation_center = (0, 0)
-    rotation_center = (0, 0)
+    if center_margins:
+        rotation_center = (width / 2, -height / 2)
+    else:
+        rotation_center = (0, 0)
     if angle:
         fov_rect = fov_rect.rotate(angle, rotation_center)
     fov_cell = Cell(f"FOV-{name}")
@@ -356,25 +353,26 @@ def draw_fov_cell(name, width, height, angle=None, layer=FOV_LAYER):
     return fov_cell
 
 
-def draw_fov_grid(
+def draw_fov_grids(
     chip_cell,
     chip_metadata,
-    fov_grid_df,
+    fov_grids_df,
+    center_margins=True,
     rotate=False,
     label=True,
     label_font_size=120,
     label_margin=200,
     layer=FOV_LAYER,
 ):
-    for _, region_grid_df in fov_grid_df.groupby("region"):
+    fov_layer = layer
+    for _, region_fov_grids_df in fov_grids_df.groupby("region"):
         ul = None
-        for idx, (key, row) in enumerate(region_grid_df.iterrows()):
+        for idx, (key, fov_grid) in enumerate(region_fov_grids_df.iterrows()):
             if ul is None:
-                ul = row["ul"]
-            fov_layer = layer + idx
+                ul = fov_grid["ul"]
             if label:
                 label_text = " ".join(
-                    f"{k}:{v}" for k, v in zip(fov_grid_df.index.names, key)
+                    f"{k}:{v}" for k, v in zip(fov_grids_df.index.names, key)
                 )
                 label_anchor = ul + np.array([-label_margin, -idx * label_font_size])
                 chip_cell.add(
@@ -387,23 +385,28 @@ def draw_fov_grid(
                     )
                 )
             xs = list(
-                get_fov_positions(row["ul"][0], row["offsets_x"], max=row["lr"][0])
+                get_fov_positions(
+                    fov_grid["ul"][0], fov_grid["offsets_x"], max=fov_grid["lr"][0]
+                )
             )
             ys = list(
-                get_fov_positions(row["ul"][1], row["offsets_y"], max=row["lr"][1])
+                get_fov_positions(
+                    fov_grid["ul"][1], fov_grid["offsets_y"], max=fov_grid["lr"][1]
+                )
             )
             if rotate:
-                angle = np.deg2rad(row["angle_tol"])
+                angle = np.deg2rad(fov_grid["angle_tol"])
             else:
                 angle = None
             fov_cell = draw_fov_cell(
-                row["fov_name"],
-                row["fov_width"],
-                row["fov_height"],
+                fov_grid["fov_name"],
+                fov_grid["fov_width"],
+                fov_grid["fov_height"],
+                center_margins=center_margins,
                 angle=angle,
                 layer=fov_layer,
             )
-            for y in ys[:2]:
+            for y in ys:
                 for x in xs:
                     chip_cell.add(
                         gdstk.Reference(
@@ -414,7 +417,7 @@ def draw_fov_grid(
                             ),
                         )
                     )
-            return
+            fov_layer += 1
 
 
 def draw_fov_grid_old(
