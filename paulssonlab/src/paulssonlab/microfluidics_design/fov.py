@@ -73,7 +73,7 @@ def get_fov_positions(origin, offsets, max=None):
         initial=origin,
     )
     if max is not None:
-        xs = takewhile(lambda x: x * sign(offsets[0]) <= max * sign(offsets[0]), xs)
+        xs = takewhile(lambda x: x * sign(offsets[0]) < max * sign(offsets[0]), xs)
     return xs
 
 
@@ -286,14 +286,7 @@ def get_fov_grids_y(
     return fov_grids
 
 
-def _shift_distance(region_heights, bottom=False):
-    pass
-
-
-# def _shift_fov_grid(fov_grid, region_heights, top_shift=0, bottom_shift=0):
-# new_fov_grid = {**fov_grid}
-# return new_fov_grid
-def _shift_fov_grid(origin_y, ul, lr, region_heights, top_shift=0, bottom_shift=0):
+def _shift_fov_grid(origin_y, ul, lr, region_heights, top_shift=0):
     total_height = sum(region_heights)
     if top_shift <= 0:
         top_delta = sum(islice(cycle(reversed(region_heights)), 2 * -top_shift))
@@ -301,15 +294,6 @@ def _shift_fov_grid(origin_y, ul, lr, region_heights, top_shift=0, bottom_shift=
         top_delta = -sum(islice(cycle(region_heights), 2 * top_shift + 1))
     top_y = (origin_y + top_delta) % total_height - top_delta
     ul = ul - np.array([0, top_y])
-    # _, bottom_idx = _next_region(lr[1] - ul[1], region_heights)
-    # if bottom_shift < 0:
-    #     bottom_shift = -bottom_shift
-    #     region_heights_ = reversed(region_heights)
-    # else:
-    #     region_heights_ = region_heights
-    # bottom_delta = sum(
-    #     islice(cycle(region_heights_), bottom_idx, bottom_idx + 2 * bottom_shift)
-    # )
     return ul, lr
 
 
@@ -319,7 +303,6 @@ def get_fov_grids(
     center_margins=True,
     padding=(0, 0),
     top_shift=-1,
-    bottom_shift=0,
 ):
     if padding is None:
         padding = np.array([0, 0])
@@ -350,7 +333,6 @@ def get_fov_grids(
                     trench_md["lr"],
                     region_heights,
                     top_shift=top_shift,
-                    bottom_shift=bottom_shift,
                 )
                 offsets_x = [fov_dim[0] + padding[0]]
                 offsets_y = -np.array(fov_grid["offsets_y"])
@@ -383,7 +365,6 @@ def get_fov_grids(
                         "margin_frac": margin_frac,
                         "angle_tol": angle_tol,  # NOTE: this is in degrees
                         "top_shift": top_shift,
-                        "bottom_shift": bottom_shift,
                     }
                 )
     return grid_metadata
@@ -395,7 +376,6 @@ def get_fov_grids_df(
     center_margins=True,
     padding=(0, 0),
     top_shift=-1,
-    bottom_shift=0,
 ):
     grids = get_fov_grids(
         fov_dims,
@@ -403,7 +383,6 @@ def get_fov_grids_df(
         center_margins=center_margins,
         padding=padding,
         top_shift=top_shift,
-        bottom_shift=bottom_shift,
     )
     return pd.concat(
         {
@@ -473,12 +452,12 @@ def draw_fov_grids(
                 get_fov_positions(
                     fov_grid["ul"][0], fov_grid["offsets_x"], max=fov_grid["lr"][0]
                 )
-            )[:1]
+            )
             ys = list(
                 get_fov_positions(
                     fov_grid["ul"][1], fov_grid["offsets_y"], max=fov_grid["lr"][1]
                 )
-            )[:1]
+            )
             if rotate:
                 angle = np.deg2rad(fov_grid["angle_tol"])
             else:
