@@ -101,7 +101,12 @@ def _next_region(x0, region_heights):
         idx = (idx + 1) % num_regions
 
 
-def get_fov_packings(fov_height, region_heights, padding=0, allow_skipping=False):
+def get_fov_packings(
+    fov_height,
+    region_heights,
+    padding=0,
+    center_margins=True,
+):
     if not (len(region_heights) % 2 == 0 and len(region_heights) > 0):
         raise ValueError("region_heights should be a list with even, nonzero length")
     if padding < 0:
@@ -129,6 +134,7 @@ def get_fov_packings(fov_height, region_heights, padding=0, allow_skipping=False
             (top_idx - bottom_idx) % len(region_heights) / 2
             + len(region_heights) / 2 * fov_height // total_height
         )
+        anchor = top_exterior_active % total_height
         if top_idx % 2 == 1 and bottom_idx % 2 == 1:
             packings.append(
                 {
@@ -144,6 +150,7 @@ def get_fov_packings(fov_height, region_heights, padding=0, allow_skipping=False
                     "bottom_exterior_active": bottom_exterior_active,
                     "bottom_interior_active": bottom_interior_active,
                     "bottom_interior_idx": bottom_interior_idx,
+                    "anchor": anchor,
                     "total_margin": total_margin,
                     "num_active": num_active,
                 }
@@ -152,40 +159,40 @@ def get_fov_packings(fov_height, region_heights, padding=0, allow_skipping=False
             x = new_top
         else:
             x = new_bottom - fov_height
-    top_exterior_actives = set(p["top_exterior_active"] for p in packings)
+    packings_map = {p["top_exterior_active"]: p for p in packings}
     for packing in packings:
-        num_active_skipped = 0
         idx = packing["bottom_interior_idx"]
-        x0 = packing["bottom_interior_active"]
-        x = x0
-        padding_wraparound, padding = divmod(padding, total_height)
-        z = 0
-        while x < x0 + padding:
-            print(z, x, x0, padding)
-            z += 1
-            if z > 10:
-                break
-            # TODO: allow_skipping
-            if x >= x0 + padding and x % total_length in top_exterior_active:
-                break
+        x = packing["bottom_interior_active"]
+        num_active_skipped = 0
+        while True:
+            wraparound_padding = (x // total_height) * total_height
+            if x % total_height in packings_map:
+                next_packing = packings_map[x % total_height]
+                # top FOV photobleaching bottom FOV
+                top_to_bottom_padding = (
+                    next_packing["top_interior_active"]
+                    + wraparound_padding
+                    - packing["bottom"]
+                )
+                # bottom FOV photobleaching top FOV
+                bottom_to_top_padding = (
+                    next_packing["top"]
+                    + wraparound_padding
+                    - packing["bottom_interior_active"]
+                )
+                if center_margins:
+                    top_to_bottom_padding -= packing["total_margin"] / 2
+                    bottom_to_top_padding += next_packing["total_margin"] / 2
+                if min(top_to_bottom_padding, bottom_to_top_padding) >= padding:
+                    break
             idx = (idx + 1) % len(region_heights)
-            # x = (x + region_heights[idx]) % total_height
             x = x + region_heights[idx]
             idx = (idx + 1) % len(region_heights)
-            # x = (x + region_heights[idx]) % total_height
             x = x + region_heights[idx]
             num_active_skipped += 1
-        x += padding_wraparound * total_height
-        # packing["bottom_next_active"] = x % total_height
-        packing["bottom_next_active"] = x  # % total_height
-        packing["extra_offset"] = x - x0
-        # TODO: wraparound!!!
+        packing["next_anchor"] = x % total_height
+        packing["extra_offset"] = x - packing["bottom_interior_active"]
         packing["num_active_skipped"] = num_active_skipped
-        # x = bottom_interior_active + padding
-        # find next top_exterior_active
-        # handle wraparound correctly (if padding is an entire FOV, need to account for that in offsets_y and num_skipped_active_regions)
-        # set bottom_next_active
-        # calculate number of active regions between bottom_interior_active and next top_exterior_active
     return packings
 
 
@@ -210,26 +217,29 @@ def _rectangle_rotation_angle_root_finder(fov_dim, margin):
         return res.root
 
 
-def _get_fov_graph(packings, total_height):
+def _get_fov_graph(packings):
     graph = nx.DiGraph()
     for packing1, packing2 in product(packings, packings):
-        if (
-            packing1["bottom_next_active"] % total_height
-            == packing2["top_exterior_active"] % total_height
-        ):
+        if packing1["next_anchor"] == packing2["anchor"]:
             graph.add_edge(packing1["top"], packing2["top"])
     return graph
 
 
 def get_fov_grids_y(
-    fov_height, region_heights, center_margins=True, padding=0, allow_skipping=False
+    fov_height,
+    region_heights,
+    center_margins=True,
+    padding=0,
 ):
     total_height = sum(region_heights)
     packings = get_fov_packings(
-        fov_height, region_heights, padding=padding, allow_skipping=allow_skipping
+        fov_height,
+        region_heights,
+        padding=padding,
+        center_margins=center_margins,
     )
     packings_map = {packing["top"]: packing for packing in packings}
-    graph = _get_fov_graph(packings, total_height)
+    graph = _get_fov_graph(packings)
     fov_grids = []
     for cycle_ in nx.simple_cycles(graph):
         for start_idx in range(len(cycle_)):
@@ -240,6 +250,9 @@ def get_fov_grids_y(
             num_active = np.array(
                 [packings_map[y]["num_active"] for y in permuted_cycle]
             )
+            num_active_skipped = np.array(
+                [packings_map[y]["num_active_skipped"] for y in permuted_cycle]
+            )
             for idx, y in enumerate(
                 islice(cycle(cycle_), start_idx, start_idx + len(cycle_) + 1)
             ):
@@ -248,16 +261,8 @@ def get_fov_grids_y(
                     if center_margins:
                         origin_y += packings_map[y]["total_margin"] / 2
                 else:
-                    # offset_y = (
-                    #     # bottom_next_active?
-                    #     packings_map[y_prev]["bottom_interior_active"]
-                    #     - y_prev
-                    #     + packings_map[y]["top_exterior_margin"]
-                    # )
                     offset_y = (
-                        # bottom_next_active?
-                        # packings_map[y_prev]["bottom_interior_active"]
-                        packings_map[y_prev]["bottom_next_active"]
+                        packings_map[y_prev]["bottom_interior_active"]
                         + packings_map[y_prev]["extra_offset"]
                         - y_prev
                         + packings_map[y]["top_exterior_margin"]
@@ -275,13 +280,46 @@ def get_fov_grids_y(
                     "offsets_y": offsets_y,
                     "margin": margin,
                     "num_active": num_active,
+                    "num_active_skipped": num_active_skipped,
                 }
             )
     return fov_grids
 
 
+def _shift_distance(region_heights, bottom=False):
+    pass
+
+
+# def _shift_fov_grid(fov_grid, region_heights, top_shift=0, bottom_shift=0):
+# new_fov_grid = {**fov_grid}
+# return new_fov_grid
+def _shift_fov_grid(origin_y, ul, lr, region_heights, top_shift=0, bottom_shift=0):
+    total_height = sum(region_heights)
+    if top_shift <= 0:
+        top_delta = sum(islice(cycle(reversed(region_heights)), 2 * -top_shift))
+    else:
+        top_delta = -sum(islice(cycle(region_heights), 2 * top_shift + 1))
+    top_y = (origin_y + top_delta) % total_height - top_delta
+    ul = ul - np.array([0, top_y])
+    # _, bottom_idx = _next_region(lr[1] - ul[1], region_heights)
+    # if bottom_shift < 0:
+    #     bottom_shift = -bottom_shift
+    #     region_heights_ = reversed(region_heights)
+    # else:
+    #     region_heights_ = region_heights
+    # bottom_delta = sum(
+    #     islice(cycle(region_heights_), bottom_idx, bottom_idx + 2 * bottom_shift)
+    # )
+    return ul, lr
+
+
 def get_fov_grids(
-    fov_dims, metadata, center_margins=True, padding=(0, 0), allow_skipping=False
+    fov_dims,
+    metadata,
+    center_margins=True,
+    padding=(0, 0),
+    top_shift=-1,
+    bottom_shift=0,
 ):
     if padding is None:
         padding = np.array([0, 0])
@@ -300,15 +338,22 @@ def get_fov_grids(
                 trench_md["region_heights"],
                 center_margins=center_margins,
                 padding=padding[1],
-                allow_skipping=allow_skipping,
             )
             # TODO: padding
             grid_metadata[fov_name][region_name] = []
             for fov_grid in fov_grids:
+                # ul = trench_md["ul"] + np.array([0, -fov_grid["origin_y"]])
+                # lr = trench_md["lr"]
+                ul, lr = _shift_fov_grid(
+                    fov_grid["origin_y"],
+                    trench_md["ul"],
+                    trench_md["lr"],
+                    region_heights,
+                    top_shift=top_shift,
+                    bottom_shift=bottom_shift,
+                )
                 offsets_x = [fov_dim[0] + padding[0]]
                 offsets_y = -np.array(fov_grid["offsets_y"])
-                ul = trench_md["ul"] + np.array([0, -fov_grid["origin_y"]])
-                lr = trench_md["lr"]
                 xs = get_fov_positions(ul[0], offsets_x, max=lr[0])
                 ys = get_fov_positions(ul[1], offsets_y, max=lr[1])
                 columns = len(list(xs))
@@ -337,20 +382,28 @@ def get_fov_grids(
                         "min_margin": min_margin,
                         "margin_frac": margin_frac,
                         "angle_tol": angle_tol,  # NOTE: this is in degrees
+                        "top_shift": top_shift,
+                        "bottom_shift": bottom_shift,
                     }
                 )
     return grid_metadata
 
 
 def get_fov_grids_df(
-    fov_dims, metadata, center_margins=True, padding=(0, 0), allow_skipping=False
+    fov_dims,
+    metadata,
+    center_margins=True,
+    padding=(0, 0),
+    top_shift=-1,
+    bottom_shift=0,
 ):
     grids = get_fov_grids(
         fov_dims,
         metadata,
         center_margins=center_margins,
         padding=padding,
-        allow_skipping=allow_skipping,
+        top_shift=top_shift,
+        bottom_shift=bottom_shift,
     )
     return pd.concat(
         {
@@ -420,12 +473,12 @@ def draw_fov_grids(
                 get_fov_positions(
                     fov_grid["ul"][0], fov_grid["offsets_x"], max=fov_grid["lr"][0]
                 )
-            )
+            )[:1]
             ys = list(
                 get_fov_positions(
                     fov_grid["ul"][1], fov_grid["offsets_y"], max=fov_grid["lr"][1]
                 )
-            )
+            )[:1]
             if rotate:
                 angle = np.deg2rad(fov_grid["angle_tol"])
             else:
