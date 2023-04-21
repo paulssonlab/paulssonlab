@@ -368,10 +368,11 @@ def part_entry_to_seq(entry):
 
 
 def re_digest_part(seq, enzyme, overhangs=None):
+    circular = hasattr(seq, "circular") and seq.circular
     if overhangs is None:
         # if we don't know expected overhangs,
         # if it's a linear fragment, just cut off the ends
-        if not (hasattr(seq, "circular") and seq.circular):
+        if not circular:
             frags = re_digest(seq, enzyme)
             return assemble(frags[1:-1], method="goldengate")
         # TODO: this doesn't handle the case where there is a cut site in the backbone
@@ -400,7 +401,8 @@ def re_digest_part(seq, enzyme, overhangs=None):
     else:
         if len(overhangs) != 2:
             raise ValueError("expecting two overhangs")
-        overhangs = [normalize_seq(o) for o in overhangs]
+        # interpret None/empty string as a blunt end
+        overhangs = [normalize_seq(o) if o is not None else "" for o in overhangs]
         frags = re_digest(seq, enzyme)
         start_idx = None
         stop_idx = None
@@ -423,9 +425,12 @@ def re_digest_part(seq, enzyme, overhangs=None):
                     f"found {len(start_idxs)} occurances of overhang {overhangs[0]}, expecting 1"
                 )
             start_idx = start_idxs[0]
+            frags_rc_stop = frags_rc[start_idx:]
+            if circular:
+                frags_rc_stop.extend(frags_rc[:start_idx])
             stop_idxs = [
                 i
-                for i, frag in enumerate(frags_rc[start_idx:] + frags_rc[:start_idx])
+                for i, frag in enumerate(frags_rc_stop)
                 if frag.downstream_overhang_seq == overhangs[1]
                 and frag.downstream_strand == -1
             ]
@@ -440,6 +445,9 @@ def re_digest_part(seq, enzyme, overhangs=None):
                 raise ValueError(
                     f"found multiple parts with overhangs ({overhangs[0]}, {overhangs[1]})"
                 )
+            # the wraparound that cycle() allows won't be used for non-circular sequences
+            # because stop_idx refers to an index in frags_rc[start_idx:]
+            # (without the wraparound frags_rc]:start_idx])
             selected_frags = list(
                 islice(cycle(frags_rc), start_idx, start_idx + stop_idx + 1)
             )
