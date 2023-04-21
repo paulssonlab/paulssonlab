@@ -412,11 +412,12 @@ def re_digest_part(seq, enzyme, overhangs=None):
                 frags_rc = [frag.reverse_complement() for frag in reversed(frags)]
             else:
                 frags_rc = frags
+            # strand != -1 is used instead of strand == 1 to handle blunt ends (strand == 0)
             start_idxs = [
                 i
                 for i, frag in enumerate(frags_rc)
                 if frag.upstream_overhang_seq == overhangs[0]
-                and frag.upstream_strand == 1
+                and frag.upstream_strand != -1
             ]
             if len(start_idxs) == 0:
                 continue
@@ -432,7 +433,7 @@ def re_digest_part(seq, enzyme, overhangs=None):
                 i
                 for i, frag in enumerate(frags_rc_stop)
                 if frag.downstream_overhang_seq == overhangs[1]
-                and frag.downstream_strand == -1
+                and frag.downstream_strand != 1
             ]
             if len(stop_idxs) == 0:
                 continue
