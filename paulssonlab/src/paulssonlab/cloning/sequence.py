@@ -244,7 +244,7 @@ class DsSeqRecord(SeqRecord):
         self.annotations["topology"] = "circular" if value else "linear"
 
     def _check_overhang(self, overhang1, overhang2):
-        if len(self) and self.ds_length < 0:
+        if len(self) - abs(overhang1) - abs(overhang2) < 0:
             raise ValueError("invalid overhang length")
 
     @property
