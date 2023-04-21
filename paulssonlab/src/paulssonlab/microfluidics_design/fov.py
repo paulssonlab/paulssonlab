@@ -346,6 +346,11 @@ def get_fov_grids(
                 margin_frac = min_margin / fov_dim[1]
                 angle_tol = np.rad2deg(rectangle_rotation_angle(fov_dim, min_margin))
                 trench_sets = fov_grid["num_active"]
+                trench_xs = trench_md["trench_xs"]
+                trenches_per_width = np.sum(
+                    (trench_xs - trench_xs[0] + trench_md["trench_width"]) <= fov_dim[0]
+                )
+                trenches_per_fov = trench_sets * trenches_per_width
                 grid_metadata[fov_name][region_name].append(
                     {
                         "fov_name": fov_name,
@@ -355,7 +360,8 @@ def get_fov_grids(
                         "columns": grid_dim[0],
                         "num_fovs": np.product(grid_dim),
                         "trench_sets": trench_sets,
-                        "mean_trench_sets": trench_sets.mean(),
+                        "trenches_per_width": trenches_per_width,
+                        "trenches_per_fov": trenches_per_fov,
                         "ul": ul,
                         "lr": lr,
                         "offsets_x": offsets_x,
