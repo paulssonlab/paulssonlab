@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib.colors import hex2color
 import dask
+from dask.base import tokenize
 import dask.array as da
 import distributed
 import scipy.ndimage as ndi
@@ -61,6 +62,33 @@ def _colorize(channel_imgs, colors, scale=True):
     for img2 in imgs_to_combine[1:]:
         img = 1 - (1 - img) * (1 - img2)
     return img
+
+
+def composite_rgb_rgba(rgb, rgba):
+    alpha = rgba[:, :, -1, np.newaxis]
+    return (1 - alpha) * rgb + alpha * rgba[:, :, :-1]
+
+
+# TODO: forces dask.array
+# also unused
+def composite_mean(stack, fillval=None):
+    mean = da.average(stack, axis=0, weights=(stack != 0))
+    if fillval is not None:
+        mean = da.where(da.isnan(mean), fillval, mean)
+    return mean
+
+
+def composite_first(stack):
+    # TODO: this doesn't work because second argument needs to be a numpy array, not delayed dask array
+    # return da.choose(stack, (stack != 0).argmax(axis=0))
+    return da.map_blocks(
+        lambda ary, idxs: np.take_along_axis(ary, idxs[np.newaxis, ...], axis=0)[0],
+        stack,
+        (stack != 0).argmax(axis=0),
+        dtype=stack.dtype,
+        name=f"composite_first-{tokenize(stack)}",
+        drop_axis=0,
+    )
 
 
 def rectangles_intersect(ul1, lr1, ul2, lr2):
@@ -195,20 +223,15 @@ def mosaic_frame(
                 channel_imgs.append(img)
     if not all_channel_imgs:
         raise ValueError("no positions visible")
-    # TODO: need to clip here or mask overlapping frames instead of summing
     channel_composite_imgs = [
-        da.stack(channel_imgs).sum(axis=0) for channel_imgs in all_channel_imgs
+        # composite_first(da.stack(channel_imgs).rechunk((-1, "auto", "auto")))
+        da.stack(channel_imgs).max(axis=0)
+        for channel_imgs in all_channel_imgs
     ]
-    # TODO: implement delayed=False without dask.array? or just call .compute?
     output_img = delayed(colorize)(
         channel_composite_imgs, colors, scale=(not scaling_funcs)
     )
     return output_img
-
-
-def _composite_rgba(rgb, rgba):
-    alpha = rgba[:, :, -1, np.newaxis]
-    return (1 - alpha) * rgb + alpha * rgba[:, :, :-1]
 
 
 def square_overlay(
@@ -302,7 +325,7 @@ def square_overlay(
                 Image.fromarray((text_img_translated * 255).astype(np.uint8))
             )
             del text_img_translated
-    return _composite_rgba(frame, np.asarray(img) / 255)
+    return composite_rgb_rgba(frame, np.asarray(img) / 255)
     # return frame
 
 
