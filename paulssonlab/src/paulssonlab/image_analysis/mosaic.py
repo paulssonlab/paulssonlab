@@ -74,7 +74,7 @@ def scale_around_center(scale, center):
     return (
         SimilarityTransform(translation=(-x, -y))
         + SimilarityTransform(scale=scale)
-        + SimilarityTransform(translation=(x, y))
+        + SimilarityTransform(translation=(scale * x, scale * y))
     )
 
 
@@ -157,7 +157,7 @@ def mosaic_frame(
     input_scale = fixed_aspect_scale(
         *input_dims, output_dims[0] * scale, output_dims[1] * scale
     )
-    rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.int_)
+    rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.uint32)
     for (filename, pos_num), position in positions.iterrows():
         frame_transform, visible = transform_to_viewport(
             *rescaled_input_dims,
@@ -172,16 +172,22 @@ def mosaic_frame(
                 img = delayed(get_frame_func)(pos_num, channel, timepoint)
                 if scaling_funcs:
                     img = delayed(scaling_funcs[channel])(img)
-                img = delayed(cv2.resize)(
-                    img, rescaled_input_dims, interpolation=cv2.INTER_AREA
-                )
-                # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
-                # so we resize first, then translate/rotate
+                if scale < 1:
+                    # TODO: cv2.INTER_AREA is not implemented for cv2.warpAffine,
+                    # so for downscaling (scale < 1) we resize first, then translate/rotate
+                    img = delayed(cv2.resize)(
+                        img, rescaled_input_dims, interpolation=cv2.INTER_AREA
+                    )
+                    frame_transform_with_scaling = frame_transform
+                else:
+                    scale_transform = scale_around_center(
+                        1 / input_scale, np.array(input_dims) / 2 - 1
+                    )
+                    frame_transform_with_scaling = frame_transform + scale_transform
                 img = delayed(cv2.warpAffine)(
                     img,
-                    frame_transform.params[:2, :],
+                    frame_transform_with_scaling.params[:2, :],
                     output_dims,
-                    # flags=cv2.INTER_AREA + cv2.WARP_INVERSE_MAP,
                     flags=(cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP),
                 )
                 img = delayed(np.clip)(img, 0, 1)  # LANCZOS4 outputs values beyond 0..1
@@ -189,6 +195,7 @@ def mosaic_frame(
                 channel_imgs.append(img)
     if not all_channel_imgs:
         raise ValueError("no positions visible")
+    # TODO: need to clip here or mask overlapping frames instead of summing
     channel_composite_imgs = [
         da.stack(channel_imgs).sum(axis=0) for channel_imgs in all_channel_imgs
     ]
