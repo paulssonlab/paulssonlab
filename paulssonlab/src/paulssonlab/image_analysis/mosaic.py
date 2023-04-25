@@ -69,8 +69,7 @@ def composite_rgb_rgba(rgb, rgba):
     return (1 - alpha) * rgb + alpha * rgba[:, :, :-1]
 
 
-# TODO: forces dask.array
-# also unused
+# TODO: unused
 def composite_mean(stack, fillval=None):
     mean = da.average(stack, axis=0, weights=(stack != 0))
     if fillval is not None:
@@ -78,6 +77,8 @@ def composite_mean(stack, fillval=None):
     return mean
 
 
+# TODO: unused
+# use via composite_first(da.stack(channel_imgs).rechunk((-1, "auto", "auto")))
 def composite_first(stack):
     # TODO: this doesn't work because second argument needs to be a numpy array, not delayed dask array
     # return da.choose(stack, (stack != 0).argmax(axis=0))
@@ -224,9 +225,7 @@ def mosaic_frame(
     if not all_channel_imgs:
         raise ValueError("no positions visible")
     channel_composite_imgs = [
-        # composite_first(da.stack(channel_imgs).rechunk((-1, "auto", "auto")))
-        da.stack(channel_imgs).max(axis=0)
-        for channel_imgs in all_channel_imgs
+        da.stack(channel_imgs).max(axis=0) for channel_imgs in all_channel_imgs
     ]
     output_img = delayed(colorize)(
         channel_composite_imgs, colors, scale=(not scaling_funcs)
