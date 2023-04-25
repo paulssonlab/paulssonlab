@@ -217,15 +217,16 @@ def square_overlay(
     noun=("cell", "cells"),
     factor=10,
     font=None,
-    font_size=60,
-    text_padding=20,
-    line_width=3,
+    font_size=180,
+    text_padding=40,
+    line_width=20,
     color=(1, 1, 1),
     alpha_width=60,
     alpha_transition=10,
     text_alpha_transition=5,
 ):
-    img = Image.new("RGBA", frame.shape[:-1:][::-1], (0, 0, 0, 255))
+    output_dims = np.array(frame.shape[:-1:][::-1])
+    img = Image.new("RGBA", tuple(output_dims), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     min_dim = min(*frame.shape[:-1])
     V = (min_dim / scale) ** 2
@@ -246,56 +247,31 @@ def square_overlay(
         rgba_color = np.array((*np.array(color) * 255, np.ceil(alpha * 255))).astype(
             np.uint8
         )
-        center = np.array([frame.shape[1] / 2, frame.shape[0] / 2])
+        center = output_dims / 2
         delta = np.array([half_width_px, half_width_px])
         draw.rectangle(
             [tuple(center - delta), tuple(center + delta)],
             outline=tuple(rgba_color),
-            width=line_width,
-            # width=int(np.ceil(line_width * geometry_scale)),
+            # width=line_width,
+            width=int(np.ceil(line_width * geometry_scale)),
         )
         caption = f"{int(count)} {noun[0] if count == 1 else noun[1]}"
         scaled_font_size = int(np.ceil(font_size * geometry_scale))
-        text_padding_ary = np.array([text_padding, -scaled_font_size - text_padding])
-        # if width >= alpha_width:
-        #     text_alpha = alpha
-        # else:
-        #     text_alpha = 1 - 1 / (
-        #         1 + np.exp(-(half_width_px - alpha_width) / text_alpha_transition)
-        #     )
-        # if text_alpha > 0.95:
-        #     continue
-        # text_rgba_color = (*np.array(color) * 255, int(np.ceil(text_alpha * 255)))
         text_rgba_color = rgba_color
-        # print("!", scaled_font_size, tuple(center - delta + text_padding_ary))
         if scaled_font_size > 3:
-            text_position = (
-                center + np.array([-half_width_px, half_width_px]) + text_padding_ary
-            )
-            # draw.text(
-            #     tuple(text_position),
-            #     caption,
-            #     font=font.font_variant(size=scaled_font_size),
-            #     fill=tuple(text_rgba_color),
-            # )
-            #####
-            text_img = Image.new("RGBA", frame.shape[:-1:][::-1], (0, 0, 0, 0))
+            text_img = Image.new("RGBA", tuple(output_dims), (0, 0, 0, 0))
             text_draw = ImageDraw.Draw(text_img)
-            text_padding_ary2 = np.array([text_padding, -font_size - text_padding])
-            text_position2 = (
-                center + np.array([-min_dim / 2, min_dim / 2]) + text_padding_ary2
+            text_padding_ary = np.array([text_padding, -font_size - text_padding])
+            text_position = (
+                center + np.array([-min_dim / 2, min_dim / 2]) + text_padding_ary
             )
-            text_rgba_color2 = np.array(
-                (*np.array(color) * 255, int(np.ceil(alpha * 255)))
-            )
-            # text_rgba_color2 = np.array((*np.array(color) * 255, 255))
             text_draw.text(
-                tuple(text_position2),
+                tuple(text_position),
                 caption,
                 font=font.font_variant(size=font_size),
-                fill=tuple(text_rgba_color2),
+                fill=tuple(rgba_color),
             )
-            text_img_dims = np.ceil(np.array(frame.shape[:-1]) * geometry_scale).astype(
+            text_img_dims = np.ceil(np.array(output_dims) * geometry_scale).astype(
                 np.int32
             )
             text_img_resized = cv2.resize(
@@ -303,26 +279,24 @@ def square_overlay(
                 text_img_dims,
                 interpolation=cv2.INTER_AREA,
             )
-            # transform = SimilarityTransform(translation=np.array(frame.shape[:-1]) / 2)
+            del text_draw
+            del text_img
             transform = SimilarityTransform(
-                translation=(np.array(frame.shape[:-1]) - text_img_dims) // 2
+                translation=(np.array(output_dims) - text_img_dims) // 2
             )
             text_img_translated = cv2.warpAffine(
                 text_img_resized,
                 transform.params[:2, :],
-                frame.shape[:-1],
-                flags=(cv2.INTER_LANCZOS4),
+                output_dims,
+                flags=cv2.INTER_LINEAR,
             )
-            # transform = SimilarityTransform(scale=width)
-            # img2_rescaled = warp(np.asarray(img2) / 255, transform)
-            # print(img2_rescaled.dtype, img2_rescaled.shape)
+            del text_img_resized
             img.alpha_composite(
                 Image.fromarray((text_img_translated * 255).astype(np.uint8))
             )
-            # img.alpha_composite(img2)
-    # return np.asarray(img)[:, :, :3] / 255
-    # return _composite_rgba(frame, np.asarray(text_ary) / 255)
+            del text_img_translated
     return _composite_rgba(frame, np.asarray(img) / 255)
+    # return frame
 
 
 def mosaic_animate_scale(
@@ -342,6 +316,7 @@ def mosaic_animate_scale(
     delayed=True,
     progress_bar=tqdm,
 ):
+    delayed = get_delayed(delayed)
     if channels is None:
         raise ValueError("must specify channels")
     if channel_to_color is None:
@@ -350,14 +325,13 @@ def mosaic_animate_scale(
 
         def frame_func(*args, timepoint=None, scale=None, **kwargs):
             if overlay_only:
-                frame = np.zeros((*output_dims, 3), dtype=np.float32)
+                frame = delayed(np.zeros)((*output_dims[::-1], 3), dtype=np.float32)
             else:
                 frame = mosaic_frame(*args, timepoint=timepoint, scale=scale, **kwargs)
             return delayed(overlay_func)(frame, timepoint, scale)
 
     else:
         frame_func = mosaic_frame
-    delayed = get_delayed(delayed)
     nd2 = nd2reader.ND2Reader(filename)
     nd2s = {filename: nd2 for filename in (filename,)}
     metadata = {
