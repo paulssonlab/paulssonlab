@@ -168,6 +168,8 @@ def mosaic_frame(
     scale=1,
     output_dims=(1024, 1024),
     scaling_funcs=None,
+    dark=None,
+    flats=None,
     delayed=False,
     dtype=np.float32,
 ):
@@ -198,7 +200,13 @@ def mosaic_frame(
         )
         if visible:
             for channel, channel_imgs in zip(channels, all_channel_imgs):
-                img = delayed(get_frame_func)(pos_num, channel, timepoint)
+                img = delayed(get_frame_func)(
+                    pos_num,
+                    channel,
+                    timepoint,
+                    dark=dark,
+                    flat=(flats or {}).get(channel),
+                )
                 if scaling_funcs:
                     img = delayed(scaling_funcs[channel])(img)
                 if scale < 1:
@@ -342,6 +350,8 @@ def mosaic_animate_scale(
     overlay_func=None,
     overlay_only=False,
     positions_func=None,
+    dark=None,
+    flats=None,
     delayed=True,
     progress_bar=tqdm,
 ):
@@ -404,6 +414,8 @@ def mosaic_animate_scale(
             rotation=rotation,
             scaling_funcs=scaling_funcs,
             output_dims=output_dims,
+            dark=dark,
+            flats=flats,
             delayed=delayed,
         )
         for t, s in ts_iter

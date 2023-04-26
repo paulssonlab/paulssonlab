@@ -112,10 +112,16 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 # get_nd2_reader = compose(lambda x: x.reopen(), _get_nd2_reader)
 
 
-def get_nd2_frame(filename, position, channel, t):
+def get_nd2_frame(filename, position, channel, t, dark=None, flat=None):
     reader = get_nd2_reader(filename)
     channel_idx = reader.metadata["channels"].index(channel)
     ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    if dark is not None:
+        ary = (
+            ary - dark
+        )  # can't subtract in place because img is uint16 and dark may be float64
+    if flat is not None:
+        ary = ary / flat
     return ary
 
 
