@@ -1,4 +1,5 @@
 import tatsu
+from tatsu.ast import AST
 from frozendict import frozendict
 
 expr_rules = r"""ws = /\s*/ ;
@@ -61,7 +62,7 @@ command_name = '@' ~ @:/\w+/ ;
 
 command_arglist = '(' ~ ws @+:arg ws {{',' ws @+:arg ws }}* ')' ;
 
-command = _type:`command` command_name:command_name args:command_arglist ;
+command = _type:`command` command:command_name args:command_arglist ;
 
 quoted_string = _type:`quoted_string` '"' ~ quoted_string:/[^"]*/ '"' ;
 
@@ -79,16 +80,20 @@ class Name(str):
         return f"name:'{self}'"
 
 
-def normalize_ast(ast):
-    if ast is None:
-        return None
+def normalize_ast(ast, recursive=True):
+    if recursive:
+        _normalize_ast = normalize_ast
+    else:
+        _normalize_ast = lambda x: x
+    if not isinstance(ast, (dict, AST)):
+        return ast
     type_ = ast["_type"]
     if type_ == "command":
         return dict(
             _type="command",
             command=ast["command"],
-            args=[normalize_ast(a) for a in ast.args],
-            kwargs=getattr(ast, "kwargs"),
+            args=[_normalize_ast(a) for a in ast["args"]],
+            kwargs=ast.get("kwargs") or {},
         )
     elif type_ == "name":
         return Name(ast["name"])
@@ -101,23 +106,23 @@ def normalize_ast(ast):
     elif type_ == "pcr":
         type_ = "command"
         args = [
-            normalize_ast(ast.template),
-            normalize_ast(ast.primer1),
+            _normalize_ast(ast.template),
+            _normalize_ast(ast.primer1),
         ]
         if ast.primer2:
-            args.append(normalize_ast(ast.primer2))
-        return dict(_type="command", command_name="PCR", args=args)
+            args.append(_normalize_ast(ast.primer2))
+        return dict(_type="command", command="PCR", args=args)
     elif type_ == "digest":
         type_ = "command"
-        args = [normalize_ast(ast.input), ast.enzyme.name]
-        return dict(_type="command", command_name="Digest", args=args)
+        args = [_normalize_ast(ast.input), ast.enzyme.name]
+        return dict(_type="command", command="Digest", args=args)
     elif type_ == "anneal":
         type_ = "command"
         args = [
-            normalize_ast(ast.strand1),
-            normalize_ast(ast.strand2),
+            _normalize_ast(ast.strand1),
+            _normalize_ast(ast.strand2),
         ]
-        return dict(_type="command", command_name="Anneal", args=args)
+        return dict(_type="command", command="Anneal", args=args)
     else:
         raise ValueError(f"unknown ast type: {type_}")
 
@@ -147,7 +152,7 @@ def unparse_expr(expr):
         return f"{unparse_expr(expr['strand1'])}={unparse_expr(expr['strand2'])}"
     elif type_ == "command":
         args = ", ".join([unparse_expr(arg) for arg in expr["args"]])
-        name = expr["command_name"]
+        name = expr["command"]
         return f"@{name}({args})"
     else:
         raise ValueError(f"unknown expression type: {type_}")
