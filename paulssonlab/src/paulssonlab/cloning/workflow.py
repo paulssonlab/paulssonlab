@@ -423,7 +423,7 @@ def re_digest_part(seq, enzyme, overhangs=None):
                 continue
             elif len(start_idxs) >= 2:
                 raise ValueError(
-                    f"found {len(start_idxs)} occurances of overhang {overhangs[0]}, expecting 1"
+                    f"found {len(start_idxs)} occurances of overhang {overhangs[0]!r}, expecting 1"
                 )
             start_idx = start_idxs[0]
             frags_rc_stop = frags_rc[start_idx:]
@@ -439,12 +439,12 @@ def re_digest_part(seq, enzyme, overhangs=None):
                 continue
             elif len(stop_idxs) >= 2:
                 raise ValueError(
-                    f"found {len(stop_idxs)} occurances of overhang {overhangs[0]}, expecting 1"
+                    f"found {len(stop_idxs)} occurances of overhang {overhangs[0]!r}, expecting 1"
                 )
             stop_idx = stop_idxs[0]
             if selected_frags is not None:
                 raise ValueError(
-                    f"found multiple parts with overhangs ({overhangs[0]}, {overhangs[1]})"
+                    f"found multiple parts with overhangs ({overhangs[0]!r}, {overhangs[1]!r})"
                 )
             # the wraparound that cycle() allows won't be used for non-circular sequences
             # because stop_idx refers to an index in frags_rc[start_idx:]
@@ -454,7 +454,7 @@ def re_digest_part(seq, enzyme, overhangs=None):
             )
         if selected_frags is None:
             raise ValueError(
-                f"did not find part with overhangs ({overhangs[0]}, {overhangs[1]})"
+                f"did not find part with overhangs ({overhangs[0]!r}, {overhangs[1]!r})"
             )
         product = assemble(selected_frags, method="goldengate")
     return product
