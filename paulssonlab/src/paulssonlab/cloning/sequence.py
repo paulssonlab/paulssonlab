@@ -281,6 +281,10 @@ class DsSeqRecord(SeqRecord):
     def downstream_overhang_seq(self):
         return self.seq_lower()[len(self) - abs(self.downstream_overhang) : len(self)]
 
+    @property
+    def overhang_seqs(self):
+        return (self.upstream_overhang_seq, self.downstream_overhang_seq)
+
     def can_ligate(self, other):
         return (
             self.downstream_overhang == -other.upstream_overhang
