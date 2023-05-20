@@ -1,4 +1,5 @@
 #!/bin/sh
+UPSTREAM_URL="git@github.com:paulssonlab/paulssonlab.git"
 if [ -z "$INITIALIZING_REPO" ]; then
     export INITIALIZING_REPO=1
     # we need to run this script inside an environment loaded by direnv
@@ -15,25 +16,44 @@ fi
 cd "$root"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
-if git remote -v | grep -q github.com:paulssonlab/paulssonlab; then
-    read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
-    echo
-    case ${answer:0:1} in
-        n|N )
-            ;;
-        * )
-            # cloned from paulssonlab account, fork
-            hub fork --remote-name origin
-            status=$?
-            if [ $status != 0 ] ; then
-                echo "❌  ${bold}Could not fork repo, aborting.${normal}"
-                exit 1
-            fi
-        ;;
-    esac
-else
-    # cloned from personal account, add upstream remote
-    git remote add upstream git@github.com:paulssonlab/paulssonlab.git
+###
+# if no remote named upstream:
+#     if remote origin is paulssonlab/paulssonlab:
+#         if github-fork-url has non-empty output:
+#             set remote origin to that output
+#         else: gh repo fork (does this make upstream remote?)
+#     add remote upstream: paulssonlab/paulssonlab
+# if remote named upstream:
+#    do nothing
+# WHAT HAPPENS IF NO PERSONAL FORK??
+###
+if !git remote get-url upstream; then
+    if git remote get-url origin 2>&1|grep "$UPSTREAM_URL"; then
+        #ask about forking/setting remotes
+        fork_url=$(github-fork-url)
+        if [ -z "$fork_url" ]; then
+            read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
+            echo
+            case ${answer:0:1} in
+                n|N )
+                    ;;
+                * )
+                    # cloned from paulssonlab account, fork
+                    gh repo fork --remote --remote-name origin
+                    status=$?
+                    if [ $status != 0 ] ; then
+                        echo "❌  ${bold}Could not fork repo, aborting.${normal}"
+                        exit 1
+                    fi
+                ;;
+            esac
+        else
+            echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
+            git remote add
+        fi
+    fi
+    echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
+    git remote add upstream "$UPSTREAM_URL"
 fi
 # make paulssonlab conda env
 "${root}/bin/direnv-allowall"
@@ -60,6 +80,6 @@ if [ ! -d .nbcleanse ]; then
     git clone git@github.com:shenker/nbcleanse.git "${root}/.nbcleanse"
 fi
 nbcleanse_conda_env=nbcleanse # in case we want to change this
-ensure_mamba env remove -n "${nbcleanse_conda_env}" &> /dev/null
-ensure_mamba env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml"
-conda run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" install --conda "${nbcleanse_conda_env}"
+$(mamba_cmd) env remove -n "${nbcleanse_conda_env}" &> /dev/null
+$(mamba_cmd) env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml" -y
+$(mamba_cmd) run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" install --conda "${nbcleanse_conda_env}"

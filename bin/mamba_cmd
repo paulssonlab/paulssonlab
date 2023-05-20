@@ -1,0 +1,11 @@
+#!/bin/sh
+bold="$(tput bold)"
+normal="$(tput sgr0)"
+if hash micromamba; then
+    echo micromamba
+elif hash mamba; then
+    echo mamba
+else
+    echo echo "❌  ${bold}Could not find micromamba or mamba, please install and try again.${normal}" >&2
+    echo echo "${bold}FAILED:${normal} mamba "
+fi

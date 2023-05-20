@@ -12,14 +12,15 @@ if [ ! -f "$envyml" ]; then
     exit 1
 fi
 check-long-running-process || exit $?
-ensure_mamba env create -n "$envname" -f "$envyml"
+$(mamba_cmd) env create -n "$envname" -f "$envyml" -y
 status=$?
 if [ $status != 0 ] ; then
     echo "❌  ${bold}Could not create environment '${envname}', aborting.${normal}"
     exit 1
 fi
-. "$CONDA_PREFIX/etc/profile.d/conda.sh"
-conda activate "$envname"
+# when create-env is run in a subshell, mamba will complain about the hook being uninitialized
+# so we need to source instead of executing create-env from initenv
+$(mamba_cmd) activate "$envname"
 status=$?
 if [ $status != 0 ] ; then
     echo "❌  ${bold}Could not activate environment '${envname}', aborting.${normal}"

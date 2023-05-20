@@ -6,6 +6,9 @@ envname="$2"
 if [ -z "$envyml" ]; then
     envyml="${PWD}/environment.yml"
 fi
+# use .envconda files in same dir as environment.yml file to set conda config env vars
+# (e.g., setting CONDA_SUBDIR=osx-64 to force rosetta emulation on apple silicon)
+dotenv_if_exists "$(dirname "$envyml")/.envconda"
 envname_file="${PWD}/.envname"
 if [ -z "$envname" ]; then
     # if `dirname env.yml`/.envname exists, conda activate << .envname
@@ -37,14 +40,15 @@ if [ "$envname" = "$CONDA_DEFAULT_ENV" ]; then
 fi
 
 # try to activate environment
-conda activate "$envname" 2> /dev/null && exit 0
+$(mamba_cmd) activate "$envname" 2> /dev/null && exit 0
 
 # if conda env does not exist, create it? [y/N]
 read -n 1 -p "🔎  ${bold}Conda environment '${envname}' does not exist, create it? ${normal}[y/N] " answer
 echo
 case ${answer:0:1} in
     y|Y )
-        create-env "$envname" "$envyml" && conda activate "$envname"
+        # we need to source instead of running create-env as a subprocess so that create-env can activate the env
+        source create-env "$envname" "$envyml"
     ;;
     * )
         exit 1
