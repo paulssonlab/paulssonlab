@@ -29,7 +29,7 @@ dependencies:
   - nf-core
   - numpy
   - pandas
-  - parasail
+  - parasail-python
   - pip
   - pip:
       - benchlingapi
