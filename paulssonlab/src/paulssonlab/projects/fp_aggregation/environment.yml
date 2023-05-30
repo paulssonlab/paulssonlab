@@ -6,8 +6,6 @@ channels:
 dependencies:
   - black
   - bokeh
-  - cachetools
-  - click
   - cytoolz
   - dask
   - dask-jobqueue
@@ -19,14 +17,8 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib
-  - nbformat
   - nd2reader
-  - nodejs
   - numpy
   - pandas
-  - pip
-  - pip:
-      - docformatter
-  - pre-commit
   - scikit-image
   - scipy

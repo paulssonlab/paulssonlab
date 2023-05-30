@@ -26,9 +26,6 @@ dependencies:
   - numpy
   - pandas
   - panel
-  - pip
-  - pip:
-      - docformatter
   - pre-commit
   - scikit-image
   - scikit-learn

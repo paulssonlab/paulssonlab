@@ -8,4 +8,3 @@ dependencies:
   - jupyterlab_code_formatter
   - matplotlib
   - numpy
-  - pip

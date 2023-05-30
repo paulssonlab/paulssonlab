@@ -12,11 +12,12 @@ dependencies:
   - clustalo
   - cytoolz
   - frozendict
+  - gfapy
   - google-api-python-client
   - jsondiff
   - jupyterlab
   - jupyterlab_code_formatter
-  - libxml2=2.9.10
+  - libxml2
   - mafft
   - natsort
   - nbformat
