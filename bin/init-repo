@@ -82,4 +82,4 @@ fi
 nbcleanse_conda_env=nbcleanse # in case we want to change this
 $(mamba_cmd) env remove -n "${nbcleanse_conda_env}" &> /dev/null
 $(mamba_cmd) env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml" -y
-$(mamba_cmd) run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" install --conda "${nbcleanse_conda_env}"
+nbcleanse-enable

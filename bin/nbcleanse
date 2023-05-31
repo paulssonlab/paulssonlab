@@ -1,0 +1,3 @@
+#!/bin/sh
+nbcleanse_conda_env=nbcleanse # in case we want to change this
+$(mamba_cmd) run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" "$@"
