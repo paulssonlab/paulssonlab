@@ -1,6 +1,7 @@
 # tooling
 /.nbcleanse
 .envname
+.envconda
 
 # data files
 .snakemake
