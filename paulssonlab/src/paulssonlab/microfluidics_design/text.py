@@ -1,7 +1,8 @@
-import numpy as np
 import gdstk
+import numpy as np
 from matplotlib.font_manager import FontProperties
 from matplotlib.textpath import TextToPath
+
 from paulssonlab.microfluidics_design.geometry import (
     Cell,
     from_matplotlib_path,

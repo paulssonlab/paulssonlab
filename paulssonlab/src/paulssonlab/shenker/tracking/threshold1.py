@@ -21,8 +21,9 @@ plt.show()"""
 Image.fromarray(th1).show()
 Image.fromarray(th1).save("1.png")
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -49,7 +50,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, 23):
-
     video.write(images[i])
 
 

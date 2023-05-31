@@ -1,8 +1,10 @@
-import numpy as np
-import gdstk
-from matplotlib.path import Path
 from functools import partial
-from paulssonlab.microfluidics_design.util import get_uuid, get_polygons
+
+import gdstk
+import numpy as np
+from matplotlib.path import Path
+
+from paulssonlab.microfluidics_design.util import get_polygons, get_uuid
 
 ELLIPSE_TOLERANCE = 0.3
 

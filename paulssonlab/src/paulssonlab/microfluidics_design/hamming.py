@@ -3,8 +3,9 @@
 Inspired by https://github.com/dominiccarrano/hamming.
 """
 
+from math import ceil, floor, log2
+
 import numpy as np
-from math import floor, ceil, log2
 from bitarray import bitarray
 
 

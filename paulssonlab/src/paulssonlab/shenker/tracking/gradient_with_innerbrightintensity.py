@@ -1,6 +1,7 @@
+import math
+
 import cv2
 import numpy as np
-import math
 from PIL import Image, ImageDraw, ImageFilter
 
 # ============================================================================
@@ -20,6 +21,7 @@ def ellipse_bbox(h, k, a, b, theta):
 
 
 # ----------------------------------------------------------------------------
+
 
 # Rotated elliptical gradient - faster, vectorized numpy approach
 def make_gradient_v2(width, height, h, k, a, b, theta):

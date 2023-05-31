@@ -1,12 +1,12 @@
-import pandas as pd
-import numpy as np
+import holoviews as hv
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from matplotlib import cm
 from scipy.integrate import simps, trapz
 from scipy.optimize import curve_fit
-import seaborn as sns
 from sklearn.linear_model import LinearRegression
-import holoviews as hv
 
 
 ###These functions are all involved in the initial processing of the time series data.

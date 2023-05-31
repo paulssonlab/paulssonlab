@@ -1,24 +1,26 @@
-import pandas as pd
-import click
-import pickle
 import os.path
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-import pendulum
-from cytoolz import excepts
+import pickle
+import re
+from collections import defaultdict
 from datetime import datetime
 from functools import wraps
 from itertools import zip_longest
-from collections import defaultdict
-import re
+
+import click
+import pandas as pd
+import pendulum
+from cytoolz import excepts
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 from IPython import embed
+
 from paulssonlab.api.google import (
-    get_calendar_service,
-    get_sheets_service,
     get_calendar_id,
-    iter_calendar_events,
+    get_calendar_service,
     get_sheets_for_spreadsheet,
+    get_sheets_service,
+    iter_calendar_events,
 )
 
 # TODO: individual meeting duration (45min)

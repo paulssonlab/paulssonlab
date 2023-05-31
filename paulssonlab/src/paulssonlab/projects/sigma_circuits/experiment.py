@@ -1,7 +1,8 @@
-import pandas as pd
 import re
 from ast import literal_eval
 from datetime import datetime
+
+import pandas as pd
 from cytoolz import get_in
 
 POSITIONS_KEY = (b"SLxExperiment", b"ppNextLevelEx", b"", b"uLoopPars", b"Points", b"")

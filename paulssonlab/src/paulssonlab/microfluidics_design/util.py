@@ -1,13 +1,14 @@
+from collections.abc import Iterable
+
+import cytoolz
+import gdstk
+import matplotlib.pyplot as plt
 import numpy as np
+import shortuuid
 
 # from functools import lru_cache, wraps
 import toolz
-import cytoolz
-from cytoolz import partial, compose
-from collections.abc import Iterable
-import gdstk
-import matplotlib.pyplot as plt
-import shortuuid
+from cytoolz import compose, partial
 
 get_uuid = partial(shortuuid.random, length=4)
 

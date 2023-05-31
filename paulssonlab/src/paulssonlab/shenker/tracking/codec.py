@@ -1,6 +1,5 @@
 from PIL import Image, ImageDraw, ImageFilter
 
-
 img1 = Image.new("RGB", (840, 400), "grey")
 img2 = Image.new("RGBA", (800, 80), "rgba(18,18,18,100)")
 img2 = img2.filter(ImageFilter.GaussianBlur(3))
@@ -9,7 +8,6 @@ img1.paste(img2, (5, 15))
 
 
 def make_ellipse(image, x, y, dx, dy, next_1, color):
-
     dr = ImageDraw.Draw(image)
 
     # ell3 = dr.ellipse((x-10,y-10,dx+next_1+10,dy+10),fill ='red')
@@ -24,7 +22,6 @@ def make_ellipse(image, x, y, dx, dy, next_1, color):
 
 
 def halo(image, x, y, dx, dy, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
 

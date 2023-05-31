@@ -3,22 +3,18 @@ from gurobipy import *
 
 # @profile
 def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
-
-    import skimage
+    import math
+    import random
 
     # from PIL import Image
     import cv2
-    import numpy as np
     import matplotlib.pyplot as plt
-    import scipy
+    import numpy as np
     import pandas as pd
-    from skimage import morphology
-
-    from PIL import Image, ImageDraw, ImageFilter
-
+    import scipy
     import skimage
-    import random
-    import math
+    from PIL import Image, ImageDraw, ImageFilter
+    from skimage import morphology
 
     # @profile
     def get_coordinates(img1, mask_num):
@@ -32,7 +28,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
     def get_array(n_mask_img, imgs):
         arr_array = [[]] * n_mask_img
         for i in range(n_mask_img):
-
             arr1 = get_coordinates(imgs, i + 1)
 
             arr_array[i] = arr1
@@ -89,7 +84,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
         return int(arr_center_x), pp, len_x, right_edge, left_edge
 
     def tree2(x):
-
         tree2_1 = get_tree(
             n_mask_img[mn][0], arr[mn][0], n_mask_img[mn][12], arr[mn][12]
         )
@@ -169,7 +163,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
     arr = [[[]]] * len(arr_m)
     len_df = [0] * len(arr_m)
     for mn in range(len(arr_m)):
-
         img_ini = cv2.imread("%d.jpg" % (mn + 0))
         th = [[]] * 13
         imgs = [[]] * 13
@@ -261,7 +254,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
         for j in range(len(df_list[mn - 1])):
             row = [0] * len(df_list[mn])
             for i in range(len(df_list[mn])):
-
                 cost_move[j][i] = (
                     matrix_cost_move[0]
                     * (abs(center_arr[i] - df_list[mn - 1]["center"].values[j]))
@@ -342,7 +334,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
                             and center_arr[i2] < (c_i[i] + (1.2 * lenx_arr[i]))
                         ]
                         for j in index_i:
-
                             if (
                                 df_list[mn]["length_x"].values[i] < 35
                                 or df_list[mn - 1]["length_x"].values[k] < 35
@@ -750,7 +741,6 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
         return Image.fromarray(img3)
 
     for jk in range(0, len(arr_m)):
-
         df_list[jk] = df_list_concat[df_list_concat["t"] == jk]
         df_new = df_list[jk][df_list[jk]["s_i"] == 1]
         df_new = df_new.reset_index(drop=True)
@@ -862,8 +852,8 @@ def main2(mainhuh, matrix_cost_move, matrix_cost_divide, imgd):
 
 
 def scorefunc(imgd):
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     df = pd.read_csv("df_label_list_new_yay5.csv")
     df2 = pd.DataFrame()
@@ -885,7 +875,6 @@ def scorefunc(imgd):
         arr_center_which[i] = []
         for j in range(len(df2)):
             if df2["t"][j] == i:
-
                 if arr_Mod[i] != "exit":
                     df2["centerwhich"][j] = df2["centerwhich"][j][2:]
                     df2["centerwhich"][j] = df2["centerwhich"][j][:-2]
@@ -927,8 +916,8 @@ def scorefunc(imgd):
     df3 = df3.drop(columns=["t"])
     df3.to_csv("output_segmentation_tracking5.csv")
 
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     df_ground = pd.read_csv("ground_truth_b.csv")
     df_test = pd.read_csv("output_segmentation_tracking5.csv")
@@ -972,7 +961,6 @@ def scorefunc(imgd):
                 countm += 1
 
             elif df_test["MoD"][i][j][2] == "o":
-
                 a = df_test["centers"][i][j]
                 b = df_test["centerwhichs"][i][j + countm]
                 # if (len(a) >1 and len(b) >  1 ):
@@ -1007,7 +995,6 @@ def scorefunc(imgd):
                 countm2 += 1
 
             elif df_ground["assign"][i][j][2] == "o":
-
                 an = df_ground["center"][i][j]
                 bn = df_ground["to"][i][j + countm2]
                 i  # f (len(an) >1 and len(bn) >  1 ):
@@ -1021,7 +1008,6 @@ def scorefunc(imgd):
         df_ground["coms"][i] = comb_arr_g[i]
 
     for i in range(len(df_test) - 1):
-
         Y = df_test["centers"][i]
         X = df_test["coms"][i]
         z = df_test["MoD"][i]
@@ -1111,7 +1097,6 @@ sc_i = sc_i[0][len(sc_i) - 1]
 arr_score = [-1] * 100
 arr_score[0] = sc_i
 for i in range(1, 100):
-
     matrix_cost_move2[0] = matrix_cost_move2[0] + i * 1  # 8
     # matrix_cost_move2[1] = matrix_cost_move2[1] + i*0.0050
     # matrix_cost_move2[2] = matrix_cost_move2[2]+  i*0.001

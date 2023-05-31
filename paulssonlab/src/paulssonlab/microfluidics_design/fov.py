@@ -1,12 +1,14 @@
+import operator
+from itertools import accumulate, count, cycle, islice, product, takewhile
+
+import gdstk
+import networkx as nx
 import numpy as np
 import pandas as pd
 import scipy.optimize as optimize
-from itertools import count, cycle, islice, product, accumulate, takewhile
-import operator
-import networkx as nx
-import gdstk
-from paulssonlab.microfluidics_design.geometry import Cell
+
 from paulssonlab.microfluidics_design.design import text
+from paulssonlab.microfluidics_design.geometry import Cell
 from paulssonlab.microfluidics_design.util import get_uuid, memoize
 from paulssonlab.util import sign
 

@@ -1,21 +1,20 @@
-import skimage
-from PIL import Image
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-import pandas as pd
-from skimage import morphology
 import math
-import gurobipy
-from gurobipy import *
 
+import cv2
+import gurobipy
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
+import skimage
+from gurobipy import *
+from PIL import Image
+from skimage import morphology
 
 # FUNCTIONS USED
 
 
 def Make_d_nodes(array):
-
     node_arr = []
     for node in array:
         node = str(node)
@@ -134,7 +133,6 @@ th_mat = [[[]]] * len(arr_m)
 model_tree = Model()
 
 for mn in range(len(arr_m)):
-
     img_ini = cv2.imread("%d.jpg" % (mn))
     th = [[]] * 4
     imgs = [[]] * 4
@@ -443,8 +441,9 @@ for i in range(len(df_list_concat)):
         df_list_concat["MoD"][i] = "last"
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 

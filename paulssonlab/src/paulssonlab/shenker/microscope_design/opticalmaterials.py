@@ -1,15 +1,16 @@
 # import numpy as np
+import io
+import os
+import zipfile
+
 import jax
-from jax import numpy as np
 import pandas as pd
+import yaml
+from jax import numpy as np
 
 # from cytoolz import partial
 from jax.tree_util import Partial
 from scipy.interpolate import InterpolatedUnivariateSpline
-import zipfile
-import yaml
-import os
-import io
 
 # NOTE: wavelengths are in µm!
 
@@ -18,6 +19,7 @@ import io
 # https://github.com/quartiq/rayopt/blob/master/rayopt/material.py
 # were used as reference for the refractiveindex.info database format
 # and refractive index formulae
+
 
 # TODO: needs testing
 def n_schott(c, w):

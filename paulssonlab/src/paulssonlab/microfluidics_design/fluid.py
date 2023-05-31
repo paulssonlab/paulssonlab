@@ -1,7 +1,9 @@
-import numpy as np
 from collections.abc import Mapping
-from paulssonlab.microfluidics_design.util import strip_units
+
+import numpy as np
 import pint
+
+from paulssonlab.microfluidics_design.util import strip_units
 
 
 def _ensure_array(val, size):

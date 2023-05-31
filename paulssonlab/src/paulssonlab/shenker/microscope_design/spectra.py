@@ -1,12 +1,13 @@
-import pandas as pd
 import holoviews as hv
+import pandas as pd
 import param
 import requests
 from IPython.display import display
+
 from paulssonlab.api.fpbase import (
-    get_fpbase_spectrum as _get_fpbase_spectrum,
     get_fpbase_protein_spectra as _get_fpbase_protein_spectra,
 )
+from paulssonlab.api.fpbase import get_fpbase_spectrum as _get_fpbase_spectrum
 from paulssonlab.api.semrock import get_semrock_spectra as _get_semrock_spectra
 from paulssonlab.shenker.microscope_design.util import interpolate_dataframe
 

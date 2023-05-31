@@ -1,25 +1,27 @@
 #!/usr/bin/env python
-import numpy as np
+import numbers
+from functools import partial
+from itertools import product
+
+import bitarray.util
 import gdstk
-from gdstk import Reference, rectangle, boolean, Curve, Polygon
+import numpy as np
+from cytoolz import compose
+from gdstk import Curve, Polygon, Reference, boolean, rectangle
+
+import paulssonlab.microfluidics_design.hamming as hamming
 from paulssonlab.microfluidics_design.geometry import (
     Cell,
-    ellipse,
+    align,
     cross,
-    qr_target,
+    ellipse,
+    flatten_or_merge,
     mirror,
     mirror_refs,
-    align,
-    flatten_or_merge,
+    qr_target,
 )
 from paulssonlab.microfluidics_design.text import text as _text
-from paulssonlab.microfluidics_design.util import make_odd, memoize, get_uuid, write_gds
-import paulssonlab.microfluidics_design.hamming as hamming
-import bitarray.util
-from functools import partial
-from cytoolz import compose
-from itertools import product
-import numbers
+from paulssonlab.microfluidics_design.util import get_uuid, make_odd, memoize, write_gds
 
 CURVE_TOLERANCE = 0.2
 REFERENCE_LAYER = 0
@@ -406,7 +408,10 @@ def manifold_snake(
         trench_xs = []
         for idx in range(num_manifolds):
             trench_name = f"{name}-T{idx}"
-            (snake_trenches_cell, manifold_trench_info,) = _snake_trenches(
+            (
+                snake_trenches_cell,
+                manifold_trench_info,
+            ) = _snake_trenches(
                 **{
                     **dict(
                         trench_active_width=trench_active_width,
