@@ -35,22 +35,21 @@ if [ -z "$envname" ]; then
 fi
 
 # exit if we are in env already
-if [ "$envname" = "$CONDA_DEFAULT_ENV" ]; then
-    exit 0
+if [ "$envname" != "$CONDA_DEFAULT_ENV" ]; then
+    # try to activate environment
+    $(mamba_cmd) activate "$envname" 2> /dev/null
+    if [ $? != 0 ]; then
+        # if conda env does not exist, create it? [y/N]
+        read -n 1 -p "🔎  ${bold}Conda environment '${envname}' does not exist, create it? ${normal}[y/N] " answer
+        echo
+        case ${answer:0:1} in
+            y|Y )
+                # we need to source instead of running create-env as a subprocess so that create-env can activate the env
+                source create-env "$envname" "$envyml"
+                ;;
+            * )
+                ;;
+        esac
+    fi
+
 fi
-
-# try to activate environment
-$(mamba_cmd) activate "$envname" 2> /dev/null && exit 0
-
-# if conda env does not exist, create it? [y/N]
-read -n 1 -p "🔎  ${bold}Conda environment '${envname}' does not exist, create it? ${normal}[y/N] " answer
-echo
-case ${answer:0:1} in
-    y|Y )
-        # we need to source instead of running create-env as a subprocess so that create-env can activate the env
-        source create-env "$envname" "$envyml"
-    ;;
-    * )
-        exit 1
-    ;;
-esac
