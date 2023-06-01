@@ -42,8 +42,8 @@ if ! git remote get-url upstream 2> /dev/null; then
     fi
 fi
 echo "🍴  To push to your fork, ${bold}git push origin${normal}."
-echo "   To push to the central paulssonlab repo, ${bold}git push upstream${normal}."
-echo "   To push to both, ${bold}git pss${normal} (requires paulssonlab dotfiles)."
+echo "    To push to the central paulssonlab repo, ${bold}git push upstream${normal}."
+echo "    To push to both, ${bold}git pss${normal} (requires paulssonlab dotfiles)."
 
 
 # make paulssonlab conda env
