@@ -15,7 +15,9 @@ cd "$root"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
 if ! git remote get-url upstream 2> /dev/null; then
+    echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
     git remote add upstream "$UPSTREAM_URL"
+    git fetch upstream
     if git remote get-url origin 2> /dev/null|grep "$UPSTREAM_URL"; then
         fork_url=$(github-fork-url)
         if [ -z "$fork_url" ]; then
