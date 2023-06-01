@@ -1,4 +1,5 @@
 import os
+
 from Bio import SeqIO
 
 read_idx = 0

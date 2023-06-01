@@ -1,7 +1,8 @@
-import re
 import io
-from cytoolz import partial
+import re
+
 from apiclient.http import MediaIoBaseUpload
+from cytoolz import partial
 from google.api_core.datetime_helpers import from_rfc3339
 
 FOLDER_MIMETYPE = "application/vnd.google-apps.folder"

@@ -1,6 +1,6 @@
+import numba
 import numpy as np
 import scipy.ndimage as ndi
-import numba
 
 # SEE:
 # - https://stackoverflow.com/questions/98359/fastest-gaussian-blur-implementation

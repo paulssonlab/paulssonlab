@@ -1,4 +1,5 @@
 import re
+
 from tqdm.auto import tqdm
 
 PROGRESS_BAR = tqdm

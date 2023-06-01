@@ -1,45 +1,47 @@
-import pandas as pd
 import os
 import re
-from cytoolz import dissoc, excepts
 from numbers import Integral
-from Bio.Seq import Seq
+
 import Bio.Restriction
+import pandas as pd
 import pygsheets
+from Bio.Seq import Seq
+from cytoolz import dissoc, excepts
 from natsort import natsorted, ns
 from tatsu.ast import AST
+
 from paulssonlab.api.google import (
-    insert_sheet_rows,
-    update_sheet_rows,
-    get_drive_by_path,
-    ensure_drive_folder,
-    upload_drive,
-    make_drive_folder,
-    copy_drive_file,
-    copy_drive_folder,
-    list_drive,
-    clear_sheet,
     FOLDER_MIMETYPE,
     SHEETS_MIMETYPE,
-)
-from paulssonlab.cloning.workflow import (
-    parse_id,
-    rename_ids,
-    part_entry_to_seq,
-    ID_REGEX,
-    overhangs_for,
-)
-from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq, is_bases
-from paulssonlab.cloning.commands.semantics import eval_ast
-from paulssonlab.cloning.commands.parser import expr_list_parser, normalize_ast
-from paulssonlab.cloning.io import (
-    value_to_bytes,
-    bytes_to_value,
-    value_to_mimetype,
-    filename_to_mimetype,
-    value_to_extension,
+    clear_sheet,
+    copy_drive_file,
+    copy_drive_folder,
+    ensure_drive_folder,
+    get_drive_by_path,
+    insert_sheet_rows,
+    list_drive,
+    make_drive_folder,
+    update_sheet_rows,
+    upload_drive,
 )
 from paulssonlab.api.util import PROGRESS_BAR, regex_key
+from paulssonlab.cloning.commands.parser import expr_list_parser, normalize_ast
+from paulssonlab.cloning.commands.semantics import eval_ast
+from paulssonlab.cloning.io import (
+    bytes_to_value,
+    filename_to_mimetype,
+    value_to_bytes,
+    value_to_extension,
+    value_to_mimetype,
+)
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, get_seq, is_bases, pcr
+from paulssonlab.cloning.workflow import (
+    ID_REGEX,
+    overhangs_for,
+    parse_id,
+    part_entry_to_seq,
+    rename_ids,
+)
 
 AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "fragments"]

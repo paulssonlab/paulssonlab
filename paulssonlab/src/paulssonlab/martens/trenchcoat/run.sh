@@ -46,12 +46,12 @@ identifier="1"
 crop_top=1000
 crop_bottom=1325
 
-./trenchcoat.py trench-measurements -i "$HDF5_dir" -p "$parent_name" -n $num_cpu -I "$identifier" -T $crop_top -B $crop_bottom 
+./trenchcoat.py trench-measurements -i "$HDF5_dir" -p "$parent_name" -n $num_cpu -I "$identifier" -T $crop_top -B $crop_bottom
 
 # # 4. Define bounding boxes within each trench
 # # NOTE: this was less useful that I had hoped (help provide constraints for cell segmentation), and is error-prone.
 # # Segmentation alone works well enough.
-# 
+#
 # HDF5_dir="/home/andrew/Martens/2019-12-04 Delay Time/HDF5_0_29/"
 # parent_name="delaytime_9_16_100x_001.h5"
 # num_cpu=1
@@ -60,7 +60,7 @@ crop_bottom=1325
 # crop_bottom=1325
 # min_peak_distance=20
 # prominence_file="prominence_values.tsv"
-# 
+#
 # ./cell_detection.py -i "$HDF5_dir" -p "$parent_name" -n $num_cpu -I "$identifier" -T $crop_top -B $crop_bottom -d $min_peak_distance -P $prominence_file
 
 # 5. Segment cells within each trench

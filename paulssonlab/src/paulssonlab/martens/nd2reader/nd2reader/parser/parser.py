@@ -1,5 +1,5 @@
-from nd2reader.parser.v3 import V3Parser
 from nd2reader.exc import InvalidVersionError
+from nd2reader.parser.v3 import V3Parser
 
 
 def get_parser(fh, major_version, minor_version):

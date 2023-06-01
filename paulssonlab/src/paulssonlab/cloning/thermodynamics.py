@@ -1,5 +1,6 @@
-from paulssonlab.cloning.sequence import normalize_seq
 import Bio.SeqUtils.MeltingTemp as MeltingTemp
+
+from paulssonlab.cloning.sequence import normalize_seq
 
 
 def tm(seq, method="q5", **kwargs):

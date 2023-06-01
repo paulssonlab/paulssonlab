@@ -1,7 +1,8 @@
-import serial
-import serial.tools.list_ports
 import time
 from time import sleep
+
+import serial
+import serial.tools.list_ports
 
 
 class handlerCore:
@@ -90,7 +91,7 @@ class handlerCore:
                     no_timeout = False
             if returnedstr == "MARLIN":
                 self.serial_handle.timeout = 10.0
-                print ("Connected.")
+                print("Connected.")
             else:
                 raise ValueError("MARLIN connection timeout.")
         else:
@@ -102,7 +103,6 @@ class handlerCore:
         self.titanxstates = titanxstates
 
     def sendstate(self, valvestate, pumpstate, titanxstates):
-
         self.updatestate(valvestate, pumpstate, titanxstates)
         no_handshake = True
         handshake_failed = False
@@ -145,7 +145,7 @@ class handlerCore:
                 + str(self.pumpstate)
             )
 
-            print returnedstr.strip()
+            print(returnedstr.strip())
 
             if returnedstr.strip() == checkstr.strip():
                 no_handshake = False

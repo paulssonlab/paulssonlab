@@ -1,13 +1,15 @@
+import holoviews as hv
 import numpy as np
 import pandas as pd
-import holoviews as hv
-from ..misc.holoborodko_diff import holo_diff
+
+from paulssonlab.util.numeric import silent_nanquantile
+
 from ..geometry import get_image_limits
+from ..misc.holoborodko_diff import holo_diff
 from ..ui import RevImage
 from ..workflow import points_dataframe
+from .geometry import coords_along, edge_point
 from .hough import trench_anchors
-from .geometry import edge_point, coords_along
-from paulssonlab.util.numeric import silent_nanquantile
 
 
 def get_trench_line_profiles(

@@ -1,26 +1,41 @@
 # fmt: off
-import matplotlib.pyplot as plt
-import numpy as np
-import skimage as sk
-import pandas as pd
-import holoviews as hv
+import copy
+import pickle as pkl
+
 import dask.array as da
 import dask.dataframe as dd
-import xarray as xr
-import pickle as pkl
 import h5py
-import copy
-
-from scipy import ndimage as ndi
-from skimage.segmentation import watershed
-from ipywidgets import interact, interactive, fixed, interact_manual, FloatSlider, IntSlider, Dropdown, IntText, SelectMultiple, Select, IntRangeSlider, FloatRangeSlider
-from skimage import filters,transform
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.collections import PolyCollection
+import holoviews as hv
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import skimage as sk
+import xarray as xr
 from holoviews.operation.datashader import regrid
+from ipywidgets import (
+    Dropdown,
+    FloatRangeSlider,
+    FloatSlider,
+    IntRangeSlider,
+    IntSlider,
+    IntText,
+    Select,
+    SelectMultiple,
+    fixed,
+    interact,
+    interact_manual,
+    interactive,
+)
+from matplotlib.collections import PolyCollection
+from mpl_toolkits.mplot3d import Axes3D
+from scipy import ndimage as ndi
+from skimage import filters, transform
+from skimage.segmentation import watershed
+
 from .kymograph import kymograph_multifov
 from .segment import fluo_segmentation
-from .utils import kymo_handle,pandas_hdf5_handler
+from .utils import kymo_handle, pandas_hdf5_handler
+
 
 class kymograph_interactive(kymograph_multifov):
     def __init__(self,headpath):

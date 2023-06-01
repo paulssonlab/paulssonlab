@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import six
 from nd2reader.parser import get_parser
 from nd2reader.version import get_version
-import six
 
 
 class Nd2(object):

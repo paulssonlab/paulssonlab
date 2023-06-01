@@ -1,9 +1,9 @@
 CFP:
     algorithm: "niblack_phase"
-    
+
     fluorescent_channel: "CFP"
     phase_channel: "Phase"
-    
+
     parameters:
         niblack_k: -0.45
         niblack_w: 7
@@ -11,22 +11,22 @@ CFP:
         fluor_background: 0
         garbage_otsu_value: 130
         scaling_factor: 1
-        
+
         phase_background: 0
         phase_threshold_min: 0
         phase_threshold_max: 400
         phase_sigma: 0.5
-        
+
         min_size: 40
-        
+
         # In microns^2. Must use pixel_microns for conversion!
         #minimum_area: 0.2
 MCHERRY:
     algorithm: "niblack_phase"
-    
+
     fluorescent_channel: "MCHERRY"
     phase_channel: "Phase"
-    
+
     parameters:
         niblack_k: -0.45
         niblack_w: 7
@@ -34,13 +34,13 @@ MCHERRY:
         fluor_background: 0
         garbage_otsu_value: 130
         scaling_factor: 1
-        
+
         phase_background: 0
         phase_threshold_min: 0
         phase_threshold_max: 400
         phase_sigma: 0.5
-        
+
         min_size: 40
-        
+
         # In microns^2. Must use pixel_microns for conversion!
         #minimum_area: 0.2

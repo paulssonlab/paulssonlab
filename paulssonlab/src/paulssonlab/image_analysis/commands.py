@@ -1,10 +1,10 @@
-import pandas as pd
-from distributed import Client
-from dask_jobqueue import SLURMCluster
 import click
+import pandas as pd
+from dask_jobqueue import SLURMCluster
+from distributed import Client
 
 # from .processing import compress_trenches
-from .util import multi_join, apply_map_futures
+from .util import apply_map_futures, multi_join
 
 IDX = pd.IndexSlice
 

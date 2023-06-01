@@ -1,6 +1,6 @@
 import tatsu
-from tatsu.ast import AST
 from frozendict import frozendict
+from tatsu.ast import AST
 
 expr_rules = r"""ws = /\s*/ ;
 

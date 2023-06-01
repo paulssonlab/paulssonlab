@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-import tables
-import numpy
-from scipy.signal import find_peaks, savgol_filter
 import os
 import pathlib
+
+import numpy
+import tables
+from scipy.signal import find_peaks, savgol_filter
 
 # from skimage.filters import unsharp_mask
 

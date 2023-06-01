@@ -1,28 +1,28 @@
 # fmt: off
+import copy
 import itertools
 import json
-import h5py
 import os
-import copy
-import h5py_cache
-import tifffile
 import shutil
+
 import dask
+import dask.array as da
+import dask.dataframe as dd
+import h5py
+import h5py_cache
+import ipywidgets as ipyw
 import numpy as np
 import pandas as pd
 import scipy as sp
-import sklearn as skl
-import ipywidgets as ipyw
-import dask.array as da
-import dask.dataframe as dd
 import scipy.signal
+import sklearn as skl
 import sklearn.mixture
-
+import tifffile
 from matplotlib import pyplot as plt
-from .utils import pandas_hdf5_handler, writedir
-from .ndextract import apply_flatfield
 from parse import compile
 
+from .ndextract import apply_flatfield
+from .utils import pandas_hdf5_handler, writedir
 
 ####
 

@@ -1,30 +1,31 @@
+import numbers
+import uuid
+from collections.abc import Mapping, Sequence
+from functools import partial, reduce
+
+import bokeh
+import holoviews as hv
+import ipywidgets as widgets
 import numpy as np
 import pandas as pd
-import holoviews as hv
-import bokeh
-import ipywidgets as widgets
+from cachetools import LRUCache
+from cytoolz import compose, get_in
 
 # from holoviews.operation.datashader import aggregate, datashade, dynspread, shade, regrid
 from holoviews.operation import datashader
-from IPython.display import display, clear_output, HTML
-from holoviews.streams import Stream, param, Selection1D
+from holoviews.streams import Selection1D, Stream, param
+from IPython.display import HTML, clear_output, display
 from matplotlib.colors import hex2color
-from collections.abc import Mapping, Sequence
-import numbers
-from functools import partial, reduce
-import uuid
-from .util import summarize_filenames, get_one, format_number
+
 from . import common
+from .geometry import bounding_box
+from .util import format_number, get_one, summarize_filenames
 from .workflow import (
+    get_nd2_frame,
     get_nd2_frame_anyargs,
     get_trench_image,
-    get_nd2_frame,
     get_trench_set_image,
 )
-from .geometry import bounding_box
-import numbers
-from cytoolz import get_in, compose
-from cachetools import LRUCache
 
 IDX = pd.IndexSlice
 

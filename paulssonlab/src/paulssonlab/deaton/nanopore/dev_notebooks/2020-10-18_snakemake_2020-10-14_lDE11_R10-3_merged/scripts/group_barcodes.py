@@ -1,12 +1,11 @@
-import csv
 import ast
+import csv
 import os
 import shutil
+
 import numpy as np
 import pandas as pd
-
 from Bio import SeqIO
-
 from matplotlib import pyplot as plt
 
 
@@ -76,7 +75,6 @@ chunksize = snakemake.params["chunksize"]
 subsample_list = snakemake.params["subsample_list"]
 
 for key, val in inv_barcode_codebook.items():
-
     ref_str = ""
     ref_seq = generate_reference(cigar_dict[val[0]], seg_dict)
     ref_str += ">group_" + str(key) + "\n"

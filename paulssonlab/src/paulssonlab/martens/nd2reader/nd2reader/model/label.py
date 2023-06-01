@@ -1,6 +1,7 @@
-import six
-import struct
 import re
+import struct
+
+import six
 
 
 class LabelMap(object):

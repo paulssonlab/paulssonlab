@@ -1,23 +1,26 @@
-import numpy as np
+from collections import defaultdict
+
 import holoviews as hv
+import numpy as np
 import scipy
-from matplotlib.path import Path
-from scipy.spatial import ConvexHull
 import skimage
 import sklearn
 import sklearn.cluster
+from matplotlib.path import Path
+from scipy.spatial import ConvexHull
 from sklearn.preprocessing import StandardScaler
-from collections import defaultdict
-from ..misc.holoborodko_diff import holo_diff
-from .refinement import get_trench_line_profiles
+
+from paulssonlab.util.numeric import silent_nanquantile
+
 from ..image import (
     gaussian_box_approximation,
-    remove_large_objects,
     normalize_componentwise,
+    remove_large_objects,
 )
+from ..misc.holoborodko_diff import holo_diff
 from ..ui import RevImage
 from ..util import getitem_if_not_none
-from paulssonlab.util.numeric import silent_nanquantile
+from .refinement import get_trench_line_profiles
 
 
 def _standardize_cluster_labels(X, fit):

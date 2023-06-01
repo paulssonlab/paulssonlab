@@ -1,12 +1,12 @@
-import numpy as np
-import pandas as pd
-import matplotlib
-import MMCorePy
-from IPython.display import clear_output
-import matplotlib.pyplot as plt
 import time
 
 import h5py
+import matplotlib
+import matplotlib.pyplot as plt
+import MMCorePy
+import numpy as np
+import pandas as pd
+from IPython.display import clear_output
 
 
 class scopeCore:
@@ -98,7 +98,6 @@ class scopeCore:
         output_folder="./",
         group_name="FISH_channels",
     ):
-
         ### Make sure configs are valid ###
         undefined_configs = []
         for config in config_list:

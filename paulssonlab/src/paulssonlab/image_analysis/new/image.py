@@ -1,8 +1,9 @@
+import holoviews as hv
 import numpy as np
 import pandas as pd
-import holoviews as hv
-from paulssonlab.image_analysis.trench_detection import find_trenches
+
 from paulssonlab.image_analysis.geometry import get_image_limits, get_trench_bbox
+from paulssonlab.image_analysis.trench_detection import find_trenches
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
 

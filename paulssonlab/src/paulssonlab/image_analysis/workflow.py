@@ -1,33 +1,35 @@
+import sys
+from collections import defaultdict, namedtuple
+from datetime import timedelta
+
+import cachetools
+import holoviews as hv
+import nd2reader
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import holoviews as hv
 import streamz
+from cytoolz import compose, get_in, juxt, partial, valfilter
+from distributed.client import default_client
+from numcodecs import Blosc
 from tornado import gen
 from tornado.util import TimeoutError
-from distributed.client import default_client
-from cytoolz import get_in, valfilter, juxt, compose, partial
-import cachetools
-from numcodecs import Blosc
-import nd2reader
-import sys
-from datetime import timedelta
-from collections import defaultdict, namedtuple
-from .util import (
-    zip_dicts,
-    multi_join,
-    array_to_tuples,
-    get_one,
-    unzip_dicts,
-    unzip_items,
-    get_kwargs,
-    kwcompose,
-)
 
 from paulssonlab.io.metadata import parse_nd2_metadata
-from .geometry import get_image_limits, get_trench_bbox, bounding_box
+
 from .diagnostics import expand_diagnostics_by_label
+from .geometry import bounding_box, get_image_limits, get_trench_bbox
 from .image import get_regionprops
+from .util import (
+    array_to_tuples,
+    get_kwargs,
+    get_one,
+    kwcompose,
+    multi_join,
+    unzip_dicts,
+    unzip_items,
+    zip_dicts,
+)
 
 IDX = pd.IndexSlice
 
@@ -100,6 +102,7 @@ def get_channels_to_indices(channels):
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 ND2_FRAME_CACHE = cachetools.LFUCache(maxsize=10**8, getsizeof=sys.getsizeof)
+
 
 # def _get_nd2_reader(filename, **kwargs):
 def _get_nd2_reader(filename, **kwargs):

@@ -1,7 +1,8 @@
-import pandas as pd
 import re
-from cytoolz import dissoc
+
+import pandas as pd
 import requests
+from cytoolz import dissoc
 
 
 def get_fpbase_proteins(**params):

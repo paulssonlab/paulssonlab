@@ -1,26 +1,26 @@
 #!/usr/bin/env python
 import os
-import tables
-import numpy
-import napari
-from dask import delayed
-import dask.array
-import pandas
-from params import read_params_string, read_params_file
 
+import dask.array
+import matplotlib.cm
+import napari
+import numpy
+import pandas
+import tables
+from dask import delayed
+from lineages import relabel_mask_complete
 from napari_browse_hdf5 import (
     get_largest_extents_hdf5,
-    metadata_attributes_equal,
     metadata_array_equal,
+    metadata_attributes_equal,
 )
+from params import read_params_file, read_params_string
 
 # TODO spawn sub-tasks in multiple threads?
 # from napari.qt.threading import thread_worker
 
 # FIXME/TODO update loading Napari Settings, Corrections
 
-from lineages import relabel_mask_complete
-import matplotlib.cm
 
 """
 Browse kymographs from an HDF5 file using Napari.
@@ -70,7 +70,7 @@ def dask_stack_loop(
                                 tr_width,
                                 img_width,
                                 height,
-                                *load_func_args
+                                *load_func_args,
                             ),
                             shape=(img_width, height),
                             dtype=dtype,

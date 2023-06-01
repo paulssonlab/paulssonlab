@@ -1,26 +1,25 @@
 # fmt: off
-from .utils import pandas_hdf5_handler
-from .trcluster import dask_controller
-
-import h5py
 import os
+from time import sleep
 
-import skimage as sk
-import pandas as pd
-import numpy as np
-import dask.dataframe as dd
 import dask.array as da
+import dask.dataframe as dd
 import dask.delayed as delayed
-import xarray as xr
+import h5py
 import holoviews as hv
+import numpy as np
+import pandas as pd
 import panel as pn
 import scipy as sp
 import scipy.stats
-
+import skimage as sk
+import xarray as xr
 from distributed.client import futures_of
-from time import sleep
-
 from matplotlib import pyplot as plt
+
+from .trcluster import dask_controller
+from .utils import pandas_hdf5_handler
+
 ## HERE
 
 class regionprops_extractor:

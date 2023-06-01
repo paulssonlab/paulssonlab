@@ -1,6 +1,7 @@
-from nd2reader.model.image import Image
-import numpy as np
 import unittest
+
+import numpy as np
+from nd2reader.model.image import Image
 
 
 class ImageTests(unittest.TestCase):

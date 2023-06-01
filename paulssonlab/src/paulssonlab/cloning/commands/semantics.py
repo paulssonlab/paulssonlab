@@ -1,15 +1,17 @@
+from itertools import repeat
+
 import Bio.Restriction
 from tatsu.ast import AST
-from itertools import repeat
+
 from paulssonlab.cloning.commands.parser import (
-    expr_parser,
-    expr_list_parser,
-    command_parser,
-    normalize_ast,
     Name,
+    command_parser,
+    expr_list_parser,
+    expr_parser,
+    normalize_ast,
 )
-from paulssonlab.cloning.sequence import anneal, pcr, assemble
 from paulssonlab.cloning.enzyme import re_digest
+from paulssonlab.cloning.sequence import anneal, assemble, pcr
 from paulssonlab.cloning.workflow import re_digest_part
 
 

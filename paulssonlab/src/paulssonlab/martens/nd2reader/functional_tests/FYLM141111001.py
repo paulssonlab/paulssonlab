@@ -3,12 +3,13 @@ These tests require that you have a specific ND2 file created by the developer o
 run them unless you're Jim Rybarski.
 
 """
+import time
+import unittest
+from datetime import datetime
+
+import numpy as np
 from nd2reader import Nd2
 from skimage import io
-import numpy as np
-from datetime import datetime
-import unittest
-import time
 
 
 class FYLM141111Tests(unittest.TestCase):

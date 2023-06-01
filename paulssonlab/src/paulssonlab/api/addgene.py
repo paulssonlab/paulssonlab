@@ -1,8 +1,10 @@
 import re
-import requests_html
 import urllib
+
+import requests_html
+
+from paulssonlab.api.util import PROGRESS_BAR, parse_html_table
 from paulssonlab.cloning.util import format_well_name
-from paulssonlab.api.util import parse_html_table, PROGRESS_BAR
 
 
 def _ensure_addgene_url(catalog_or_url):

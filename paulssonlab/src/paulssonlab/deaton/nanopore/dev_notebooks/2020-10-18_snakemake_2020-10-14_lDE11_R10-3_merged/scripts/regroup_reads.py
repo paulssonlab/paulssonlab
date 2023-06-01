@@ -1,4 +1,5 @@
 import os
+
 from Bio import SeqIO
 
 read_idx = 0
@@ -25,7 +26,6 @@ for fastq_dir in fastqpath_list:
             for record in input_records:
                 record_len = len(record.seq)
                 if (record_len <= max_readlength) and (record_len >= min_readlength):
-
                     output_records.append(record)
                     read_idx += 1
                     if read_idx >= numreads:

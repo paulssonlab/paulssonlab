@@ -1,11 +1,13 @@
+import warnings
+
+import numba
 import numpy as np
 import pandas as pd
 import scipy
 import skimage.morphology
-from skimage.feature import hessian_matrix, hessian_matrix_eigvals
-import numba
 from cytoolz import compose
-import warnings
+from skimage.feature import hessian_matrix, hessian_matrix_eigvals
+
 from paulssonlab.image_analysis.blur import scipy_box_blur
 from paulssonlab.image_analysis.util import repeat_apply
 
@@ -189,6 +191,7 @@ def hessian_eigenvalues(img, sigma=1.5):
 #     k1[np.isnan(k1)] = 0
 #     k2[np.isnan(k2)] = 0
 #     return k1, k2
+
 
 # FROM: Kovesi, Peter. 2010. Fast Almost-Gaussian Filtering.
 # TODO: replace with http://blog.ivank.net/fastest-gaussian-blur.html

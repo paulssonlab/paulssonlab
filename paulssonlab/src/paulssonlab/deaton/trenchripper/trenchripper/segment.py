@@ -1,27 +1,38 @@
 # fmt: off
-import numpy as np
-import skimage as sk
-import scipy as sp
-import h5py
-import os
 import copy
+import os
 import pickle as pkl
-import pandas as pd
-import dask.dataframe as dd
-from scipy import ndimage as ndi
-from dask.distributed import as_completed
-
-from skimage import measure,feature,segmentation,future,util,morphology,filters,exposure,transform
-from skimage.segmentation import watershed
-from .utils import kymo_handle,pandas_hdf5_handler,writedir
-from .trcluster import hdf5lock
 from time import sleep
-import scipy.ndimage.morphology as morph
-# import mahotas as mh
-from dask.distributed import worker_client
-from pandas import HDFStore
 
+import dask.dataframe as dd
+import h5py
+import numpy as np
+import pandas as pd
+import scipy as sp
+import scipy.ndimage.morphology as morph
+import skimage as sk
+
+# import mahotas as mh
+from dask.distributed import as_completed, worker_client
 from matplotlib import pyplot as plt
+from pandas import HDFStore
+from scipy import ndimage as ndi
+from skimage import (
+    exposure,
+    feature,
+    filters,
+    future,
+    measure,
+    morphology,
+    segmentation,
+    transform,
+    util,
+)
+from skimage.segmentation import watershed
+
+from .trcluster import hdf5lock
+from .utils import kymo_handle, pandas_hdf5_handler, writedir
+
 
 class fluo_segmentation:
     def __init__(self,bit_max=0,scale_timepoints=False,scaling_percentile=0.9,img_scaling=1.,smooth_sigma=0.75,eig_sigma=2.,\

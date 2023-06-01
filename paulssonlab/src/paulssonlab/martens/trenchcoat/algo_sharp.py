@@ -1,11 +1,9 @@
 import numpy
-
+from scipy.ndimage import binary_fill_holes
+from skimage.filters import threshold_niblack, threshold_otsu, unsharp_mask
+from skimage.measure import label
 from skimage.morphology import remove_small_objects
 from skimage.segmentation import watershed
-from skimage.measure import label
-from skimage.filters import threshold_otsu, threshold_niblack, unsharp_mask
-
-from scipy.ndimage import binary_fill_holes
 
 
 def run_fluor_sharp_segmentation(stack, ch_to_index, params):

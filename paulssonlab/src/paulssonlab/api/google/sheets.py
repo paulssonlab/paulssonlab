@@ -1,5 +1,6 @@
-import numpy as np
 import re
+
+import numpy as np
 import pygsheets
 
 SHEETS_MIMETYPE = "application/vnd.google-apps.spreadsheet"
@@ -188,7 +189,7 @@ def clear_sheet(sheet, skiprows=1):
 
 def _clear_sheet_request(sheet, bounds, fields="userEnteredValue"):
     requests = []
-    for (start, end) in bounds:
+    for start, end in bounds:
         range_ = {
             "sheetId": sheet.id,
             "startRowIndex": start[0],

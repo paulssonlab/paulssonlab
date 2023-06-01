@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 import os
+from multiprocessing import Pool, get_context
 
+import new_trench_algos
 import numpy
 import tables
-from multiprocessing import Pool, get_context
-from tqdm import tqdm
-
+from metadata import get_metadata
 from params import read_params_file
 from properties import get_max_length
-from metadata import get_metadata
-import new_trench_algos
+from tqdm import tqdm
 
 """
 Write two PyTables tables:

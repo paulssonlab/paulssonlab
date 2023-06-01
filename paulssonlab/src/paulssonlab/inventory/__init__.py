@@ -1,1 +1,1 @@
-from .core import File, connect_db, make_inventory, get_metadata
+from .core import File, connect_db, get_metadata, make_inventory

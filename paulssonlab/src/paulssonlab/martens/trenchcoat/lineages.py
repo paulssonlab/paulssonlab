@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-import tables
-import pandas
 import numpy
+import pandas
+import tables
 from dataframe_conversion import write_dataframe_to_hdf5
 
 """
@@ -272,7 +272,7 @@ def relabel_mask_complete(mask, old_labels, new_labels):
     # or come up with a way to color all lineages without interference.
     # As is, each repeat of a progeny id will further increment previous iterations of that progeny id.
     new_mask = numpy.zeros(mask.shape, dtype=mask.dtype)
-    for (o, n) in zip(old_labels, new_labels):
+    for o, n in zip(old_labels, new_labels):
         new_mask += ((mask == o).astype(mask.dtype) * n).astype(mask.dtype)
 
     return new_mask
@@ -503,7 +503,6 @@ def run_kymograph_to_lineages(kymograph, total_cells, length_buffer):
                     top_cell["cell_length"] + length_buffer
                     < previous_cell["cell_length"]
                 ) and (job["not_cell_edge"]):
-
                     # If the cell is ~ 2x larger than that in the previous frame, then
                     # there might be a cell merging issue (segmentation problem).
                     # NOTE this didn't work. Clearly there are some mergers, but no warnings are printed.

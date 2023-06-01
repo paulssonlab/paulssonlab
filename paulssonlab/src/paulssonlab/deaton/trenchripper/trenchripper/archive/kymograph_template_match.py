@@ -1,19 +1,27 @@
 # fmt: off
-import numpy as np
-import pandas as pd
-import h5py
-import scipy.signal
-import shutil
-import skimage as sk
 import os
 import pickle
+import shutil
 import sys
-import h5py_cache
 
+import h5py
+import h5py_cache
+import numpy as np
+import pandas as pd
+import scipy.signal
+import skimage as sk
 from skimage import filters
+
+from .drift_detection import (
+    find_drift_poi,
+    find_drift_template,
+    find_seed_image,
+    find_template,
+    get_orb_pois,
+)
 from .trcluster import hdf5lock
-from .utils import multifov,pandas_hdf5_handler,writedir
-from .drift_detection import find_seed_image, get_orb_pois, find_drift_poi, find_template, find_drift_template
+from .utils import multifov, pandas_hdf5_handler, writedir
+
 
 class kymograph_cluster:
     def __init__(self,headpath="",trenches_per_file=20,paramfile=False,all_channels=[""],trench_len_y=270,padding_y=20,trench_width_x=30,\

@@ -1,40 +1,42 @@
-import numpy as np
 import re
-import requests
-from copy import deepcopy
 import string
-from itertools import product, count, cycle, islice
-from datetime import datetime
-from collections import ChainMap
 import textwrap
-import pygsheets
-from Bio.Seq import Seq
+from collections import ChainMap
+from copy import deepcopy
+from datetime import datetime
+from itertools import count, cycle, islice, product
+
 import Bio.Restriction as Restriction
-from paulssonlab.cloning.sequence import (
-    normalize_seq,
-    get_seq,
-    smoosh_sequences,
-    find_homologous_ends,
-    find_aligned_subsequence,
-    find_coding_sequence,
-    find_subsequence,
-    DsSeqRecord,
-    reverse_complement,
-    assemble,
-    pcr,
-)
-from paulssonlab.cloning.primers import iter_primers, PrimerPair
-from paulssonlab.cloning.commands.parser import expr_list_parser
-from paulssonlab.cloning.enzyme import re_digest, CutDirection
+import numpy as np
+import pygsheets
+import requests
+from Bio.Seq import Seq
+
 from paulssonlab.api.addgene import get_addgene
 from paulssonlab.api.google import (
-    list_drive,
-    upload_drive,
     columns_with_validation,
     insert_sheet_rows,
+    list_drive,
+    upload_drive,
 )
 from paulssonlab.api.util import PROGRESS_BAR, regex_key
+from paulssonlab.cloning.commands.parser import expr_list_parser
+from paulssonlab.cloning.enzyme import CutDirection, re_digest
 from paulssonlab.cloning.io import bytes_to_value, filename_to_mimetype
+from paulssonlab.cloning.primers import PrimerPair, iter_primers
+from paulssonlab.cloning.sequence import (
+    DsSeqRecord,
+    assemble,
+    find_aligned_subsequence,
+    find_coding_sequence,
+    find_homologous_ends,
+    find_subsequence,
+    get_seq,
+    normalize_seq,
+    pcr,
+    reverse_complement,
+    smoosh_sequences,
+)
 
 DEGENERATE_BASES = "RYMKSWHBVDN".lower()
 DEGENERATE_BASES_REGEX = re.compile(f"[{DEGENERATE_BASES}]", re.IGNORECASE)

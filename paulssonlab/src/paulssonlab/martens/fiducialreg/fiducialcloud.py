@@ -2,20 +2,20 @@
 
 from __future__ import division
 
-from scipy import ndimage
-from os import path as osp
-import numpy as np
-import logging
 import json
-
-from .fiducialreg import get_thresh, intrinsicToWorld
-from .gaussfit import fit_gaussian
+import logging
+from os import path as osp
 
 # using Qt5Agg causes "window focus loss" in interpreter for some reason
 import matplotlib
 
 # matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy import ndimage
+
+from .fiducialreg import get_thresh, intrinsicToWorld
+from .gaussfit import fit_gaussian
 
 logger = logging.getLogger(__name__)
 logger.setLevel("WARNING")

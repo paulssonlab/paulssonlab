@@ -1,10 +1,11 @@
-import nd2reader
-from tifffile import TiffFile
 import array
+import xml
+
+import nd2reader
+import xmltodict
 import zarr
 from numcodecs import Blosc
-import xmltodict
-import xml
+from tifffile import TiffFile
 
 DEFAULT_METADATA_COMPRESSOR = Blosc(
     cname="zstd", clevel=5, shuffle=Blosc.NOSHUFFLE, blocksize=0

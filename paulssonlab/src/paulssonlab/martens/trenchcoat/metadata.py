@@ -1,10 +1,11 @@
-import nd2reader
 import os
-import tables
-import numpy
-import xmltodict
-import xml.etree.ElementTree as ElementTree
 import re
+import xml.etree.ElementTree as ElementTree
+
+import nd2reader
+import numpy
+import tables
+import xmltodict
 
 
 def get_metadata(n):
@@ -339,7 +340,6 @@ def copy_fov_metadata(h5file, frames, fields_of_view, reader):
             reader._parser.raw_metadata.pfs_status,
         )
     ):
-
         # Convert linear index into FOV, frame
         fov = i % num_fov
         frame_number = int((i - fov) / num_fov)

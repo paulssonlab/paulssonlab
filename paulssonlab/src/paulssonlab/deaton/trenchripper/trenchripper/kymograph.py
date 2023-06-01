@@ -1,32 +1,33 @@
 # fmt: off
-import numpy as np
-import pandas as pd
-import h5py
-import scipy.signal
-import skimage as sk
-import os
-import pickle
-import sys
-import h5py_cache
 import copy
-import shutil
-import pickle as pkl
-from parse import compile
-from time import sleep
-from distributed.client import futures_of
-from dask.distributed import wait
-
-import dask.dataframe as dd
-import dask.delayed as delayed
-
-from skimage import filters
-from .trcluster import hdf5lock
-from .utils import multifov,pandas_hdf5_handler,writedir
-from .daskutils import add_list_to_column
-from tifffile import imread
 
 ## Hacky memory trim
 import ctypes
+import os
+import pickle
+import pickle as pkl
+import shutil
+import sys
+from time import sleep
+
+import dask.dataframe as dd
+import dask.delayed as delayed
+import h5py
+import h5py_cache
+import numpy as np
+import pandas as pd
+import scipy.signal
+import skimage as sk
+from dask.distributed import wait
+from distributed.client import futures_of
+from parse import compile
+from skimage import filters
+from tifffile import imread
+
+from .daskutils import add_list_to_column
+from .trcluster import hdf5lock
+from .utils import multifov, pandas_hdf5_handler, writedir
+
 
 def trim_memory() -> int:
     libc = ctypes.CDLL("libc.so.6")

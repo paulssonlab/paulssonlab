@@ -1,31 +1,37 @@
 # fmt: off
-import skimage as sk
-import sklearn as skl
-import numpy as np
-import pandas as pd
+import copy
+import os
 import pickle as pkl
+import shutil
+from time import sleep
+
 import dask.dataframe as dd
 import dask.delayed as delayed
-from time import sleep
-from distributed.client import futures_of
-from dask.distributed import as_completed
-
-import os
-import copy
 import h5py
-import shutil
-
-from sklearn import cluster
-from scipy.special import logsumexp
+import numpy as np
+import pandas as pd
+import skimage as sk
+import sklearn as skl
+from dask.distributed import as_completed
+from distributed.client import futures_of
+from ipywidgets import (
+    FloatSlider,
+    IntRangeSlider,
+    IntSlider,
+    SelectMultiple,
+    fixed,
+    interactive,
+)
+from matplotlib import cm, colors
 from matplotlib import pyplot as plt
-from matplotlib import cm
-from matplotlib import colors
 from pulp import *
-from ipywidgets import interactive, fixed, FloatSlider, IntSlider, IntRangeSlider, SelectMultiple
+from scipy.special import logsumexp
+from sklearn import cluster
 
-from .utils import pandas_hdf5_handler,writedir
-from .trcluster import dask_controller
 from .metrics import get_cell_dimensions_spherocylinder
+from .trcluster import dask_controller
+from .utils import pandas_hdf5_handler, writedir
+
 
 def get_labeled_data(kymo_arr,orientation):
     labeled_data = []

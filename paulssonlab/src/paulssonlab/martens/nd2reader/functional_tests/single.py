@@ -3,9 +3,10 @@ These tests require that you have a specific ND2 file created by the developer o
 run them unless you're Jim Rybarski.
 
 """
-from nd2reader import Nd2
-from datetime import datetime
 import unittest
+from datetime import datetime
+
+from nd2reader import Nd2
 
 
 class SingleTests(unittest.TestCase):

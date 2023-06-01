@@ -1,26 +1,28 @@
-from paulssonlab.cloning.sequence import DsSeqRecord, normalize_seq_upper
-from paulssonlab.cloning.primers import Primer
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
-from Bio.SeqFeature import (
-    SeqFeature,
-    FeatureLocation,
-    CompoundLocation,
-    ExactPosition,
-    BeforePosition,
-    AfterPosition,
-    Reference,
-)
-from Bio import GenBank
-import sqlalchemy
-from lxml import etree
-from lxml.builder import E
-from cytoolz import get_in
-from datetime import datetime
-import time
 import re
+import time
 import uuid
 from copy import deepcopy
+from datetime import datetime
+
+import sqlalchemy
+from Bio import GenBank
+from Bio.Seq import Seq
+from Bio.SeqFeature import (
+    AfterPosition,
+    BeforePosition,
+    CompoundLocation,
+    ExactPosition,
+    FeatureLocation,
+    Reference,
+    SeqFeature,
+)
+from Bio.SeqRecord import SeqRecord
+from cytoolz import get_in
+from lxml import etree
+from lxml.builder import E
+
+from paulssonlab.cloning.primers import Primer
+from paulssonlab.cloning.sequence import DsSeqRecord, normalize_seq_upper
 
 GENEIOUS_TO_GENBANK = {
     "fields/topology": "topology",

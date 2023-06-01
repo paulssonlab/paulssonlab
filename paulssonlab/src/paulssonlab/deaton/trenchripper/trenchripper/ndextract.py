@@ -1,18 +1,20 @@
 # fmt: off
-import h5py
-import os
-import shutil
 import copy
-import h5py_cache
-import tifffile
+import os
 import pickle as pkl
+import shutil
+
+import h5py
+import h5py_cache
+import ipywidgets as ipyw
 import numpy as np
 import pandas as pd
-import ipywidgets as ipyw
-
+import tifffile
 from nd2reader import ND2Reader
-from .utils import pandas_hdf5_handler,writedir
 from parse import compile
+
+from .utils import pandas_hdf5_handler, writedir
+
 
 def generate_flatfield(flatfieldpath,outputpath): #can add dark image correction to this
     img_arr = []

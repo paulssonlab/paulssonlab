@@ -1,5 +1,6 @@
 import random
-from paulssonlab.cloning.sequence import reverse_complement, normalize_seq
+
+from paulssonlab.cloning.sequence import normalize_seq, reverse_complement
 
 
 def random_bases(n, letters="atcg", seed=None):

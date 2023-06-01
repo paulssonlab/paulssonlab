@@ -1,9 +1,11 @@
 # fmt: off
-import cv2
 import os
-import numpy as np
+
+import cv2
 import matplotlib.pyplot as plt
+import numpy as np
 from skimage.util import pad
+
 
 def find_seed_image(image_stack, max_poi_std=5):
     """Find a suitable image for segmentation from an image stack by checking

@@ -1,5 +1,6 @@
-import nd2reader
 import unittest
+
+import nd2reader
 from setup import VERSION
 
 

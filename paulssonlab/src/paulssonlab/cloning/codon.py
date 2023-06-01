@@ -1,8 +1,10 @@
-import pandas as pd
-import requests
 import re
 from operator import itemgetter
-from paulssonlab.util import grouper, first
+
+import pandas as pd
+import requests
+
+from paulssonlab.util import first, grouper
 
 KAZUSA_URL = "http://www.kazusa.or.jp/codon/cgi-bin/showcodon.cgi?"
 
