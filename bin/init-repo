@@ -3,14 +3,12 @@ UPSTREAM_URL="git@github.com:paulssonlab/paulssonlab.git"
 if [ -z "$INITIALIZING_REPO" ]; then
     export INITIALIZING_REPO=1
     # we need to run this script inside an environment loaded by direnv
-    # this uses the direnv for the bin dir
-    # assuming there is no $root/bin/.envrc,
     # this will load the root direnv from $root/.envrc, as desired
     # FROM: https://stackoverflow.com/questions/4774054/reliable-way-for-a-bash-script-to-get-the-full-path-to-itself
     bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     this_script="${bin_dir}/$(basename "${BASH_SOURCE[0]}")"
-    direnv allow "${bin_dir}/.envrc" # make sure the root .envrc is allowed so we can direnv exec
-    direnv exec "$bin_dir" "$this_script"
+    direnv allow "${bin_dir}/../.envrc" # make sure the root .envrc is allowed so we can direnv exec
+    direnv exec "$bin_dir/.." "$this_script"
     exit $?
 fi
 cd "$root"
@@ -27,7 +25,7 @@ normal="$(tput sgr0)"
 #    do nothing
 # WHAT HAPPENS IF NO PERSONAL FORK??
 ###
-if !git remote get-url upstream; then
+if ! git remote get-url upstream; then
     if git remote get-url origin 2>&1|grep "$UPSTREAM_URL"; then
         #ask about forking/setting remotes
         fork_url=$(github-fork-url)
@@ -72,8 +70,6 @@ if [ $status != 0 ] ; then
     echo "❌  pre-commit install${bold}failed, aborting.${normal}"
     exit $status
 fi
-# run git status (so git builds its cache before we install the nbcleanse filter)
-git status > /dev/null
 # install nbcleanse
 if [ ! -d .nbcleanse ]; then
     echo "💾  ${bold}Installing nbcleanse to ${normal}${root}/.nbcleanse"
