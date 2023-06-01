@@ -7,7 +7,7 @@ dependencies:
   - h5py
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - numpy
   - pandas
   - pyserial

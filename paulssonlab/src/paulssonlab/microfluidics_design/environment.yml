@@ -10,7 +10,7 @@ dependencies:
   - gdstk
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - nbformat
   - networkx
   - numpy

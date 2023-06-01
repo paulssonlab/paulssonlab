@@ -1,10 +1,13 @@
-name: microscope
+name: cfd
 channels:
   - conda-forge
+  - defaults
 dependencies:
-  - black
-  - click
+  - fenics
+  - holoviews
+  - hvplot
   - jupyterlab
-  - jupyterlab_code_formatter
   - matplotlib-base
   - numpy
+  - pandas
+  - scipy

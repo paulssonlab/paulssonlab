@@ -29,7 +29,7 @@ dependencies:
   - jupyterlab_code_formatter
   - leidenalg
   - line_profiler
-  - matplotlib
+  - matplotlib-base
   - minimap2
   - nd2reader
   - networkx

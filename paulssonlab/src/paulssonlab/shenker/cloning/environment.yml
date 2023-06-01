@@ -21,7 +21,7 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - mafft
-  - matplotlib
+  - matplotlib-base
   - natsort
   - nbformat
   - networkx

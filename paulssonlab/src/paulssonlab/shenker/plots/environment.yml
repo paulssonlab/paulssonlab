@@ -9,7 +9,7 @@ dependencies:
   - hvplot
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - numpy
   - pandas
   - pint

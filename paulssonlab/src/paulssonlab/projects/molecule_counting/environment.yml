@@ -19,7 +19,7 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - nbformat
   - nd2reader
   - nodejs

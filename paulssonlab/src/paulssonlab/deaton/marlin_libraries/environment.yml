@@ -9,7 +9,7 @@ dependencies:
   - dna_features_viewer
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - minimap2
   - nodejs
   - numpy
