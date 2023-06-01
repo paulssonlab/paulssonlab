@@ -15,7 +15,7 @@ def cli():
 @click.option(
     "--file-list", type=click.File("r")
 )  # TODO: make this a flag, have file list as in_path instead?
-@click.option("--skip", multiple=True, default=False)
+@click.option("--skip", multiple=True, default=[])
 @click.option("--aggregate", multiple=True, default=["tiff"])
 @click.option("--metadata/--no-metadata", default=True)
 @click.option("--checksums/--no-checksums", default=True)

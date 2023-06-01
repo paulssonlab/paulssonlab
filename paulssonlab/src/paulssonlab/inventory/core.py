@@ -16,15 +16,13 @@ from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 import os
 import re
-from tqdm.autonotebook import tqdm
+from tqdm.auto import tqdm
 from paulssonlab.io.metadata import (
     parse_nd2_file_metadata,
     parse_nikon_tiff_file_metadata,
 )
 
-AGGREGATE_EXCLUDE = re.compile(
-    r"^(Thumbs.*\.db|Pos7_TimelapseAnalysis\.mat|.*\.txt|\..*)$"
-)
+AGGREGATE_EXCLUDE = re.compile(r"^(Thumbs.*\.db|.*\.txt|\..*)$")
 AGGREGATE_EXCLUDE_DIRS = re.compile(r"^ps$")
 
 EXTENSION_ALIASES = {"tif": "tiff"}
@@ -230,7 +228,7 @@ def make_inventory(
     out_path,
     rescan=False,
     file_list=None,
-    skip=False,
+    skip=[],
     aggregate=["tiff"],
     metadata=True,
     checksums=True,
@@ -298,6 +296,7 @@ def make_inventory(
                 )
                 try:
                     file_row.metadata = METADATA_READERS[extension](file_row.path)
+                    print(">>>>", file_row.metadata)
                 except KeyboardInterrupt:
                     click.echo("skipped: {}".format(skipped), err=True)
                     raise

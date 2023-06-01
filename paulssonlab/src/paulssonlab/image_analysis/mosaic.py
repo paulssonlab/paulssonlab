@@ -24,6 +24,7 @@ from paulssonlab.image_analysis.workflow import (
 )
 from paulssonlab.image_analysis.blur import scipy_box_blur
 
+
 # TODO: move to paulssonlab.util
 def get_delayed(delayed):
     if delayed is True:
@@ -333,7 +334,6 @@ def square_overlay(
             )
             del text_img_translated
     return composite_rgb_rgba(frame, np.asarray(img) / 255)
-    # return frame
 
 
 def mosaic_animate_scale(

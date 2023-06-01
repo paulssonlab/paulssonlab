@@ -44,8 +44,7 @@ def parse_nd2_file_metadata(nd2_file):
 
 
 def _parse_xml(s):
-    # use native dicts, since they are ordered starting in Python 3.6
-    return xmltodict.parse(s, dict_constructor=dict)
+    return xmltodict.parse(s, encoding="utf-8")
 
 
 def _stringify_dict_keys(d):
@@ -84,6 +83,7 @@ def parse_nd2_metadata(nd2):
             data = None
         metadata[label] = data
     for label in ND2_METADATA_PARSED:
+        # TODO
         metadata[label] = _stringify_dict_keys(getattr(raw_metadata, label))
     for label, dtype in ND2_METADATA_ARRAYS.items():
         metadata[label] = _nd2_parse_array(nd2, label, dtype)
