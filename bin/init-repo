@@ -41,6 +41,7 @@ if ! git remote get-url upstream 2> /dev/null; then
         fi
     fi
 fi
+git branch --set-upstream-to=upstream/master master
 echo "🍴  To push to your fork, ${bold}git push origin${normal}."
 echo "    To push to the central paulssonlab repo, ${bold}git push upstream${normal}."
 echo "    To push to both, ${bold}git pss${normal} (requires paulssonlab dotfiles)."
@@ -69,6 +70,6 @@ if [ ! -d .nbcleanse ]; then
     git clone git@github.com:shenker/nbcleanse.git "${root}/.nbcleanse"
 fi
 nbcleanse_conda_env=nbcleanse # in case we want to change this
-$(mamba_cmd) env remove -n "${nbcleanse_conda_env}" &> /dev/null
+$(mamba_cmd) env remove -n "${nbcleanse_conda_env}" -y &> /dev/null
 $(mamba_cmd) env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml" -y
 nbcleanse-enable
