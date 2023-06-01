@@ -1,0 +1,21 @@
+#!/bin/sh
+gh api graphql --paginate --jq '.data.viewer.repositories.nodes | map(select(.parent.nameWithOwner == "paulssonlab/paulssonlab")) | .[].sshUrl' -f query='
+  query($endCursor: String) {
+    viewer {
+      repositories(first: 100, isFork: true, after: $endCursor) {
+        nodes {
+            nameWithOwner
+            sshUrl
+            parent {
+                nameWithOwner
+                sshUrl
+            }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+'

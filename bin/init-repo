@@ -14,28 +14,15 @@ fi
 cd "$root"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
-###
-# if no remote named upstream:
-#     if remote origin is paulssonlab/paulssonlab:
-#         if github-fork-url has non-empty output:
-#             set remote origin to that output
-#         else: gh repo fork (does this make upstream remote?)
-#     add remote upstream: paulssonlab/paulssonlab
-# if remote named upstream:
-#    do nothing
-# WHAT HAPPENS IF NO PERSONAL FORK??
-###
-if ! git remote get-url upstream; then
-    if git remote get-url origin 2>&1|grep "$UPSTREAM_URL"; then
-        #ask about forking/setting remotes
+if ! git remote get-url upstream 2> /dev/null; then
+    git remote add upstream "$UPSTREAM_URL"
+    if git remote get-url origin 2> /dev/null|grep "$UPSTREAM_URL"; then
         fork_url=$(github-fork-url)
         if [ -z "$fork_url" ]; then
             read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
             echo
             case ${answer:0:1} in
-                n|N )
-                    ;;
-                * )
+                y|Y )
                     # cloned from paulssonlab account, fork
                     gh repo fork --remote --remote-name origin
                     status=$?
@@ -43,16 +30,22 @@ if ! git remote get-url upstream; then
                         echo "❌  ${bold}Could not fork repo, aborting.${normal}"
                         exit 1
                     fi
-                ;;
+                    ;;
+                * )
+                    ;;
             esac
         else
-            echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
-            git remote add
+            echo "📡  Setting git remote ${bold}origin${normal} to ${fork_url}"
+            git remote remove origin 2> /dev/null
+            git remote add origin "${fork_url}"
         fi
     fi
-    echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
-    git remote add upstream "$UPSTREAM_URL"
 fi
+echo "🍴  To push to your fork, ${bold}git push origin${normal}."
+echo "   To push to the central paulssonlab repo, ${bold}git push upstream${normal}."
+echo "   To push to both, ${bold}git pss${normal} (requires paulssonlab dotfiles)."
+
+
 # make paulssonlab conda env
 "${root}/bin/direnv-allowall"
 # check that direnv loaded/conda env was created
