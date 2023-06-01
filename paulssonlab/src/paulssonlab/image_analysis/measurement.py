@@ -1,5 +1,6 @@
-from .workflow import get_trench_bboxes
 import pandas as pd
+
+from .workflow import get_trench_bboxes
 
 
 def _trench_diag_to_dataframe(trench_diag, sep="."):

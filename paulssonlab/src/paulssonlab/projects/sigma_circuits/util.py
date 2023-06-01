@@ -1,5 +1,5 @@
-import numpy as np
 import dask.base
+import numpy as np
 
 
 def conditional(flag, true_val, false_val):

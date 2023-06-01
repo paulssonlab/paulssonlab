@@ -1,8 +1,10 @@
 import collections.abc
-from frozendict import frozendict
 import functools
-import json
 import hashlib
+import json
+
+from frozendict import frozendict
+
 
 # FROM: https://stackoverflow.com/a/53035002
 @functools.singledispatch
@@ -38,6 +40,10 @@ def _(x: collections.abc.Mapping):
 # SEE: https://stackoverflow.com/a/22003440
 def hash_json(obj, digest_size=4, hash_func=hashlib.blake2b):
     s = json.dumps(obj, sort_keys=True, ensure_ascii=True, default=str)
+    return hash_str(s, digest_size=digest_size, hash_func=hash_func)
+
+
+def hash_str(s, digest_size=4, hash_func=hashlib.blake2b):
     h = hash_func(digest_size=digest_size)
     h.update(s.encode())
     return h.hexdigest()

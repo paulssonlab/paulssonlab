@@ -2,29 +2,29 @@
 
 from __future__ import division
 
-from os import path as osp
 import itertools
-import numpy as np
-import logging
 import json
-import pandas
-
-from .fiducialcloud import FiducialCloud
-from .cpd import CPDrigid, CPDsimilarity, CPDaffine, cpd_2step
-from .fiducialreg import (
-    infer_translation,
-    infer_rigid,
-    infer_similarity,
-    infer_affine,
-    infer_2step,
-    get_matching_points,
-)
+import logging
+from os import path as osp
 
 # using Qt5Agg causes "window focus loss" in interpreter for some reason
 import matplotlib
 
 # matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas
+
+from .cpd import CPDaffine, CPDrigid, CPDsimilarity, cpd_2step
+from .fiducialcloud import FiducialCloud
+from .fiducialreg import (
+    get_matching_points,
+    infer_2step,
+    infer_affine,
+    infer_rigid,
+    infer_similarity,
+    infer_translation,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel("DEBUG")
@@ -57,7 +57,7 @@ class CloudSet(object):
         dz=1,
         mincount=None,
         threshold=None,
-        **kwargs
+        **kwargs,
     ):
         self.dx = dx
         self.dz = dz
@@ -88,7 +88,7 @@ class CloudSet(object):
                         dz=self.dz,
                         threshold=threshold,
                         mincount=mincount,
-                        **kwargs
+                        **kwargs,
                     )
                 )
         else:

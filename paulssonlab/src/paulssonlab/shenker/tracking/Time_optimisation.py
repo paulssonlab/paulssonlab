@@ -1,24 +1,23 @@
-import skimage
-from PIL import Image
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
-import scipy
+import numpy as np
 import pandas as pd
-from skimage import morphology
+import scipy
+import skimage
 
 # import math
 # import gurobipy
 from gurobipy import *
+from PIL import Image
+from skimage import morphology
 
 # from line_profiler import LineProfiler
 
+
 # @profile
 def main2(mainhuh):
-
     # FUNCTIONS USED
     def Make_d_nodes(array):
-
         node_arr = []
         for node in array:
             node = str(node)
@@ -157,7 +156,6 @@ def main2(mainhuh):
     arr = [[[]]] * len(arr_m)
     len_df = [0] * len(arr_m)
     for mn in range(len(arr_m)):
-
         img_ini = cv2.imread("%d.jpg" % (mn + 10))
         th = [[]] * 4
         imgs = [[]] * 4
@@ -281,7 +279,6 @@ def main2(mainhuh):
         ####################################################################################################
         s[mn - 1] = [-1] * 1000
         for i in range(0, len(df_list[mn - 1])):
-
             s1 = (
                 sum(np.sum(a_div3[mn - 1][i][j]) for j in range(0, len(df_list[mn])))
                 + np.sum(a_div2[mn - 1][i])
@@ -440,7 +437,6 @@ def main2(mainhuh):
         return Image.fromarray(img3)
 
     for jk in range(0, len(arr_m)):
-
         df_list[jk] = df_list_concat[df_list_concat["t"] == jk]
         df_new = df_list[jk][df_list[jk]["s_i"] == 1]
         df_new = df_new.reset_index(drop=True)

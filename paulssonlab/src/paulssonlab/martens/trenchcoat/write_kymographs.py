@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 
 import os
-import tables
-import numpy
-import pandas
 import pathlib
 from multiprocessing import Pool
-from tqdm import tqdm
-from params import read_params_string
+
+import numpy
+import pandas
+import tables
+from lineages import relabel_mask_complete
 from napari_browse_hdf5 import (
     get_largest_extents_hdf5,
-    metadata_attributes_equal,
     metadata_array_equal,
+    metadata_attributes_equal,
 )
-from lineages import relabel_mask_complete
+from params import read_params_string
+from tqdm import tqdm
 
 """
 Write kymographs to disk. This only includes the original intensity images, not mask, regions or other "layers."

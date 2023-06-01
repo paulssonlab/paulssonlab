@@ -1,13 +1,13 @@
+from operator import itemgetter
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
 import skimage
 from PIL import Image, ImageDraw, ImageFilter
 from skimage import morphology
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-from operator import itemgetter
-import pandas as pd
-
 
 for m in range(0, 75):
     # m=12
@@ -241,8 +241,9 @@ for m in range(0, 75):
     print("m", m)
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -269,7 +270,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, 75):
-
     video.write(images[i])
 
 

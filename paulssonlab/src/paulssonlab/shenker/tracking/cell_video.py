@@ -1,8 +1,8 @@
-from PIL import Image, ImageDraw, ImageFilter
-import numpy as np
-import skimage
 import random
 
+import numpy as np
+import skimage
+from PIL import Image, ImageDraw, ImageFilter
 
 # img1 = Image.new("RGB",(1740,150),'rgba(18,18,18,100)')
 # img2 = Image.new("RGBA",(800,80),'rgba(18,18,18,100)')
@@ -13,7 +13,6 @@ angle = 0.1
 
 
 def make_ellipse(image, x, y, dx, dy, next_1, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     ell2 = dr.ellipse((x + next_1, y, dx + next_1, dy), color)
@@ -23,7 +22,6 @@ def make_ellipse(image, x, y, dx, dy, next_1, color):
 
 
 def halo(image, x, y, dx, dy, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     return ell
@@ -87,7 +85,6 @@ for i in range(0, t):
     dy = y + 33
 
     if length < 100:
-
         img = Image.new(
             "RGBA", (800, 160), "rgba(0,0,0,0)"
         )  # we do get a background less image
@@ -105,7 +102,6 @@ for i in range(0, t):
         img1 = img1.save("%d.png" % i)
 
     elif length > 90:
-
         length = int(length / 2)
         length1 = length
 
@@ -153,7 +149,6 @@ for i in range(0, t):
 
 
 import cv2
-
 
 # import cv2
 img0 = cv2.imread("0.png")

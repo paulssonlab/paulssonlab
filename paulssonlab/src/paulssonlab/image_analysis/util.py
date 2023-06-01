@@ -1,25 +1,24 @@
-import numpy as np
-import pandas as pd
-import pandas.core.groupby.groupby
-from collections import defaultdict
-from collections.abc import Sequence, Mapping, MutableMapping
-from tqdm import tqdm, tqdm_notebook
-import zarr
-from datetime import datetime, timezone
-import holoviews as hv
-import functools
-from functools import wraps
-from itertools import zip_longest
-import wrapt
-from itertools import count
-from cytoolz import compose, take, reduce, partial, keymap
 import collections
-from collections import namedtuple
+import functools
 import numbers
-from dask.distributed import Future
 import operator
 import os
 import random
+from collections import defaultdict, namedtuple
+from collections.abc import Mapping, MutableMapping, Sequence
+from datetime import datetime, timezone
+from functools import wraps
+from itertools import count, zip_longest
+
+import holoviews as hv
+import numpy as np
+import pandas as pd
+import pandas.core.groupby.groupby
+import wrapt
+import zarr
+from cytoolz import compose, keymap, partial, reduce, take
+from dask.distributed import Future
+from tqdm import tqdm, tqdm_notebook
 
 
 def return_none(*args, **kwargs):
@@ -95,6 +94,7 @@ def split_into(ary, max_length):
 
 
 UNEVEN_GROUPS = object()
+
 
 # FROM: https://docs.python.org/3/library/itertools.html#recipes
 def grouper(iterable, n, fillvalue=UNEVEN_GROUPS):
@@ -210,6 +210,7 @@ def drop_constant_columns(df):
 
 # predicate that's useful for flatten_dict
 mapping_values_are_dict = lambda x: isinstance(get_one(x), MutableMapping)
+
 
 # FROM: https://stackoverflow.com/questions/6027558/flatten-nested-python-dictionaries-compressing-keys
 def flatten_dict(d, parent_key=None, sep=None, predicate=None, lookahead=None):
@@ -356,6 +357,7 @@ map_futures = partial(recursive_map, shortcircuit=Future)
 
 getitem_r = lambda b, a: operator.getitem(a, b)
 getattr_r = lambda b, a: operator.getattr(a, b)
+
 
 # TODO: unused. remove? see unzip_dicts, above
 def unzip_collection(data, **kwargs):

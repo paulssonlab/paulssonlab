@@ -1,20 +1,21 @@
+import warnings
+from collections import Mapping, Sequence, defaultdict
+from numbers import Integral
+
+import cachetools
+import dask
+import dask.array as da
+import holoviews as hv
+import nd2reader
 import numpy as np
 import pandas as pd
-import holoviews as hv
-import dask
-from dask import delayed
-import dask.array as da
-import nd2reader
-import skimage
-import skimage.filters
-import skimage.feature
-from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 import scipy.ndimage as ndi
-from cytoolz import reduce, compose, partial
-import cachetools
-from numbers import Integral
-import warnings
-from collections import Sequence, Mapping, defaultdict
+import skimage
+import skimage.feature
+import skimage.filters
+from cytoolz import compose, partial, reduce
+from dask import delayed
+from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 
 # import zarr
 # from numcodecs import Blosc
@@ -43,6 +44,7 @@ def _get_nd2_reader(filename, fix_z_levels=True, **kwargs):
 
 get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 # get_nd2_reader = _get_nd2_reader
+
 
 # TODO: modified
 def get_nd2_frame(filename, position, channel, t):
@@ -158,6 +160,7 @@ def hessian_eigenvalues(img, sigma=1.5):
 #     k1[np.isnan(k1)] = 0
 #     k2[np.isnan(k2)] = 0
 #     return k1, k2
+
 
 # TODO: modified, this is the newest version
 def gaussian_box_approximation(ary, sigma, n=3, output=None, mode="nearest", cval=0):

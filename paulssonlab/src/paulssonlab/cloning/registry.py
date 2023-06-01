@@ -1,46 +1,47 @@
-import pandas as pd
 import os
 import re
-from cytoolz import dissoc, excepts
 from numbers import Integral
-from Bio.Seq import Seq
+
 import Bio.Restriction
+import pandas as pd
 import pygsheets
+from Bio.Seq import Seq
+from cytoolz import dissoc, excepts
 from natsort import natsorted, ns
+from tatsu.ast import AST
+
 from paulssonlab.api.google import (
-    insert_sheet_rows,
-    update_sheet_rows,
-    get_drive_by_path,
-    ensure_drive_folder,
-    upload_drive,
-    make_drive_folder,
-    copy_drive_file,
-    copy_drive_folder,
-    list_drive,
-    clear_sheet,
     FOLDER_MIMETYPE,
     SHEETS_MIMETYPE,
-)
-from paulssonlab.cloning.workflow import (
-    parse_id,
-    rename_ids,
-    part_entry_to_seq,
-    ID_REGEX,
-)
-from paulssonlab.cloning.sequence import DsSeqRecord, anneal, pcr, get_seq, is_bases
-from paulssonlab.cloning.commands.semantics import (
-    eval_expr,
-    eval_command,
-    eval_exprs_by_priority,
-)
-from paulssonlab.cloning.io import (
-    value_to_bytes,
-    bytes_to_value,
-    value_to_mimetype,
-    filename_to_mimetype,
-    value_to_extension,
+    clear_sheet,
+    copy_drive_file,
+    copy_drive_folder,
+    ensure_drive_folder,
+    get_drive_by_path,
+    insert_sheet_rows,
+    list_drive,
+    make_drive_folder,
+    update_sheet_rows,
+    upload_drive,
 )
 from paulssonlab.api.util import PROGRESS_BAR, regex_key
+from paulssonlab.cloning.commands.parser import expr_list_parser, normalize_ast
+from paulssonlab.cloning.commands.semantics import eval_ast
+from paulssonlab.cloning.io import (
+    bytes_to_value,
+    filename_to_mimetype,
+    value_to_bytes,
+    value_to_extension,
+    value_to_mimetype,
+)
+from paulssonlab.cloning.sequence import DsSeqRecord, anneal, get_seq, is_bases, pcr
+from paulssonlab.cloning.workflow import (
+    ID_REGEX,
+    overhangs_for,
+    parse_id,
+    part_entry_to_seq,
+    rename_ids,
+)
 
 AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "fragments"]
@@ -49,6 +50,10 @@ TYPES_WITH_SEQUENCING = ["plasmids", "strains"]
 TYPES_WITH_MAPS = ["plasmids"]
 COLLECTION_REGEX = r"^([^_]+)_(\w+)$"
 ENABLE_AUTOMATION_FILENAME = "ENABLE_AUTOMATION.txt"
+
+
+class GetError(ValueError):
+    pass
 
 
 def _name_mapper_for_prefix(old_prefix, new_prefix):
@@ -936,6 +941,16 @@ class Registry(object):
             types = ["fragments"]
         return prefix, types
 
+    def _eval_command(self, s, kwargs={}):
+        if not s.strip():
+            return None
+        exprs = expr_list_parser.parse(s)
+        expr = normalize_ast(exprs[0])
+        if expr.get("_type") == "command" and expr.get("command") == "Digest":
+            new_kwargs = kwargs.get(expr.get("command"), {})
+            expr = {**expr, "kwargs": {**expr.get("kwargs", {}), **new_kwargs}}
+        return eval_ast(expr, ctx=dict(registry=self))
+
     def get_with_prefix(self, name, prefix, type_, name_column="Name"):
         if type_ == "fragments":
             client = None
@@ -950,14 +965,14 @@ class Registry(object):
                     name = id_
                     break
             if prefix is None:
-                raise ValueError(f"could not find part '{name}'")
+                raise GetError(f"could not find part '{name}'")
         else:
             key = (prefix, type_)
             if key not in self:
-                raise ValueError(f"prefix '{prefix}' does not have a '{type_}'")
+                raise GetError(f"prefix '{prefix}' does not have a '{type_}'")
             client = self[key]
             if name not in client:
-                raise ValueError(f"could not find '{name}'")
+                raise GetError(f"could not find '{name}'")
         entry = client[name]
         entry["_id"] = name
         entry["_type"] = type_
@@ -966,12 +981,17 @@ class Registry(object):
             try:
                 map_client = self[(prefix, "maps")]
             except:
-                raise ValueError(f"no maps folder for prefix '{prefix}'")
+                raise GetError(f"no maps folder for prefix '{prefix}'")
             if name not in map_client:
-                raise ValueError(f"could not find map for '{name}'")
+                raise GetError(f"could not find map for '{name}'")
             entry["_seq"] = map_client[name]
         elif type_ == "fragments":
-            res = eval_exprs_by_priority(entry["Usage"], self.get)
+            overhangs = overhangs_for(entry)
+            if any(overhangs):
+                kwargs = {"Digest": {"overhangs": overhangs}}
+            else:
+                kwargs = {}
+            res = self._eval_command(entry["Usage"], kwargs)
             if res is None:
                 seq = None
             else:
@@ -998,15 +1018,17 @@ class Registry(object):
         for type_ in types:
             try:
                 return self.get_with_prefix(name, prefix, type_)
-            except ValueError:
+            except GetError:
                 pass
         raise ValueError(f"could not find '{name}'")
 
-    def eval_expr(self, expr):
-        return eval_expr(expr, self.get)
+    # TODO
+    # def eval_expr(self, expr):
+    #     return eval_expr(expr, self.get)
 
-    def eval_command(self, command):
-        return eval_command(command, self.get)
+    # TODO
+    # def eval_command(self, command):
+    #     return eval_command(command, self.get)
 
     def sync_geneious(
         self,

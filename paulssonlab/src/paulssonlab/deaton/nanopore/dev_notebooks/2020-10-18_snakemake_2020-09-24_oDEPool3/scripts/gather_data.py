@@ -1,7 +1,6 @@
 import csv
 
 import pandas as pd
-
 from Bio import SeqIO
 
 consfile_path = snakemake.input["consfile"]

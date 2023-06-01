@@ -1,12 +1,14 @@
-import numpy as np
+from itertools import product
+from numbers import Integral
+
+import cachetools
 import dask
 import h5py
 import nd2reader
-import cachetools
-from tqdm.auto import tqdm
+import numpy as np
 from cytoolz import excepts
-from itertools import product
-from numbers import Integral
+from tqdm.auto import tqdm
+
 from paulssonlab.io.metadata import parse_nd2_metadata
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)

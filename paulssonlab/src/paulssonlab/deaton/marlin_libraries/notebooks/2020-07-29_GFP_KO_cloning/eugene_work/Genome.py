@@ -1,14 +1,15 @@
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.Alphabet import generic_dna, generic_protein
-import sys
+import copy
 import csv
 import random
-import copy
-from Bio import pairwise2
 import re
-from Bio.SeqFeature import SeqFeature, FeatureLocation
+import sys
+
 import numpy as np
+from Bio import SeqIO, pairwise2
+from Bio.Alphabet import generic_dna, generic_protein
+from Bio.Seq import Seq
+from Bio.SeqFeature import FeatureLocation, SeqFeature
+
 
 # Find location of all PAM sites on sequence
 def PAM(genome):

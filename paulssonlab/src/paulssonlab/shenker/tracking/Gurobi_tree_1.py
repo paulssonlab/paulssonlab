@@ -5,7 +5,6 @@
 
 from gurobipy import *
 
-
 # In[18]:
 
 
@@ -65,7 +64,6 @@ m.optimize()
 
 
 import matplotlib.pyplot as plt
-
 
 # In[28]:
 

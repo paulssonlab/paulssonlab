@@ -1,11 +1,11 @@
 # fmt: off
 import copy
 
+import numpy as np
+import scipy as sp
+import skimage as sk
 import skimage.measure
 
-import numpy as np
-import skimage as sk
-import scipy as sp
 
 def object_f_scores(true_labels,pred_labels,eps = (10**-5)):
     any_true,any_pred = (np.any(true_labels>0),np.any(pred_labels>0))

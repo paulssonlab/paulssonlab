@@ -36,9 +36,10 @@ Examples
 """
 from __future__ import division
 
-from scipy import ndimage, stats
-import numpy as np
 import logging
+
+import numpy as np
+from scipy import ndimage, stats
 
 logger = logging.getLogger(__name__)
 

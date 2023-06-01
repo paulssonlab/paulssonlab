@@ -1,6 +1,7 @@
-from ruamel.yaml import YAML
-import tables
 import pathlib
+
+import tables
+from ruamel.yaml import YAML
 
 
 def read_params_file(file_path):

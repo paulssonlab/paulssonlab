@@ -1,9 +1,10 @@
+import warnings
+
+import holoviews as hv
 import numpy as np
 import pandas as pd
-import holoviews as hv
-import scipy.signal
 import scipy.ndimage
-import warnings
+import scipy.signal
 
 
 def find_peaks(

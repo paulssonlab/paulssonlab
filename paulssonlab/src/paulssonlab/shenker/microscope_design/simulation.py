@@ -1,9 +1,10 @@
+import re
+
 import numpy as np
 import pandas as pd
-import xarray as xr
-import scipy
 import pint
-import re
+import scipy
+import xarray as xr
 
 # FROM: https://pint.readthedocs.io/en/latest/tutorial.html#using-pint-in-your-projects
 ureg = pint.UnitRegistry()

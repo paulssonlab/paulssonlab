@@ -1,12 +1,12 @@
+from operator import itemgetter
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy
 import skimage
 from PIL import Image, ImageDraw, ImageFilter
 from skimage import morphology
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-from operator import itemgetter
-
 
 for i in range(12, 17):
     # m=12

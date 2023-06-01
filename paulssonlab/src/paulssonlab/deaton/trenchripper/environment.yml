@@ -21,7 +21,7 @@ dependencies:
   - kmodes
   - line_profiler
   - lmfit
-  - matplotlib
+  - matplotlib-base
   - nd2reader
   - nodejs
   - numpy

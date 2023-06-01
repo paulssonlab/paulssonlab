@@ -1,10 +1,11 @@
-from PIL import Image, ImageDraw, ImageFilter
-import numpy as np
-import skimage
-import random
 import math
+import random
+
 import cv2
+import numpy as np
 import pandas as pd
+import skimage
+from PIL import Image, ImageDraw, ImageFilter
 
 bright_halo = "rgb(68,68,68)"
 bright_blur = "rgb(128,128,128)"
@@ -51,7 +52,6 @@ def draw_ellipse(length):
 
 
 def image_edit(img, angle):
-
     pixelsize = random.choice(pixelsize_list)
     img = img.rotate(angle)
     imgSmall = img.resize((pixelsize, pixelsize), resample=Image.BILINEAR)
@@ -62,7 +62,6 @@ def image_edit(img, angle):
 
 
 def image_edit2(img):
-
     img = img.rotate(0)
     imgSmall = img.resize((150, 150), resample=Image.BILINEAR)
     result = imgSmall.resize(img.size, Image.NEAREST)
@@ -72,7 +71,6 @@ def image_edit2(img):
 
 
 def position_ellipse(imga, length_mat, x_pos_mat, y_pos_mat, label):
-
     for i in range(len(length_mat)):
         img = draw_ellipse(int(length_mat[i]))
         result = image_edit(img, random.choice(list2))
@@ -85,7 +83,6 @@ def position_ellipse(imga, length_mat, x_pos_mat, y_pos_mat, label):
 
 
 def pos_mat_gen(len_mat_in):
-
     pos_mat2 = [0] * len(len_mat_in)
     pos_mat2[0] = 0
     for i in range(1, len(len_mat_in)):
@@ -119,7 +116,6 @@ for i in range(1, t):
     sum_len[i - 1] = [0] * len(m1_mat[i - 1])
 
     for j in range(len(m1_mat[i - 1])):
-
         if m1_mat[i - 1][j] <= 180:
             m1_mat[i][j] = int(m1_mat[i - 1][j] + random.uniform(10, 20))
 
@@ -136,7 +132,6 @@ for i in range(1, t):
                 or (int(m1_mat[i - 1][j]) == (2 * (m1_mat[i][j + count]) - 1))
                 or (int(m1_mat[i - 1][j]) == (2 * (m1_mat[i][j + count]) + 1))
             ):
-
                 m1_mat[i] = list(m1_mat[i])
                 m1_mat[i].insert(j + count, int(m1_mat[i - 1][j] / 2))
                 m1_mat[i] = np.asarray(m1_mat[i])
@@ -145,7 +140,6 @@ for i in range(1, t):
 
     arr = []
     for j in range(len(m1_mat[i - 1])):
-
         if (sum_len[i - 1][j]) > 1200:
             arr += [j]
 
@@ -193,7 +187,6 @@ for i in range(1, t):
                 count22 += 1
 
         else:
-
             if j < len(df["len_mat"][i]):
                 if df["len_mat"][i - 1][j] <= 180:  # df['len_mat'][i][j+count33]:
                     mat2[j] = "move"
@@ -250,14 +243,14 @@ for i in range(0, t-1):
 
 m1 = []
 for i in range(t):
-
     # img1 = Image.new("RGB", (2740, 150), "rgba(18,18,18,100)")
     img1 = Image.new("RGB", (1440, 150), "rgba(18,18,18,100)")
     m1 = m1_mat[i]
     img = position_ellipse(img1, m1, pos_mat_gen(m1), [22] * len(m1), i)
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -284,7 +277,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, t):
-
     video.write(images[i])
 
 

@@ -1,5 +1,6 @@
 from tqdm.auto import tqdm
 
+
 # FROM: https://gist.github.com/drs251/c0c348e88a1cc95e3e70205bff0ed91b
 def holomap_to_video(hmap, out=None, fps=10, dpi=200, size=None, progress_bar=tqdm):
     if out is None:

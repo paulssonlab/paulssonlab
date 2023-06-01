@@ -1,6 +1,7 @@
 import re
-from typing import NamedTuple
+from dataclasses import dataclass
 from enum import Enum
+
 import Bio.Restriction
 
 
@@ -28,10 +29,11 @@ class CutDirection(Enum):
             raise ValueError(f"cannot reverse {self}")
 
 
-class CutSite(NamedTuple):
+@dataclass
+class CutSite:
     cut5: int
     cut3: int
-    cut_direction: bool
+    cut_direction: CutDirection
 
 
 def _re_search(seq, enzyme, circular=None):

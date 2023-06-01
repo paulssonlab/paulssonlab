@@ -1,16 +1,16 @@
+import math
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
 import skimage
 from PIL import Image  # , ImageDraw, ImageFilter
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-import pandas as pd
 from skimage import morphology
-import math
 
 
 def Make_d_nodes(array):
-
     node_arr = []
     for node in array:
         node = str(node)
@@ -44,7 +44,6 @@ ass_arr = [[[]]] * len(arr_m)
 center = [[]] * len(arr_m)
 len_x_m = [[]] * len(arr_m)
 for mn in range(len(arr_m)):
-
     img_ini = cv2.imread("%d.jpg" % (mn + 34))
     th = [[]] * 4
     imgs = [[]] * 4
@@ -315,9 +314,7 @@ for mn in range(len(arr_m)):
 
     for i in range(0, len(df_list[mn])):
         for k in range(0, len(df_list[mn - 1])):
-
             for j in range(0, len(df_list[mn])):
-
                 con2 = model_tree.addConstr(
                     (-3 * a_div3[mn - 1][k][i][j]) + s[mn][i] + s[mn][j] + s[mn - 1][k]
                     >= 0
@@ -505,8 +502,9 @@ for i in range(len(df_list_concat)):
 # print(df_new)'''
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -530,7 +528,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, len(arr_m)):
-
     video.write(images[i])
 
 

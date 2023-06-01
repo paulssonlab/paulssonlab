@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+
 from .fiducialreg import mat2to3
 
 

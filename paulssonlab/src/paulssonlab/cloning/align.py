@@ -1,10 +1,11 @@
-import numpy as np
-from io import StringIO
-from Bio import SeqIO, AlignIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 import subprocess
 import tempfile
+from io import StringIO
+
+import numpy as np
+from Bio import AlignIO, SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 
 def read_ab1(ab1_file, array_wrapper=np.array):

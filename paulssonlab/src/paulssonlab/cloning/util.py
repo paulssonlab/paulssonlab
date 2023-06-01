@@ -1,5 +1,5 @@
-from itertools import product, count
 import string
+from itertools import count, product
 
 
 def well_iterator(kind=96):

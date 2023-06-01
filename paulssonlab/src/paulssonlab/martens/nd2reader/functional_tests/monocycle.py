@@ -2,9 +2,10 @@
 Tests on ND2s that have 1 or 2 cycles only. This is unlike the ND2s I work with typically, which are all done over very long periods of time.
 
 """
-from nd2reader import Nd2
-import numpy as np
 import unittest
+
+import numpy as np
+from nd2reader import Nd2
 
 
 class Monocycle1Tests(unittest.TestCase):

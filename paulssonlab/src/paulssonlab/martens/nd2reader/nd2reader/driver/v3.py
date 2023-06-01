@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import array
-import numpy as np
 import struct
-from nd2reader.model.image import Image
+
+import numpy as np
 from nd2reader.common.v3 import read_chunk
 from nd2reader.exc import NoImageError
+from nd2reader.model.image import Image
 
 
 class V3Driver(object):

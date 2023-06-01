@@ -1,0 +1,20 @@
+name: microfluidics_design
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - bitarray
+  - black
+  - cachetools
+  - cytoolz
+  - gdstk
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - matplotlib-base
+  - nbformat
+  - networkx
+  - numpy
+  - pandas
+  - pint
+  - scipy
+  - shortuuid

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import pydna.all
+import os
+import pathlib
+
 import Bio
 import dna_features_viewer
-import pathlib
+import pydna.all
 import sequin.config as config
-import os
 
 
 class record:

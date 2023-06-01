@@ -1,5 +1,7 @@
-import requests
 import time
+
+import requests
+
 from paulssonlab.cloning.sequence import get_seq
 from paulssonlab.cloning.util import enzymes_to_names
 

@@ -1,17 +1,18 @@
 # Add 10 bp before and after the sequence of interest
 # Adjust the orientation of the sequence of interest to be from left to right
 # Must be a fasta file
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.Alphabet import generic_dna, generic_protein
-import sys
+import copy
 import csv
 import random
-import copy
-from Bio import pairwise2
+import sys
+
 import distance
 import numpy as np
-from Genome import PAM, bad_seq, comp_PAM, bad_target
+from Bio import SeqIO, pairwise2
+from Bio.Alphabet import generic_dna, generic_protein
+from Bio.Seq import Seq
+from Genome import PAM, bad_seq, bad_target, comp_PAM
+
 
 # Input is a list of strings
 def bad_seed(mut_list):

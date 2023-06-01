@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
 # Using nd2reader version 2.1.3, with modifications for loading F-ordered channel stacks
-import nd2reader
-from multiprocessing import Pool
-import pathlib
 import os
-import tables
-import numpy
-from tqdm import tqdm
+import pathlib
+import warnings
+from multiprocessing import Pool
 
 import metadata
-
-import warnings
+import nd2reader
+import numpy
+import tables
+from tqdm import tqdm
 
 # These warnings become tiresome...
 warnings.simplefilter(action="ignore", category=tables.NaturalNameWarning)

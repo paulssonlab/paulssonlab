@@ -6,8 +6,7 @@ dependencies:
   - dask
   - ipywidgets
   - magicgui
-  - matplotlib
-  # For imwarp registration
+  - matplotlib-base
   - napari
   - numba
   - numpy

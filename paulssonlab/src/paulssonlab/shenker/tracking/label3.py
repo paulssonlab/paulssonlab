@@ -1,9 +1,8 @@
+import cv2
+import numpy as np
 import skimage
 from PIL import Image, ImageDraw, ImageFilter
 from skimage import morphology
-import cv2
-import numpy as np
-
 
 img = cv2.imread("0.png", 0)
 ###########################################img = cv2.medianBlur(img,5)

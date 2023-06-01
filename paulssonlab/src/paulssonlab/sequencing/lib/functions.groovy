@@ -1,38 +1,79 @@
 import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.file.FileSystems
 import nextflow.util.CsvParser
 import static nextflow.Nextflow.file
 import static nextflow.Nextflow.groupKey
+import nextflow.Channel
+import groovy.transform.Field // SEE: https://stackoverflow.com/a/31301183
+
+@Field static final normal = "\033[0;0m"
+@Field static final bold = "\033[0;1m"
 
 static def file_in_dir(dir, filename) {
     file(Paths.get(dir as String, filename as String))
 }
 
-static def scp(remote_path, dest_path) {
-    def dest = file(dest_path)
-    if (!dest.exists()) {
-        def dest_parent = dest.getParent()
-        if (!dest_parent.exists()) {
-            dest_parent.mkdirs()
+static boolean is_dir_empty(dir) {
+    try {
+        def dir_stream = Files.newDirectoryStream(dir)
+        return !dir_stream.iterator().hasNext()
+    } catch (Exception e) {
+        return true
+    }
+}
+
+static def download_data(params) {
+    def remote_path = Paths.get(params.remote_path_base, params.remote_path)
+    def dest = file(params.data_dir)
+    if (is_dir_empty(dest)) {
+        if (!dest.exists()) {
+            dest.mkdirs()
         }
-        // SEE: https://stackoverflow.com/questions/25300550/difference-in-collecting-output-of-executing-external-command-in-groovy
-        // and https://stackoverflow.com/questions/159148/groovy-executing-shell-commands
-        // without escaping spaces, would need -T to deal with scp quoted source paths
-        // SEE: https://stackoverflow.com/questions/54598689/scp-fails-with-protocol-error-filename-does-not-match-request
-        // not sure why I need two backslashes to escape spaces
-        def command = ['scp', remote_path.replaceAll(' ', '\\\\ '), dest_path]
-        def proc = command.execute()
-        //def proc = ['scp', "\"${remote_path}\"", dest_path].execute()
-        def outputStream = new StringBuffer()
-        proc.waitForProcessOutput(outputStream, System.err)
-        //proc.waitForProcessOutput(System.out, System.err)
-        //return outputStream.toString()
-        if ((proc.exitValue() != 0) || (!dest.exists())) {
-            println "scp failed with output:"
-            println outputStream.toString()
-            throw new Exception("scp of '${remote_path}' to '${dest_path}' failed")
-        }
+        println "${bold}Downloading data from${normal} ${remote_path}"
+        rsync(remote_path, dest)
+        println "${bold}Done.${normal}"
     }
     return dest
+}
+
+static def rsync(remote_path, dest_path) {
+    // SEE: https://stackoverflow.com/questions/25300550/difference-in-collecting-output-of-executing-external-command-in-groovy
+    // and https://stackoverflow.com/questions/159148/groovy-executing-shell-commands
+    // without escaping spaces, would need -T to deal with scp quoted source paths
+    // SEE: https://stackoverflow.com/questions/54598689/scp-fails-with-protocol-error-filename-does-not-match-request
+    // not sure why I need two backslashes to escape spaces
+    def command = ['rsync', '-az', (remote_path as String).replaceAll(' ', '\\\\ ') + "/", dest_path]
+    def proc = command.execute()
+    def outputStream = new StringBuffer()
+    proc.waitForProcessOutput(outputStream, outputStream)
+    if (proc.exitValue() != 0) {
+        println "${bold}rsync failed with output:${normal}"
+        println outputStream.toString()
+        throw new Exception("rync of '${remote_path}' to '${dest_path}' failed")
+    }
+}
+
+static def glob(pattern, base) {
+    def paths = []
+    def path_matcher = FileSystems.getDefault().getPathMatcher("glob:" + pattern)
+    base = file(base).toAbsolutePath()
+    Files.walk(base).forEach { abs_path ->
+        def rel_path = base.relativize(abs_path)
+        if (path_matcher.matches(rel_path)) {
+            paths << abs_path
+        }
+    }
+    return paths
+}
+
+static def glob_inputs(ch, base, input_names) {
+    ch.map { it ->
+        input_names.each { k ->
+            it[k] = it.get(k) ? glob(it[k], base) : []
+        }
+        it
+    }
 }
 
 static def read_tsv(path) {
@@ -44,6 +85,22 @@ static def read_tsv(path) {
         data << parser.parse(line)
     }
     return data
+}
+
+static def get_samples(params, defaults = [:], substitute = true, Closure preprocess = null) {
+    def sample_sheet_path
+    // not sure why we need to define this here, error otherwise:
+    // cause: Variable `Paths` already defined in the process scope @ line 25, column 27.
+    def remote_path
+    if (params?.samples) {
+        sample_sheet_path = params.samples
+    } else {
+        sample_sheet_path = Paths.get(params.data_dir, params.sample_sheet_name)
+    }
+    def sample_list = SampleSheetParser.load(sample_sheet_path as String, defaults, substitute, preprocess)
+    return Channel.fromList(sample_list).map {
+        [*:it, output_run_dir: file_in_dir(params.output_dir, it.run_path)]
+    }
 }
 
 // equivalent Groovy's GStringImpl and Java's String do not hash to the same value
@@ -101,6 +158,15 @@ static def join_map(ch_entries, ch_map, key, stringify_keys = true) {
     }
 }
 
+// returns a map with old_key removed and replaced by new_key, optionally
+// modifying the value with a closure
+static def rename_key(map, old_key, new_key, Closure closure = Closure.IDENTITY) {
+    def new_map = map.clone()
+    new_map.keySet().removeAll([old_key])
+    new_map[new_key] = closure(map[old_key])
+    new_map
+}
+
 // edit_map_key renames a map's key (if closure is Closure.IDENTITY)
 // or runs a closure on a map's key (if old_key == new_key)
 // or does both at the same time
@@ -132,8 +198,18 @@ static def collect_closures(map, Object... args) {
 
 // see below. call_closure is the same as call_process except it does not uniquify the channel
 // sent to the process.
-static def call_closure(Closure closure, ch, join_keys, closure_map, output_keys, stringify_keys = true, Closure preprocess) {
-    def ch_input = ch.map { it ->
+static def call_closure(Closure closure, ch, join_keys, closure_map, output_keys, when = null, passthrough = true, stringify_keys = true, Closure preprocess) {
+// static def call_closure(Closure closure, ch, join_keys, closure_map, output_keys, Closure when, passthrough = true, stringify_keys = true, Closure preprocess) {
+    def ch_filtered
+    def ch_passthrough
+    if (when) {
+        ch_filtered = ch.filter { when(it) }
+        ch_passthrough = ch.filter { !when(it) }
+    } else {
+        ch_filtered = ch
+        ch_passthrough = Channel.empty()
+    }
+    def ch_input = ch_filtered.map { it ->
             def join_map_ = it.subMap(join_keys)
             // we could use preprocess(it) and collect_closures(..., it) here,
             // but that would allow the process to depend on information
@@ -141,12 +217,13 @@ static def call_closure(Closure closure, ch, join_keys, closure_map, output_keys
             [[*:join_map_,
               *:collect_closures(closure_map, join_map_)], *preprocess(join_map_)]
         }
-    def ch_output = closure(ch_input).map { [remove_keys(it[0], closure_map.keySet()), *it[1..-1]] }
+    def ch_processed = closure(ch_input).map { [remove_keys(it[0], closure_map.keySet()), *it[1..-1]] }
     def ch_orig = ch.map { [it.subMap(join_keys), it] }
-    cross(ch_output, ch_orig, stringify_keys)
+    return cross(ch_processed, ch_orig, stringify_keys)
         .map {
             [*:it[1][1], *:[output_keys, it[0][1..-1]].transpose().collectEntries()]
         }
+        .mix(ch_passthrough)
 }
 
 // preprocess takes each map from ch (with all keys removed except for join_keys) and outputs a list
@@ -158,9 +235,11 @@ static def call_closure(Closure closure, ch, join_keys, closure_map, output_keys
 // closure_map is a way of adding additional keys to meta derived from only the information
 // in join_keys. the purpose is to allow using processes that expect extra keys in meta
 // without having to modify the process itself.
-static def call_process(process, ch, join_keys, closure_map, output_keys, stringify_keys = true, Closure preprocess) {
+static def call_process(process, ch, join_keys, closure_map, output_keys, when = null, passthrough = true, stringify_keys = true, Closure preprocess) {
+// static def call_process(process, ch, join_keys, closure_map, output_keys, Closure when, passthrough = true, stringify_keys = true, Closure preprocess) {
     // TODO: not sure why { process(it.unique()) } doesn't work
-    call_closure({ it.unique() | process }, ch, join_keys, closure_map, output_keys, stringify_keys, preprocess)
+    // call_closure({ it.unique() | process }, ch, join_keys, closure_map, output_keys, when, passthrough, stringify_keys, preprocess)
+    call_closure({ it.unique() | process }, ch, join_keys, closure_map, output_keys, when, passthrough, stringify_keys, preprocess)
 }
 
 static def uuid() {
@@ -174,15 +253,18 @@ static def uuid() {
 // and not just the mapped value itself, although this may prevent deduplicating process calls
 // temp_key is an arbitrary unique string and is used as a prefix for keys that are
 // temporarily added to the map that is passed through process
-static def map_call_process(process, ch, join_keys, closure_map, map_input_key, output_keys, temp_key, stringify_keys = true, Closure preprocess) {
+static def map_call_process(process, ch, join_keys, closure_map, map_input_key, output_keys, temp_key, stringify_keys = true, passthrough = true, Closure preprocess) {
     // the key we use to store the list of UUIDs we use when joining input channel and process output channel
     def temp_uuids_key = "${temp_key}_uuids"
     // the key we use to store mapped value for each process input. this is used to ensure
     // that the order of values in output collections corresponds to the order of values
     // in the input collection
     def temp_mapped_value_key = "${temp_key}_mapped_value"
-    // ch is a channel emitting maps
-    def ch_input_untransposed = ch.map {
+    // ch is a channel emitting maps. some of these items may contains empty collections.
+    // these items disappear when we transpose, below. as such, we filter them out.
+    // if passthrough is true, we mix them to ch_output before returning
+    def ch_input_nonempty = ch.filter { it.getOrDefault(map_input_key, []).size() != 0 }
+    def ch_input_untransposed = ch_input_nonempty.map {
             def collection_to_map = it.getOrDefault(map_input_key, [])
             // we need to use groupKey to wrap the UUID so that the second groupTuple invokation
             // (ch_output_transposed.groupTuple) knows how many elements to expect for each UUID
@@ -244,5 +326,13 @@ static def map_call_process(process, ch, join_keys, closure_map, map_input_key, 
         // merge new output keys into map
         [*:input, *:new_output]
     }
-    ch_output
+    if (passthrough) {
+        // add items with empty collections to output channel
+        // we could add an empty list to each item keyed under output_key,
+        // but this probably is not helpful
+        def ch_input_empty = ch.filter { it.getOrDefault(map_input_key, []).size() == 0 }
+        ch_output.mix(ch_input_empty)
+    } else {
+        ch_output
+    }
 }

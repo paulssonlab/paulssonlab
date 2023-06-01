@@ -1,19 +1,20 @@
-import networkx as nx
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
-from Bio.SeqFeature import SeqFeature, FeatureLocation, ExactPosition
 import re
+from collections import OrderedDict, defaultdict
+from copy import deepcopy
+from itertools import product as it_product
 from math import ceil
 from numbers import Integral
-from cytoolz import partial
-from itertools import product as it_product
-from collections import defaultdict, OrderedDict
 from operator import attrgetter
-from copy import deepcopy
-from typing import Union, NamedTuple
-from paulssonlab.cloning.enzyme import re_digest
-from paulssonlab.util import sign, format_sign
+from typing import NamedTuple, Union
 
+import networkx as nx
+from Bio.Seq import Seq
+from Bio.SeqFeature import ExactPosition, FeatureLocation, SeqFeature
+from Bio.SeqRecord import SeqRecord
+from cytoolz import partial
+
+from paulssonlab.cloning.enzyme import re_digest
+from paulssonlab.util import format_sign, sign
 
 MAX_SEQUENCE_STR_LENGTH = 34
 SEQUENCE_OVERHANG_STR_BUFFER = 4
@@ -244,7 +245,7 @@ class DsSeqRecord(SeqRecord):
         self.annotations["topology"] = "circular" if value else "linear"
 
     def _check_overhang(self, overhang1, overhang2):
-        if len(self) and self.ds_length < 0:
+        if len(self) - abs(overhang1) - abs(overhang2) < 0:
             raise ValueError("invalid overhang length")
 
     @property
@@ -280,6 +281,10 @@ class DsSeqRecord(SeqRecord):
     @property
     def downstream_overhang_seq(self):
         return self.seq_lower()[len(self) - abs(self.downstream_overhang) : len(self)]
+
+    @property
+    def overhang_seqs(self):
+        return (self.upstream_overhang_seq, self.downstream_overhang_seq)
 
     def can_ligate(self, other):
         return (
@@ -1013,9 +1018,7 @@ def iter_matches(
         else:
             seq1_lower = seq1
             seq2_lower = seq2
-        for (seq1_start, seq1_stop, seq2_start, seq2_stop) in iterate_shifts(
-            seq1, seq2
-        ):
+        for seq1_start, seq1_stop, seq2_start, seq2_stop in iterate_shifts(seq1, seq2):
             seq1_overlap = seq1_lower.slice_or_reindex(seq1_start, seq1_stop)
             seq2_overlap = seq2_lower.slice_or_reindex(seq2_start, seq2_stop)
             score, overlap_start, overlap_stop = scoring_func(

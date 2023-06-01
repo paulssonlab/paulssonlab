@@ -1,9 +1,11 @@
-import benchlingapi
-from paulssonlab.cloning.sequence import get_seq
-import json
 import hashlib
-import jsondiff
+import json
 from copy import deepcopy
+
+import benchlingapi
+import jsondiff
+
+from paulssonlab.cloning.sequence import get_seq
 
 HASH_FIELD = "_hash"
 

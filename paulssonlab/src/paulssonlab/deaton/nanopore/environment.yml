@@ -11,7 +11,7 @@ dependencies:
   - distributed
   - graphaligner
   - jupyterlab
-  - matplotlib
+  - matplotlib-base
   - medaka
   - minimap2
   - nodejs

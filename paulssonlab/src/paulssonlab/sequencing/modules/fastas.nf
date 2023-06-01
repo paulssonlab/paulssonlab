@@ -9,28 +9,38 @@ process ANY2FASTA {
     output:
     tuple val(meta), path("${meta.id}.fasta")
 
-    publishDir "${params.output_dir}/${params.references_dir}"
+    publishDir params.references_dir, mode: "copy"
 
     conda "${params.conda_env_dir}/any2fasta.yml"
 
-    shell:
-    '''
-    any2fasta -q !{input} | seqkit replace -p '(.*)' -r '!{meta.id}' > !{input.baseName}.fasta
-    '''
+    // script:
+    // """
+    // any2fasta -q ${input} | seqkit replace -p '(.*)' -r '${meta.id}' > ${input.baseName}.fasta
+    // """
+    script:
+    """
+    any2fasta -q ${input} > ${input.baseName}.fasta
+    """
+    // any2fasta -q !{input} | seqkit replace -p '(.*)' -r '!{meta.id}' > !{input.baseName}.fasta
 }
 
-process MERGE_FASTAS {
+process MERGE_FILES {
     tag "$meta.id"
 
     input:
-    tuple val(meta), path('seq')
+    tuple val(meta), path("input"), val(ext)
 
     output:
-    tuple val(meta), path('merged.fasta')
+    tuple val(meta), path("merged.${ext}")
+
+    // SEE: https://github.com/nextflow-io/nextflow/discussions/2813
+    // MERGE_FILES is run for each unique reference list, not for each
+    // run_path, so we need a separate process to publish merged fastas
+    // publishDir { meta.run_output_dir }, mode: "copy"
 
     script:
     """
-    cat seq* > merged.fasta
+    cat input* > merged.${ext}
     """
 }
 
@@ -44,7 +54,7 @@ process EXTRACT_CONSENSUS {
     output:
     tuple val(meta), path("consensus"), path("*.log")
 
-    conda "${params.conda_env_dir}/mapping.yml"
+    conda "${params.conda_env_dir}/seqkit.yml"
 
     script:
     """
@@ -57,7 +67,6 @@ def call_EXTRACT_CONSENSUS(ch) {
     call_process(EXTRACT_CONSENSUS,
                 ch,
                 ["consensus"],
-                // [id: { it.consensus.baseName }],
-                [:],
+                [id: { it.consensus.baseName }],
                 ["consensus_extracted"]) { [it.consensus] }
 }

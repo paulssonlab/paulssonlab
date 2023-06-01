@@ -1,42 +1,38 @@
 # fmt: off
-import os
-import h5py
-import torch
 import copy
 import datetime
-import time
 import itertools
-import qgrid
+import os
+import pickle as pkl
 import shutil
 import subprocess
+import time
 
-import skimage.morphology
-
-import pandas as pd
-import numpy as np
+import dask.dataframe as dd
+import h5py
 import ipywidgets as ipyw
+import numpy as np
+import pandas as pd
+import qgrid
 import skimage as sk
+import skimage.morphology
 import sklearn as skl
-import pickle as pkl
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import dask.dataframe as dd
-
-from torch.utils.data import Dataset, DataLoader
-from scipy import ndimage
 from imgaug import augmenters as iaa
-from imgaug.augmentables.segmaps import SegmentationMapsOnImage
 from imgaug.augmentables.heatmaps import HeatmapsOnImage
-from scipy.ndimage import convolve1d
-from torch._six import container_abcs, string_classes, int_classes
-
-from .utils import pandas_hdf5_handler,kymo_handle,writedir
-from .trcluster import hdf5lock,dask_controller
-from .metrics import object_f_scores
-
+from imgaug.augmentables.segmaps import SegmentationMapsOnImage
 from matplotlib import pyplot as plt
+from scipy import ndimage
+from scipy.ndimage import convolve1d
+from torch._six import container_abcs, int_classes, string_classes
+from torch.utils.data import DataLoader, Dataset
 
+from .metrics import object_f_scores
+from .trcluster import dask_controller, hdf5lock
+from .utils import kymo_handle, pandas_hdf5_handler, writedir
 
 
 def get_border(labeled):

@@ -1,8 +1,9 @@
-import pandas as pd
-import urllib.parse
 import json
-from escapejson import escapejson
+import urllib.parse
+
+import pandas as pd
 import pyppeteer
+from escapejson import escapejson
 
 HARVARD_LOGIN_URL = "https://www.pin1.harvard.edu/cas/login"
 ORDERS_URL = "https://sysbiolabops.hms.harvard.edu/orders/paulsson"

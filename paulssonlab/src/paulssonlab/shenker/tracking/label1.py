@@ -1,11 +1,11 @@
+import cv2
+import numpy as np
 import skimage
+from matplotlib import pyplot as plt
 from PIL import Image, ImageDraw, ImageFilter
 
 # https://scipy-lectures.org/packages/scikit-image/index.html
 from skimage import morphology
-import cv2
-import numpy as np
-from matplotlib import pyplot as plt
 
 """img = cv2.imread('0.png',0)
 img = cv2.medianBlur(img,5)

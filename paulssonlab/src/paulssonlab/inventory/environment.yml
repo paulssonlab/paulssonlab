@@ -11,7 +11,7 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - nd2reader
   - numpy
   - pandas
@@ -20,4 +20,3 @@ dependencies:
   - tifffile
   - tqdm
   - zarr
-

@@ -31,7 +31,7 @@ def do_measure_and_write(
     return_none=True,
     write=True,
     # filename_func=filename_func,
-    **kwargs
+    **kwargs,
 ):
     if trenches is None:
         return None

@@ -3,5 +3,5 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - any2fasta
-  - seqkit=0.15.0
+  - any2fasta=0.4.2
+  - seqkit=2.3.1

@@ -1,9 +1,11 @@
-import os
 import io
+import os
+
 import requests
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+
 from paulssonlab.cloning.sequence import DsSeqRecord
 
 TYPE_TO_MIMETYPE = {

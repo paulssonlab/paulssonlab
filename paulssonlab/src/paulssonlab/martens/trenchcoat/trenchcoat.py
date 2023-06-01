@@ -2,17 +2,17 @@
 
 import click
 from convert import main_conversion_function
+from corrections import main_corrections_function
 from lineages import main_lineages_function
 from metadata import main_print_metadata_function
-from corrections import main_corrections_function
+from napari_browse_hdf5 import main_hdf5_browser_function
+from napari_browse_kymographs import main_kymograph_browser_function
+from napari_browse_nd2 import main_nd2_browser_function
+from renumber_trenches import main_renumbering_function
 from segmentation import main_segmentation_function
 from trench_detect import main_detection_function
-from write_kymographs import main_kymographs_function
-from renumber_trenches import main_renumbering_function
-from napari_browse_nd2 import main_nd2_browser_function
-from napari_browse_hdf5 import main_hdf5_browser_function
 from trench_measurements import main_trench_measurements_function
-from napari_browse_kymographs import main_kymograph_browser_function
+from write_kymographs import main_kymographs_function
 
 
 def range_expand(range_string):

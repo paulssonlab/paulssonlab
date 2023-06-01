@@ -1,10 +1,14 @@
 import random
-from paulssonlab.cloning.sequence import reverse_complement, normalize_seq
+
+from paulssonlab.cloning.sequence import normalize_seq, reverse_complement
 
 
-def random_bases(n, letters="atcg", seed=""):
-    seed = normalize_seq(seed)
-    myrandom = random.Random(seed)
+def random_bases(n, letters="atcg", seed=None):
+    if seed is None:
+        myrandom = random
+    else:
+        seed = normalize_seq(seed)
+        myrandom = random.Random(seed)
     return "".join(myrandom.choice(letters) for _ in range(max(n, 0)))
 
 

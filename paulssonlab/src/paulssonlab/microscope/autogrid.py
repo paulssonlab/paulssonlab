@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+
 import click
 import numpy as np
 
@@ -54,11 +55,9 @@ def autogrid_from_corners(input_xml, x_step, y_step, num_rows, skip_rows, keep_p
     input_positions = []
     preamble_elements = []
     if not keep_pfs:
+        preamble_elements.append(ET.Element("bIncludeZ", runtype="bool", value="false"))
         preamble_elements.append(
-            ET.SubElement(position, "bIncludeZ", runtype="bool", value="false")
-        )
-        preamble_elements.append(
-            ET.SubElement(position, "bPFSEnabled", runtype="bool", value="true")
+            ET.Element("bPFSEnabled", runtype="bool", value="true")
         )
     for e in input_xml.findall("./no_name/*"):
         if e.tag in ("bIncludeZ", "bPFSEnabled"):

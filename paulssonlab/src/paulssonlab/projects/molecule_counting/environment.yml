@@ -19,16 +19,13 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - nbformat
   - nd2reader
   - nodejs
   - numpy
   - pandas
   - panel
-  - pip
-  - pip:
-      - docformatter
   - pre-commit
   - scikit-image
   - scikit-learn

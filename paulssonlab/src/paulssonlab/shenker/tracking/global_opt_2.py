@@ -1,15 +1,14 @@
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
 import skimage
 from PIL import Image  # , ImageDraw, ImageFilter
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-import pandas as pd
 from skimage import morphology
 
 
 def Make_d_nodes(array):
-
     node_arr = []
     for node in array:
         node = str(node)
@@ -43,7 +42,6 @@ ass_arr = [[[]]] * len(arr_m)
 center = [[]] * len(arr_m)
 len_x_m = [[]] * len(arr_m)
 for mn in range(len(arr_m)):
-
     img_ini = cv2.imread("%d.jpg" % (mn + 3))
     th = [[]] * 4
     imgs = [[]] * 4
@@ -271,7 +269,6 @@ for mn in range(len(arr_m)):
         # print(mn,i,a_div3[mn][i],'\n')#, len(df_list[mn-1]))
 
     for i in range(0, len(df_list[mn])):
-
         a1 = model_tree.addVar(
             0, 1, obj=-20, vtype=GRB.INTEGER, name="a_exit%d,%d" % (mn, i)
         )
@@ -283,9 +280,7 @@ for mn in range(len(arr_m)):
         aaaab = [LinExpr()] * len(df_list[mn])
 
         for i in range(0, len(df_list[mn])):
-
             for j in range(0, len(df_list[mn - 1])):
-
                 aaaab[i] += np.sum(a_div3[mn][i][j])
 
             # aaaa=    np.matrix(a_div2[mn][i]).sum()
@@ -376,7 +371,6 @@ s_arr = []  # [0] * (len(df_list_concat)*2)
 for v in model_tree.getVars():
     # print('%s %g' % (v.varName, v.x))
     if v.varName[0] == "n":  # .split(',')[-1])==mn):
-
         s_arr += [v.x]
         if v.x == 1:
             print("%s %g" % (v.varName, v.x))

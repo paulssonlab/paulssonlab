@@ -10,8 +10,7 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab_code_formatter
-  - libxml2=2.9.10
-  - matplotlib
+  - matplotlib-base
   - nd2reader
   - nodejs
   - numba

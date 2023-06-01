@@ -1,25 +1,17 @@
 name: lab_helper
 channels:
-  - pyviz
   - conda-forge
   - defaults
 dependencies:
   - black
   - bokeh
-  - cachetools
   - click
   - cytoolz
   - google-api-python-client
   - holoviews
   - jupyterlab
   - jupyterlab_code_formatter
-  - nbformat
-  - nodejs
   - numpy
   - pandas
-  - pip
-  - pip:
-      - docformatter
-  - pre-commit
   - pytoml
   - requests

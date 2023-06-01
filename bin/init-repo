@@ -1,40 +1,54 @@
 #!/bin/sh
+UPSTREAM_URL="git@github.com:paulssonlab/paulssonlab.git"
 if [ -z "$INITIALIZING_REPO" ]; then
     export INITIALIZING_REPO=1
     # we need to run this script inside an environment loaded by direnv
-    # this uses the direnv for the bin dir
-    # assuming there is no $root/bin/.envrc,
     # this will load the root direnv from $root/.envrc, as desired
     # FROM: https://stackoverflow.com/questions/4774054/reliable-way-for-a-bash-script-to-get-the-full-path-to-itself
     bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     this_script="${bin_dir}/$(basename "${BASH_SOURCE[0]}")"
-    direnv allow "${bin_dir}/.envrc" # make sure the root .envrc is allowed so we can direnv exec
-    direnv exec "$bin_dir" "$this_script"
+    direnv allow "${bin_dir}/../.envrc" # make sure the root .envrc is allowed so we can direnv exec
+    direnv exec "$bin_dir/.." "$this_script"
     exit $?
 fi
 cd "$root"
 bold="$(tput bold)"
 normal="$(tput sgr0)"
-if git remote -v | grep -q github.com:paulssonlab/paulssonlab; then
-    read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
-    echo
-    case ${answer:0:1} in
-        n|N )
-            ;;
-        * )
-            # cloned from paulssonlab account, fork
-            hub fork --remote-name origin
-            status=$?
-            if [ $status != 0 ] ; then
-                echo "❌  ${bold}Could not fork repo, aborting.${normal}"
-                exit 1
-            fi
-        ;;
-    esac
-else
-    # cloned from personal account, add upstream remote
-    git remote add upstream git@github.com:paulssonlab/paulssonlab.git
+if ! git remote get-url upstream 2> /dev/null; then
+    echo "📡  Setting git remote ${bold}upstream${normal} to ${UPSTREAM_URL}"
+    git remote add upstream "$UPSTREAM_URL"
+    git fetch upstream
+    if git remote get-url origin 2> /dev/null|grep "$UPSTREAM_URL"; then
+        fork_url=$(github-fork-url)
+        if [ -z "$fork_url" ]; then
+            read -n 1 -p "🍴  ${bold}Do you want to fork this repo under your personal github account?${normal} [Y/n] " answer
+            echo
+            case ${answer:0:1} in
+                y|Y )
+                    # cloned from paulssonlab account, fork
+                    gh repo fork --remote --remote-name origin
+                    status=$?
+                    if [ $status != 0 ] ; then
+                        echo "❌  ${bold}Could not fork repo, aborting.${normal}"
+                        exit 1
+                    fi
+                    ;;
+                * )
+                    ;;
+            esac
+        else
+            echo "📡  Setting git remote ${bold}origin${normal} to ${fork_url}"
+            git remote remove origin 2> /dev/null
+            git remote add origin "${fork_url}"
+        fi
+    fi
 fi
+git branch --set-upstream-to=upstream/master master
+echo "🍴  To push to your fork, ${bold}git push origin${normal}."
+echo "    To push to the central paulssonlab repo, ${bold}git push upstream${normal}."
+echo "    To push to both, ${bold}git pss${normal} (requires paulssonlab dotfiles)."
+
+
 # make paulssonlab conda env
 "${root}/bin/direnv-allowall"
 # check that direnv loaded/conda env was created
@@ -52,14 +66,12 @@ if [ $status != 0 ] ; then
     echo "❌  pre-commit install${bold}failed, aborting.${normal}"
     exit $status
 fi
-# run git status (so git builds its cache before we install the nbcleanse filter)
-git status > /dev/null
 # install nbcleanse
 if [ ! -d .nbcleanse ]; then
     echo "💾  ${bold}Installing nbcleanse to ${normal}${root}/.nbcleanse"
     git clone git@github.com:shenker/nbcleanse.git "${root}/.nbcleanse"
 fi
 nbcleanse_conda_env=nbcleanse # in case we want to change this
-ensure_mamba env remove -n "${nbcleanse_conda_env}" &> /dev/null
-ensure_mamba env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml"
-conda run -n "${nbcleanse_conda_env}" python "${root}/.nbcleanse/nbcleanse.py" install --conda "${nbcleanse_conda_env}"
+$(mamba_cmd) env remove -n "${nbcleanse_conda_env}" -y &> /dev/null
+$(mamba_cmd) env create -n "${nbcleanse_conda_env}" -f "${root}/.nbcleanse/environment.yml" -y
+nbcleanse-enable

@@ -1,10 +1,10 @@
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from matplotlib import cm
 from scipy.integrate import simps, trapz
 from scipy.optimize import curve_fit, nnls
-import seaborn as sns
 from sklearn.linear_model import LinearRegression
 
 

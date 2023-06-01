@@ -1,14 +1,16 @@
-import pandas as pd
-import holoviews as hv
 from collections import defaultdict
 from functools import wraps
+
+import holoviews as hv
+import pandas as pd
+
 from .util import (
-    wrap_dict_values,
     drop_dict_nones,
     flatten_dict,
+    get_one,
     map_collections,
     tree,
-    get_one,
+    wrap_dict_values,
 )
 
 

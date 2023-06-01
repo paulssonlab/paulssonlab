@@ -2,6 +2,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
+
 def plot_kymograph(kymograph):
     """Helper function for plotting kymographs. Takes a kymograph array of
     shape (y_dim,x_dim,t_dim).

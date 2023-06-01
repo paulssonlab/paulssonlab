@@ -1,0 +1,13 @@
+name: cfd
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - fenics
+  - holoviews
+  - hvplot
+  - jupyterlab
+  - matplotlib-base
+  - numpy
+  - pandas
+  - scipy

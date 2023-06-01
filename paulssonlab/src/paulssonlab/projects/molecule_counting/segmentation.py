@@ -1,24 +1,27 @@
-import numpy as np
-import holoviews as hv
+from numbers import Integral
+
 import dask
-from dask import delayed
-from dask.delayed import Delayed
 import dask.array as da
+import holoviews as hv
+import numpy as np
+import scipy.ndimage as ndi
 import skimage
 import skimage.segmentation
-import scipy.ndimage as ndi
 from cytoolz import compose, partial
-from numbers import Integral
+from dask import delayed
+from dask.delayed import Delayed
+
 from .matriarch_stub import (
-    get_nd2_reader,
-    get_nd2_frame,
-    get_regionprops,
-    repeat_apply,
-    gaussian_box_approximation,
-    hessian_eigenvalues,
     RevImage,
+    gaussian_box_approximation,
+    get_nd2_frame,
+    get_nd2_reader,
+    get_regionprops,
+    hessian_eigenvalues,
+    repeat_apply,
 )
 from .util import conditional
+
 
 # TODO: new
 def nd2_to_dask(filename, position, channel, rechunk=True):

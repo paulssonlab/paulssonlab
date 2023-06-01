@@ -1,28 +1,30 @@
+from itertools import repeat, zip_longest
+
+import holoviews as hv
+import holoviews.operation.datashader as datashader
 import numpy as np
 import pandas as pd
 import scipy
 import skimage
 import skimage.morphology
 import skimage.segmentation
-from itertools import zip_longest, repeat
-import holoviews as hv
-import holoviews.operation.datashader as datashader
+
+from .. import common
+from ..geometry import get_image_limits
+from ..image import (
+    gaussian_box_approximation,
+    hough_line_intensity,
+    normalize_componentwise,
+    remove_large_objects,
+)
 
 # TODO: fix imports
 from ..misc.holoborodko_diff import holo_diff
-from .geometry import edge_point, coords_along
-from .peaks import find_periodic_peaks
-from ..util import getitem_if_not_none
 from ..ui import RevImage
-from ..image import (
-    hough_line_intensity,
-    remove_large_objects,
-    normalize_componentwise,
-    gaussian_box_approximation,
-)
-from ..geometry import get_image_limits
+from ..util import getitem_if_not_none
 from ..workflow import points_dataframe
-from .. import common
+from .geometry import coords_along, edge_point
+from .peaks import find_periodic_peaks
 
 
 def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):

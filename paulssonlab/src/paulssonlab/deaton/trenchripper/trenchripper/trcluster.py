@@ -1,19 +1,20 @@
 # fmt: off
-import os
-import shutil
-import dask
-import time
-import h5py
-
-from time import sleep
-from dask.distributed import Client,progress
-from dask_jobqueue import SLURMCluster
-from IPython.core.display import display, HTML
-from .utils import writedir
-
 ## Hacky memory trim
 import ctypes
 import gc
+import os
+import shutil
+import time
+from time import sleep
+
+import dask
+import h5py
+from dask.distributed import Client, progress
+from dask_jobqueue import SLURMCluster
+from IPython.core.display import HTML, display
+
+from .utils import writedir
+
 
 def trim_memory() -> int:
     libc = ctypes.CDLL("libc.so.6")

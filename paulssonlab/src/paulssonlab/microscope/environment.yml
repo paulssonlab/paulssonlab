@@ -6,6 +6,5 @@ dependencies:
   - click
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
+  - matplotlib-base
   - numpy
-  - pip

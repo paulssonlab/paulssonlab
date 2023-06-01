@@ -1,15 +1,14 @@
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
 import skimage
 from PIL import Image  # , ImageDraw, ImageFilter
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-import pandas as pd
 from skimage import morphology
 
 
 def Make_d_nodes(array):
-
     node_arr = []
     for node in array:
         node = str(node)
@@ -40,7 +39,6 @@ ass_arr = [[[]]] * len(arr_m)
 center = [[]] * len(arr_m)
 len_x_m = [[]] * len(arr_m)
 for mn in range(len(arr_m)):
-
     img_ini = cv2.imread("%d.jpg" % (mn))  ###########################################
     #
 
@@ -218,7 +216,6 @@ for mn in range(len(arr_m)):
     n_constr_b[mn] = n_mask_img[len(th) - 4] - 1
 
     for i in range(1, n_constr[mn] + 1):
-
         # con1 = model_tree.addConstr(s[0]+s[(tree(1,3)[int(np.where([x[0]==i for x in tree(1,3)])[0])][1])]+s[2+(tree(2,3)[int(np.where([x[0]==i for x in tree(2,3)])[0])][1])] +s[n_constr+i] == 1)
         con1 = model_tree.addConstr(
             s[mn][
@@ -246,7 +243,6 @@ for mn in range(len(arr_m)):
 
         # v.varName.split(',')
         if int(v.varName.split(",")[-1]) == mn:
-
             s_arr_label += [v.x]
 
     constrs = model_tree.getConstrs()
@@ -401,12 +397,10 @@ for ik in range(0, len(arr_m)):
     lwn = len(df_label_list[ik]["label"][0])
     count_d = 0
     for k in range(0, len(df_label_list[ik]["assg"][0])):
-
         print(ik, k, df_label_list[ik]["assg"][0])
 
         if df_label_list[ik]["assg"][0][k] == "divide":
             if k + count_d < len(df_label_list[ik]["assg"][0]) + count_d:
-
                 df_label_list[ik]["label"][0][k + count_d] = Make_d_nodes(
                     [df_label_list[ik - 1]["label"][0][k]]
                 )[0]
@@ -434,8 +428,9 @@ df_label_list_concat = pd.concat([df_label_list[mn] for mn in range(0, len(arr_m
 df_label_list_concat.to_csv("df_label_list.csv")
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -459,7 +454,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, len(arr_m)):
-
     video.write(images[i])
 
 

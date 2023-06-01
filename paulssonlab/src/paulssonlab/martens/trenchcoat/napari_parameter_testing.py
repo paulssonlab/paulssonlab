@@ -1,28 +1,25 @@
 #!/usr/bin/env python
 
 import click
+import napari
+import numpy
+import tables
+from algo_sharp import fluor_sharpen_segmentation
+from magicgui import magicgui
+from metadata import get_metadata
+from napari.layers import Image, Labels
+from napari_browse_hdf5 import (
+    add_image_layers,
+    get_largest_extents_hdf5,
+    metadata_array_equal,
+    metadata_attributes_equal,
+)
+from new_trench_algos import find_trenches, generate_boxes
+from params import read_params_file
 
 # from dask import delayed
 # import dask.array
 
-from magicgui import magicgui
-import napari
-from napari.layers import Image, Labels
-
-import tables
-import numpy
-
-from algo_sharp import fluor_sharpen_segmentation
-from params import read_params_file
-from metadata import get_metadata
-
-from new_trench_algos import find_trenches, generate_boxes
-from napari_browse_hdf5 import (
-    add_image_layers,
-    get_largest_extents_hdf5,
-    metadata_attributes_equal,
-    metadata_array_equal,
-)
 
 ###
 

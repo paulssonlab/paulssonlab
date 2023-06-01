@@ -1,11 +1,12 @@
+import array
+import base64
 import json
 import pickle
-import base64
-import zarr
-import array
-from collections.abc import Mapping
-from functools import partial
+from collections import Mapping
+
 import playhouse.sqlite_ext
+import zarr
+
 
 # FROM: https://gist.github.com/simonw/7000493
 class JSONEncoder(json.JSONEncoder):

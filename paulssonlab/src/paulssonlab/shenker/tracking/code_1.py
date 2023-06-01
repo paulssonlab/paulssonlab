@@ -2,7 +2,6 @@ import numpy as np
 
 
 def Make_d_nodes(array):
-
     node_arr = []
     for node in array:
         node = str(node)
@@ -15,7 +14,6 @@ def Make_d_nodes(array):
 
 
 def divide_arr(array, m):
-
     m = Mmax
 
     l = len(array)

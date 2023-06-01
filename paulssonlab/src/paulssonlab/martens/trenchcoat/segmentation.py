@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
 
-import skimage
-import numpy
 import os
 import pathlib
-import tables
 from multiprocessing import Pool
-from tqdm import tqdm
-import pandas
 
-import algorithms
 import algo_sharp
+import algorithms
+import numpy
+import pandas
+import skimage
+import tables
+from metadata import get_metadata
+from napari_browse_hdf5 import parse_corrections_settings, sub_bg_no_underflow
+from params import read_params_file
 
 # import arrayfire_algorithms
-from properties import (
-    # write_properties_to_table,
-    # merge_tables,
-    make_cell_type,
-    # subtract_background_from_coords,
-    init_properties_dict,
-    write_properties_to_table_from_df,
-    get_max_length,
+from properties import (  # write_properties_to_table,; merge_tables,; subtract_background_from_coords,
     add_properties,
+    get_max_length,
+    init_properties_dict,
+    make_cell_type,
+    write_properties_to_table_from_df,
 )
-from metadata import get_metadata
-from params import read_params_file
-from napari_browse_hdf5 import parse_corrections_settings, sub_bg_no_underflow
+from tqdm import tqdm
 
 """
 Perform cell segmentation & measure fluorescence intensities in microscope images, with support for sub-regions (e.g. "trenches").
@@ -168,7 +165,7 @@ def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
     # No Regions ~ could also check if regions is None
     if stack.shape[2] == 1:
         # 1. Camera Noise
-        for (channel, index) in ch_to_index.items():
+        for channel, index in ch_to_index.items():
             stack[..., 0, index] = sub_bg_no_underflow(
                 stack[..., 0, index], camera_noise
             )
@@ -177,7 +174,7 @@ def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
         # Optional for each channel
         # If there is nothing, then do nothing!
         if corrections_dict["flatfield"] is not None:
-            for (channel, index) in ch_to_index.items():
+            for channel, index in ch_to_index.items():
                 if corrections_dict["flatfield"][channel] is not None:
                     stack[..., 0, index] = numpy.divide(
                         stack[..., 0, index], corrections_dict["flatfield"][channel]
@@ -186,7 +183,7 @@ def run_flatfielding(stack, ch_to_index, regions, corrections_dict):
     # Regions
     else:
         if corrections_dict["flatfield"] is not None:
-            for (channel, index) in ch_to_index.items():
+            for channel, index in ch_to_index.items():
                 if corrections_dict["flatfield"][channel] is not None:
                     # min_row, min_col, max_row, max_col
                     for j, r in enumerate(regions):

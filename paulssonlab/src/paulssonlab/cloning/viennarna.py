@@ -1,7 +1,9 @@
 import os
 from threading import Lock
-from paulssonlab.util.threading import synchronized
+
 import RNA
+
+from paulssonlab.util.threading import synchronized
 
 PARAMETERS = {
     "dna_mathews2004": f"{os.environ['CONDA_PREFIX']}/share/ViennaRNA/dna_mathews2004.par"

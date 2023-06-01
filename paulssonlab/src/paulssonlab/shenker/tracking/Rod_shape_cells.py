@@ -1,11 +1,9 @@
 from PIL import Image, ImageDraw, ImageFilter
 
-
 img1 = Image.new("RGB", (840, 1400), "grey")
 
 
 def make_ellipse(image, x, y, dx, dy, next_1):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill="white")
     ell2 = dr.ellipse((x + next_1, y, dx + next_1, dy), "white")

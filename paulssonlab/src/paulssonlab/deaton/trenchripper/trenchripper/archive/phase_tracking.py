@@ -1,23 +1,24 @@
 # fmt: off
-import numpy as np
-import skimage as sk
-import h5py
-import os
 import copy
+import os
 import pickle
 import shutil
-import cv2
-import pandas as pd
-
-
-import scipy.signal as signal
-import scipy.interpolate as interpolate
-from .utils import kymo_handle,pandas_hdf5_handler,writedir
-from .trcluster import hdf5lock
-from .DetectPeaks import detect_peaks
 from time import sleep
+
+import cv2
+import h5py
+import numpy as np
+import pandas as pd
+import scipy.interpolate as interpolate
+import scipy.signal as signal
+import skimage as sk
 from dask.distributed import worker_client
 from pandas import HDFStore
+
+from .DetectPeaks import detect_peaks
+from .trcluster import hdf5lock
+from .utils import kymo_handle, pandas_hdf5_handler, writedir
+
 
 class mother_tracker():
     """Class for tracking growth properties of a mother cell in a trench.

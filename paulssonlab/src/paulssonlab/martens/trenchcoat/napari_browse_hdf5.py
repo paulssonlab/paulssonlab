@@ -1,17 +1,17 @@
-import tables
-import numpy
-import napari
-from dask import delayed
-import dask.array
-import pandas
-from params import read_params_string, read_params_file
+import logging
 import os
+
+import dask.array
+import napari
+import numpy
+import pandas
+import tables
+from dask import delayed
+from imref import imref2d
 
 # For registration
 from imwarp import imwarp
-from imref import imref2d
-
-import logging
+from params import read_params_file, read_params_string
 
 logger = logging.getLogger(__name__)
 

@@ -4,19 +4,12 @@ channels:
   - defaults
 dependencies:
   - black
-  - cachetools
   - click
-  - conda
   - jupyterlab
   - jupyterlab_code_formatter
-  - matplotlib
-  - nbformat
+  - matplotlib-base
   - numpy
   - opencv
   - pandas
-  - pip
-  - pip:
-      - docformatter
   - pre-commit
   - pyqt
-  - python=2.7

@@ -1,22 +1,24 @@
-import numpy as np
+import os
+import re
+from collections import OrderedDict, defaultdict
+from contextlib import contextmanager
+from datetime import datetime
+
 import click
+import numpy as np
+import xxhash
 from peewee import Model
 from playhouse.apsw_ext import (
     APSWDatabase,
-    TextField,
-    IntegerField,
-    DoubleField,
-    BooleanField,
     BlobField,
+    BooleanField,
+    DoubleField,
+    IntegerField,
+    TextField,
 )
+from tqdm.autonotebook import tqdm
+
 from paulssonlab.inventory.json_util import JSONField
-import xxhash
-from datetime import datetime
-from collections import OrderedDict, defaultdict
-from contextlib import contextmanager
-import os
-import re
-from tqdm.auto import tqdm
 from paulssonlab.io.metadata import (
     parse_nd2_file_metadata,
     parse_nikon_tiff_file_metadata,

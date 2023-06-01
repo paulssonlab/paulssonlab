@@ -1,3 +1,7 @@
+import datetime
+from itertools import chain
+
+import sqlalchemy.sql as sql
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -10,24 +14,22 @@ from sqlalchemy import (
     String,
     Table,
     event,
-    text,
-    true,
     orm,
     select,
+    text,
+    true,
     update,
 )
-import sqlalchemy.sql as sql
-from sqlalchemy.sql.sqltypes import NullType
-from sqlalchemy.orm import Session, relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, backref, relationship
 from sqlalchemy.orm.collections import column_mapped_collection
-from itertools import chain
-import datetime
+from sqlalchemy.sql.sqltypes import NullType
 
 Base = declarative_base()
 metadata = Base.metadata
 
 # TODO: event listeners get duplicated when this file is autoreloaded, this mangles queries
+
 
 # FROM: https://docs.sqlalchemy.org/en/20/_modules/examples/extending_query/filter_public.html
 @event.listens_for(Session, "do_orm_execute")

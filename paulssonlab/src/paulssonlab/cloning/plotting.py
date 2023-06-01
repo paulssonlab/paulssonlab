@@ -1,11 +1,13 @@
-import numpy as np
 import re
-from bokeh.layouts import column, gridplot
-from bokeh.plotting import figure, show
-from bokeh.models import Range1d, LinearAxis, BoxAnnotation
-from bokeh.models.callbacks import CustomJS
-from cytoolz import compose
+
+import numpy as np
 from align import align_mafft, read_ab1, trim_to_ref
+from bokeh.layouts import column, gridplot
+from bokeh.models import BoxAnnotation, LinearAxis, Range1d
+from bokeh.models.callbacks import CustomJS
+from bokeh.plotting import figure, show
+from cytoolz import compose
+
 from paulssonlab.util import grouper
 
 

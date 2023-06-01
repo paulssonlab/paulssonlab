@@ -1,9 +1,9 @@
-from PIL import Image, ImageDraw, ImageFilter
+import math
+import random
+
 import numpy as np
 import skimage
-import random
-import math
-
+from PIL import Image, ImageDraw, ImageFilter
 
 bright_halo = "rgb(68,68,68)"
 bright_blur = "rgb(128,128,128)"
@@ -27,7 +27,6 @@ bright_list = ["rgb(225,225,225)"]
 
 
 def make_ellipse(image, x, y, dx, dy, next_1, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     ell2 = dr.ellipse((x + next_1, y, dx + next_1, dy), color)
@@ -37,7 +36,6 @@ def make_ellipse(image, x, y, dx, dy, next_1, color):
 
 
 def halo(image, x, y, dx, dy, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     return ell
@@ -58,7 +56,6 @@ def draw_ellipse(length):
 
 
 def divide(length, x_there, x_here):  # x_here is x_there + divide_length
-
     length = int(length / 2)
 
     # x_there = int(x_there)
@@ -96,7 +93,6 @@ def divide(length, x_there, x_here):  # x_here is x_there + divide_length
 
 
 def image_edit(img, angle):
-
     pixelsize = random.choice(pixelsize_list)
     img = img.rotate(angle)
     imgSmall = img.resize((pixelsize, pixelsize), resample=Image.BILINEAR)
@@ -107,7 +103,6 @@ def image_edit(img, angle):
 
 
 def image_edit2(img):
-
     img = img.rotate(0)
     imgSmall = img.resize((150, 150), resample=Image.BILINEAR)
     result = imgSmall.resize(img.size, Image.NEAREST)
@@ -127,7 +122,6 @@ for i in range(0, t):
     divide_length = int(99 + (2 * 2))
 
     if length < 100:
-
         img = draw_ellipse(length)
         result = image_edit(img, random.choice(list2))
         img1.paste(result, (0, 0), result)
@@ -135,7 +129,6 @@ for i in range(0, t):
         img1 = img1.save("%d.png" % i)
 
     elif length > 90:
-
         length = int(length / 2)
         length1 = length
 
@@ -183,8 +176,9 @@ for i in range(0, t):
         img1 = img1.save("%d.png" % i)
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -209,7 +203,6 @@ height, width, layers = img0.shape
 video = cv2.VideoWriter("video5zzzzzzzzzzzj.mp4", -1, 5, (width, height))
 
 for i in range(0, t):
-
     video.write(images[i])
 
 

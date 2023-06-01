@@ -7,8 +7,8 @@ calendars.
 :Website: http://github.com/jiffyclub
 """
 
-import math
 import datetime as dt
+import math
 
 # Note: The Python datetime module assumes an infinitely valid Gregorian calendar.
 #       The Gregorian calendar took effect after 10-15-1582 and the dates 10-05 through

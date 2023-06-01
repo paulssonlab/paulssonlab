@@ -12,6 +12,7 @@ dependencies:
   - clustalo
   - cytoolz
   - frozendict
+  - gfapy
   - google-api-python-client
   - holoviews
   - hvplot
@@ -19,18 +20,16 @@ dependencies:
   - jsondiff
   - jupyterlab
   - jupyterlab_code_formatter
-  - libxml2=2.9.10
   - mafft
-  - matplotlib
+  - matplotlib-base
   - natsort
   - nbformat
   - networkx
   - nextflow
   - nf-core
-  - nodejs
   - numpy
   - pandas
-  - parasail
+  - parasail-python
   - pip
   - pip:
       - benchlingapi

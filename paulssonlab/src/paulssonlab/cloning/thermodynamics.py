@@ -1,15 +1,18 @@
 import Bio.SeqUtils.MeltingTemp as MeltingTemp
 
+from paulssonlab.cloning.sequence import normalize_seq
+
 
 def tm(seq, method="q5", **kwargs):
+    if not seq:
+        return None
+    seq = normalize_seq(seq)
     if method == "q5":
         return MeltingTemp.Tm_NN(
             seq, dnac1=500, nn_table=MeltingTemp.DNA_NN3, saltcorr=7, Na=150
         )
     elif method == "phusion":
-        pass
-    elif method == "":
-        pass
+        raise NotImplementedError
     else:
         raise ValueError(f"unknown method: {method}")
 
@@ -27,8 +30,6 @@ def ta_from_tms(*tms, method="q5"):
         # NEB Tm calc JAVASCRIPT CODE:
         # (o = .93 * s + 7.5) > 72 && (o = 72);
         return min(0.93 * min(tms) + 7.5, 72)
-    elif method == "":
-        pass
     else:
         raise ValueError(f"unknown method: {method}")
 

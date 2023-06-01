@@ -1,16 +1,18 @@
 from functools import cached_property
-from Bio.SeqUtils import GC
-from Bio.Seq import Seq
+
 import primer3plus
+from Bio.Seq import Seq
+from Bio.SeqUtils import GC
+
+import paulssonlab.cloning.thermodynamics as thermodynamics
 from paulssonlab.cloning.sequence import (
-    reverse_complement,
     enumerate_primer_binding_sites,
     get_seq,
-    smoosh_and_trim_flanks,
     normalize_seq,
+    reverse_complement,
+    smoosh_and_trim_flanks,
 )
-import paulssonlab.cloning.thermodynamics as thermodynamics
-from paulssonlab.cloning.viennarna import dna_secondary_structure, dna_heterodimer
+from paulssonlab.cloning.viennarna import dna_heterodimer, dna_secondary_structure
 from paulssonlab.util import any_not_none, format_number
 
 PRIMER3_DEFAULT_TM = (55, 65, 72)

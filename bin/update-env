@@ -7,5 +7,5 @@ if [ ! -f "$envyml" ]; then
     exit 1
 fi
 check-long-running-process || exit $?
-ensure_mamba env update --prune -f "$envyml"
+$(mamba_cmd) env update --prune -f "$envyml"
 prepare-env "$envyml"

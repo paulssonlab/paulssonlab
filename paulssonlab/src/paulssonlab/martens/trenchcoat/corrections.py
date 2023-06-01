@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-import tables
 import numpy
-
+import tables
 from metadata import get_metadata
 from params import read_params_file
 

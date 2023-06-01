@@ -1,13 +1,13 @@
-import napari
-from dask import delayed
-import dask.array
-import numpy
-import nd2reader
 import os
 
-from params import read_params_file
-from metadata import get_largest_extents, metadata_attributes_equal
+import dask.array
+import napari
+import nd2reader
+import numpy
 from convert import make_nd2_list
+from dask import delayed
+from metadata import get_largest_extents, metadata_attributes_equal
+from params import read_params_file
 
 """
 Use Napari to browse a directory of ND2 files.

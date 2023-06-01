@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from datetime import datetime
-from nd2reader.model.metadata import Metadata
-from nd2reader.model.label import LabelMap
-from nd2reader.parser.base import BaseParser
-from nd2reader.driver.v3 import V3Driver
-from nd2reader.common.v3 import read_chunk, read_array, read_metadata
 import re
-import six
 import struct
+from datetime import datetime
+
+import six
 import xmltodict
+from nd2reader.common.v3 import read_array, read_chunk, read_metadata
+from nd2reader.driver.v3 import V3Driver
+from nd2reader.model.label import LabelMap
+from nd2reader.model.metadata import Metadata
+from nd2reader.parser.base import BaseParser
 
 
 def ignore_missing(func):

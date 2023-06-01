@@ -1,12 +1,14 @@
-import pyarrow as pa
-import pyarrow.parquet as pq
-import numpy_indexed as npi
-from cytoolz import partial, take
-import json
 import io
+import json
 import os
 import shutil
+
+import numpy_indexed as npi
+import pyarrow as pa
+import pyarrow.parquet as pq
+from cytoolz import partial, take
 from tqdm.auto import tqdm
+
 from .util import grouper
 
 DEFAULT_ROW_GROUP_SIZE = 1_000_000

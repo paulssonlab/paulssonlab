@@ -51,18 +51,18 @@ def inventory(
 @cli.command()
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
 def inspect_metadata(file):
+    # import PIL.Image
+    import nd2reader
+    from IPython import embed
+
     from paulssonlab.inventory.core import get_metadata
 
     # convenience imports
     from paulssonlab.io.metadata import (
-        _nikon_tiff_label,
         _nikon_tiff_field,
+        _nikon_tiff_label,
         parse_nikon_tiff_metadata,
     )
-
-    # import PIL.Image
-    import nd2reader
-    from IPython import embed
 
     md = get_metadata(file)
     embed()

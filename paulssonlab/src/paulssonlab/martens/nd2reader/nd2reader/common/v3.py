@@ -1,5 +1,6 @@
-import struct
 import array
+import struct
+
 import six
 
 

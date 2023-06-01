@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 import os
-import tables
-import pandas
-import numpy
-from metadata import get_metadata, get_files_list, get_attribute_list
-from dataframe_conversion import write_dataframe_to_hdf5
-
 from multiprocessing import Pool
+
+import numpy
+import pandas
+import tables
+from dataframe_conversion import write_dataframe_to_hdf5
+from metadata import get_attribute_list, get_files_list, get_metadata
 from skimage.registration import phase_cross_correlation
 
 """

@@ -2,7 +2,6 @@ import os
 from datetime import datetime
 
 import flask
-
 import google.auth
 
 # from googleapiclient.discovery import build

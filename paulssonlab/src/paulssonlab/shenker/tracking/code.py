@@ -1,19 +1,18 @@
-import skimage
-from PIL import Image
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
-import scipy
+import numpy as np
 import pandas as pd
-from skimage import morphology
-
+import scipy
+import skimage
 from gurobipy import *
+from PIL import Image
+from skimage import morphology
 
 # from line_profiler import LineProfiler
 
+
 # @profile
 def main2(mainhuh):
-
     # @profile
     def get_coordinates(img1, mask_num):
         output2 = np.where(img1 == mask_num)
@@ -26,7 +25,6 @@ def main2(mainhuh):
     def get_array(n_mask_img, imgs):
         arr_array = [[]] * n_mask_img
         for i in range(n_mask_img):
-
             arr1 = get_coordinates(
                 imgs, i + 1
             )  # list(zip(np.where(imgs==i+1)[0], np.where(imgs==i+1)[1], [i+1 for j in range (len(np.where(imgs==i+1)[0]))]))
@@ -88,7 +86,6 @@ def main2(mainhuh):
         return int(arr_center_x), pp, len_x, right_edge, left_edge
 
     def tree2(x):
-
         tree2_1 = get_tree(n_mask_img[mn][0], arr[mn][0], n_mask_img[mn][3], arr[mn][3])
         tree2_2 = get_tree(n_mask_img[mn][1], arr[mn][1], n_mask_img[mn][3], arr[mn][3])
         tree2_3 = get_tree(n_mask_img[mn][2], arr[mn][2], n_mask_img[mn][3], arr[mn][3])
@@ -114,7 +111,6 @@ def main2(mainhuh):
     arr = [[[]]] * len(arr_m)
     len_df = [0] * len(arr_m)
     for mn in range(len(arr_m)):
-
         img_ini = cv2.imread("%d.jpg" % (mn))  # +44))#+20+14+2-36))#+29+2)) #12
         # cv2.imshow('img_ini', img_ini)
         # cv2.waitKey(0)
@@ -250,7 +246,6 @@ def main2(mainhuh):
                 c_i = [0] * len(df_list[mn])
 
                 for i in range(len(df_list[mn])):
-
                     ro2 = [0] * len(df_list[mn])
                     c_i[i] = r_e[i]
 
@@ -262,7 +257,6 @@ def main2(mainhuh):
                             and center_arr[i2] < (c_i[i] + (1.2 * lenx_arr[i]))
                         ]  #############################
                         for j in index_i:  #
-
                             if (
                                 df_list[mn]["length_x"].values[i] < 5
                                 or df_list[mn - 1]["length_x"].values[k] < 5
@@ -346,7 +340,6 @@ def main2(mainhuh):
         if mn == 1:
             s[mn - 1] = [7] * 10000
             for i in range(0, len(df_list[mn - 1])):
-
                 s1 = (
                     quicksum(
                         a_div3[mn - 1][i][j][k]
@@ -412,7 +405,6 @@ def main2(mainhuh):
             sum_see2 = [LinExpr()] * len(df_list[mn - 1])
             index_ia = [None] * len(df_list[mn - 1])
             for i in range(len(df_list[mn - 1])):
-
                 c_a[i] = df_list[mn - 1]["right_edge"].values[i]
 
                 if c_a[i] < max(df_list[mn - 1]["left_edge"]):
@@ -514,7 +506,6 @@ def main2(mainhuh):
 
     asg_arr2a = []
     for i in range(len(asg_arr)):
-
         if type(asg_arr[i][2]) == int:
             if int(asg_arr[i][2]) == (len(arr_m) - 2):
                 asg_arr2a += [asg_arr[i]]
@@ -585,7 +576,6 @@ def main2(mainhuh):
         return Image.fromarray(img3)
 
     for jk in range(0, len(arr_m)):
-
         df_list[jk] = df_list_concat[df_list_concat["t"] == jk]
         df_new = df_list[jk][df_list[jk]["s_i"] == 1]
         df_new = df_new.reset_index(drop=True)
@@ -652,7 +642,6 @@ def main2(mainhuh):
     )  # second last is fps should be a factor of total time points
 
     for i in range(0, len(arr_m) - 2):
-
         video.write(images[i])
 
     cv2.destroyAllWindows()

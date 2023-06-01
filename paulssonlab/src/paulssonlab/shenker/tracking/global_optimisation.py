@@ -1,14 +1,14 @@
+from operator import itemgetter
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
 import skimage
+from gurobipy import *
 from PIL import Image, ImageDraw, ImageFilter
 from skimage import morphology
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-from operator import itemgetter
-import pandas as pd
-from gurobipy import *
-
 
 arr_m = [0] * 75
 df_list = [pd.DataFrame()] * len(arr_m)
@@ -200,7 +200,6 @@ for mn in range(len(arr_m)):
     # constr[mn] = [model_tree.addConstr(s1==0)] * n_constr[mn]
 
     for i in range(1, n_constr[mn] + 1):
-
         # con1 = model_tree.addConstr(s[0]+s[(tree(1,3)[int(np.where([x[0]==i for x in tree(1,3)])[0])][1])]+s[2+(tree(2,3)[int(np.where([x[0]==i for x in tree(2,3)])[0])][1])] +s[n_constr+i] == 1)
         con1 = model_tree.addConstr(
             s[mn][
@@ -298,8 +297,9 @@ for i_df in range(0, len(arr_m)):
     print("i_df", i_df)
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -326,7 +326,6 @@ video = cv2.VideoWriter(
 )  # second last is fps should be a factor of total time points
 
 for i in range(0, 75):
-
     video.write(images[i])
 
 

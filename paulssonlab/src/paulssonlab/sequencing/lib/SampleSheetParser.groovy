@@ -3,14 +3,11 @@ import com.moandjiezana.toml.Toml
 
 import nextflow.util.CsvParser
 import java.nio.file.Paths
+import java.math.BigDecimal
 
 class SampleSheetParser {
     private static Boolean anyDuplicates(x) {
         return x.toUnique().size() != x.size()
-    }
-
-    private static def renameKey(map, oldKey, newKey, defaultValue) {
-        return map.put(newKey, map.remove(oldKey) ?: defaultValue)
     }
 
     private static def splitString(str) {
@@ -25,7 +22,7 @@ class SampleSheetParser {
         }
     }
 
-    private static List load(String path) {
+    private static List load(String path, Map defaults = [:], substitute = true, Closure preprocess = null) {
         def sampleSheet = new Toml().read(new File(path)).toMap()
         def samples = []
         def tsv = sampleSheet.get("tsv")
@@ -33,42 +30,61 @@ class SampleSheetParser {
             def tsvParser = new CsvParser()
                 .setSeparator('\t')
             def data = []
+            def header
             tsv.eachLine { line ->
                 def parsedLine = tsvParser.parse(line)
-                if (parsedLine.size() != 2) {
-                    throw new Exception("Expecting two columns in tsv, got ${parsedLine.size()}")
+                parsedLine = parsedLine.collect { it =~ /\s*-\s*/ ? "" : it }
+                if (!header) {
+                    header = parsedLine
+                } else {
+                    if (parsedLine.size() != header.size()) {
+                        throw new Exception("Expecting ${header.size()} columns in tsv, got ${parsedLine.size()}")
+                    }
+                    samples << [header, parsedLine].transpose().collectEntries()
                 }
-                samples << [["reads_prefix", "references"], parsedLine].transpose().collectEntries()
             }
         }
         def samplesTable = sampleSheet.get("samples")
-        if (tsv && samplesTable) {
-            throw new Exception("Cannot specify both tsv and samples in sample sheet TOML")
-        }
         samplesTable?.each {
             samples << it
         }
-        samples.each {
-            it.reference_names = it.get("references")
-            it.remove("references")
-            if (!it.get("name")) {
-                it.name = it.getOrDefault("reads_prefix", "default")
-            }
+        def paramSets = sampleSheet.getOrDefault("params", [[run_path: "default"]])
+        def tomlDefaults = sampleSheet.getOrDefault("defaults", [:])
+        paramSets = paramSets.collect {
+            [run_path: "default", *:tomlDefaults, *:it]
         }
-        if (anyDuplicates(samples*.getOrDefault("name", ""))) {
-            throw new Exception("Samples must have unique names")
-        }
-        def paramSets = sampleSheet.getOrDefault("params", [[name: "default"]])
-        paramSets.each { renameKey(it, "name", "param_set", "default") }
-        if (anyDuplicates(paramSets*.param_set)) {
-            throw new Exception("Param sets must have unique names")
+        if (anyDuplicates(paramSets*.run_path)) {
+            throw new Exception("Param sets must have unique run paths")
         }
         def runs = paramSets.collectMany { p ->
-            samples.collect { s -> [*:p, *:s] }
+            samples.collect { s -> [*:defaults, *:p, *:s] }
         }
+        def engine = new groovy.text.SimpleTemplateEngine()
+        runs.each { it ->
+            it.replaceAll { k, v ->
+                if (v instanceof String) {
+                    try {
+                        v = new BigDecimal(v)
+                    } catch (NumberFormatException e) {}
+                }
+                v
+            }
+            if (preprocess != null) {
+                preprocess(it)
+            }
+            def meta = it.clone() // so substitutions can't depend on each other
+            it.replaceAll { k, v ->
+                if (v instanceof String && (substitute == true || (substitute instanceof Collection && k in substitute))) {
+                    engine.createTemplate(v).make(meta).toString()
+                } else {
+                    v
+                }
+            }
+            it.run_path = Paths.get(it.run_path, it.name) as String
+        }
+        runs = runs.unique()
         runs.eachWithIndex { it, index ->
             it.id = index
-            it.run_path = Paths.get(it.param_set, it.get("name")) as String
         }
         return runs
     }

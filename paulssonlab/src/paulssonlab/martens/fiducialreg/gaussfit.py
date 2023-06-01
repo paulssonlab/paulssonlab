@@ -2,8 +2,8 @@
 
 from __future__ import division
 
-from scipy import optimize
 import numpy as np
+from scipy import optimize
 
 
 def calculate_sigma(electrons_per_ADU, TrueEMGain, NoiseFactor, ReadNoise, dataROI):

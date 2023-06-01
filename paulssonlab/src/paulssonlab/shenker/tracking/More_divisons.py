@@ -1,8 +1,8 @@
-from PIL import Image, ImageDraw, ImageFilter
-import numpy as np
-import skimage
 import random
 
+import numpy as np
+import skimage
+from PIL import Image, ImageDraw, ImageFilter
 
 bright_halo = "rgb(68,68,68)"
 bright_blur = "rgb(128,128,128)"
@@ -14,7 +14,6 @@ list2 = [2, 3, 4, 8]
 
 
 def make_ellipse(image, x, y, dx, dy, next_1, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     ell2 = dr.ellipse((x + next_1, y, dx + next_1, dy), color)
@@ -24,14 +23,12 @@ def make_ellipse(image, x, y, dx, dy, next_1, color):
 
 
 def halo(image, x, y, dx, dy, color):
-
     dr = ImageDraw.Draw(image)
     ell = dr.ellipse((x, y, dx, dy), fill=color)
     return ell
 
 
 def draw_ellipse(length):
-
     img = Image.new(
         "RGBA", (800, 160), "rgba(0,0,0,0)"
     )  # we do get a background less image
@@ -43,7 +40,6 @@ def draw_ellipse(length):
 
 
 def divide(length, x_there, x_here):  # x_here is x_there + divide_length
-
     length = int(length / 2)
 
     img = draw_ellipse(length)
@@ -53,7 +49,6 @@ def divide(length, x_there, x_here):  # x_here is x_there + divide_length
         img1.paste(result, (x_here + (2 * i), 0), result)  # +(2*i)
         return img1
     if length > 90:
-
         img2 = divide(length, x_there, x_there + divide_length)
         img2 = divide(length, x_here + (4 * i), x_here + divide_length + (4 * i))
         # img2.show()
@@ -61,7 +56,6 @@ def divide(length, x_there, x_here):  # x_here is x_there + divide_length
 
 
 def image_edit(img):
-
     img = img.rotate(random.choice(list2))
     imgSmall = img.resize((pixelsize, pixelsize), resample=Image.BILINEAR)
     result = imgSmall.resize(img.size, Image.NEAREST)
@@ -81,14 +75,12 @@ for i in range(0, t):
     divide_length = int(99 + (2 * 2))
 
     if length < 100:
-
         img = draw_ellipse(length)
         result = image_edit(img)
         img1.paste(result, (0, 0), result)
         img1 = img1.save("%d.png" % i)
 
     elif length > 90:
-
         length = int(length / 2)
         length1 = length
 
@@ -117,8 +109,9 @@ for i in range(0, t):
         img1 = img1.save("%d.png" % i)
 
 
-import cv2
 import glob
+
+import cv2
 
 images = []
 
@@ -143,7 +136,6 @@ height, width, layers = img0.shape
 video = cv2.VideoWriter("video5zx.mp4", -1, 10, (width, height))
 
 for i in range(0, t):
-
     video.write(images[i])
 
 

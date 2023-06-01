@@ -1,13 +1,12 @@
 import numpy
-
-from skimage.morphology import remove_small_objects, binary_closing, binary_erosion
-from skimage.segmentation import watershed
+from scipy import ndimage
+from skimage.filters import gaussian, threshold_niblack, threshold_otsu
 from skimage.measure import label
-from skimage.filters import gaussian, threshold_otsu, threshold_niblack
+from skimage.morphology import binary_closing, binary_erosion, remove_small_objects
+from skimage.segmentation import watershed
 
 # from ipywidgets import fixed, interactive
 
-from scipy import ndimage
 
 # TODO: finish the basic dual or multi-channel thresholding algo
 

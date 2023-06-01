@@ -2,12 +2,13 @@
 
 import os
 import time
-import numpy
-from scipy import ndimage  # For Gaussian blur in numpy / scipy
-import skimage.morphology
-import skimage.measure
-import tables
 from multiprocessing import Pool
+
+import numpy
+import skimage.measure
+import skimage.morphology
+import tables
+from scipy import ndimage  # For Gaussian blur in numpy / scipy
 
 """
 Measure properties of trenches, without segmentation.

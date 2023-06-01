@@ -3,58 +3,15 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 import static functions.*
-// include { scp;
-//           join_key;
-//           join_key2;
-//           join_each;
-//           join_map;
-//           edit_map_key;
-//           file_in_dir;
-//           map_call_process } from '../functions.nf'
 
-include { ANY2FASTA;
-          MERGE_FASTAS } from '../modules/fastas.nf'
-
-workflow PREPARE_SAMPLE_SHEET {
-    main:
-    def sample_sheet_path = Paths.get(params.data_dir, params.sample_sheet_name)
-    def remote_path = Paths.get(params.remote_path_base, params.remote_path)
-    scp("${remote_path}/${params.sample_sheet_name}", sample_sheet_path)
-    def sample_list = SampleSheetParser.load(sample_sheet_path as String)
-    Channel
-        .fromList(sample_list)
-        .set { samples }
-
-    emit:
-    samples
-}
-
-workflow PREPARE_READS {
-    take:
-    samples_in
-
-    main:
-    def remote_path = Paths.get(params.remote_path_base, params.remote_path)
-    samples_in
-        .map { it.reads_path }
-        .unique()
-        .map {
-           [it, scp("${remote_path}/${it}", Paths.get(params.data_dir, it))]
-        }
-        .set { ch_reads }
-    join_key(samples_in, ch_reads, "reads_path", "reads")
-        .set { samples }
-
-    emit:
-    samples
-}
+include { ANY2FASTA; MERGE_FILES } from '../modules/fastas.nf'
 
 def json_command(command, input) {
     def SCRIPT_TIMEOUT = 100000 // msec
     def json_input = JsonOutput.toJson(input)
     def proc = command.execute()
     def output_stream = new StringBuffer();
-    proc.consumeProcessOutput(output_stream, System.err)
+    proc.consumeProcessOutput(output_stream, output_stream)
     proc.withWriter { writer ->
         writer.write(json_input)
     }
@@ -72,7 +29,7 @@ def json_command(command, input) {
 def get_registry_seqs(references_dir, sample_references) {
     def output = json_command(["${src}/sequencing/bin/get_registry_seqs.py", "${src}/shenker/cloning", references_dir], sample_references)
     edit_map_key(output, "references", "references") { refs ->
-        refs.collect { ref -> file_in_dir(references_dir, ref) } as Set
+        refs.collect { file(it) } as Set
     }
 }
 
@@ -83,7 +40,7 @@ workflow PREPARE_REFERENCES {
     main:
     def references_dir = Paths.get(params.references_dir)
     samples_in
-        .map { [(it.run_path): it.reference_names] }
+        .map { [(it.run_path): it.references] }
         .collect()
         .map { it.sum() }
         .map { get_registry_seqs(references_dir, it) }
@@ -101,12 +58,19 @@ workflow PREPARE_REFERENCES {
                      "_ANY2FASTA") { ref, meta -> [ref] }
         .set { ch_samples_with_fastas }
 
-    call_process(MERGE_FASTAS,
-                 ch_samples_with_fastas,
+    def samples_filtered_by_ref = ch_samples_with_fastas.branch {
+        ref: it.get("references_fasta")
+        noref: true
+    }
+
+    call_process(MERGE_FILES,
+                 samples_filtered_by_ref.ref,
                  "references_fasta",
                  [id: { it.references_fasta }],
-                 ["reference"]) { [it.references_fasta] }
+                 ["reference"]) { [it.references_fasta, "fasta"] }
+        .mix(samples_filtered_by_ref.noref)
         .set { samples }
+
 
     emit:
     samples

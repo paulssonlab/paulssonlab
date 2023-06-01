@@ -1,7 +1,8 @@
 import numpy as np
-from scipy.ndimage.interpolation import map_coordinates
-from .imref import imref3d
 from numba import njit
+from scipy.ndimage.interpolation import map_coordinates
+
+from .imref import imref3d
 
 # NOTE why not use skimage.transform.warp()?
 
