@@ -9,22 +9,22 @@ import skimage
 import skimage.morphology
 import skimage.segmentation
 
-from .. import common
-from ..geometry import get_image_limits
-from ..image import (
+from paulssonlab.image_analysis.geometry import get_image_limits
+from paulssonlab.image_analysis.image import (
     gaussian_box_approximation,
     hough_line_intensity,
     normalize_componentwise,
     remove_large_objects,
 )
-
-# TODO: fix imports
-from ..misc.holoborodko_diff import holo_diff
-from ..ui import RevImage
-from ..util import getitem_if_not_none
-from ..workflow import points_dataframe
-from .geometry import coords_along, edge_point
-from .peaks import find_periodic_peaks
+from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
+from paulssonlab.image_analysis.trench_detection.geometry import (
+    coords_along,
+    edge_point,
+)
+from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
+from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.util import getitem_if_not_none
+from paulssonlab.image_analysis.workflow import points_dataframe
 
 
 def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):

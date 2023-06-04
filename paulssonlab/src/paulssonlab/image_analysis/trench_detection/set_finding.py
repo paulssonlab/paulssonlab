@@ -10,17 +10,18 @@ from matplotlib.path import Path
 from scipy.spatial import ConvexHull
 from sklearn.preprocessing import StandardScaler
 
-from paulssonlab.util.numeric import silent_nanquantile
-
-from ..image import (
+from paulssonlab.image_analysis.image import (
     gaussian_box_approximation,
     normalize_componentwise,
     remove_large_objects,
 )
-from ..misc.holoborodko_diff import holo_diff
-from ..ui import RevImage
-from ..util import getitem_if_not_none
-from .refinement import get_trench_line_profiles
+from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
+from paulssonlab.image_analysis.trench_detection.refinement import (
+    get_trench_line_profiles,
+)
+from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.util import getitem_if_not_none
+from paulssonlab.util.numeric import silent_nanquantile
 
 
 def _standardize_cluster_labels(X, fit):

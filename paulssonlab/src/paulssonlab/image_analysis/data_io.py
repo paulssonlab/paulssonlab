@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 from cytoolz import partial, take
 from tqdm.auto import tqdm
 
-from .util import grouper
+from paulssonlab.image_analysis.util import grouper
 
 DEFAULT_ROW_GROUP_SIZE = 1_000_000
 

@@ -4,7 +4,7 @@ from functools import wraps
 import holoviews as hv
 import pandas as pd
 
-from .util import (
+from paulssonlab.image_analysis.util import (
     drop_dict_nones,
     flatten_dict,
     get_one,

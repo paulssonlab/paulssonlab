@@ -15,12 +15,14 @@ from numcodecs import Blosc
 from tornado import gen
 from tornado.util import TimeoutError
 
-from paulssonlab.io.metadata import parse_nd2_metadata
-
-from .diagnostics import expand_diagnostics_by_label
-from .geometry import bounding_box, get_image_limits, get_trench_bbox
-from .image import get_regionprops
-from .util import (
+from paulssonlab.image_analysis.diagnostics import expand_diagnostics_by_label
+from paulssonlab.image_analysis.geometry import (
+    bounding_box,
+    get_image_limits,
+    get_trench_bbox,
+)
+from paulssonlab.image_analysis.image import get_regionprops
+from paulssonlab.image_analysis.util import (
     array_to_tuples,
     get_kwargs,
     get_one,
@@ -30,6 +32,7 @@ from .util import (
     unzip_items,
     zip_dicts,
 )
+from paulssonlab.io.metadata import parse_nd2_metadata
 
 IDX = pd.IndexSlice
 

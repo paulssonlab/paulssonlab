@@ -173,26 +173,6 @@ def hessian_eigenvalues(img, sigma=1.5):
     )
 
 
-# TODO: use skimage.filters.ridge.compute_hessian_eigenvalues?
-# def hessian_eigenvalues(img, sigma=1.5):
-#     I = skimage.filters.gaussian(img, sigma)
-#     I_x = skimage.filters.sobel_h(I)
-#     I_y = skimage.filters.sobel_v(I)
-#     I_xx = skimage.filters.sobel_h(I_x)
-#     I_xy = skimage.filters.sobel_v(I_x)
-#     I_yx = skimage.filters.sobel_h(I_y)
-#     I_yy = skimage.filters.sobel_v(I_y)
-#     kappa_1 = (I_xx + I_yy) / 2
-#     with warnings.catch_warnings():
-#         warnings.simplefilter('ignore', RuntimeWarning)
-#         kappa_2 = (np.sqrt((I_xx + I_yy)**2 - 4*(I_xx*I_yy - I_xy*I_yx))) / 2
-#     k1 = kappa_1 + kappa_2
-#     k2 = kappa_1 - kappa_2
-#     k1[np.isnan(k1)] = 0
-#     k2[np.isnan(k2)] = 0
-#     return k1, k2
-
-
 # FROM: Kovesi, Peter. 2010. Fast Almost-Gaussian Filtering.
 # TODO: replace with http://blog.ivank.net/fastest-gaussian-blur.html
 def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
@@ -208,6 +188,31 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
     for i in range(n - m):
         ary = scipy.ndimage.filters.uniform_filter(ary, w_u, mode=mode)
     return ary
+
+
+# SEE: https://math.stackexchange.com/a/2007723
+def _quadratic_root(a, b, c):
+    # we've chosen the correct root for for radial_transform (smallest positive root)
+    return 2 * c / (-b + np.sqrt(b**2 - 4 * a * c))
+
+
+# SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
+# Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
+def radial_distortion_inverse(coords, center=np.array((0, 0)), k1=0):
+    coords_centered = coords - center
+    r_u = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]
+    r_d = _quadratic_root(k1 * r_u, -1, r_u)
+    new_coords = center + (r_d / r_u) * coords_centered
+    return new_coords
+
+
+def correct_radial_distortion(img, k1=0, **kwargs):
+    return skimage.transform.warp(
+        img,
+        radial_distortion_inverse,
+        map_args=dict(center=(np.array(img.shape)[::-1] - 1) / 2, k1=k1),
+        **{**dict(preserve_range=True, mode="edge"), **kwargs},
+    )
 
 
 DEFAULT_REGIONPROPS = [

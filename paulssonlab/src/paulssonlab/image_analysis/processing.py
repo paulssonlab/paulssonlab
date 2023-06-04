@@ -13,9 +13,17 @@ from filelock import SoftFileLock
 from numcodecs import Blosc
 from tqdm.auto import tqdm
 
-from .data_io import write_dataframe_to_arrow, write_dataframe_to_parquet
-from .util import flatten_dict, get_one, mapping_values_are_dict, unflatten_dict
-from .workflow import get_nd2_frame
+from paulssonlab.image_analysis.data_io import (
+    write_dataframe_to_arrow,
+    write_dataframe_to_parquet,
+)
+from paulssonlab.image_analysis.util import (
+    flatten_dict,
+    get_one,
+    mapping_values_are_dict,
+    unflatten_dict,
+)
+from paulssonlab.image_analysis.workflow import get_nd2_frame
 
 DEFAULT_COMPRESSOR = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE, blocksize=0)
 DEFAULT_ORDER = "C"

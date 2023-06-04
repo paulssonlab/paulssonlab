@@ -1,5 +1,4 @@
-from . import (
-    common,
+from paulssonlab.image_analysis import (
     data_io,
     diagnostics,
     geometry,
@@ -11,6 +10,3 @@ from . import (
     util,
     workflow,
 )
-
-# from . import trench_detection.hough, trench_detection.core
-# from . import trench_segmentation.watershed

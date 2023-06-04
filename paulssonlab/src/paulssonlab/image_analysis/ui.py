@@ -17,10 +17,9 @@ from holoviews.streams import Selection1D, Stream, param
 from IPython.display import HTML, clear_output, display
 from matplotlib.colors import hex2color
 
-from . import common
-from .geometry import bounding_box
-from .util import format_number, get_one, summarize_filenames
-from .workflow import (
+from paulssonlab.image_analysis.geometry import bounding_box
+from paulssonlab.image_analysis.util import format_number, get_one, summarize_filenames
+from paulssonlab.image_analysis.workflow import (
     get_nd2_frame,
     get_nd2_frame_anyargs,
     get_trench_image,

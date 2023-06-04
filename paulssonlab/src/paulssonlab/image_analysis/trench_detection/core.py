@@ -2,12 +2,14 @@ import numpy as np
 import pandas as pd
 import skimage.morphology
 
-from .. import common
-from ..util import getitem_if_not_none
-from .hough import find_trench_lines
-from .peaks import find_periodic_peaks
-from .refinement import find_trench_ends
-from .set_finding import binarize_trench_image, find_trench_sets_by_cutting
+from paulssonlab.image_analysis.trench_detection.hough import find_periodic_lines
+from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
+from paulssonlab.image_analysis.trench_detection.refinement import find_trench_ends
+from paulssonlab.image_analysis.trench_detection.set_finding import (
+    binarize_trench_image,
+    find_trench_sets_by_cutting,
+)
+from paulssonlab.image_analysis.util import getitem_if_not_none
 
 
 # FROM: https://stackoverflow.com/questions/23815327/numpy-one-liner-for-combining-unequal-length-np-array-to-a-matrixor-2d-array

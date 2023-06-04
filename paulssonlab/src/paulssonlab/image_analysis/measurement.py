@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .workflow import get_trench_bboxes
+from paulssonlab.image_analysis.workflow import get_trench_bboxes
 
 
 def _trench_diag_to_dataframe(trench_diag, sep="."):
