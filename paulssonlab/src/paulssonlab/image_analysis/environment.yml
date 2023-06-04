@@ -16,6 +16,7 @@ dependencies:
   - hvplot
   - ipython
   - ipywidgets
+  - isort
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib-base
