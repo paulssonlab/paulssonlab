@@ -1,0 +1,8 @@
+#!/bin/sh
+envname_file="${root}/.envname"
+if [ -f "$envname_file" ]; then
+    envname="$(cat "$envname_file")"
+else
+	envname="paulssonlab" # default
+fi
+$(mamba_cmd) run -n "$envname" pre-commit "$@"
