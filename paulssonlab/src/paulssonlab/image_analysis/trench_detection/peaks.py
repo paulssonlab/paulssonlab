@@ -46,13 +46,13 @@ def find_peaks(
             * points
         )
         diagnostics["peaks"] = hv.Curve(profile_detrended) * points_detrended
-    info = pd.DataFrame(properties)
-    return idxs, info
+    trench_info = pd.DataFrame(properties)
+    return idxs, None, trench_info
 
 
 def find_periodic_peaks(
     profile,
-    refine=1,  # TODO: choose better default?
+    refine=0,  # TODO: refinement may be unnecessary now that we have distortion correction, remove?
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
@@ -99,7 +99,7 @@ def find_periodic_peaks(
         diagnostics["offsets"] = offset_plot
     if not refine:
         refined_idxs = idxs
-        info = None
+        trench_info = None
     else:
         idx_start = np.clip(idxs - refine, 0, len(profile))
         idx_end = np.clip(idxs + refine, 0, len(profile))
@@ -111,7 +111,7 @@ def find_periodic_peaks(
         )
         shifts = np.where(profile[idxs] != profile[idxs + shifts], shifts, 0)
         refined_idxs = idxs + shifts
-        info = pd.DataFrame({"hough_unshifted_value": profile[idxs], "shift": shifts})
+        trench_info = pd.DataFrame({"shift": shifts})
         if diagnostics is not None:
             periodic_points = hv.Scatter((idxs, profile[idxs])).options(
                 size=5, color="red"
@@ -122,5 +122,5 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
-    # TODO: use scipy.signal.peak_widths to calculate peak widths
-    return refined_idxs, info
+    info = dict(pitch=pitch, offset=offset)
+    return refined_idxs, info, trench_info

@@ -26,21 +26,23 @@ def stack_jagged_points(arys):
 
 def find_trenches(
     img,
-    reindex=True,
-    setwise=True,  # TODO: set False by default?
+    max_angle=np.deg2rad(10),
+    num_angles=400,
     peak_func=find_periodic_peaks,
     set_finding_func=find_trench_sets_by_cutting,
     diagnostics=None,
+    join_info=True,
 ):
     labeling_diagnostics = getitem_if_not_none(diagnostics, "labeling")
     img_normalized, img_binarized = binarize_trench_image(
         img,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "binarize_trench_image"),
     )
-    angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
+    angle, anchor_rho, rho_min, rho_max, info, line_info = find_periodic_lines(
         img_normalized,
+        theta=np.linspace(-max_angle, max_angle, num_angles),
         peak_func=peak_func,
-        diagnostics=getitem_if_not_none(labeling_diagnostics, "find_trench_lines"),
+        diagnostics=getitem_if_not_none(labeling_diagnostics, "find_periodic_lines"),
     )
     img_labels, label_index = set_finding_func(
         img_normalized,
@@ -59,12 +61,6 @@ def find_trenches(
             img_normalized,
             np.percentile(img_normalized, 5),
         )
-        if setwise:
-            angle, anchor_rho, rho_min, rho_max, anchor_info = find_trench_lines(
-                img_masked,
-                peak_func=peak_func,
-                diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_lines"),
-            )
         trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
@@ -74,11 +70,17 @@ def find_trenches(
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
         trench_sets[label]["trench_set"] = label
-        if anchor_info is not None:
-            trench_sets[label] = trench_sets[label].join(anchor_info, how="left")
-            if reindex:
-                # TODO: what is the purpose of reindexing?
-                trench_sets[label].reset_index(drop=True, inplace=True)
+        if line_info is not None:
+            trench_sets[label] = trench_sets[label].join(line_info)
     trenches_df = pd.concat(trench_sets.values())
     trenches_df.reset_index(drop=True, inplace=True)
-    return trenches_df
+    if join_info:
+        if info is not None:
+            info_df = pd.DataFrame.from_records([info])
+            info_df = info_df.loc[info_df.index.repeat(len(trenches_df))].reset_index(
+                drop=True
+            )
+            trenches_df = trenches_df.join(info_df)
+        return trenches_df
+    else:
+        return trenches_df, info

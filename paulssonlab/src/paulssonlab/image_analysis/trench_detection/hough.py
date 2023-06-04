@@ -53,7 +53,7 @@ def find_periodic_lines(
     diagnostics=None,
 ):
     if theta is None:
-        theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
+        theta = np.linspace(np.deg2rad(-45), np.deg2rad(44), 90)
     if threshold_quantile is not None:
         img_thresh = img * (img > np.percentile(img, threshold_quantile * 100))
     else:
@@ -62,9 +62,7 @@ def find_periodic_lines(
     diff_h = np.diff(h.astype(np.int_), axis=1)  # TODO: is diff necessary??
     diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
     if smooth:
-        diff_h_std_smoothed = scipy.ndimage.filters.gaussian_filter1d(
-            diff_h_std, smooth
-        )
+        diff_h_std_smoothed = scipy.ndimage.gaussian_filter1d(diff_h_std, smooth)
     else:
         diff_h_std_smoothed = diff_h_std
     theta_idx = diff_h_std_smoothed.argmax()
@@ -122,7 +120,7 @@ def find_periodic_lines(
         interpolated_profile = trimmed_profile
     if diagnostics is not None:
         diagnostics["trimmed_profile"] = trimmed_profile_plot
-    anchor_idxs, anchor_info = peak_func(
+    anchor_idxs, peak_info, peak_line_info = peak_func(
         interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
     )
     if upscale:
@@ -139,35 +137,12 @@ def find_periodic_lines(
         profile_plot *= hv.VLine(rho_min).options(color="red")
         profile_plot *= hv.VLine(rho_max).options(color="red")
         diagnostics["profile"] = profile_plot
-    info = pd.DataFrame({"hough_value": anchor_values})
-    if anchor_info is not None:
-        info = info.join(anchor_info)
-    return angle, anchor_rho, rho_min, rho_max, info
-
-
-def find_trench_lines(
-    img, max_angle=np.deg2rad(10), num_angles=400, diagnostics=None, **kwargs
-):
-    # TODO: can probably reduce sampling here in one or both hough calls
-    if not isinstance(max_angle, (tuple, list)):
-        max_angle_iter = [max_angle]
-    else:
-        max_angle_iter = max_angle
-    if not isinstance(num_angles, (tuple, list)):
-        num_angles_iter = [num_angles]
-    else:
-        num_angles_iter = num_angles
-    angle = 0
-    res = None
-    for hough_iter, (max_angle, num_angles) in enumerate(
-        zip(max_angle_iter, num_angles_iter)
-    ):
-        theta = np.linspace(angle - max_angle, angle + max_angle, num_angles)
-        res = find_periodic_lines(
-            img,
-            theta=theta,
-            **kwargs,
-            diagnostics=getitem_if_not_none(diagnostics, f"hough_{hough_iter}"),
-        )
-        angle = res[0]
-    return res
+    line_info = peak_line_info
+    # if we want to add additional line metadata, we can do so like this:
+    # line_info = pd.DataFrame({"hough_value": anchor_values})
+    # if peak_line_info is not None:
+    #    line_info = line_info.join(peak_line_info)
+    info = dict(angle=angle)
+    if peak_info is not None:
+        info = {**peak_info, **info}
+    return angle, anchor_rho, rho_min, rho_max, info, line_info

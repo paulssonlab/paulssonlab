@@ -127,11 +127,8 @@ def find_trench_sets_by_cutting(
     label_index = tuple(range(1, len(endpoints) + 1))
     img_labels = np.zeros_like(img_mask, dtype=np.int8)
     width, height = img.shape
-    # x, y = np.mgrid[:height, :width]
     y, x = np.nonzero(img_mask)
-    coors = np.hstack(
-        (x.reshape(-1, 1), y.reshape(-1, 1))
-    )  # coors.shape is (4000000,2)
+    coors = np.hstack((x.reshape(-1, 1), y.reshape(-1, 1)))
     for label, (top_end, bottom_end) in zip(label_index, endpoints):
         top_endpoints = stacked_points[top_end]
         bottom_endpoints = stacked_points[bottom_end]
@@ -141,33 +138,21 @@ def find_trench_sets_by_cutting(
         )
         top_endpoints = top_endpoints[mask]
         bottom_endpoints = bottom_endpoints[mask]
-        # (3392, 133, 2)
-        # polygon = [stacked_points[start][0], #stacked_points[start][-1],
-        #           stacked_points[stop][-1], stacked_points[stop][0]]
         polygon = np.vstack((top_endpoints, bottom_endpoints))
         hull = ConvexHull(polygon)
         poly_path = Path(polygon[hull.vertices])
         # FROM: https://stackoverflow.com/questions/3654289/scipy-create-2d-polygon-mask
-        # mask = poly_path.contains_points(coors).reshape(height, width)
         mask = poly_path.contains_points(coors)
         img_labels[y[mask], x[mask]] = label
-        # img_labels[mask] = label
-        # print('!!',img_labels.sum())
-        # break
-        # img_labels[mask] = label
     img_labels = img_labels  # .T#[:,::-1]
     if diagnostics is not None:
         diagnostics["labeled_image"] = RevImage(img_labels)
-        # diagnostics['label_index'] = tuple(label_index) # TODO: arrow/parquet nested column
         diagnostics["label_min"] = label_index[0]
         diagnostics["label_max"] = label_index[-1]
-    #     return find_trench_sets_by_clustering(img, img_mask,
-    #                                           angle, anchor_rho, rho_min, rho_max,
-    #                                           diagnostics=diagnostics)
     return img_labels, label_index
 
 
-# TODO: WIP
+# TODO: WIP, remove?
 def find_trench_sets_by_diff_cutting(
     img,
     img_mask,
@@ -311,10 +296,3 @@ def binarize_trench_image(
     if diagnostics is not None:
         diagnostics["normalized_image"] = RevImage(normalized_img)
     return normalized_img, cleaned_components
-
-
-#     img_labels, label_index = label_binary_image(cleaned_components)
-#     if diagnostics is not None:
-#         diagnostics['labeled_image'] = RevImage(img_labels)
-#         diagnostics['label_index'] = tuple(label_index)
-#     return normalized_img, img_labels, label_index
