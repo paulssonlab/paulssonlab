@@ -1,10 +1,13 @@
 import warnings
+from functools import lru_cache
 
 import numba
 import numpy as np
 import pandas as pd
 import scipy
+import scipy.ndimage
 import skimage.morphology
+import skimage.transform
 from cytoolz import compose
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 
@@ -206,12 +209,25 @@ def radial_distortion_inverse(coords, center=np.array((0, 0)), k1=0):
     return new_coords
 
 
-def correct_radial_distortion(img, k1=0, **kwargs):
-    return skimage.transform.warp(
-        img,
-        radial_distortion_inverse,
-        map_args=dict(center=(np.array(img.shape)[::-1] - 1) / 2, k1=k1),
-        **{**dict(preserve_range=True, mode="edge"), **kwargs},
+@lru_cache(maxsize=1)
+def radial_distortion_coords(shape, k1):
+    return skimage.transform.warp_coords(
+        partial(
+            radial_distortion_inverse, center=(np.array(shape)[::-1] - 1) / 2, k1=k1
+        ),
+        shape,
+    )
+
+
+def correct_radial_distortion(img, k1=None, coords=None, **kwargs):
+    if coords is None:
+        if k1 is None:
+            raise ValueError(
+                "either k1 or coords (pre-computed with radial_distortion_coords) must be specified"
+            )
+        coords = radial_distortion_coords(img.shape, k1)
+    return scipy.ndimage.map_coordinates(
+        img, coords, **{**dict(order=1, mode="nearest", prefilter=False), **kwargs}
     )
 
 
