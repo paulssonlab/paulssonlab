@@ -201,21 +201,31 @@ def _quadratic_root(a, b, c):
 
 # SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
 # Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
-def radial_distortion_inverse(coords, center=np.array((0, 0)), k1=0):
-    coords_centered = coords - center
+def radial_distortion_inverse(
+    coords, input_center=np.array((0, 0)), output_center=np.array((0, 0)), k1=0
+):
+    coords_centered = coords - output_center
     r_u = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]
     r_d = _quadratic_root(k1 * r_u, -1, r_u)
-    new_coords = center + (r_d / r_u) * coords_centered
+    new_coords = input_center + (r_d / r_u) * coords_centered
     return new_coords
 
 
 @lru_cache(maxsize=1)
 def radial_distortion_coords(shape, k1):
+    input_center = (np.array(shape)[::-1] - 1) / 2
+    output_shape = np.ceil(input_center / (1 + k1 * input_center**2) * 2 + 1).astype(
+        np.int32
+    )[::-1]
+    output_center = (output_shape[::-1] - 1) / 2
     return skimage.transform.warp_coords(
         partial(
-            radial_distortion_inverse, center=(np.array(shape)[::-1] - 1) / 2, k1=k1
+            radial_distortion_inverse,
+            input_center=input_center,
+            output_center=output_center,
+            k1=k1,
         ),
-        shape,
+        output_shape,
     )
 
 
@@ -227,7 +237,9 @@ def correct_radial_distortion(img, k1=None, coords=None, **kwargs):
             )
         coords = radial_distortion_coords(img.shape, k1)
     return scipy.ndimage.map_coordinates(
-        img, coords, **{**dict(order=1, mode="nearest", prefilter=False), **kwargs}
+        img,
+        coords,
+        **{**dict(order=1, mode="constant", cval=0, prefilter=False), **kwargs},
     )
 
 
