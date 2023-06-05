@@ -28,6 +28,7 @@ dependencies:
   - panel
   - py-opencv
   - pyarrow
+  - pyinstrument
   - pytables
   - python-lmdb
   - scikit-image
