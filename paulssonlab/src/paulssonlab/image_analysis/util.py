@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Mapping
 from functools import partial
 from itertools import zip_longest
