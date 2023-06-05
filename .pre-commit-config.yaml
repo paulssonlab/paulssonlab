@@ -13,11 +13,14 @@ repos:
     rev: v4.4.0
     hooks:
     -   id: check-added-large-files
-        exclude: '\.ipynb$'
+        exclude_types: [jupyter]
     -   id: mixed-line-ending
         args: ['--fix=lf']
+        exclude_types: [jupyter]
     -   id: trailing-whitespace
+        exclude_types: [jupyter]
     -   id: end-of-file-fixer
+        exclude_types: [jupyter]
     -   id: check-merge-conflict
     -   id: check-case-conflict
 -   repo: https://github.com/shenker/pre-commit-hooks.git
