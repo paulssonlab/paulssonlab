@@ -1,5 +1,5 @@
 import itertools as it
-from functools import cache
+from functools import cache, partial
 from numbers import Number
 
 import av
@@ -11,29 +11,19 @@ import nd2reader
 import numpy as np
 import scipy.ndimage as ndi
 import skimage
-from cytoolz import partial
 from matplotlib.colors import hex2color
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import SimilarityTransform, warp
 from tqdm.auto import tqdm
 
 from paulssonlab.image_analysis.blur import scipy_box_blur
+from paulssonlab.image_analysis.util import get_delayed
 from paulssonlab.image_analysis.workflow import (
     get_filename_image_limits,
     get_nd2_frame,
     get_position_metadata,
-    parse_nd2_metadata,
 )
-
-
-# TODO: move to paulssonlab.util
-def get_delayed(delayed):
-    if delayed is True:
-        return dask.delayed(pure=True)
-    elif delayed is False:
-        return lambda func, **kwargs: func
-    else:
-        return delayed
+from paulssonlab.io.metadata import parse_nd2_metadata
 
 
 def colorize(imgs, hexcolors, scale=True):

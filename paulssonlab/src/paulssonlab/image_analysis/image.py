@@ -1,5 +1,5 @@
 import warnings
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import numba
 import numpy as np

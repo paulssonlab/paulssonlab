@@ -5,10 +5,9 @@ import skimage
 import skimage.morphology
 import skimage.segmentation
 
-from .. import common
-from ..image import hessian_eigenvalues, permute_labels
-from ..ui import RevImage, _trench_img
-from ..util import repeat_apply
+from paulssonlab.image_analysis.image import hessian_eigenvalues, permute_labels
+from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.util import repeat_apply
 
 
 def uniformize_trench_intensity(img):
