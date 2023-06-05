@@ -52,24 +52,27 @@ def find_peaks(
 
 def find_periodic_peaks(
     profile,
-    refine=0,  # TODO: refinement may be unnecessary now that we have distortion correction, remove?
+    pitch=None,
+    refine=5,
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
-    max_period=50,
+    min_period=50,
     diagnostics=None,
 ):
-    freqs, spectrum = scipy.signal.periodogram(
-        profile, window="hann", nfft=nfft, scaling="spectrum"
-    )
-    if max_period:
-        spectrum[:max_period] = 0
-    pitch_idx = spectrum.argmax()
-    pitch = 1 / freqs[pitch_idx]
+    if pitch is None or diagnostics is not None:
+        freqs, spectrum = scipy.signal.periodogram(
+            profile, window="hann", nfft=nfft, scaling="spectrum"
+        )
+        if min_period:
+            spectrum[:min_period] = 0
+    if pitch is None:
+        pitch_idx = spectrum.argmax()
+        pitch = 1 / freqs[pitch_idx]
     if diagnostics is not None:
         diagnostics["pitch"] = pitch
-        spectrum_plot = hv.Curve(spectrum)
-        spectrum_plot *= hv.VLine(pitch_idx).options(color="red")
+        spectrum_plot = hv.Curve((1 / freqs, spectrum))
+        spectrum_plot *= hv.VLine(pitch).options(color="red")
         diagnostics["spectrum"] = spectrum_plot
     offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
     # always leave a period of length `pitch` so we can add offsets
@@ -99,7 +102,7 @@ def find_periodic_peaks(
         diagnostics["offsets"] = offset_plot
     if not refine:
         refined_idxs = idxs
-        trench_info = None
+        trench_info = {}
     else:
         idx_start = np.clip(idxs - refine, 0, len(profile))
         idx_end = np.clip(idxs + refine, 0, len(profile))
@@ -122,5 +125,15 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
+    prominence_data = scipy.signal.peak_prominences(profile, refined_idxs)
+    width_data = scipy.signal.peak_widths(
+        profile, refined_idxs, prominence_data=prominence_data
+    )
+    trench_info = {
+        **trench_info,
+        **dict(zip(("prominences", "left_bases", "right_bases"), prominence_data)),
+        **dict(zip(("widths", "width_heights", "left_ips", "right_ips"), width_data)),
+    }
+    trench_info = pd.DataFrame(trench_info)
     info = dict(pitch=pitch, offset=offset)
     return refined_idxs, info, trench_info

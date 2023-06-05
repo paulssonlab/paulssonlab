@@ -24,7 +24,6 @@ from paulssonlab.image_analysis.trench_detection.geometry import (
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
-from paulssonlab.image_analysis.workflow import points_dataframe
 
 
 def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
@@ -45,6 +44,7 @@ def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
 def find_periodic_lines(
     img,
     theta=None,
+    pitch=None,
     smooth=4,
     threshold_quantile=0.75,
     upscale=None,
@@ -54,6 +54,8 @@ def find_periodic_lines(
 ):
     if theta is None:
         theta = np.linspace(np.deg2rad(-45), np.deg2rad(44), 90)
+    else:
+        theta = np.array(theta)
     if threshold_quantile is not None:
         img_thresh = img * (img > np.percentile(img, threshold_quantile * 100))
     else:
@@ -70,7 +72,7 @@ def find_periodic_lines(
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
         diagnostics["thresholded_image"] = RevImage(img_thresh)
-        # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1])) # TODO: arrow/parquet nested column
+        # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
         diagnostics["angle_range_min"] = np.rad2deg(theta[0])
         diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
         bounds = (np.rad2deg(theta[0]), rho[0], np.rad2deg(theta[-1]), rho[-1])
@@ -120,15 +122,18 @@ def find_periodic_lines(
         interpolated_profile = trimmed_profile
     if diagnostics is not None:
         diagnostics["trimmed_profile"] = trimmed_profile_plot
+    peak_func_kwargs = dict(diagnostics=getitem_if_not_none(diagnostics, "peak_func"))
+    if pitch is not None:
+        peak_func_kwargs["pitch"] = pitch
     anchor_idxs, peak_info, peak_line_info = peak_func(
-        interpolated_profile, diagnostics=getitem_if_not_none(diagnostics, "peak_func")
+        interpolated_profile, **peak_func_kwargs
     )
     if upscale:
         anchor_idxs = (anchor_idxs / upscale).astype(np.int_)
-    anchor_values = trimmed_profile[anchor_idxs]  # TODO: interpolation
+    anchor_values = trimmed_profile[anchor_idxs]  # TODO: interpolation (?)
     anchor_idxs += idx_min
     anchor_rho = rho[anchor_idxs]
-    # TODO interpolate rho
+    # TODO interpolate rho?
     if diagnostics is not None:
         rho_points = hv.Scatter((anchor_rho, anchor_values)).options(
             size=5, color="cyan"

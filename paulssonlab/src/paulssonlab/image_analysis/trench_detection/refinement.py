@@ -2,14 +2,16 @@ import holoviews as hv
 import numpy as np
 import pandas as pd
 
+from paulssonlab.image_analysis.geometry import get_image_limits
+from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
+from paulssonlab.image_analysis.trench_detection.geometry import (
+    coords_along,
+    edge_point,
+)
+from paulssonlab.image_analysis.trench_detection.hough import trench_anchors
+from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.workflow import points_dataframe
 from paulssonlab.util.numeric import silent_nanquantile
-
-from ..geometry import get_image_limits
-from ..misc.holoborodko_diff import holo_diff
-from ..ui import RevImage
-from ..workflow import points_dataframe
-from .geometry import coords_along, edge_point
-from .hough import trench_anchors
 
 
 def get_trench_line_profiles(
