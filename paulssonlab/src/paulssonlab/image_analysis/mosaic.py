@@ -11,12 +11,12 @@ import nd2reader
 import numpy as np
 import scipy.ndimage as ndi
 import skimage
-from matplotlib.colors import hex2color
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import SimilarityTransform, warp
 from tqdm.auto import tqdm
 
 from paulssonlab.image_analysis.blur import scipy_box_blur
+from paulssonlab.image_analysis.image import colorize
 from paulssonlab.image_analysis.util import get_delayed
 from paulssonlab.image_analysis.workflow import (
     get_filename_image_limits,
@@ -24,36 +24,6 @@ from paulssonlab.image_analysis.workflow import (
     get_position_metadata,
 )
 from paulssonlab.io.metadata import parse_nd2_metadata
-
-
-def colorize(imgs, hexcolors, scale=True):
-    colors = [hex2color(hexcolor) for hexcolor in hexcolors]
-    return _colorize(imgs, colors, scale=scale)
-
-
-def _colorize(channel_imgs, colors, scale=True):
-    if len(channel_imgs) != len(colors):
-        raise ValueError("expecting equal numbers of channels and colors")
-    num_channels = len(channel_imgs)
-    if scale:
-        scaled_imgs = [
-            channel_imgs[i] / np.percentile(channel_imgs[i], 99.9)
-            for i in range(num_channels)
-        ]
-        for scaled_img in scaled_imgs:
-            np.clip(scaled_img, 0, 1, scaled_img)  # clip in place
-    else:
-        scaled_imgs = channel_imgs
-    imgs_to_combine = [
-        scaled_img[:, :, np.newaxis] * np.array(color)
-        for scaled_img, color in zip(scaled_imgs, colors)
-    ]
-    if not len(imgs_to_combine):
-        return np.ones(channel_imgs[0].shape)  # white placeholder
-    img = imgs_to_combine[0]
-    for img2 in imgs_to_combine[1:]:
-        img = 1 - (1 - img) * (1 - img2)
-    return img
 
 
 def composite_rgb_rgba(rgb, rgba):

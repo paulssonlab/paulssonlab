@@ -9,6 +9,7 @@ import scipy.ndimage
 import skimage.morphology
 import skimage.transform
 from cytoolz import compose
+from matplotlib.colors import hex2color
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 
 from paulssonlab.image_analysis.blur import scipy_box_blur
@@ -281,3 +282,67 @@ def get_regionprops(label_image, intensity_image, properties=DEFAULT_REGIONPROPS
 def permute_labels(labels):
     label_map = np.concatenate(((0,), np.random.permutation(labels.max()) + 1))
     return label_map[labels]
+
+
+def unstack(ary):
+    return np.swapaxes(ary, 0, 1).reshape(ary.shape[1], -1)
+
+
+def pad_and_stack(arys, fill_value=0):
+    shape = np.max([ary.shape for ary in arys], axis=0)
+    return np.stack(
+        [
+            np.pad(
+                ary,
+                ((shape[0] - ary.shape[0], 0), (shape[1] - ary.shape[1], 0)),
+                constant_values=fill_value,
+            )
+            for ary in arys
+        ]
+    )
+
+
+def pad_unstack(arys):
+    return unstack(pad_and_stack(arys))
+
+
+def unstack_multichannel(arys, colors=None, scale=True):
+    imgs = []
+    for i in range(arys.shape[0]):
+        img = unstack(arys[i]).T
+        img /= np.nanmax(img)
+        imgs.append(img)
+    if colors is not None:
+        return colorize(imgs, colors, scale=False)
+    else:
+        return np.concatenate(imgs, axis=-1)
+
+
+def colorize(imgs, hexcolors, scale=True):
+    colors = [hex2color(hexcolor) for hexcolor in hexcolors]
+    return _colorize(imgs, colors, scale=scale)
+
+
+def _colorize(channel_imgs, colors, scale=True):
+    if len(channel_imgs) != len(colors):
+        raise ValueError("expecting equal numbers of channels and colors")
+    num_channels = len(channel_imgs)
+    if scale:
+        scaled_imgs = [
+            channel_imgs[i] / np.percentile(channel_imgs[i], 99.9)
+            for i in range(num_channels)
+        ]
+        for scaled_img in scaled_imgs:
+            np.clip(scaled_img, 0, 1, scaled_img)  # clip in place
+    else:
+        scaled_imgs = channel_imgs
+    imgs_to_combine = [
+        scaled_img[:, :, np.newaxis] * np.array(color)
+        for scaled_img, color in zip(scaled_imgs, colors)
+    ]
+    if not len(imgs_to_combine):
+        return np.ones(channel_imgs[0].shape)  # white placeholder
+    img = imgs_to_combine[0]
+    for img2 in imgs_to_combine[1:]:
+        img = 1 - (1 - img) * (1 - img2)
+    return img
