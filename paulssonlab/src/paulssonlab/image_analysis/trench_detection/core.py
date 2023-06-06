@@ -53,37 +53,49 @@ def get_trench_bboxes(trenches, width, x_lim, y_lim, **kwargs):
     return bboxes
 
 
-def _trench_bbox_plot(trenches_df):
-    top_endpoints = np.vstack(
-        (trenches_df["top_x"].values, trenches_df["top_y"].values)
-    ).T
-    bottom_endpoints = np.vstack(
-        (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
-    ).T
-    trench_plot = hv.Path(
-        [
-            [top_endpoint, bottom_endpoint]
-            for top_endpoint, bottom_endpoint in zip(top_endpoints, bottom_endpoints)
-        ]
-    ).options(color="white")
-    top_points_plot = hv.Points(top_endpoints).options(size=3, color="green")
-    bottom_points_plot = hv.Points(bottom_endpoints).options(size=3, color="red")
-    bbox_plot = hv.Rectangles(
-        (
-            trenches_df["ul_x"],
-            trenches_df["lr_y"],
-            trenches_df["lr_x"],
-            trenches_df["ul_y"],
-        )
-    ).opts(fill_color=None, line_color="red")
-    label_plot = hv.Labels(
-        (trenches_df["ul_x"], trenches_df["ul_y"], trenches_df.index.values.astype(str))
-    ).opts(
-        text_color="red", text_font_size="10pt"
-    )  # , xoffset=3, yoffset=3)
-    # return trench_plot * top_points_plot * bottom_points_plot * bbox_plot * label_plot
-    return bbox_plot * trench_plot * top_points_plot * bottom_points_plot
-    # return label_plot
+def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
+    plots = []
+    if lines:
+        top_endpoints = np.vstack(
+            (trenches_df["top_x"].values, trenches_df["top_y"].values)
+        ).T
+        bottom_endpoints = np.vstack(
+            (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
+        ).T
+        line_plot = hv.Path(
+            [
+                np.array([top_endpoint, bottom_endpoint])
+                for top_endpoint, bottom_endpoint in zip(
+                    top_endpoints, bottom_endpoints
+                )
+            ]
+        ).opts(color="white")
+        top_points_plot = hv.Points(top_endpoints).opts(size=3, color="green")
+        bottom_points_plot = hv.Points(bottom_endpoints).opts(size=3, color="red")
+        plots.extend([line_plot, top_points_plot, bottom_points_plot])
+    if bboxes:
+        bbox_plot = hv.Rectangles(
+            (
+                trenches_df["ul_x"],
+                trenches_df["lr_y"],
+                trenches_df["lr_x"],
+                trenches_df["ul_y"],
+            )
+        ).opts(fill_color=None, line_color="red")
+        plots.append(bbox_plot)
+    if labels:
+        # TODO: labels seem to be broken in holoviews/bokeh
+        # 1) they case issues
+        # 2) bokeh doesn't allow text size to be set in data coördinates (so it scales with zoom level)
+        label_plot = hv.Labels(
+            (
+                trenches_df["ul_x"],
+                trenches_df["ul_y"],
+                trenches_df.index.values.astype(str),
+            )
+        ).opts(text_color="white", text_font_size="10pt", xoffset=3, yoffset=3)
+        plots.append(label_plot)
+    return hv.Overlay(plots)
 
 
 def find_trenches(
@@ -183,7 +195,7 @@ def find_trenches(
         if trench_bboxes is not None:
             trenches_df = pd.concat([trenches_df, trench_bboxes], axis=1)
         if diagnostics is not None:
-            diagnostics["bboxes"] = RevImage(img) * _trench_bbox_plot(trenches_df)
+            diagnostics["bboxes"] = RevImage(img) * plot_trenches(trenches_df)
     if join_info:
         if info is not None:
             info_df = pd.DataFrame.from_records([info])
