@@ -82,7 +82,7 @@ def _trench_bbox_plot(trenches_df):
         text_color="red", text_font_size="10pt"
     )  # , xoffset=3, yoffset=3)
     # return trench_plot * top_points_plot * bottom_points_plot * bbox_plot * label_plot
-    return trench_plot * top_points_plot * bottom_points_plot * bbox_plot
+    return bbox_plot * trench_plot * top_points_plot * bottom_points_plot
     # return label_plot
 
 
@@ -91,7 +91,7 @@ def find_trenches(
     angle=None,
     pitch=None,
     width=None,
-    width_to_pitch_ratio=1.8 / 3.5,
+    width_to_pitch_ratio=None,
     width_to_line_width_ratio=None,
     max_angle=np.deg2rad(10),
     num_angles=400,
@@ -107,12 +107,12 @@ def find_trenches(
         diagnostics=getitem_if_not_none(labeling_diagnostics, "binarize_trench_image"),
     )
     if angle is None:
-        angles = np.linspace(-max_angle, max_angle, num_angles)
+        theta = np.linspace(-max_angle, max_angle, num_angles)
     else:
-        angles = [angle]
+        theta = [angle]
     angle, anchor_rho, rho_min, rho_max, info, line_info = find_periodic_lines(
         img_normalized,
-        theta=angles,
+        theta=theta,
         pitch=pitch,
         peak_func=peak_func,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "find_periodic_lines"),

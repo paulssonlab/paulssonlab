@@ -60,34 +60,37 @@ def find_periodic_lines(
         img_thresh = img * (img > np.percentile(img, threshold_quantile * 100))
     else:
         img_thresh = img
-    h, theta, rho = hough_func(img_thresh, theta=theta)
-    diff_h = np.diff(h.astype(np.int_), axis=1)  # TODO: is diff necessary??
-    diff_h_std = diff_h.std(axis=0)  # / diff_h.max(axis=0)
-    if smooth:
-        diff_h_std_smoothed = scipy.ndimage.gaussian_filter1d(diff_h_std, smooth)
-    else:
-        diff_h_std_smoothed = diff_h_std
-    theta_idx = diff_h_std_smoothed.argmax()
-    angle = theta[theta_idx]
     if diagnostics is not None:
         diagnostics["input"] = RevImage(img)
         diagnostics["thresholded_image"] = RevImage(img_thresh)
-        # diagnostics['angle_range'] = (np.rad2deg(theta[0]), np.rad2deg(theta[-1]))
-        diagnostics["angle_range_min"] = np.rad2deg(theta[0])
-        diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
-        bounds = (np.rad2deg(theta[0]), rho[0], np.rad2deg(theta[-1]), rho[-1])
-        diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
-        # TODO: fix the left-edge vs. right-edge issue for theta bins
-        theta_degrees = np.rad2deg(theta[:-1])
-        diff_h_plot = hv.Curve((theta_degrees, diff_h_std))
+    h, theta, rho = hough_func(img_thresh, theta=theta)
+    if len(theta) == 1:
+        theta_idx = 0
+        angle = theta[0]
+    else:
+        h_std = h.std(axis=0)
         if smooth:
-            diff_h_plot *= hv.Curve((theta_degrees, diff_h_std_smoothed)).options(
-                color="cyan"
-            )
-        diff_h_plot *= hv.VLine(np.rad2deg(angle)).options(color="red")
-        diagnostics["diff_h_std"] = diff_h_plot
-        diagnostics["angle"] = np.rad2deg(angle)
+            h_std_smoothed = scipy.ndimage.gaussian_filter1d(h_std, smooth)
+        else:
+            h_std_smoothed = h_std
+        theta_idx = h_std_smoothed.argmax()
+        angle = theta[theta_idx]
+        if diagnostics is not None:
+            diagnostics["angle_range_min"] = np.rad2deg(theta[0])
+            diagnostics["angle_range_max"] = np.rad2deg(theta[-1])
+            bounds = (np.rad2deg(theta[0]), rho[0], np.rad2deg(theta[-1]), rho[-1])
+            diagnostics["log_hough"] = hv.Image(np.log(1 + h), bounds=bounds)
+            theta_degrees = np.rad2deg(theta)
+            h_plot = hv.Curve((theta_degrees, h_std))
+            if smooth:
+                h_plot *= hv.Curve((theta_degrees, h_std_smoothed)).options(
+                    color="cyan"
+                )
+            h_plot *= hv.VLine(np.rad2deg(angle)).options(color="red")
+            diagnostics["h_std"] = h_plot
     profile = h[:, theta_idx]
+    if diagnostics is not None:
+        diagnostics["angle"] = np.rad2deg(angle)
     x_lim, y_lim = get_image_limits(img.shape)
     x_min, x_max = x_lim
     y_min, y_max = y_lim

@@ -21,7 +21,7 @@ def coords_along(x0, x1):
     return xs, ys
 
 
-def edge_point(x0, theta, x_lim, y_lim, precision=5):
+def edge_point(x0, theta, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     # TODO: hack to fix getting edge points where x0 is on the border
@@ -48,45 +48,4 @@ def edge_point(x0, theta, x_lim, y_lim, precision=5):
     else:
         # left/right
         x1 = np.array([corner_x, x0[1] - (corner_x - x0[0]) * np.tan(theta)])
-    if precision is not None:
-        x1 = np.round(x1, precision)
     return x1
-
-
-def line_array(
-    anchors, theta, x_lim, y_lim, start=None, stop=None, bidirectional=False
-):
-    if bidirectional:
-        line_array1 = line_array(
-            anchors, theta, x_lim, y_lim, start=start, stop=stop, bidirectional=False
-        )
-        line_array2 = line_array(
-            anchors,
-            theta + np.pi,
-            x_lim,
-            y_lim,
-            start=start,
-            stop=stop,
-            bidirectional=False,
-        )
-        for (x0, x1), (y0, y1) in zip(line_array1, line_array2):
-            yield x0, x1, y1
-        return
-    if start is None:
-        start = 0
-    if stop is None:
-        stop = 0
-    if not stop >= start >= 0:
-        raise ValueError("need stop >= start >= 0")
-    theta = theta % (2 * np.pi)
-    for anchor in anchors:
-        x0 = anchor
-        x1 = edge_point(x0, theta, x_lim, y_lim)
-        max_length = np.sqrt(((x1 - x0) ** 2).sum())
-        y0, y1 = x0, x1
-        if start:
-            y0 = min(start / max_length, 1) * (x1 - x0) + x0
-        if stop:
-            y1 = min(stop / max_length, 1) * (x1 - x0) + x0
-        if not np.array_equal(y0, y1):
-            yield y0, y1
