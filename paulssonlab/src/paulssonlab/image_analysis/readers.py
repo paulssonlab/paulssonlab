@@ -1,14 +1,18 @@
+import re
 from itertools import product
 from numbers import Integral
+from pathlib import Path
 
 import cachetools
 import dask
 import h5py
 import nd2reader
 import numpy as np
+import pandas as pd
 from cytoolz import excepts
 from tqdm.auto import tqdm
 
+from paulssonlab.image_analysis.util import get_delayed
 from paulssonlab.io.metadata import parse_nd2_metadata
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
@@ -42,10 +46,7 @@ def _select_indices(idxs, slice_):
 # TODO: random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
 # (better for testing)
 def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
-    if delayed is True:
-        delayed = dask.delayed(pure=True)
-    elif delayed is False:
-        delayed = lambda func, **kwargs: func
+    delayed = get_delayed(delayed)
     nd2 = nd2reader.ND2Reader(filename)
     iterators = [
         _select_indices(
@@ -127,29 +128,35 @@ def get_eaton_fish_frame(filename):
     return frame
 
 
-def send_eaton_fish(root_dir, pattern, axis_order="tvc", slices={}, delayed=True):
+def send_eaton_fish(
+    root_dir,
+    pattern,
+    axis_order="tvc",
+    slices={},
+    include_fixation=False,
+    include_tables=False,
+    delayed=True,
+):
     root_dir = Path(root_dir)
-    if delayed is True:
-        delayed = dask.delayed(pure=True)
-    elif delayed is False:
-        delayed = lambda func, **kwargs: func
+    delayed = get_delayed(delayed)
     filenames, unmatched_filenames = slice_directory(
         root_dir, pattern, axis_order=axis_order, slices=slices
     )
-    for suffix in ("initial.hdf5", "init_fixation.hdf5", "fixed.hdf5"):
-        filename = root_dir / suffix
-        if not filename.exists():
-            continue
-        image = delayed(get_eaton_fish_frame)(filename)
-        image_metadata = {}  # TODO
-        msg = {
-            "type": "image",
-            "image": image,
-            "metadata": image_metadata,
-            "image_type": "eaton_fish_fixation",
-            "image_name": filename.stem,
-        }
-        yield msg
+    if include_fixation:
+        for suffix in ("initial.hdf5", "init_fixation.hdf5", "fixed.hdf5"):
+            filename = root_dir / suffix
+            if not filename.exists():
+                continue
+            image = delayed(get_eaton_fish_frame)(filename)
+            image_metadata = {}  # TODO
+            msg = {
+                "type": "image",
+                "image": image,
+                "metadata": image_metadata,
+                "image_type": "eaton_fish_fixation",
+                "image_name": filename.stem,
+            }
+            yield msg
     for key, filename in filenames:
         image = delayed(get_eaton_fish_frame)(filename)
         coords = dict(zip(axis_order, key))
@@ -166,11 +173,16 @@ def send_eaton_fish(root_dir, pattern, axis_order="tvc", slices={}, delayed=True
             "image_type": "eaton_fish",
         }
         yield msg
-    # TODO: these are not sent sorted, but it shouldn't matter
-    for metadata_filename in root_dir.glob("metadata_*.hdf5"):
-        metadata = delayed(pd.read_hdf)(metadata_filename)
-        msg = {"type": "table", "table": metadata, "table_type": "eaton_fish_metadata"}
-        yield msg
+    if include_tables:
+        # TODO: these are not sent sorted, but it shouldn't matter
+        for metadata_filename in root_dir.glob("metadata_*.hdf5"):
+            metadata = delayed(pd.read_hdf)(metadata_filename)
+            msg = {
+                "type": "table",
+                "table": metadata,
+                "table_type": "eaton_fish_metadata",
+            }
+            yield msg
 
 
 def get_hdf5_frame(filename, hdf5_path, slice_=()):
@@ -178,10 +190,7 @@ def get_hdf5_frame(filename, hdf5_path, slice_=()):
 
 
 def send_hdf5(filename, delayed=True):
-    if delayed is True:
-        delayed = dask.delayed(pure=True)
-    elif delayed is False:
-        delayed = lambda func, **kwargs: func
+    delayed = get_delayed(delayed)
     h5 = h5py.File(filename)
     # TODO: slicing
     # TODO: send whole-file metadata
