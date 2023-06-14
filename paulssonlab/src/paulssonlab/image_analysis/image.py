@@ -55,9 +55,7 @@ def hough_line_intensity(img, theta=None):
     width, height = img.shape
     diagonal = int(np.ceil(np.sqrt(width**2 + height**2)))
     rho = np.linspace(-diagonal, diagonal, diagonal * 2)
-    accumulator = np.zeros(
-        (2 * diagonal, len(theta)), dtype=_accumulator_dtype(img.dtype)
-    )
+    accumulator = np.zeros((len(rho), len(theta)), dtype=_accumulator_dtype(img.dtype))
     _hough_line_intensity(accumulator, img, theta, diagonal)
     return accumulator, theta, rho
 
@@ -73,8 +71,7 @@ def _hough_line_intensity(accumulator, img, theta, diagonal):
             if img[i, j] == 0:  # optimization for boolean input images
                 continue
             for k in range(num_thetas):
-                # TODO: is round correct here?
-                rho = int(np.round_(i * sin_theta[k] + j * cos_theta[k])) + diagonal
+                rho = int(np.floor(i * sin_theta[k] + j * cos_theta[k])) + diagonal
                 accumulator[rho, k] += img[i, j]
 
 
