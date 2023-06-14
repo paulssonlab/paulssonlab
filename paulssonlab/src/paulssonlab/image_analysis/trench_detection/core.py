@@ -170,10 +170,10 @@ def find_trenches(
                     width_to_line_width_ratio is not None,
                 ]
             )
-            > 1
+            != 1
         ):
             raise ValueError(
-                "may specify at most one of width, width_to_pitch_ratio, width_to_line_width_ratio"
+                "must specify exactly one of width, width_to_pitch_ratio, width_to_line_width_ratio"
             )
         if width is None:
             if width_to_pitch_ratio is not None:
