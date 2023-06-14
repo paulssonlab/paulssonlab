@@ -10,35 +10,10 @@ import skimage.morphology
 import skimage.segmentation
 
 from paulssonlab.image_analysis.geometry import get_image_limits
-from paulssonlab.image_analysis.image import (
-    gaussian_box_approximation,
-    hough_line_intensity,
-    normalize_componentwise,
-    remove_large_objects,
-)
-from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
-from paulssonlab.image_analysis.trench_detection.geometry import (
-    coords_along,
-    edge_point,
-)
+from paulssonlab.image_analysis.image import hough_bounds, hough_line_intensity
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
-
-
-def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    if angle < 0:
-        anchor_rho = rho_max - anchor_rho
-    anchors = (
-        anchor_rho[:, np.newaxis]
-        * np.array((np.cos(angle), np.sin(angle)))[np.newaxis, :]
-    )
-    if angle < 0:
-        upper_right = np.array((x_max, 0))
-        anchors = upper_right - anchors
-    return anchors
 
 
 def find_periodic_lines(
@@ -91,16 +66,7 @@ def find_periodic_lines(
     profile = h[:, theta_idx]
     if diagnostics is not None:
         diagnostics["angle"] = np.rad2deg(angle)
-    x_lim, y_lim = get_image_limits(img.shape)
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    max_dist = int(np.ceil(np.sqrt(x_max**2 + y_max**2)))
-    if angle < 0:
-        rho_min = y_max * np.sin(angle)
-        rho_max = x_max * np.cos(angle)
-    else:
-        rho_min = 0
-        rho_max = max_dist * np.cos(angle - np.pi / 4)
+    rho_min, rho_max = hough_bounds(img.shape, angle)
     idx_min = np.where(rho_min <= rho)[0][0]
     idx_max = np.where(rho_max > rho)[0][-1]
     assert rho_min <= rho[idx_min] >= rho_min

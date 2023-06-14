@@ -13,6 +13,7 @@ from matplotlib.colors import hex2color
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 
 from paulssonlab.image_analysis.blur import scipy_box_blur
+from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.util import repeat_apply
 
 gaussian_box_blur = scipy_box_blur
@@ -46,6 +47,19 @@ def _accumulator_dtype(dtype):
         return np.complex128
     else:
         return NotImplementedError
+
+
+def hough_bounds(shape, theta):
+    x_lim, y_lim = get_image_limits(shape)
+    x_min, x_max = x_lim
+    y_min, y_max = y_lim
+    if theta < 0:
+        rho_min = y_max * np.sin(theta)
+        rho_max = x_max * np.cos(theta)
+    else:
+        rho_min = 0
+        rho_max = x_max * np.cos(theta) + y_max * np.sin(theta)
+    return rho_min, rho_max
 
 
 # FROM: https://alyssaq.github.io/2014/understanding-hough-transform/

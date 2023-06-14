@@ -7,8 +7,8 @@ from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
 from paulssonlab.image_analysis.trench_detection.geometry import (
     coords_along,
     edge_point,
+    trench_anchors,
 )
-from paulssonlab.image_analysis.trench_detection.hough import trench_anchors
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.workflow import points_dataframe
 from paulssonlab.util.numeric import silent_nanquantile
@@ -23,8 +23,8 @@ def get_trench_line_profiles(
     line_points = []
     offsets = []
     for anchor in anchors:
-        top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim)
-        bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim)
+        top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim, int=True)
+        bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim, int=True)
         line_length = np.linalg.norm(top_anchor - bottom_anchor)
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
