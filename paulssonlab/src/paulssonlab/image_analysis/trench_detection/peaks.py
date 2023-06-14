@@ -6,6 +6,8 @@ import pandas as pd
 import scipy.ndimage
 import scipy.signal
 
+MIN_PERIODS = 5
+
 
 def find_peaks(
     profile,
@@ -69,6 +71,10 @@ def find_periodic_peaks(
     if pitch is None:
         pitch_idx = spectrum.argmax()
         pitch = 1 / freqs[pitch_idx]
+    if MIN_PERIODS * pitch >= len(profile):
+        raise ValueError(
+            f"pitch/offset fitting will perform poorly if profile contains fewer than {MIN_PERIODS} periods"
+        )
     if diagnostics is not None:
         diagnostics["pitch"] = pitch
         spectrum_plot = hv.Curve((1 / freqs, spectrum))
