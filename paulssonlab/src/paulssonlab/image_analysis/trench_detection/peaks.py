@@ -22,20 +22,20 @@ def find_peaks(
     minimum = scipy.ndimage.minimum_filter1d(profile, detrend_window, mode="constant")
     maximum = scipy.ndimage.maximum_filter1d(profile, detrend_window, mode="constant")
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            "invalid value encountered in true_divide",
-        )
+        warnings.filterwarnings("ignore", "invalid value encountered in true_divide")
         profile_detrended = (profile - minimum) / (maximum - minimum)
     # TODO: which properties do we want to calculate?
-    idxs, properties = scipy.signal.find_peaks(
-        profile_detrended,
-        distance=min_distance,
-        height=(None, None),
-        prominence=prominence,
-        wlen=prominence_wlen,
-        width=(None, None),
-    )
+    with warnings.catch_warnings(
+        action="ignore", category=scipy.signal._peak_finding_utils.PeakPropertyWarning
+    ):
+        idxs, properties = scipy.signal.find_peaks(
+            profile_detrended,
+            distance=min_distance,
+            height=(None, None),
+            prominence=prominence,
+            wlen=prominence_wlen,
+            width=(None, None),
+        )
     if diagnostics is not None:
         points = hv.Scatter((idxs, profile[idxs])).options(size=5, color="cyan")
         points_detrended = hv.Scatter((idxs, profile_detrended[idxs])).options(
@@ -77,7 +77,9 @@ def find_periodic_peaks(
         )
     if diagnostics is not None:
         diagnostics["pitch"] = pitch
-        spectrum_plot = hv.Curve((1 / freqs, spectrum))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "divide by zero encountered in divide")
+            spectrum_plot = hv.Curve((1 / freqs, spectrum))
         spectrum_plot *= hv.VLine(pitch).options(color="red")
         diagnostics["spectrum"] = spectrum_plot
     offsets = np.linspace(0, pitch, num_offset_points, endpoint=False)
@@ -131,10 +133,13 @@ def find_periodic_peaks(
             diagnostics["refined_points"] = (
                 hv.Curve(profile) * periodic_points * refined_points
             )
-    prominence_data = scipy.signal.peak_prominences(profile, refined_idxs)
-    width_data = scipy.signal.peak_widths(
-        profile, refined_idxs, prominence_data=prominence_data
-    )
+    with warnings.catch_warnings(
+        action="ignore", category=scipy.signal._peak_finding_utils.PeakPropertyWarning
+    ):
+        prominence_data = scipy.signal.peak_prominences(profile, refined_idxs)
+        width_data = scipy.signal.peak_widths(
+            profile, refined_idxs, prominence_data=prominence_data
+        )
     trench_info = {
         **trench_info,
         **dict(zip(("prominences", "left_bases", "right_bases"), prominence_data)),
