@@ -20,7 +20,7 @@ def bounding_box(points):
     return np.array([[upper_left_x, upper_left_y], [lower_right_x, lower_right_y]])
 
 
-def iter_crops(img, trenches):
+def iter_crops(img, trenches, corner=False):
     index = trenches.index.values
     ul_x = trenches["ul_x"].values
     ul_y = trenches["ul_y"].values
@@ -28,4 +28,7 @@ def iter_crops(img, trenches):
     lr_y = trenches["lr_y"].values
     for i in range(len(index)):
         crop = img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
-        yield i, crop
+        if corner:
+            yield i, crop, np.array([ul_x[i], ul_y[i]])
+        else:
+            yield i, crop
