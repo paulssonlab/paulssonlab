@@ -1,5 +1,7 @@
 import numpy as np
 
+ROI_COORDINATE_COLUMNS = set(["top", "bottom", "ul", "lr"])
+
 
 def get_image_limits(shape):
     x_min = y_min = 0
@@ -20,15 +22,46 @@ def bounding_box(points):
     return np.array([[upper_left_x, upper_left_y], [lower_right_x, lower_right_y]])
 
 
-def iter_crops(img, trenches, corner=False):
-    index = trenches.index.values
-    ul_x = trenches["ul_x"].values
-    ul_y = trenches["ul_y"].values
-    lr_x = trenches["lr_x"].values
-    lr_y = trenches["lr_y"].values
-    for i in range(len(index)):
-        crop = img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
+def iter_roi_crops(img, rois, corner=False):
+    index = rois.index.values
+    ul_x = rois["ul_x"].values
+    ul_y = rois["ul_y"].values
+    lr_x = rois["lr_x"].values
+    lr_y = rois["lr_y"].values
+    for roi_idx in range(len(index)):
+        crop = img[ul_y[roi_idx] : lr_y[roi_idx] + 1, ul_x[roi_idx] : lr_x[roi_idx] + 1]
         if corner:
-            yield i, crop, np.array([ul_x[i], ul_y[i]])
+            yield roi_idx, crop, np.array([ul_x[roi_idx], ul_y[roi_idx]])
         else:
-            yield i, crop
+            yield roi_idx, crop
+
+
+def get_roi_crop(img, rois, roi_idx):
+    ul_x = rois["ul_x"].values
+    ul_y = rois["ul_y"].values
+    lr_x = rois["lr_x"].values
+    lr_y = rois["lr_y"].values
+    return img[ul_y[roi_idx] : lr_y[roi_idx] + 1, ul_x[roi_idx] : lr_x[roi_idx] + 1]
+
+
+def _coordinate_columns(columns):
+    cols_x = set([f"{col}_x" for col in ROI_COORDINATE_COLUMNS]) & set(columns)
+    cols_y = set([f"{col}_y" for col in ROI_COORDINATE_COLUMNS]) & set(columns)
+    return cols_x, cols_y
+
+
+def filter_rois(rois, image_limits):
+    x_lim = image_limits[0]
+    y_lim = image_limits[1]
+    cols_x, cols_y = _coordinate_columns(rois.columns)
+    return rois[
+        np.logical_and.reduce([rois[col].between(*x_lim) for col in cols_x])
+        & np.logical_and.reduce([rois[col].between(*y_lim) for col in cols_y])
+    ]
+
+
+def shift_rois(rois, shift):
+    cols_x, cols_y = _coordinate_columns(rois.columns)
+    coords_x = {col: rois[col].values + shift[0] for col in cols_x}
+    coords_y = {col: rois[col].values + shift[1] for col in cols_y}
+    return rois.assign(**coords_x, **coords_y)
