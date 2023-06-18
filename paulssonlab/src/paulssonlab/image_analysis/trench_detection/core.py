@@ -11,7 +11,7 @@ from paulssonlab.image_analysis.trench_detection.set_finding import (
     binarize_trench_image,
     find_trench_sets_by_cutting,
 )
-from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.ui import RevImage, overlay_inverted_yaxis
 from paulssonlab.image_analysis.util import getitem_if_not_none
 
 
@@ -85,7 +85,7 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
         plots.append(bbox_plot)
     if labels:
         # TODO: labels seem to be broken in holoviews/bokeh
-        # 1) they case issues
+        # 1) bokeh JS error
         # 2) bokeh doesn't allow text size to be set in data coördinates (so it scales with zoom level)
         label_plot = hv.Labels(
             (
@@ -195,7 +195,9 @@ def find_trenches(
         if trench_bboxes is not None:
             trenches_df = pd.concat([trenches_df, trench_bboxes], axis=1)
         if diagnostics is not None:
-            diagnostics["bboxes"] = RevImage(img) * plot_trenches(trenches_df)
+            diagnostics["bboxes"] = overlay_inverted_yaxis(
+                RevImage(img) * plot_trenches(trenches_df)
+            )
     if join_info:
         if info is not None:
             info_df = pd.DataFrame.from_records([info])

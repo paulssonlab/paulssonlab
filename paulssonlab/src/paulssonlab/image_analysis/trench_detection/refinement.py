@@ -9,7 +9,7 @@ from paulssonlab.image_analysis.trench_detection.geometry import (
     edge_point,
     trench_anchors,
 )
-from paulssonlab.image_analysis.ui import RevImage
+from paulssonlab.image_analysis.ui import RevImage, overlay_inverted_yaxis
 from paulssonlab.image_analysis.workflow import points_dataframe
 from paulssonlab.util.numeric import silent_nanquantile
 
@@ -76,7 +76,7 @@ def get_trench_line_profiles(
             color="red"
         )
         anchor_points_plot = hv.Points(anchors).options(size=3, color="cyan")
-        diagnostics["image_with_lines"] = (
+        diagnostics["image_with_lines"] = overlay_inverted_yaxis(
             RevImage(img)
             * lines_plot
             * top_line_plot
@@ -135,7 +135,7 @@ def find_trench_ends(
         ).options(color="white")
         top_points_plot = hv.Points(top_endpoints).options(size=3, color="green")
         bottom_points_plot = hv.Points(bottom_endpoints).options(size=3, color="red")
-        diagnostics["image_with_trenches"] = (
+        diagnostics["image_with_trenches"] = overlay_inverted_yaxis(
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )
     trench_index = np.arange(len(mask))[mask]
