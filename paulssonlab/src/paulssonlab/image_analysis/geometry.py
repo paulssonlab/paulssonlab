@@ -28,20 +28,22 @@ def iter_roi_crops(img, rois, corner=False):
     ul_y = rois["ul_y"].values
     lr_x = rois["lr_x"].values
     lr_y = rois["lr_y"].values
-    for roi_idx in range(len(index)):
-        crop = img[ul_y[roi_idx] : lr_y[roi_idx] + 1, ul_x[roi_idx] : lr_x[roi_idx] + 1]
+    for i in range(len(index)):
+        roi_idx = index[i]
+        crop = img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
         if corner:
-            yield roi_idx, crop, np.array([ul_x[roi_idx], ul_y[roi_idx]])
+            yield roi_idx, crop, np.array([ul_x[i], ul_y[i]])
         else:
             yield roi_idx, crop
 
 
 def get_roi_crop(img, rois, roi_idx):
+    i = rois.index.get_loc(roi_idx)
     ul_x = rois["ul_x"].values
     ul_y = rois["ul_y"].values
     lr_x = rois["lr_x"].values
     lr_y = rois["lr_y"].values
-    return img[ul_y[roi_idx] : lr_y[roi_idx] + 1, ul_x[roi_idx] : lr_x[roi_idx] + 1]
+    return img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
 
 
 def _coordinate_columns(columns):
