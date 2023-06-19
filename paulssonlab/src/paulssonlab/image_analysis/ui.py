@@ -29,10 +29,9 @@ def RevImage(img, **kwargs):
 
 def _RevImage(cls, img, scale=False, **kwargs):
     plot = cls(
-        img[::-1, ...],
+        img[::-1],
         **{
-            "bounds": (0, img.shape[0], img.shape[1], 0),
-            "extents": (0, img.shape[0], img.shape[1], 0),
+            "bounds": (0, 0, img.shape[1], img.shape[0]),
             **kwargs,
         },
     )
@@ -49,9 +48,3 @@ def _RevImage(cls, img, scale=False, **kwargs):
 
 def RevRGB(img, **kwargs):
     return _RevImage(hv.RGB, img, **kwargs)
-
-
-def overlay_inverted_yaxis(overlay):
-    return overlay.opts(
-        hv.opts.Overlay(invert_yaxis=True), hv.opts.Image(invert_yaxis=False)
-    )
