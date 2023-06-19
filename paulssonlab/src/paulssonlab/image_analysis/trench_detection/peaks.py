@@ -55,7 +55,7 @@ def find_peaks(
 def find_periodic_peaks(
     profile,
     pitch=None,
-    refine=5,
+    refine=0,
     nfft=2**14,
     smooth_offset=4,
     num_offset_points=200,
