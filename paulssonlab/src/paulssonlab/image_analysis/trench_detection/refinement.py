@@ -1,11 +1,11 @@
 import holoviews as hv
 import numpy as np
 import pandas as pd
+from skimage.measure.profile import _line_profile_coordinates, profile_line
 
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
 from paulssonlab.image_analysis.trench_detection.geometry import (
-    coords_along,
     edge_point,
     trench_anchors,
 )
@@ -23,14 +23,18 @@ def get_trench_line_profiles(
     line_points = []
     offsets = []
     for anchor in anchors:
-        top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim, int=True)
-        bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim, int=True)
+        top_anchor = edge_point(anchor, 3 / 2 * np.pi - angle, x_lim, y_lim)
+        bottom_anchor = edge_point(anchor, np.pi / 2 - angle, x_lim, y_lim)
         line_length = np.linalg.norm(top_anchor - bottom_anchor)
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
-        xs, ys = coords_along(top_anchor, bottom_anchor)
-        profile = img[ys, xs]
-        points = np.vstack((xs, ys)).T
+        # need to give coordinates in (y, x) order
+        profile = profile_line(
+            img, top_anchor[::-1], bottom_anchor[::-1], mode="constant"
+        )
+        points = _line_profile_coordinates(
+            top_anchor[::-1], bottom_anchor[::-1]
+        ).swapaxes(0, 1)[:, ::-1, 0]
         # TODO: precision??
         if line_length >= max(top_length, bottom_length):
             # line contains anchor
@@ -67,15 +71,15 @@ def get_trench_line_profiles(
         diagnostics["profiles"] = hv.Overlay([hv.Curve(tp) for tp in padded_profiles])
     if diagnostics is not None:
         lines_plot = hv.Path(
-            [[points[0], points[-1]] for points in line_points]
+            [[points[0] + 0.5, points[-1] + 0.5] for points in line_points]
         ).options(color="blue")
-        top_line_plot = hv.Points([points[0] for points in line_points]).options(
+        top_line_plot = hv.Points([points[0] + 0.5 for points in line_points]).options(
             color="green"
         )
-        bottom_line_plot = hv.Points([points[-1] for points in line_points]).options(
-            color="red"
-        )
-        anchor_points_plot = hv.Points(anchors).options(size=3, color="cyan")
+        bottom_line_plot = hv.Points(
+            [points[-1] + 0.5 for points in line_points]
+        ).options(color="red")
+        anchor_points_plot = hv.Points(anchors + 0.5).options(size=3, color="cyan")
         diagnostics["image_with_lines"] = (
             RevImage(img)
             * lines_plot
@@ -124,17 +128,23 @@ def find_trench_ends(
     mask = ~np.apply_along_axis(np.all, 1, np.equal(top_endpoints, bottom_endpoints))
     top_endpoints = top_endpoints[mask]
     bottom_endpoints = bottom_endpoints[mask]
+    top_endpoints_shifted = top_endpoints + 0.5
+    bottom_endpoints_shifted = bottom_endpoints + 0.5
     if diagnostics is not None:
         trench_plot = hv.Path(
             [
                 [top_endpoint, bottom_endpoint]
                 for top_endpoint, bottom_endpoint in zip(
-                    top_endpoints, bottom_endpoints
+                    top_endpoints_shifted, bottom_endpoints_shifted
                 )
             ]
         ).options(color="white")
-        top_points_plot = hv.Points(top_endpoints).options(size=3, color="green")
-        bottom_points_plot = hv.Points(bottom_endpoints).options(size=3, color="red")
+        top_points_plot = hv.Points(top_endpoints_shifted).options(
+            size=3, color="green"
+        )
+        bottom_points_plot = hv.Points(bottom_endpoints_shifted).options(
+            size=3, color="red"
+        )
         diagnostics["image_with_trenches"] = (
             RevImage(img) * trench_plot * top_points_plot * bottom_points_plot
         )

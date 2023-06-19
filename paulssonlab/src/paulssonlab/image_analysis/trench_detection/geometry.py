@@ -16,21 +16,7 @@ def trench_anchors(angle, anchor_rho, rho_min, rho_max, x_lim, y_lim):
     return anchors
 
 
-def coords_along(x0, x1):
-    # TODO: is floor or trunc correct?
-    # do we care, since coords should be positive?
-    x0 = np.floor(x0)
-    x1 = np.floor(x1)
-    # TODO: are ceil, length=0 -> 1 correct??
-    length = int(np.ceil(np.sqrt(np.sum((x1 - x0) ** 2))))
-    if length == 0:
-        length = 1
-    xs = np.linspace(x0[0], x1[0], length).astype(np.int_)
-    ys = np.linspace(x0[1], x1[1], length).astype(np.int_)
-    return xs, ys
-
-
-def edge_point(x0, theta, x_lim, y_lim, int=False):
+def edge_point(x0, theta, x_lim, y_lim):
     x_min, x_max = x_lim
     y_min, y_max = y_lim
     theta = theta % (2 * np.pi)
@@ -61,6 +47,4 @@ def edge_point(x0, theta, x_lim, y_lim, int=False):
     else:
         # left/right
         x1 = np.array([corner_x, x0[1] - (corner_x - x0[0]) * np.tan(theta)])
-    if int:
-        x1 = np.floor(x1).astype(np.int32)
     return x1

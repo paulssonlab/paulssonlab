@@ -56,12 +56,16 @@ def get_trench_bboxes(trenches, width, x_lim, y_lim, **kwargs):
 def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
     plots = []
     if lines:
-        top_endpoints = np.vstack(
-            (trenches_df["top_x"].values, trenches_df["top_y"].values)
-        ).T
-        bottom_endpoints = np.vstack(
-            (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
-        ).T
+        top_endpoints = (
+            np.vstack((trenches_df["top_x"].values, trenches_df["top_y"].values)).T
+            + 0.5
+        )
+        bottom_endpoints = (
+            np.vstack(
+                (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
+            ).T
+            + 0.5
+        )
         line_plot = hv.Path(
             [
                 np.array([top_endpoint, bottom_endpoint])
