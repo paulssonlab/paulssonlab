@@ -77,8 +77,8 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
         bbox_plot = hv.Rectangles(
             (
                 trenches_df["ul_x"],
-                trenches_df["lr_y"],
-                trenches_df["lr_x"],
+                trenches_df["lr_y"] + 1,
+                trenches_df["lr_x"] + 1,
                 trenches_df["ul_y"],
             )
         ).opts(fill_color=None, line_color="red")
@@ -93,7 +93,7 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
                 trenches_df["ul_y"],
                 trenches_df.index.values.astype(str),
             )
-        ).opts(text_color="white", text_font_size="10pt", xoffset=3, yoffset=3)
+        ).opts(text_color="white", text_font_size="10pt", xoffset=2, yoffset=2)
         plots.append(label_plot)
     return hv.Overlay(plots)
 
