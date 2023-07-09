@@ -60,7 +60,22 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
+class SplitFilename:
+    def __init__(self, files):
+        self.files = files
+
+    def __str__(self):
+        return self.files[0]
+
+    def __repr__(self):
+        return f"SplitFilename:{list(self.files)}"
+
+
 def _get_nd2_reader(filename, **kwargs):
+    if isinstance(filename, SplitFilename):
+        from split_file_reader import SplitFileReader
+
+        filename = SplitFileReader.open(filename.files, mode="rb")
     return nd2reader.ND2Reader(filename, **kwargs)
 
 
