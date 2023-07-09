@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import cachetools
+import h5py
 import nd2reader
 import numpy as np
 import pandas as pd
@@ -86,6 +89,18 @@ def get_nd2_frame(filename, position, channel, t, dark=None, flat=None):
     reader = get_nd2_reader(filename)
     channel_idx = reader.metadata["channels"].index(channel)
     ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    if dark is not None:
+        ary = (
+            ary - dark
+        )  # can't subtract in place because img is uint16 and dark may be float64
+    if flat is not None:
+        ary = ary / flat
+    return ary
+
+
+def get_eaton_fish_frame(filename, v, channel, t, dark=None, flat=None):
+    with h5py.File(Path(filename) / f"fov={v}_config={channel}_t={t}.hdf5") as f:
+        ary = f["data"][()]
     if dark is not None:
         ary = (
             ary - dark
