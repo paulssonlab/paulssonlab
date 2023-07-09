@@ -1,4 +1,5 @@
 import itertools as it
+from collections.abc import Sequence
 from functools import cache, partial
 from numbers import Number
 
@@ -7,10 +8,10 @@ import cv2
 import dask
 import dask.array as da
 import distributed
-import nd2reader
 import numpy as np
 import scipy.ndimage as ndi
 import skimage
+import zarr
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import SimilarityTransform, warp
 from tqdm.auto import tqdm
@@ -21,6 +22,7 @@ from paulssonlab.image_analysis.util import get_delayed
 from paulssonlab.image_analysis.workflow import (
     get_filename_image_limits,
     get_nd2_frame,
+    get_nd2_reader,
     get_position_metadata,
 )
 from paulssonlab.io.metadata import parse_nd2_metadata
@@ -213,6 +215,7 @@ def square_overlay(
     max_scale=0.1,
     max_n=5,
     max_width=0.9,
+    n_range=None,
     noun=("cell", "cells"),
     factor=10,
     font=None,
@@ -224,6 +227,8 @@ def square_overlay(
     alpha_transition=10,
     text_alpha_transition=5,
 ):
+    if n_range is None:
+        n_range = (min_n, max_n)
     output_dims = np.array(frame.shape[:-1:][::-1])
     img = Image.new("RGBA", tuple(output_dims), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -236,7 +241,7 @@ def square_overlay(
     # result in counts of factor**min_n, factor**max_n, respectively
     fit_factor = (max_U / min_U) ** (1 / (max_n - min_n))
     viewport_n = int(np.floor((np.log(V) - np.log(min_U)) / np.log(fit_factor)))
-    for n in range(min_n, viewport_n + 2):
+    for n in range(n_range[0], min(viewport_n + 2, n_range[1])):
         count = factor**n
         geometry_scale = scale / min_dim * np.sqrt(min_U * fit_factor ** (n - min_n))
         half_width_px = min_dim * geometry_scale / 2
@@ -297,26 +302,46 @@ def square_overlay(
     return composite_rgb_rgba(frame, np.asarray(img) / 255)
 
 
+def get_nd2_metadata(filename):
+    nd2 = get_nd2_reader(filename)
+    nd2s = {filename: nd2 for filename in (filename,)}
+    metadata = {
+        nd2_filename: parse_nd2_metadata(nd2) for nd2_filename, nd2 in nd2s.items()
+    }
+    positions = get_position_metadata(metadata)
+    image_limits = get_filename_image_limits(metadata)
+    input_dims = (
+        image_limits[filename][0][1] + 1,
+        image_limits[filename][1][1] + 1,
+    )
+    return positions, input_dims
+
+
 def mosaic_animate_scale(
-    filename,
+    get_frame_func,
     scale=1,
     timepoints=None,
+    positions=None,
     center=None,
     offset=None,
     rotation=None,
+    input_dims=None,
     output_dims=(1024, 1024),
     channels=None,
     channel_to_color=None,
     scaling_funcs=None,
     overlay_func=None,
     overlay_only=False,
-    positions_func=None,
     dark=None,
     flats=None,
     delayed=True,
     progress_bar=tqdm,
 ):
     delayed = get_delayed(delayed)
+    if positions is None:
+        raise ValueError("must specify positions")
+    if input_dims is None:
+        raise ValueError("must specify input_dims")
     if channels is None:
         raise ValueError("must specify channels")
     if channel_to_color is None:
@@ -332,40 +357,16 @@ def mosaic_animate_scale(
 
     else:
         frame_func = mosaic_frame
-    nd2 = nd2reader.ND2Reader(filename)
-    nd2s = {filename: nd2 for filename in (filename,)}
-    metadata = {
-        nd2_filename: parse_nd2_metadata(nd2) for nd2_filename, nd2 in nd2s.items()
-    }
-    positions = get_position_metadata(metadata)
-    if positions_func is not None:
-        positions = positions_func(positions)
-    if callable(rotation):
-        rotation = rotation(positions)
-    image_limits = get_filename_image_limits(metadata)
-    get_frame_func = partial(
-        get_nd2_frame,
-        filename,
-    )
-    input_dims = (
-        image_limits[filename][0][1] + 1,
-        image_limits[filename][1][1] + 1,
-    )
-    if isinstance(scale, Number):
-        if timepoints is None:
-            timepoints = range(nd2.sizes["t"])
-    else:
-        if timepoints is None:
-            timepoints = it.cycle(range(nd2.sizes["t"]))
-    colors = [channel_to_color[channel] for channel in channels]
-    ts_iter = list(zip(timepoints, scale))
+    if isinstance(channels, Sequence) and isinstance(channels[0], str):
+        channels = it.repeat(channels)
+    tsc_iter = list(zip(timepoints, scale, channels))
     if progress_bar is not None:
-        ts_iter = progress_bar(ts_iter)
+        tsc_iter = progress_bar(tsc_iter)
     animation = [
         frame_func(
             get_frame_func,
-            channels,
-            colors,
+            frame_channels,
+            [channel_to_color[channel] for channel in frame_channels],
             positions,
             input_dims,
             timepoint=t,
@@ -379,7 +380,7 @@ def mosaic_animate_scale(
             flats=flats,
             delayed=delayed,
         )
-        for t, s in ts_iter
+        for t, s, frame_channels in tsc_iter
     ]
     return animation
 
@@ -413,7 +414,14 @@ def get_scaling_funcs(extrema):
 
 
 def export_video(
-    ary, filename, fps=30, codec="h264", crf=22, tune="stillimage", progress_bar=tqdm
+    ary,
+    filename,
+    fps=30,
+    downsample=None,
+    codec="h264",
+    crf=22,
+    tune="stillimage",
+    progress_bar=tqdm,
 ):
     with av.open(str(filename), mode="w") as container:
         stream = container.add_stream(
@@ -427,6 +435,8 @@ def export_video(
             img = ary[idx]
             if isinstance(img, distributed.Future):
                 img = img.result()
+            if downsample is not None:
+                img = img[::downsample, ::downsample, ...]
             if not initialized:
                 stream.width = img.shape[1]
                 stream.height = img.shape[0]
@@ -439,3 +449,14 @@ def export_video(
                 container.mux(packet)
         for packet in stream.encode():
             container.mux(packet)
+
+
+def write_to_zarr(filename, frame, frame_num, num_frames, dtype=np.float32):
+    arr = zarr.open_array(
+        filename,
+        mode="a",
+        shape=(num_frames, *frame.shape),
+        chunks=(1, *frame.shape),
+        dtype=dtype,
+    )
+    arr[frame_num, ...] = frame
