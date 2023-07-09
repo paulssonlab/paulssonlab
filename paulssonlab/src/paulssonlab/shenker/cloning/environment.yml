@@ -17,6 +17,7 @@ dependencies:
   - holoviews
   - hvplot
   - ipywidgets
+  - isort
   - jsondiff
   - jupyterlab
   - jupyterlab_code_formatter
@@ -36,8 +37,10 @@ dependencies:
       - escapejson
       - primer3plus
       - pygsheets
+      - pystream-protobuf
       - sqlalchemy-cockroachdb
   - primer3-py
+  - protobuf
   - psycopg2
   - pyppeteer
   - pytoml
