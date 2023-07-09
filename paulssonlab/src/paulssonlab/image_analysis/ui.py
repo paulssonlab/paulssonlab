@@ -4,8 +4,10 @@ import IPython.display
 import numpy as np
 
 
-def display_image(img, scale=False, downsample=1, format="jpg"):
-    if downsample != 1:
+def display_image(img, scale=False, downsample=None, format="jpg"):
+    # needed for downsample to work if we have extraneous singleton dimensions up front
+    img = img.squeeze()
+    if downsample is not None:
         img = img[::downsample, ::downsample, ...]
     if scale is True:
         img_min = np.nanmin(img)
