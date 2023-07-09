@@ -65,7 +65,9 @@ def hough_bounds(shape, theta):
 # FROM: https://alyssaq.github.io/2014/understanding-hough-transform/
 def hough_line_intensity(img, theta=None):
     if theta is None:
-        theta = np.linspace(-np.pi / 2, np.pi / 2, 180)
+        theta = np.linspace(np.deg2rad(-90), np.deg2rad(90), 180, endpoint=False)
+    else:
+        theta = np.asarray(theta)
     width, height = img.shape
     diagonal = int(np.ceil(np.sqrt(width**2 + height**2)))
     rho = np.linspace(-diagonal, diagonal, diagonal * 2)

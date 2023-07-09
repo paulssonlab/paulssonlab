@@ -28,7 +28,7 @@ def find_periodic_lines(
     diagnostics=None,
 ):
     if theta is None:
-        theta = np.linspace(np.deg2rad(-45), np.deg2rad(44), 90)
+        theta = np.linspace(np.deg2rad(-45), np.deg2rad(45), 90)
     else:
         theta = np.array(theta)
     if threshold_quantile is not None:
