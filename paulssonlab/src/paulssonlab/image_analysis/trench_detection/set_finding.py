@@ -16,9 +16,7 @@ from paulssonlab.image_analysis.image import (
     remove_large_objects,
 )
 from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
-from paulssonlab.image_analysis.trench_detection.refinement import (
-    get_trench_line_profiles,
-)
+from paulssonlab.image_analysis.trench_detection.profile import get_trench_line_profiles
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
 from paulssonlab.util.numeric import silent_nanquantile
@@ -58,6 +56,7 @@ def drop_rare_labels(labels):
     return good_labels
 
 
+# TODO: remove
 def find_trench_sets_by_clustering(
     img, img_mask, angle, anchor_rho, rho_min, rho_max, diagnostics=None
 ):
@@ -78,17 +77,15 @@ def find_trench_sets_by_cutting(
     img,
     img_mask,
     angle,
-    anchor_rho,
-    rho_min,
-    rho_max,
+    rhos,
     profile_quantile=0.95,
     min_length=50,
     smooth=10,
     threshold=0.05,
     diagnostics=None,
 ):
-    profiles, stacked_points, _ = get_trench_line_profiles(
-        img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
+    profiles, stacked_points = get_trench_line_profiles(
+        img, angle, rhos, diagnostics=diagnostics
     )
     stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
@@ -144,7 +141,6 @@ def find_trench_sets_by_cutting(
         # FROM: https://stackoverflow.com/questions/3654289/scipy-create-2d-polygon-mask
         mask = poly_path.contains_points(coors)
         img_labels[y[mask], x[mask]] = label
-    img_labels = img_labels  # .T#[:,::-1]
     if diagnostics is not None:
         diagnostics["labeled_image"] = RevImage(img_labels)
         diagnostics["label_min"] = label_index[0]

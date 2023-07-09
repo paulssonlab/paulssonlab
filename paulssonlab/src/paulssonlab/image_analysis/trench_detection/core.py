@@ -6,7 +6,7 @@ import skimage.morphology
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.trench_detection.hough import find_periodic_lines
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
-from paulssonlab.image_analysis.trench_detection.refinement import find_trench_ends
+from paulssonlab.image_analysis.trench_detection.profile import find_trench_ends
 from paulssonlab.image_analysis.trench_detection.set_finding import (
     binarize_trench_image,
     find_trench_sets_by_cutting,
@@ -126,7 +126,7 @@ def find_trenches(
         theta = np.linspace(-max_angle, max_angle, num_angles)
     else:
         theta = [angle]
-    angle, anchor_rho, rho_min, rho_max, info, line_info = find_periodic_lines(
+    angle, rhos, info, line_info = find_periodic_lines(
         img_normalized,
         theta=theta,
         pitch=pitch,
@@ -139,9 +139,7 @@ def find_trenches(
         img_normalized,
         img_binarized,
         angle,
-        anchor_rho,
-        rho_min,
-        rho_max,
+        rhos,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "set_finding"),
     )
     trench_sets = {}
@@ -155,9 +153,7 @@ def find_trenches(
         trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
-            anchor_rho,
-            rho_min,
-            rho_max,
+            rhos,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
         trench_sets[label]["trench_set"] = label
