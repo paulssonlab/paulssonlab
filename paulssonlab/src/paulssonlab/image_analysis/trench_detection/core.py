@@ -6,9 +6,9 @@ import skimage.morphology
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.trench_detection.hough import find_periodic_lines
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
-from paulssonlab.image_analysis.trench_detection.profile import find_trench_ends
 from paulssonlab.image_analysis.trench_detection.set_finding import (
     binarize_trench_image,
+    find_trench_ends,
     find_trench_sets_by_cutting,
 )
 from paulssonlab.image_analysis.ui import RevImage
