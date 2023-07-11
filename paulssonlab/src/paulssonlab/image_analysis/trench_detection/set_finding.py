@@ -85,18 +85,18 @@ def find_trench_sets_by_cutting(
     threshold=0.05,
     diagnostics=None,
 ):
-    profiles, stacked_points = angled_profiles(
+    profiles, profile_points = angled_profiles(
         img, angle, rhos, diagnostics=diagnostics
     )
-    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
+    reduced_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
-        stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
-            stacked_profile, smooth
+        reduced_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
+            reduced_profile, smooth
         )
     else:
-        stacked_profile_smooth = stacked_profile
-    threshold_value = silent_nanquantile(stacked_profile_smooth, threshold)
-    profile_mask = stacked_profile_smooth > threshold_value
+        reduced_profile_smooth = reduced_profile
+    threshold_value = silent_nanquantile(reduced_profile_smooth, threshold)
+    profile_mask = reduced_profile_smooth > threshold_value
     if min_length:
         skimage.morphology.remove_small_objects(
             profile_mask, min_size=min_length, out=profile_mask
@@ -116,8 +116,8 @@ def find_trench_sets_by_cutting(
         stop_lines = hv.Overlay([hv.VLine(x[1]) for x in endpoints]).options(
             "VLine", color="red"
         )
-        diagnostics["stacked_profile"] = (
-            hv.Curve(stacked_profile)
+        diagnostics["reduced_profile"] = (
+            hv.Curve(reduced_profile)
             * hv.HLine(threshold_value).options(color="gray")
             * start_lines
             * stop_lines
@@ -126,10 +126,10 @@ def find_trench_sets_by_cutting(
     img_labels = np.zeros_like(img_mask, dtype=np.int8)
     width, height = img.shape
     y, x = np.nonzero(img_mask)
-    coors = np.hstack((x.reshape(-1, 1), y.reshape(-1, 1)))
+    coords = np.hstack((x.reshape(-1, 1), y.reshape(-1, 1)))
     for label, (top_end, bottom_end) in zip(label_index, endpoints):
-        top_endpoints = stacked_points[top_end]
-        bottom_endpoints = stacked_points[bottom_end]
+        top_endpoints = profile_points[top_end]
+        bottom_endpoints = profile_points[bottom_end]
         # discard trenches where top endpoint is the same as the bottom endpoint
         mask = ~np.apply_along_axis(
             np.all, 1, np.equal(top_endpoints, bottom_endpoints)
@@ -140,7 +140,7 @@ def find_trench_sets_by_cutting(
         hull = ConvexHull(polygon)
         poly_path = Path(polygon[hull.vertices])
         # FROM: https://stackoverflow.com/questions/3654289/scipy-create-2d-polygon-mask
-        mask = poly_path.contains_points(coors)
+        mask = poly_path.contains_points(coords)
         img_labels[y[mask], x[mask]] = label
     if diagnostics is not None:
         diagnostics["labeled_image"] = RevImage(img_labels)
@@ -154,37 +154,33 @@ def find_trench_sets_by_diff_cutting(
     img,
     img_mask,
     angle,
-    anchor_rho,
-    rho_min,
-    rho_max,
+    rhos,
     profile_quantile=0.95,
     min_length=50,
     smooth=10,
     prominence=0.5,
     diagnostics=None,
 ):
-    profiles, _, _ = get_trench_line_profiles(
-        img, angle, anchor_rho, rho_min, rho_max, diagnostics=diagnostics
-    )
-    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
+    profiles, _ = angled_profiles(img, angle, rhos, diagnostics=diagnostics)
+    reduced_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
-        stacked_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
-            stacked_profile, smooth
+        reduced_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
+            reduced_profile, smooth
         )
     else:
-        stacked_profile_smooth = stacked_profile
-    stacked_profile_diff = holo_diff(1, stacked_profile_smooth)
-    stacked_profile_diff[np.isnan(stacked_profile_diff)] = 0
-    abs_prominence = np.abs(stacked_profile_diff).max() * prominence
-    stacked_profile_diff_pos = np.clip(stacked_profile_diff, 0, None)
-    stacked_profile_diff_neg = np.clip(-stacked_profile_diff, 0, None)
+        reduced_profile_smooth = reduced_profile
+    reduced_profile_diff = holo_diff(1, reduced_profile_smooth)
+    reduced_profile_diff[np.isnan(reduced_profile_diff)] = 0
+    abs_prominence = np.abs(reduced_profile_diff).max() * prominence
+    reduced_profile_diff_pos = np.clip(reduced_profile_diff, 0, None)
+    reduced_profile_diff_neg = np.clip(-reduced_profile_diff, 0, None)
     start_idxs = scipy.signal.find_peaks(
-        stacked_profile_diff_pos,
+        reduced_profile_diff_pos,
         distance=min_length,
         prominence=abs_prominence,
     )
     stop_idxs = scipy.signal.find_peaks(
-        stacked_profile_diff_neg,
+        reduced_profile_diff_neg,
         distance=min_length,
         prominence=abs_prominence,
     )
@@ -196,9 +192,9 @@ def find_trench_sets_by_diff_cutting(
         stop_lines = hv.Overlay([hv.VLine(x) for x in stop_idxs]).options(
             "VLine", color="red"
         )
-        diagnostics["stacked_profile"] = (
-            hv.Curve(stacked_profile)
-            * hv.Curve(stacked_profile_diff).options(color="cyan")
+        diagnostics["reduced_profile"] = (
+            hv.Curve(reduced_profile)
+            * hv.Curve(reduced_profile_diff).options(color="cyan")
             * start_lines
             * stop_lines
         )
@@ -303,27 +299,27 @@ def find_trench_ends(
     profile_quantile=0.95,
     diagnostics=None,
 ):
-    profiles, stacked_points = get_trench_line_profiles(
+    profiles, profile_points = angled_profiles(
         img, angle, rhos, diagnostics=diagnostics
     )
-    stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
-    stacked_profile_diff = holo_diff(1, stacked_profile)
+    reduced_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
+    reduced_profile_diff = holo_diff(1, reduced_profile)
     # using np.nanargmax/min because we might have an all-nan axis
-    top_end = max(np.nanargmax(stacked_profile_diff) - margin, 0)
+    top_end = max(np.nanargmax(reduced_profile_diff) - margin, 0)
     bottom_end = min(
-        np.nanargmin(stacked_profile_diff) + margin, len(stacked_profile) - 1
+        np.nanargmin(reduced_profile_diff) + margin, len(reduced_profile) - 1
     )
     if diagnostics is not None:
         diagnostics["profile_quantile"] = profile_quantile
         diagnostics["margin"] = margin
-        diagnostics["stacked_profile"] = (
-            hv.Curve(stacked_profile)
-            * hv.Curve(stacked_profile_diff).options(color="cyan")
+        diagnostics["reduced_profile"] = (
+            hv.Curve(reduced_profile)
+            * hv.Curve(reduced_profile_diff).options(color="cyan")
             * hv.VLine(top_end).options(color="green")
             * hv.VLine(bottom_end).options(color="red")
         )
-    top_endpoints = stacked_points[top_end]
-    bottom_endpoints = stacked_points[bottom_end]
+    top_endpoints = profile_points[top_end]
+    bottom_endpoints = profile_points[bottom_end]
     # discard trenches where top endpoint is the same as the bottom endpoint
     mask = ~np.apply_along_axis(np.all, 1, np.equal(top_endpoints, bottom_endpoints))
     top_endpoints = top_endpoints[mask]

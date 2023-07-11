@@ -146,13 +146,11 @@ def angled_profiles(img, angle, rhos, diagnostics=None):
             line_points = None
             line_offset = None
         else:
-            line_points = _line_profile_coordinates(top[::-1], bottom[::-1]).swapaxes(
-                0, 1
-            )[:, ::-1, 0]
-            # TODO: use ndi.map_coordinates
             # need to give coordinates in (y, x) order
+            coordinates = _line_profile_coordinates(top[::-1], bottom[::-1])
+            line_points = coordinates.swapaxes(0, 1)[:, ::-1, 0]
             line_profile = profile_line(
-                img, top[::-1], bottom[::-1], mode="constant", cval=np.nan
+                img, coordinates=coordinates, mode="constant", cval=np.nan
             )[..., 0]
             line_offset = int(np.floor(offset))
         profiles.append(line_profile)
@@ -209,8 +207,7 @@ def angled_profiles(img, angle, rhos, diagnostics=None):
                     (left_padding, right_padding),
                     *[(0, 0)] * (line_points.ndim - 1),
                 ],
-                "constant",
-                constant_values=np.nan,
+                "edge",
             )
         padded_profiles.append(padded_line_profile)
         padded_points.append(padded_line_points)
