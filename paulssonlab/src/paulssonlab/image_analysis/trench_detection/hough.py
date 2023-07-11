@@ -101,12 +101,10 @@ def find_periodic_lines(
         anchor_idxs = (anchor_idxs / upscale).astype(np.int_)
     anchor_values = trimmed_profile[anchor_idxs]  # TODO: interpolation (?)
     anchor_idxs += idx_min
-    anchor_rho = rho[anchor_idxs]
+    rhos = rho[anchor_idxs]
     # TODO interpolate rho?
     if diagnostics is not None:
-        rho_points = hv.Scatter((anchor_rho, anchor_values)).options(
-            size=5, color="cyan"
-        )
+        rho_points = hv.Scatter((rhos, anchor_values)).options(size=5, color="cyan")
         profile_plot = hv.Curve((rho, profile)) * rho_points
         profile_plot *= hv.VLine(rho_min).options(color="red")
         profile_plot *= hv.VLine(rho_max).options(color="red")
@@ -119,4 +117,4 @@ def find_periodic_lines(
     info = dict(angle=angle)
     if peak_info is not None:
         info = {**peak_info, **info}
-    return angle, anchor_rho, rho_min, rho_max, info, line_info
+    return angle, rhos, info, line_info

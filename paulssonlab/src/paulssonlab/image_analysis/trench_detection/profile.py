@@ -1,13 +1,15 @@
 import holoviews as hv
 import numpy as np
 import pandas as pd
-from skimage.measure.profile import _line_profile_coordinates, profile_line
+from scipy.ndimage import map_coordinates
+from skimage._shared.utils import _fix_ndimage_mode, _validate_interpolation_order
 from skspatial.objects import Line, LineSegment
 
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.image import hough_bounds
 from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
 from paulssonlab.image_analysis.trench_detection.geometry import (
+    angled_line,
     edge_point,
     intersect_line_with_segment,
     trench_anchors,
@@ -17,87 +19,203 @@ from paulssonlab.image_analysis.workflow import points_dataframe
 from paulssonlab.util.numeric import silent_nanquantile
 
 
-def angled_line_profile_endpoints(angle, rho):
+def _unique_close(objs):
+    if not len(objs):
+        return objs
+    unique = [objs[0]]
+    for obj in objs[1:]:
+        close = False
+        for existing in unique:
+            if existing.is_close(obj):
+                close = True
+                break
+        if not close:
+            unique.append(obj)
+    return unique
+
+
+# ADAPTED FROM: skimage.measure.profile
+def _line_profile_coordinates(src, dst, linewidth=1):
+    src_row, src_col = src = np.asarray(src, dtype=float)
+    dst_row, dst_col = dst = np.asarray(dst, dtype=float)
+    d_row, d_col = dst - src
+    theta = np.arctan2(d_row, d_col)
+
+    # we add one above because we include the last point in the profile
+    # (in contrast to standard numpy indexing)
+    length = int(np.ceil(np.hypot(d_row, d_col) + 1))
+
+    line_row = np.linspace(src_row, dst_row, length)
+    line_col = np.linspace(src_col, dst_col, length)
+
+    # we subtract 1 from linewidth to change from pixel-counting
+    # (make this line 3 pixels wide) to point distances (the
+    # distance between pixel centers)
+    row_width = (linewidth - 1) * np.cos(theta) / 2
+    col_width = (linewidth - 1) * np.sin(-theta) / 2
+    row_offsets = np.linspace(-row_width, row_width, linewidth)
+    col_offsets = np.linspace(-col_width, col_width, linewidth)
+    perp_rows = line_row[:, np.newaxis] + row_offsets[np.newaxis, :]
+    perp_cols = line_col[:, np.newaxis] + col_offsets[np.newaxis, :]
+    return np.stack([perp_rows, perp_cols])
+
+
+# ADAPTED FROM: skimage.measure.profile
+def profile_line(
+    image,
+    src=None,
+    dst=None,
+    coordinates=None,
+    linewidth=1,
+    order=None,
+    mode="constant",
+    cval=np.nan,
+):
+    order = _validate_interpolation_order(image.dtype, order)
+    mode = _fix_ndimage_mode(mode)
+
+    if sum([src is not None and dst is not None, coordinates is not None]) != 1:
+        raise ValueError(
+            "must specify one of coordinates or both src and dst but not both"
+        )
+    if coordinates is None:
+        coordinates = _line_profile_coordinates(src, dst, linewidth=linewidth)
+
+    if image.ndim == 3:
+        pixels = [
+            map_coordinates(
+                image[..., i],
+                coordinates,
+                prefilter=order > 1,
+                order=order,
+                mode=mode,
+                cval=cval,
+            )
+            for i in range(image.shape[2])
+        ]
+        pixels = np.transpose(np.asarray(pixels), (1, 2, 0))
+    else:
+        pixels = map_coordinates(
+            image, coordinates, prefilter=order > 1, order=order, mode=mode, cval=cval
+        )
+    # The outputted array with reduce_func=None gives an array where the
+    # row values (axis=1) are flipped. Here, we make this consistent.
+    pixels = np.flip(pixels, axis=1)
+
+    return pixels
+
+
+def angled_line_profile_endpoints(angle, rho, x_lim, y_lim):
+    # ensure pi/2 <= angle < pi/2
+    angle = (angle + np.pi / 2) % np.pi - np.pi / 2
     # the top/bottom labels correspond to the coördinate system
     # where the y-axis is inverted (e.g., what RevImage assumes)
     top_line = LineSegment((x_lim[0], y_lim[0]), (x_lim[1], y_lim[0]))
     bottom_line = LineSegment((x_lim[0], y_lim[1]), (x_lim[1], y_lim[1]))
     left_line = LineSegment((x_lim[0], y_lim[0]), (x_lim[0], y_lim[1]))
     right_line = LineSegment((x_lim[1], y_lim[0]), (x_lim[1], y_lim[1]))
-    anchor = (rho * np.cos(angle), 0)
+    corner = (x_lim[0], y_lim[0])
+    baseline = angled_line(corner, angle + np.pi / 2)
+    anchor = baseline.to_point(rho)
+    profile_line = angled_line(anchor, angle)
     points = []
     for bounding_line in (top_line, bottom_line, left_line, right_line):
-        intersection = intersect_line_with_segment(
-            angled_line(anchor, angle), bounding_line
-        )
+        intersection = intersect_line_with_segment(profile_line, bounding_line)
         if intersection is not None:
             points.append(intersection)
-    points = list(sorted(points, key=lambda x: x.distance_point(anchor)))
-    if not points:
+    points = list(
+        sorted(
+            _unique_close(points),
+            key=lambda x: x.distance_point(anchor),
+        )
+    )
+    if len(points) != 2:
         return None, None, None
-    assert len(points) == 2
     top, bottom = points
     if angle <= 0:
-        corner = (x_lim[0], y_lim[0])
+        offset_corner = (x_lim[0], y_lim[0])
     else:
-        corner = (x_lim[1], y_lim[0])
-    offset = angled_line(anchor, angle + np.pi / 2).distance_point(top)
+        offset_corner = (x_lim[1], y_lim[0])
+    offset_baseline = angled_line(offset_corner, angle + np.pi / 2)
+    offset = offset_baseline.distance_point(top)
     return top, bottom, offset
 
 
 def angled_profiles(img, angle, rhos, diagnostics=None):
     x_lim, y_lim = get_image_limits(img.shape)
     profiles = []
-    line_points = []
+    points = []
     offsets = []
     for rho in rhos:
-        top, bottom, offset = angled_line_profile_endpoints(angle, rho)
-        assert top is not None  # if rho bounds are correct
-        # need to give coordinates in (y, x) order
-        profile = profile_line(
-            img, top[::-1], bottom[::-1], mode="constant", cval=np.nan
-        )
-        points = _line_profile_coordinates(top[::-1], bottom[::-1]).swapaxes(0, 1)[
-            :, ::-1, 0
-        ]
-        profiles.append(profile)
-        line_points.append(points)
-        offsets.append(offset)
-    min_offset = min(offsets)
-    max_stacked_length = max(
-        [len(profile) - offset for offset, profile in zip(offsets, profiles)]
-    )
-    padded_profiles = []
-    padded_line_points = []
-    for i, (profile, points, offset) in enumerate(zip(profiles, line_points, offsets)):
-        left_padding = offset - min_offset
-        right_padding = max_stacked_length - left_padding - len(profile)
-        padded_profile = np.pad(
-            profile, (left_padding, right_padding), "constant", constant_values=np.nan
-        )
-        padded_points = np.pad(points, [(left_padding, right_padding), (0, 0)], "edge")
-        padded_profiles.append(padded_profile)
-        padded_line_points.append(padded_points)
-    if diagnostics is not None:
-        # TODO: make hv.Path??
-        diagnostics["profiles"] = hv.Overlay([hv.Curve(tp) for tp in padded_profiles])
+        top, bottom, offset = angled_line_profile_endpoints(angle, rho, x_lim, y_lim)
+        if top is None:
+            line_profile = None
+            line_points = None
+            line_offset = None
+        else:
+            line_points = _line_profile_coordinates(top[::-1], bottom[::-1]).swapaxes(
+                0, 1
+            )[:, ::-1, 0]
+            # TODO: use ndi.map_coordinates
+            # need to give coordinates in (y, x) order
+            line_profile = profile_line(
+                img, top[::-1], bottom[::-1], mode="constant", cval=np.nan
+            )
+            line_offset = int(np.floor(offset))
+        profiles.append(line_profile)
+        points.append(line_points)
+        offsets.append(line_offset)
     if diagnostics is not None:
         lines_plot = hv.Path(
-            [[points[0] + 0.5, points[-1] + 0.5] for points in line_points]
+            [
+                [line_points[0] + 0.5, line_points[-1] + 0.5]
+                for line_points in points
+                if line_points is not None
+            ]
         ).options(color="blue")
-        top_line_plot = hv.Points([points[0] + 0.5 for points in line_points]).options(
-            color="green"
-        )
+        top_line_plot = hv.Points(
+            [line_points[0] + 0.5 for line_points in points if line_points is not None]
+        ).options(color="green")
         bottom_line_plot = hv.Points(
-            [points[-1] + 0.5 for points in line_points]
+            [line_points[-1] + 0.5 for line_points in points if line_points is not None]
         ).options(color="red")
-        anchor_points_plot = hv.Points(anchors + 0.5).options(size=3, color="cyan")
         diagnostics["image_with_lines"] = (
-            RevImage(img)
-            * lines_plot
-            * top_line_plot
-            * bottom_line_plot
-            * anchor_points_plot
+            RevImage(img) * lines_plot * top_line_plot * bottom_line_plot
+        )
+    max_offset = max(o for o in offsets if o is not None)
+    max_stacked_length = max(
+        [
+            len(line_profile) + line_offset
+            for line_offset, line_profile in zip(offsets, profiles)
+            if line_profile is not None
+        ]
+    )
+    padded_profiles = []
+    padded_points = []
+    for i, (profile, points, offset) in enumerate(zip(profiles, line_points, offsets)):
+        if profile is None:
+            padded_line_profile = np.full(max_stacked_length, np.nan)
+            padded_line_points = np.full((max_stacked_length, 2), np.nan)
+        else:
+            left_padding = max_offset - offset
+            right_padding = max_stacked_length - left_padding - len(profile)
+            padded_line_profile = np.pad(
+                profile,
+                *[(0, 0)] * (profile.ndim - 1),
+                "constant",
+                constant_values=np.nan,
+            )
+            padded_line_points = np.pad(
+                points,
+                [(left_padding, right_padding), *[(0, 0)] * (points.ndim - 1)],
+                "edge",
+            )
+        padded_profiles.append(padded_line_profile)
+        padded_points.append(padded_line_points)
+    if diagnostics is not None:
+        # TODO: make hv.Path??
+        diagnostics["profiles"] = hv.Overlay(
+            [hv.Curve(line_profile) for line_profile in padded_profiles]
         )
     profiles = np.array(padded_profiles)
     stacked_points = np.array(padded_line_points).swapaxes(0, 1)
@@ -118,12 +236,9 @@ def get_trench_line_profiles(img, angle, rhos, diagnostics=None):
         top_length = np.linalg.norm(top_anchor - anchor)
         bottom_length = np.linalg.norm(bottom_anchor - anchor)
         # need to give coordinates in (y, x) order
-        profile = profile_line(
-            img, top_anchor[::-1], bottom_anchor[::-1], mode="constant"
-        )
-        points = _line_profile_coordinates(
-            top_anchor[::-1], bottom_anchor[::-1]
-        ).swapaxes(0, 1)[:, ::-1, 0]
+        coordinates = _line_profile_coordinates(top_anchor[::-1], bottom_anchor[::-1])
+        points = coordinates.swapaxes(0, 1)[:, ::-1, 0]
+        profile = profile_line(img, coordinates=coordinates, mode="constant")[..., 0]
         # TODO: precision??
         if line_length >= max(top_length, bottom_length):
             # line contains anchor
@@ -140,7 +255,6 @@ def get_trench_line_profiles(img, angle, rhos, diagnostics=None):
         line_points.append(points)
         offsets.append(offset)
     min_offset = min(offsets)
-    anchor_idx = -min_offset
     max_stacked_length = max(
         [len(profile) - offset for offset, profile in zip(offsets, profiles)]
     )
@@ -150,9 +264,16 @@ def get_trench_line_profiles(img, angle, rhos, diagnostics=None):
         left_padding = offset - min_offset
         right_padding = max_stacked_length - left_padding - len(profile)
         padded_profile = np.pad(
-            profile, (left_padding, right_padding), "constant", constant_values=np.nan
+            profile,
+            [(left_padding, right_padding), *[(0, 0)] * (profile.ndim - 1)],
+            "constant",
+            constant_values=np.nan,
         )
-        padded_points = np.pad(points, [(left_padding, right_padding), (0, 0)], "edge")
+        padded_points = np.pad(
+            points,
+            [(left_padding, right_padding), *[(0, 0)] * (points.ndim - 1)],
+            "edge",
+        )
         padded_profiles.append(padded_profile)
         padded_line_points.append(padded_points)
     if diagnostics is not None:
@@ -168,18 +289,12 @@ def get_trench_line_profiles(img, angle, rhos, diagnostics=None):
         bottom_line_plot = hv.Points(
             [points[-1] + 0.5 for points in line_points]
         ).options(color="red")
-        anchor_points_plot = hv.Points(anchors + 0.5).options(size=3, color="cyan")
         diagnostics["image_with_lines"] = (
-            RevImage(img)
-            * lines_plot
-            * top_line_plot
-            * bottom_line_plot
-            * anchor_points_plot
+            RevImage(img) * lines_plot * top_line_plot * bottom_line_plot
         )
-    # 0 / 0
     profiles = np.array(padded_profiles)
     stacked_points = np.array(padded_line_points).swapaxes(0, 1)
-    return profiles, stacked_points, anchor_idx
+    return profiles, stacked_points
 
 
 def find_trench_ends(
@@ -190,7 +305,7 @@ def find_trench_ends(
     profile_quantile=0.95,
     diagnostics=None,
 ):
-    profiles, stacked_points, anchor_idx = get_trench_line_profiles(
+    profiles, stacked_points = get_trench_line_profiles(
         img, angle, rhos, diagnostics=diagnostics
     )
     stacked_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
@@ -206,7 +321,6 @@ def find_trench_ends(
         diagnostics["stacked_profile"] = (
             hv.Curve(stacked_profile)
             * hv.Curve(stacked_profile_diff).options(color="cyan")
-            * hv.VLine(anchor_idx).options(color="gray")
             * hv.VLine(top_end).options(color="green")
             * hv.VLine(bottom_end).options(color="red")
         )

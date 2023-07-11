@@ -33,6 +33,7 @@ dependencies:
   - python-lmdb
   - scikit-image
   - scikit-learn
+  - scikit-spatial
   - scipy
   - streamz
   - tornado

@@ -50,6 +50,7 @@ def _accumulator_dtype(dtype):
 
 
 def hough_bounds(shape, theta):
+    theta = (theta + np.pi / 2) % np.pi - np.pi / 2
     x_lim, y_lim = get_image_limits(shape)
     x_min, x_max = x_lim
     y_min, y_max = y_lim
