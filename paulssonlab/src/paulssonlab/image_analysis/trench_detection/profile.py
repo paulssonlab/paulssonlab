@@ -11,18 +11,17 @@ from paulssonlab.image_analysis.trench_detection.geometry import (
 from paulssonlab.image_analysis.ui import RevImage
 
 
-def _unique_close_nonnan(objs):
+def _unique_close(objs):
     if not len(objs):
         return objs
     unique = [objs[0]]
     for obj in objs[1:]:
         close = False
         for existing in unique:
-            # if existing.is_close(obj):
             if np.allclose(existing, obj):
                 close = True
                 break
-        if not close and not np.any(np.isnan(obj)):
+        if not close:
             unique.append(obj)
     return unique
 
@@ -124,9 +123,16 @@ def angled_line_profile_endpoints(angle, rhos, x_lim, y_lim):
                 line_points.append(line_intersections)
     res = []
     for line_points, anchor in zip(points, anchors):
+        # filter out NaN points
+        line_points = [p for p in line_points if not np.any(np.isnan(p))]
+        # now we get unique points sorted by distance from anchor
+        # in principle np.unique could be used, I use np.allclose
+        # to handle the case where two equivalent points are non-identical
+        # because of floating point imprecision
+        # but that issue may not come up in practice
         line_points = list(
             sorted(
-                _unique_close_nonnan(line_points),
+                _unique_close(line_points),
                 key=lambda x: np.linalg.norm(anchor - x),
             )
         )
