@@ -16,9 +16,10 @@ from paulssonlab.image_analysis.util import getitem_if_not_none
 
 
 def _get_trench_bbox(top, bottom, width, trench_idx, x_lim, y_lim):
-    half_width = int(np.ceil(width / 2))
-    offset = np.array([half_width, 0])
-    return np.vstack((top[trench_idx] - offset, bottom[trench_idx] + offset))
+    offset = np.array([width / 2, 0])
+    return np.round(
+        np.vstack((top[trench_idx] - offset, bottom[trench_idx] + offset))
+    ).astype(np.int16)
 
 
 def _get_trench_bboxes(trenches, width, x_lim, y_lim, **kwargs):
