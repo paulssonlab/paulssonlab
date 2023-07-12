@@ -131,8 +131,9 @@ def find_trench_sets_by_cutting(
         top_endpoints = profile_points[top_end]
         bottom_endpoints = profile_points[bottom_end]
         # discard trenches where top endpoint is the same as the bottom endpoint
+        # this also throws out out-of-range rhos which have their endpoints set to (nan, nan)
         mask = ~np.apply_along_axis(
-            np.all, 1, np.equal(top_endpoints, bottom_endpoints)
+            np.all, 1, np.isclose(top_endpoints, bottom_endpoints, equal_nan=True)
         )
         top_endpoints = top_endpoints[mask]
         bottom_endpoints = bottom_endpoints[mask]

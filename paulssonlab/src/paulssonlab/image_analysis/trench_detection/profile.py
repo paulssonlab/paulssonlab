@@ -2,27 +2,27 @@ import holoviews as hv
 import numpy as np
 from scipy.ndimage import map_coordinates
 from skimage._shared.utils import _fix_ndimage_mode, _validate_interpolation_order
-from skspatial.objects import Line, LineSegment
 
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.trench_detection.geometry import (
-    angled_line,
-    intersect_line_with_segment,
+    angled_vector,
+    intersect_lines_with_segment,
 )
 from paulssonlab.image_analysis.ui import RevImage
 
 
-def _unique_close(objs):
+def _unique_close_nonnan(objs):
     if not len(objs):
         return objs
     unique = [objs[0]]
     for obj in objs[1:]:
         close = False
         for existing in unique:
-            if existing.is_close(obj):
+            # if existing.is_close(obj):
+            if np.allclose(existing, obj):
                 close = True
                 break
-        if not close:
+        if not close and not np.any(np.isnan(obj)):
             unique.append(obj)
     return unique
 
@@ -98,40 +98,54 @@ def profile_line(
     return pixels
 
 
-def angled_line_profile_endpoints(angle, rho, x_lim, y_lim):
+def angled_line_profile_endpoints(angle, rhos, x_lim, y_lim):
     # ensure pi/2 <= angle < pi/2
     angle = (angle + np.pi / 2) % np.pi - np.pi / 2
+    if np.isscalar(rhos):
+        rhos = np.array([rhos])
+    else:
+        rhos = np.asarray(rhos)
     # the top/bottom labels correspond to the coördinate system
     # where the y-axis is inverted (e.g., what RevImage assumes)
-    top_line = LineSegment((x_lim[0], y_lim[0]), (x_lim[1], y_lim[0]))
-    bottom_line = LineSegment((x_lim[0], y_lim[1]), (x_lim[1], y_lim[1]))
-    left_line = LineSegment((x_lim[0], y_lim[0]), (x_lim[0], y_lim[1]))
-    right_line = LineSegment((x_lim[1], y_lim[0]), (x_lim[1], y_lim[1]))
+    top_line = np.array([[x_lim[0], y_lim[0]], [x_lim[1], y_lim[0]]])
+    bottom_line = np.array([[x_lim[0], y_lim[1]], [x_lim[1], y_lim[1]]])
+    left_line = np.array([[x_lim[0], y_lim[0]], [x_lim[0], y_lim[1]]])
+    right_line = np.array([[x_lim[1], y_lim[0]], [x_lim[1], y_lim[1]]])
     corner = (x_lim[0], y_lim[0])
-    baseline = angled_line(corner, angle + np.pi / 2)
-    anchor = baseline.to_point(rho)
-    profile_line = angled_line(anchor, angle)
-    points = []
+    anchors = corner + rhos[:, np.newaxis] * angled_vector(angle + np.pi / 2)
+    profile_direction = angled_vector(angle)[np.newaxis, :]
+    points = [[] for _ in range(rhos.shape[0])]
     for bounding_line in (top_line, bottom_line, left_line, right_line):
-        intersection = intersect_line_with_segment(profile_line, bounding_line)
-        if intersection is not None:
-            points.append(intersection)
-    points = list(
-        sorted(
-            _unique_close(points),
-            key=lambda x: x.distance_point(anchor),
+        intersections = intersect_lines_with_segment(
+            anchors, profile_direction, bounding_line
         )
-    )
-    if len(points) != 2:
-        return None, None, None
-    top, bottom = points
-    if angle <= 0:
-        offset_corner = (x_lim[0], y_lim[0])
-    else:
-        offset_corner = (x_lim[1], y_lim[0])
-    offset_baseline = angled_line(offset_corner, angle + np.pi / 2)
-    offset = offset_baseline.distance_point(top)
-    return top, bottom, offset
+        for line_points, line_intersections in zip(points, intersections):
+            if line_intersections is not None:
+                line_points.append(line_intersections)
+    res = []
+    for line_points, anchor in zip(points, anchors):
+        line_points = list(
+            sorted(
+                _unique_close_nonnan(line_points),
+                key=lambda x: np.linalg.norm(anchor - x),
+            )
+        )
+        if len(line_points) != 2:
+            res.append((None, None, None))
+        else:
+            top, bottom = line_points
+            if angle <= 0:
+                offset_corner = (x_lim[0], y_lim[0])
+            else:
+                offset_corner = (x_lim[1], y_lim[0])
+            offset_direction = angled_vector(angle + np.pi / 2)
+            projected_point = offset_corner + (
+                np.dot(offset_direction, top - offset_corner) * offset_direction
+            )
+            offset = np.linalg.norm(projected_point - top)
+
+            res.append((top, bottom, offset))
+    return res
 
 
 def angled_profiles(img, angle, rhos, diagnostics=None):
@@ -139,8 +153,7 @@ def angled_profiles(img, angle, rhos, diagnostics=None):
     profiles = []
     points = []
     offsets = []
-    for rho in rhos:
-        top, bottom, offset = angled_line_profile_endpoints(angle, rho, x_lim, y_lim)
+    for top, bottom, offset in angled_line_profile_endpoints(angle, rhos, x_lim, y_lim):
         if top is None:
             line_profile = None
             line_points = None
@@ -212,10 +225,14 @@ def angled_profiles(img, angle, rhos, diagnostics=None):
         padded_profiles.append(padded_line_profile)
         padded_points.append(padded_line_points)
     if diagnostics is not None:
-        # TODO: make hv.Path??
-        diagnostics["profiles"] = hv.Overlay(
-            [hv.Curve(line_profile) for line_profile in padded_profiles]
-        )
+        profile_xs = np.arange(max_padded_length)
+        diagnostics["profiles"] = hv.Path(
+            [
+                (profile_xs, line_profile, i)
+                for i, line_profile in enumerate(padded_profiles)
+            ],
+            vdims="idx",
+        ).options(color="idx", cmap="glasbey")
     padded_profiles = np.array(padded_profiles)
     padded_points = np.array(padded_points).swapaxes(0, 1)
     return padded_profiles, padded_points
