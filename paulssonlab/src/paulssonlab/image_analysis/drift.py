@@ -111,7 +111,7 @@ def find_feature_drift(
         initial_shift1 = np.array([0, 0])
     if initial_shift2 is None:
         initial_shift2 = initial_shift1
-    image_limits = get_image_limits(img1.shape)
+    image_limits = get_image_limits(img2.shape)
     if isinstance(img1, dict):
         features1 = img1
     else:
@@ -146,11 +146,12 @@ def find_feature_drift(
             shift = shift * max_shift / np.linalg.norm(shift)
         else:
             raise NotImplementedError
-    # adding 0.5 puts the point in the center of the pixel
-    diagnostics["features1"] = hv.Points(features_list[:, 0, :] + 0.5)
-    diagnostics["features2"] = hv.Points(features_list[:, 1, :] + 0.5)
-    diagnostics["rois1"] = plot_trenches(shifted_rois1)
-    diagnostics["rois2"] = plot_trenches(shifted_rois2)
-    shifted_rois_final = filter_rois(shift_rois(rois, shift), image_limits)
-    diagnostics["rois_final"] = plot_trenches(shifted_rois_final)
+    if diagnostics is not None:
+        # adding 0.5 puts the point in the center of the pixel
+        diagnostics["features1"] = hv.Points(features_list[:, 0, :] + 0.5)
+        diagnostics["features2"] = hv.Points(features_list[:, 1, :] + 0.5)
+        diagnostics["rois1"] = plot_trenches(shifted_rois1)
+        diagnostics["rois2"] = plot_trenches(shifted_rois2)
+        shifted_rois_final = filter_rois(shift_rois(rois, shift), image_limits)
+        diagnostics["rois_final"] = plot_trenches(shifted_rois_final)
     return shift
