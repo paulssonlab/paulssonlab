@@ -82,6 +82,16 @@ def ransac_translation(
     return model_robust.translation
 
 
+def get_drift_features(img, rois, shift, feature_func=trench_cell_endpoints):
+    image_limits = get_image_limits(img.shape)
+    features = {}
+    shifted_rois = filter_rois(shift_rois(rois, shift), image_limits)
+    for roi_idx, crop, ul in iter_roi_crops(img, shifted_rois, corner=True):
+        if (feature := feature_func(crop)) is not None:
+            features[roi_idx] = feature + ul[np.newaxis, ...]
+    return features
+
+
 def find_feature_drift(
     img1,
     img2,
@@ -102,11 +112,12 @@ def find_feature_drift(
     if initial_shift2 is None:
         initial_shift2 = initial_shift1
     image_limits = get_image_limits(img1.shape)
-    features1 = {}
-    shifted_rois1 = filter_rois(shift_rois(rois, initial_shift1), image_limits)
-    for roi_idx, crop, ul in iter_roi_crops(img1, shifted_rois1, corner=True):
-        if (feature := feature_func(crop)) is not None:
-            features1[roi_idx] = feature + ul[np.newaxis, ...]
+    if isinstance(img1, dict):
+        features1 = img1
+    else:
+        features1 = get_drift_features(
+            img1, rois, initial_shift1, feature_func=feature_func
+        )
     shift = initial_shift2
     for i in range(max_iterations):
         features_list = []
