@@ -326,11 +326,12 @@ def pad_unstack(arys):
     return unstack(pad_and_stack(arys))
 
 
-def unstack_multichannel(arys, colors=None, scale=True):
+def unstack_multichannel(arys, colors=None, scale=False):
     imgs = []
     for i in range(arys.shape[0]):
         img = unstack(arys[i]).T
-        img /= np.nanmax(img)
+        if scale:
+            img /= np.nanmax(img)
         imgs.append(img)
     if colors is not None:
         return colorize(imgs, colors, scale=False)
