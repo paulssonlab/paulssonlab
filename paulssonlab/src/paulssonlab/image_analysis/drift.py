@@ -15,13 +15,6 @@ from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
 from paulssonlab.image_analysis.trench_detection.core import plot_trenches
 
 
-def centroid(img):
-    grid = np.ogrid[[slice(0, size) for size in img.shape]]
-    center = np.array([(img * grid[dim]).sum() / img.sum() for dim in range(img.ndim)])
-    # return a single centroid feature in (x, y) order
-    return center[np.newaxis, ::-1]
-
-
 def trench_cell_endpoints(img, sigma=2, k=2, min_height=0.3, margin_factor=1):
     img = skimage.img_as_float(img)
     profile = img.mean(axis=1)
