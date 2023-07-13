@@ -53,6 +53,11 @@ class TranslationTransform(skimage.transform.EuclideanTransform):
         return True
 
 
+def median_translation(data, diagnostics=None, **kwargs):
+    median = np.median(data[:, 1, :] - data[:, 0, :], axis=0)
+    return median
+
+
 def ransac_translation(
     data, residual_threshold=3, min_samples=10, diagnostics=None, **kwargs
 ):
@@ -84,7 +89,7 @@ def find_feature_drift(
     initial_shift1=None,
     initial_shift2=None,
     feature_func=trench_cell_endpoints,
-    estimation_func=ransac_translation,
+    estimation_func=median_translation,
     max_iterations=2,
     max_shift=10,
     at_saturation="ignore",
