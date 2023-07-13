@@ -187,7 +187,13 @@ def sharpness(img, q=0.999, radius=1):
 
 def hessian_eigenvalues(img, sigma=1.5):
     return hessian_matrix_eigvals(
-        hessian_matrix(skimage.img_as_float(img), sigma, mode="nearest", order="rc")
+        hessian_matrix(
+            skimage.img_as_float(img),
+            sigma,
+            mode="nearest",
+            order="rc",
+            use_gaussian_derivatives=True,
+        )
     )
 
 
