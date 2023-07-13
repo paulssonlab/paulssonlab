@@ -63,7 +63,7 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
-class SplitFilename:
+class SplitFilename(str):
     def __init__(self, files):
         self.files = files
 
