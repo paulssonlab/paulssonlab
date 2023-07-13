@@ -1,12 +1,31 @@
 import warnings
 
+import holoviews as hv
+import numpy as np
+import scipy
+import skimage
+
+from paulssonlab.image_analysis.geometry import (
+    filter_rois,
+    get_image_limits,
+    iter_roi_crops,
+    shift_rois,
+)
+from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
+from paulssonlab.image_analysis.trench_detection.core import plot_trenches
+
+
+def centroid(img):
+    grid = np.ogrid[[slice(0, size) for size in img.shape]]
+    center = np.array([(img * grid[dim]).sum() / img.sum() for dim in range(img.ndim)])
+    # return a single centroid feature in (x, y) order
+    return center[np.newaxis, ::-1]
+
 
 def trench_cell_endpoints(img, sigma=2, k=2, min_height=0.3, margin_factor=1):
     img = skimage.img_as_float(img)
     profile = img.mean(axis=1)
-    grad = misc.holoborodko_diff.holo_diff(
-        1, scipy.ndimage.gaussian_filter1d(profile, sigma)
-    )
+    grad = holo_diff(1, scipy.ndimage.gaussian_filter1d(profile, sigma))
     with warnings.catch_warnings(
         action="ignore", category=scipy.signal._peak_finding_utils.PeakPropertyWarning
     ):
@@ -68,34 +87,34 @@ def ransac_translation(
 def find_feature_drift(
     img1,
     img2,
-    trenches,
-    initial_shift=None,
-    tolerance=1,
+    rois,
+    initial_shift1=None,
+    initial_shift2=None,
     feature_func=trench_cell_endpoints,
     estimation_func=ransac_translation,
-    max_iterations=1,
+    max_iterations=2,
+    max_shift=10,
+    at_saturation="ignore",
     diagnostics=None,
 ):
-    image_limits = geometry.get_image_limits(img1.shape)
+    if at_saturation not in ["ignore", "clip"]:
+        raise ValueError("at_saturation must be one of: ignore, clip")
+    if initial_shift1 is None:
+        initial_shift1 = np.array([0, 0])
+    if initial_shift2 is None:
+        initial_shift2 = initial_shift1
+    image_limits = get_image_limits(img1.shape)
     features1 = {}
-    if initial_shift is None:
-        initial_shift = np.array([0, 0])
-    shifted_trenches = filter_trenches(
-        shift_trenches(trenches, initial_shift), image_limits
-    )
-    for roi_idx, crop, ul in geometry.iter_crops(img1, shifted_trenches, corner=True):
+    shifted_rois1 = filter_rois(shift_rois(rois, initial_shift1), image_limits)
+    for roi_idx, crop, ul in iter_roi_crops(img1, shifted_rois1, corner=True):
         if (feature := feature_func(crop)) is not None:
             features1[roi_idx] = feature + ul[np.newaxis, ...]
-    shift = initial_shift
+    shift = initial_shift2
     for i in range(max_iterations):
         features_list = []
         features2 = {}
-        shifted_trenches = filter_trenches(
-            shift_trenches(trenches, shift), image_limits
-        )
-        for roi_idx, crop, ul in geometry.iter_crops(
-            img2, shifted_trenches, corner=True
-        ):
+        shifted_rois2 = filter_rois(shift_rois(rois, shift), image_limits)
+        for roi_idx, crop, ul in iter_roi_crops(img2, shifted_rois2, corner=True):
             if (feature := feature_func(crop)) is not None:
                 features2[roi_idx] = feature + ul[np.newaxis, ...]
         for roi_idx in features1.keys() & features2.keys():
@@ -110,9 +129,19 @@ def find_feature_drift(
         features_list = np.array(features_list)
         new_shift = estimation_func(features_list, diagnostics=diagnostics)
         new_shift = np.round(new_shift).astype(np.int64)
-        # if np.linalg.norm(new_shift, shift) <= tolerance:
-        #     break
         shift = new_shift
-    diagnostics["features1"] = hv.Points(features_list.swapaxes(0, 1)[0])
-    diagnostics["features2"] = hv.Points(features_list.swapaxes(0, 1)[1])
+    if np.linalg.norm(shift - initial_shift1) > max_shift:
+        if at_saturation == "ignore":
+            shift = initial_shift2
+        elif at_saturation == "clip":
+            shift = shift * max_shift / np.linalg.norm(shift)
+        else:
+            raise NotImplementedError
+    # adding 0.5 puts the point in the center of the pixel
+    diagnostics["features1"] = hv.Points(features_list[:, 0, :] + 0.5)
+    diagnostics["features2"] = hv.Points(features_list[:, 1, :] + 0.5)
+    diagnostics["rois1"] = plot_trenches(shifted_rois1)
+    diagnostics["rois2"] = plot_trenches(shifted_rois2)
+    shifted_rois_final = filter_rois(shift_rois(rois, shift), image_limits)
+    diagnostics["rois_final"] = plot_trenches(shifted_rois_final)
     return shift
