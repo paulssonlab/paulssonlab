@@ -1,5 +1,6 @@
 __all__ = [
     "drift",
+    "focus",
     "geometry",
     "image",
     "readers",
