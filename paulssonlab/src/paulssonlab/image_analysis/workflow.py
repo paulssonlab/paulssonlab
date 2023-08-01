@@ -98,8 +98,8 @@ def get_nd2_frame(filename, position, channel, t, dark=None, flat=None):
     return ary
 
 
-def get_eaton_fish_frame(filename, v, channel, t, dark=None, flat=None):
-    with h5py.File(Path(filename) / f"fov={v}_config={channel}_t={t}.hdf5") as f:
+def get_eaton_fish_frame(filename, v, channel, t, dark=None, flat=None, suffix=""):
+    with h5py.File(Path(filename) / f"fov={v}_config={channel}_t={t}{suffix}") as f:
         ary = f["data"][()]
     if dark is not None:
         ary = (
