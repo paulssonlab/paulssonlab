@@ -149,8 +149,8 @@ def mosaic_frame(
     if offset is not None:
         center += np.array(offset)
     all_channel_imgs = [[] for _ in range(len(channels))]
-    input_scale = fixed_aspect_scale(
-        *input_dims, output_dims[0] * scale, output_dims[1] * scale
+    input_scale = scale * fixed_aspect_scale(
+        *input_dims, output_dims[0], output_dims[1]
     )
     rescaled_input_dims = np.ceil(np.array(input_dims) * input_scale).astype(np.uint32)
     for (filename, pos_num), position in positions.iterrows():
@@ -192,6 +192,7 @@ def mosaic_frame(
                     flags=(cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP),
                 )
                 img = delayed(np.clip)(img, 0, 1)  # LANCZOS4 outputs values beyond 0..1
+                # TODO: make this support the delayed=False case
                 img = da.from_delayed(img, output_dims[::-1], dtype=dtype)
                 channel_imgs.append(img)
     if not all_channel_imgs:
@@ -411,6 +412,42 @@ def get_scaling_funcs(extrema):
             np.clip(x, min_value, max_value) - min_value
         ) / (max_value - min_value)
     return scaling_funcs
+
+
+def max_scale(positions, input_dims, output_dims, offset=None, mode=None):
+    input_dims = np.asarray(input_dims)
+    output_dims = np.asarray(output_dims)
+    if offset is None:
+        offset = np.array([0, 0])
+    else:
+        offset = np.asarray(offset)
+    columns = positions["x_idx"].max() - positions["x_idx"].min() + 1
+    rows = positions["y_idx"].max() - positions["y_idx"].min() + 1
+    input_scale = fixed_aspect_scale(*input_dims, output_dims[0], output_dims[1])
+    scale = (
+        output_dims
+        / (
+            np.array([columns, rows]) * input_dims
+            + 2 * np.array([-1, 1])[:, np.newaxis] * offset
+        )
+        / input_scale
+    )
+    if mode is None:
+        return scale
+    elif mode == "fit":
+        return scale.min()
+    elif mode == "fill":
+        return scale.max()
+    elif mode == "fit_horizontal":
+        return scale[:, 0].min()
+    elif mode == "fill_horizontal":
+        return scale[:, 0].max()
+    elif mode == "fit_vertical":
+        return scale[:, 1].min()
+    elif mode == "fill_vertical":
+        return scale[:, 1].max()
+    else:
+        raise ValueError(f"unknown mode: {mode}")
 
 
 def export_video(
