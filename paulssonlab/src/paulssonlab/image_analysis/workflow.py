@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import cachetools
+import h5py
 import nd2reader
 import numpy as np
 import pandas as pd
@@ -60,7 +63,22 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
+class SplitFilename:
+    def __init__(self, files):
+        self.files = files
+
+    def __str__(self):
+        return self.files[0]
+
+    def __repr__(self):
+        return f"SplitFilename:{list(self.files)}"
+
+
 def _get_nd2_reader(filename, **kwargs):
+    if isinstance(filename, SplitFilename):
+        from split_file_reader import SplitFileReader
+
+        filename = SplitFileReader.open(filename.files, mode="rb")
     return nd2reader.ND2Reader(filename, **kwargs)
 
 
@@ -71,6 +89,18 @@ def get_nd2_frame(filename, position, channel, t, dark=None, flat=None):
     reader = get_nd2_reader(filename)
     channel_idx = reader.metadata["channels"].index(channel)
     ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    if dark is not None:
+        ary = (
+            ary - dark
+        )  # can't subtract in place because img is uint16 and dark may be float64
+    if flat is not None:
+        ary = ary / flat
+    return ary
+
+
+def get_eaton_fish_frame(filename, v, channel, t, dark=None, flat=None):
+    with h5py.File(Path(filename) / f"fov={v}_config={channel}_t={t}.hdf5") as f:
+        ary = f["data"][()]
     if dark is not None:
         ary = (
             ary - dark

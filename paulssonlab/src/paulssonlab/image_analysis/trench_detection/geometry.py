@@ -1,51 +1,37 @@
 import numpy as np
 
 
-def point_linspace(anchor0, anchor1, num_points):
-    for s in np.linspace(0, 1, num_points)[1:-1]:
-        anchor = (1 - s) * anchor0 + s * anchor1
-        yield anchor
+def angled_vector(angle):
+    return np.array([np.sin(angle), -np.cos(angle)])
 
 
-def coords_along(x0, x1):
-    # TODO: is floor or trunc correct?
-    # do we care, since coords should be positive?
-    x0 = np.floor(x0)
-    x1 = np.floor(x1)
-    # TODO: are ceil, length=0 -> 1 correct??
-    length = int(np.ceil(np.sqrt(np.sum((x1 - x0) ** 2))))
-    if length == 0:
-        length = 1
-    xs = np.linspace(x0[0], x1[0], length).astype(np.int_)  # [1:-1]
-    ys = np.linspace(x0[1], x1[1], length).astype(np.int_)  # [1:-1]
-    return xs, ys
+def _vdot(a, b):
+    return np.einsum("ij,ij->i", a, b)
 
 
-def edge_point(x0, theta, x_lim, y_lim):
-    x_min, x_max = x_lim
-    y_min, y_max = y_lim
-    # TODO: hack to fix getting edge points where x0 is on the border
-    if x0[0] in x_lim and x0[1] in y_lim:
-        return x0
-    theta = theta % (2 * np.pi)
-    if 0 <= theta < np.pi / 2:
-        corner_x, corner_y = x_min, y_max
-    elif np.pi / 2 <= theta < np.pi:
-        corner_x, corner_y = x_max, y_max
-    elif np.pi <= theta < 3 / 2 * np.pi:
-        corner_x, corner_y = x_max, y_min
-    elif 3 / 2 * np.pi <= theta:
-        corner_x, corner_y = x_min, y_min
-    angle_to_corner = np.arctan2(corner_y - x0[1], x0[0] - corner_x) % (2 * np.pi)
-    if (
-        (theta >= angle_to_corner and 0 <= theta < np.pi / 2)
-        or (theta < angle_to_corner and np.pi / 2 <= theta < np.pi)
-        or (theta >= angle_to_corner and np.pi <= theta < 3 / 2 * np.pi)
-        or (theta < angle_to_corner and 3 / 2 * np.pi <= theta < 2 * np.pi)
-    ):
-        # top/bottom
-        x1 = np.array([x0[0] - (corner_y - x0[1]) / np.tan(theta), corner_y])
-    else:
-        # left/right
-        x1 = np.array([corner_x, x0[1] - (corner_x - x0[0]) * np.tan(theta)])
-    return x1
+def _cosine_similarity(a, b):
+    return _vdot(a, b) / (np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1))
+
+
+def intersect_lines_with_segment(points, directions, line_segment):
+    line_segment_direction = (line_segment[1] - line_segment[0])[np.newaxis, :]
+    perp = np.cross(directions, line_segment_direction)
+    vector_ab = np.asarray(line_segment[0]) - points
+    num = np.cross(vector_ab, line_segment_direction) * perp
+    denom = perp**2
+    intersections = points + (num / denom)[:, np.newaxis] * directions
+    vector_ia = line_segment[0] - intersections
+    vector_ib = line_segment[1] - intersections
+    similarity = _cosine_similarity(vector_ia, vector_ib)
+    mask = np.logical_or(
+        np.isclose(similarity, -1),
+        np.logical_or(
+            np.all(np.isclose(vector_ia, 0), axis=1),
+            np.all(np.isclose(vector_ib, 0), axis=1),
+        ),
+    )
+    return np.where(
+        mask[:, np.newaxis],
+        intersections,
+        np.nan,
+    )

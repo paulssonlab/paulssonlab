@@ -13,6 +13,7 @@ from matplotlib.colors import hex2color
 from skimage.feature import hessian_matrix, hessian_matrix_eigvals
 
 from paulssonlab.image_analysis.blur import scipy_box_blur
+from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.util import repeat_apply
 
 gaussian_box_blur = scipy_box_blur
@@ -48,16 +49,30 @@ def _accumulator_dtype(dtype):
         return NotImplementedError
 
 
+def hough_bounds(shape, theta):
+    theta = (theta + np.pi / 2) % np.pi - np.pi / 2
+    x_lim, y_lim = get_image_limits(shape)
+    x_min, x_max = x_lim
+    y_min, y_max = y_lim
+    if theta < 0:
+        rho_min = y_max * np.sin(theta)
+        rho_max = x_max * np.cos(theta)
+    else:
+        rho_min = 0
+        rho_max = x_max * np.cos(theta) + y_max * np.sin(theta)
+    return rho_min, rho_max
+
+
 # FROM: https://alyssaq.github.io/2014/understanding-hough-transform/
 def hough_line_intensity(img, theta=None):
     if theta is None:
-        theta = np.linspace(-np.pi / 2, np.pi / 2, 180)
+        theta = np.linspace(np.deg2rad(-90), np.deg2rad(90), 180, endpoint=False)
+    else:
+        theta = np.asarray(theta)
     width, height = img.shape
     diagonal = int(np.ceil(np.sqrt(width**2 + height**2)))
     rho = np.linspace(-diagonal, diagonal, diagonal * 2)
-    accumulator = np.zeros(
-        (2 * diagonal, len(theta)), dtype=_accumulator_dtype(img.dtype)
-    )
+    accumulator = np.zeros((len(rho), len(theta)), dtype=_accumulator_dtype(img.dtype))
     _hough_line_intensity(accumulator, img, theta, diagonal)
     return accumulator, theta, rho
 
@@ -73,8 +88,7 @@ def _hough_line_intensity(accumulator, img, theta, diagonal):
             if img[i, j] == 0:  # optimization for boolean input images
                 continue
             for k in range(num_thetas):
-                # TODO: is round correct here?
-                rho = int(np.round_(i * sin_theta[k] + j * cos_theta[k])) + diagonal
+                rho = int(np.floor(i * sin_theta[k] + j * cos_theta[k])) + diagonal
                 accumulator[rho, k] += img[i, j]
 
 

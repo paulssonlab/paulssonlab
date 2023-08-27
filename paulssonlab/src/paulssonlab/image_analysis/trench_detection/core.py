@@ -6,9 +6,9 @@ import skimage.morphology
 from paulssonlab.image_analysis.geometry import get_image_limits
 from paulssonlab.image_analysis.trench_detection.hough import find_periodic_lines
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
-from paulssonlab.image_analysis.trench_detection.refinement import find_trench_ends
 from paulssonlab.image_analysis.trench_detection.set_finding import (
     binarize_trench_image,
+    find_trench_ends,
     find_trench_sets_by_cutting,
 )
 from paulssonlab.image_analysis.ui import RevImage
@@ -56,12 +56,16 @@ def get_trench_bboxes(trenches, width, x_lim, y_lim, **kwargs):
 def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
     plots = []
     if lines:
-        top_endpoints = np.vstack(
-            (trenches_df["top_x"].values, trenches_df["top_y"].values)
-        ).T
-        bottom_endpoints = np.vstack(
-            (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
-        ).T
+        top_endpoints = (
+            np.vstack((trenches_df["top_x"].values, trenches_df["top_y"].values)).T
+            + 0.5
+        )
+        bottom_endpoints = (
+            np.vstack(
+                (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
+            ).T
+            + 0.5
+        )
         line_plot = hv.Path(
             [
                 np.array([top_endpoint, bottom_endpoint])
@@ -77,15 +81,15 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
         bbox_plot = hv.Rectangles(
             (
                 trenches_df["ul_x"],
-                trenches_df["lr_y"],
-                trenches_df["lr_x"],
+                trenches_df["lr_y"] + 1,
+                trenches_df["lr_x"] + 1,
                 trenches_df["ul_y"],
             )
         ).opts(fill_color=None, line_color="red")
         plots.append(bbox_plot)
     if labels:
         # TODO: labels seem to be broken in holoviews/bokeh
-        # 1) they case issues
+        # 1) bokeh JS error
         # 2) bokeh doesn't allow text size to be set in data coördinates (so it scales with zoom level)
         label_plot = hv.Labels(
             (
@@ -93,7 +97,7 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
                 trenches_df["ul_y"],
                 trenches_df.index.values.astype(str),
             )
-        ).opts(text_color="white", text_font_size="10pt", xoffset=3, yoffset=3)
+        ).opts(text_color="white", text_font_size="10pt", xoffset=2, yoffset=2)
         plots.append(label_plot)
     return hv.Overlay(plots)
 
@@ -122,7 +126,7 @@ def find_trenches(
         theta = np.linspace(-max_angle, max_angle, num_angles)
     else:
         theta = [angle]
-    angle, anchor_rho, rho_min, rho_max, info, line_info = find_periodic_lines(
+    angle, rhos, info, line_info = find_periodic_lines(
         img_normalized,
         theta=theta,
         pitch=pitch,
@@ -135,9 +139,7 @@ def find_trenches(
         img_normalized,
         img_binarized,
         angle,
-        anchor_rho,
-        rho_min,
-        rho_max,
+        rhos,
         diagnostics=getitem_if_not_none(labeling_diagnostics, "set_finding"),
     )
     trench_sets = {}
@@ -151,9 +153,7 @@ def find_trenches(
         trench_sets[label] = find_trench_ends(
             img_masked,
             angle,
-            anchor_rho,
-            rho_min,
-            rho_max,
+            rhos,
             diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
         )
         trench_sets[label]["trench_set"] = label
@@ -170,10 +170,10 @@ def find_trenches(
                     width_to_line_width_ratio is not None,
                 ]
             )
-            > 1
+            != 1
         ):
             raise ValueError(
-                "may specify at most one of width, width_to_pitch_ratio, width_to_line_width_ratio"
+                "must specify exactly one of width, width_to_pitch_ratio, width_to_line_width_ratio"
             )
         if width is None:
             if width_to_pitch_ratio is not None:

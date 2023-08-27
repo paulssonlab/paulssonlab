@@ -1,11 +1,11 @@
-from paulssonlab.image_analysis import (
-    geometry,
-    image,
-    io,
-    readers,
-    segmentation,
-    trench_detection,
-    ui,
-    util,
-    workflow,
-)
+__all__ = [
+    "drift",
+    "geometry",
+    "image",
+    "readers",
+    "segmentation",
+    "trench_detection",
+    "ui",
+    "util",
+    "workflow",
+]

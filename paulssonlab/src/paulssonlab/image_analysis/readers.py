@@ -192,6 +192,8 @@ def get_hdf5_frame(filename, hdf5_path, slice_=()):
 def send_hdf5(filename, delayed=True):
     delayed = get_delayed(delayed)
     h5 = h5py.File(filename)
+    # TODO: this is currently useless,
+    # need to handle flexible file/dataset indexing (as supported by convert_nd2_to_hdf5)
     # TODO: slicing
     # TODO: send whole-file metadata
     for channel, channel_group in h5.items():
@@ -297,7 +299,10 @@ def _convert_nd2_to_hdf5(
 ):
     if "channel" in slices and "channel_num" in slices:
         raise ValueError("cannot specify both channel and channel_num slices")
-    nd2 = nd2reader.ND2Reader(nd2_filename)
+    if isinstance(nd2_filename, nd2reader.ND2Reader):
+        nd2 = nd2_filename
+    else:
+        nd2 = nd2reader.ND2Reader(nd2_filename)
     nd2_channels = nd2.metadata["channels"]
     frame = nd2.get_frame_2D()
     dtype = frame.dtype
