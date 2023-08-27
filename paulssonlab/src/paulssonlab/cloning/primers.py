@@ -1,6 +1,5 @@
 from functools import cached_property
 
-import primer3plus
 from Bio.Seq import Seq
 from Bio.SeqUtils import GC
 
@@ -269,6 +268,8 @@ def primer3_product_from_template(
 def primer3_amplicon_with_flanks(
     amplicon, flanks, tm=PRIMER3_DEFAULT_TM, return_explain=False, return_many=False
 ):
+    import primer3plus  # TODO: unmaintained
+
     amplicon_seq = str(get_seq(amplicon)).lower()
     trimmed_flanks = smoosh_and_trim_flanks(amplicon_seq, overhangs)
     design = primer3plus.Design()
