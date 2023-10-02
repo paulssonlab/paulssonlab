@@ -1,6 +1,7 @@
 import re
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
+from functools import partial
 from itertools import product as it_product
 from math import ceil
 from numbers import Integral
@@ -11,7 +12,6 @@ import networkx as nx
 from Bio.Seq import Seq
 from Bio.SeqFeature import ExactPosition, FeatureLocation, SeqFeature
 from Bio.SeqRecord import SeqRecord
-from cytoolz import partial
 
 from paulssonlab.cloning.enzyme import re_digest
 from paulssonlab.util import format_sign, sign
