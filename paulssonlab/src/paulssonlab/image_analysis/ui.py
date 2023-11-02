@@ -3,19 +3,12 @@ import imageio.v3 as iio
 import IPython.display
 import numpy as np
 
+from paulssonlab.util.numeric import scale_image
+
 
 def display_image(img, scale=False, downsample=None, format="jpg"):
-    # needed for downsample to work if we have extraneous singleton dimensions up front
-    img = img.squeeze()
-    if downsample is not None:
-        img = img[::downsample, ::downsample, ...]
-    if scale is True:
-        img_min = np.nanmin(img)
-        img = (img - img_min) / (np.nanmax(img) - img_min)
-    elif scale:
-        img = img - np.nanmin(img)
-        img = img / np.nanpercentile(img, scale * 100)
-    img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    img = scale_image(img, scale=scale, downsample=downsample)
+    img = (img * 255).astype(np.uint8)
     if format.lower() in ("jpg", "jpeg"):
         bytes_ = iio.imwrite("<bytes>", img, extension=".jpeg", quality=95)
     elif format.lower() == "png":
