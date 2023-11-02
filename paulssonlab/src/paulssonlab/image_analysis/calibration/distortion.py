@@ -4,7 +4,7 @@ import pandas as pd
 import skimage
 from sklearn.neighbors import KDTree
 
-from paulssonlab.util.numeric import scale_image
+from paulssonlab.image_analysis.image import scale_image
 
 
 def segment_puncta(

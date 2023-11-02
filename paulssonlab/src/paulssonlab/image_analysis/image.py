@@ -34,6 +34,21 @@ def downsample(img, factor):
     return img[::factor, ::factor]
 
 
+def scale_image(img, scale=False, downsample=None):
+    # needed for downsample to work if we have extraneous singleton dimensions up front
+    img = img.squeeze()
+    if downsample is not None:
+        img = img[::downsample, ::downsample, ...]
+    if scale is True:
+        img_min = np.nanmin(img)
+        img = (img - img_min) / (np.nanmax(img) - img_min)
+    elif scale:
+        img = img - np.nanmin(img)
+        img = img / np.nanpercentile(img, scale * 100)
+    img = np.clip(img, 0, 1)
+    return img
+
+
 def _accumulator_dtype(dtype):
     if np.issubdtype(dtype, np.bool_):
         return np.uint64

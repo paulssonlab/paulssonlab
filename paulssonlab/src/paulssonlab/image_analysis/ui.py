@@ -3,7 +3,7 @@ import imageio.v3 as iio
 import IPython.display
 import numpy as np
 
-from paulssonlab.util.numeric import scale_image
+from paulssonlab.image_analysis.image import scale_image
 
 
 def display_image(img, scale=False, downsample=None, format="jpg"):
