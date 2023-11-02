@@ -130,7 +130,7 @@ def get_eaton_fish_frame(filename):
 
 def send_eaton_fish(
     root_dir,
-    pattern,
+    pattern=r"fov=(?P<v>\d+)_config=(?P<c>\w+)_t=(?P<t>\d+)",
     axis_order="tvc",
     slices={},
     include_fixation=False,
