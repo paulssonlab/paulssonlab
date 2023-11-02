@@ -74,15 +74,20 @@ def _filter_puncta_df(
     return df_filtered, bad_labels
 
 
-def find_puncta(img, labels=None, segment_kwargs={}, filter_kwargs={}):
+def find_puncta(img, labels=None, filter=True, segment_kwargs={}, filter_kwargs={}):
     if labels is None:
         labels = segment_puncta(img, **segment_kwargs)
     df = measure_puncta(img, labels)
-    df_filtered, bad_labels = _filter_puncta_df(df, **filter_kwargs)
-    new_labels = labels.copy()
-    img_mask = np.isin(labels, bad_labels)
-    new_labels[img_mask] = -new_labels[img_mask]  # flip sign
-    return df_filtered, new_labels
+    if filter:
+        df, bad_labels = _filter_puncta_df(df, **filter_kwargs)
+        labels = labels.copy()
+        img_mask = np.isin(labels, bad_labels)
+        labels[img_mask] = -labels[img_mask]  # flip sign
+    return df, labels
+
+
+def translate_df(df, offset):
+    return df.assign(x=df["x"] + offset[0], y=df["y"] + offset[1])
 
 
 def plot_puncta(
@@ -90,17 +95,13 @@ def plot_puncta(
     labels=None,
     df=None,
     scale=True,
-    downsample=None,
     filter_labels=True,
 ):
     if img is not None:
-        img = scale_image(img, scale=scale, downsample=downsample)
+        img = scale_image(img, scale=scale)
     if labels is None:
         plot_img = img
     else:
-        if downsample is not None:
-            labels = labels.squeeze()
-            labels = labels[::downsample, ::downsample, ...]
         if filter_labels:
             labels = labels.copy()
             labels[labels < 0] = 0
@@ -108,6 +109,11 @@ def plot_puncta(
     if img is not None or labels is not None:
         plt.imshow(plot_img, cmap="gray")
     if df is not None:
+        if plot_img is not None:
+            df = df[
+                df["x"].between(0, plot_img.shape[1])
+                & df["y"].between(0, plot_img.shape[0])
+            ]
         plt.plot(
             df["x"],
             df["y"],
