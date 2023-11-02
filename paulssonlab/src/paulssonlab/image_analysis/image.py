@@ -237,8 +237,19 @@ def _quadratic_root(a, b, c):
 
 # SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
 # Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
+def radial_distortion(
+    coords, input_center=np.array([0, 0]), output_center=np.array([0, 0]), k1=0
+):
+    coords_centered = coords - input_center
+    r_d = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]
+    new_coords = output_center + coords_centered / (1 + k1 * r_d**2)
+    return new_coords
+
+
+# SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
+# Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
 def radial_distortion_inverse(
-    coords, input_center=np.array((0, 0)), output_center=np.array((0, 0)), k1=0
+    coords, input_center=np.array([0, 0]), output_center=np.array([0, 0]), k1=0
 ):
     coords_centered = coords - output_center
     r_u = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]

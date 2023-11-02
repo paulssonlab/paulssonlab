@@ -50,23 +50,40 @@ def measure_puncta(img, labels=None, segment_kwargs={}):
     return df
 
 
-def nearest_neighbors(df):
-    X = np.stack((df["centroid_weighted-0"], df["centroid_weighted-1"]), axis=1)
-    kdtree = KDTree(X)
-    dists, idxs = kdtree.query(X, k=2)
-    # get nearest non-identical neighbor
-    dists = dists[:, 1]
-    idxs = idxs[:, 1]
+def df_to_coords(df):
+    return np.stack((df["x"], df["y"]), axis=1)
+
+
+def nearest_neighbors_df(df, df2=None):
+    query_coords = df_to_coords(df)
+    if df2 is None:
+        ref_coords = None
+    else:
+        ref_coords = df_to_coords(df2)
+    return nearest_neighbors(query_coords, ref_coords)
+
+
+def nearest_neighbors(query_coords, ref_coords=None):
+    if ref_coords is None:
+        ref_coords = query_coords
+        # get nearest non-identical neighbor
+        neighbor_idx = 1
+    else:
+        neighbor_idx = 0
+    kdtree = KDTree(ref_coords)
+    dists, idxs = kdtree.query(query_coords, k=neighbor_idx + 1)
+    dists = dists[:, neighbor_idx]
+    idxs = idxs[:, neighbor_idx]
     return dists, idxs
 
 
 def _filter_puncta_df(
     df,
-    min_dist=15,
+    min_dist=5,  # 15 is maybe better for PSF-fitting
     max_intensity_factor=1.3,
 ):
     # filter out points with nearest neighbors closer than min_dist
-    dists, idxs = nearest_neighbors(df)
+    dists, idxs = nearest_neighbors_df(df)
     max_intensity = df["moments_weighted_central-0-0"].median() * max_intensity_factor
     bad_mask = (dists < min_dist) | (df["moments_weighted_central-0-0"] > max_intensity)
     bad_labels = df["label"][bad_mask]
@@ -74,16 +91,27 @@ def _filter_puncta_df(
     return df_filtered, bad_labels
 
 
-def find_puncta(img, labels=None, filter=True, segment_kwargs={}, filter_kwargs={}):
+def find_puncta(
+    img,
+    labels=None,
+    filter=True,
+    segment_kwargs={},
+    filter_kwargs={},
+    return_labels=False,
+):
     if labels is None:
         labels = segment_puncta(img, **segment_kwargs)
     df = measure_puncta(img, labels)
     if filter:
         df, bad_labels = _filter_puncta_df(df, **filter_kwargs)
-        labels = labels.copy()
-        img_mask = np.isin(labels, bad_labels)
-        labels[img_mask] = -labels[img_mask]  # flip sign
-    return df, labels
+        if return_labels:
+            labels = labels.copy()
+            img_mask = np.isin(labels, bad_labels)
+            labels[img_mask] = -labels[img_mask]  # flip sign
+    if return_labels:
+        return df, labels
+    else:
+        return df
 
 
 def translate_df(df, offset):
