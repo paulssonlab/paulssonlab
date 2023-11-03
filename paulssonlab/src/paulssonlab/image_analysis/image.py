@@ -1,5 +1,5 @@
 import warnings
-from functools import lru_cache, partial
+from functools import partial
 
 import numba
 import numpy as np
@@ -237,52 +237,101 @@ def _quadratic_root(a, b, c):
 
 # SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
 # Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
-def radial_distortion(
-    coords, input_center=np.array([0, 0]), output_center=np.array([0, 0]), k1=0
-):
-    coords_centered = coords - input_center
-    r_d = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]
-    new_coords = output_center + coords_centered / (1 + k1 * r_d**2)
+def radial_distortion(coords, k1, input_center=None, output_center=None):
+    if input_center is not None:
+        coords = coords - np.asarray(input_center)
+    r_d = np.sqrt((coords**2).sum(axis=-1))[..., np.newaxis]
+    new_coords = coords / (1 + k1 * r_d**2)
+    if output_center is not None:
+        new_coords += np.asarray(output_center)
     return new_coords
 
 
 # SEE: http://www.cs.ait.ac.th/~mdailey/papers/Bukhari-RadialDistortion.pdf
 # Bukhari, F., & Dailey, M. N. (2013). Automatic radial distortion estimation from a single image. Journal of mathematical imaging and vision, 45, 31-45.
-def radial_distortion_inverse(
-    coords, input_center=np.array([0, 0]), output_center=np.array([0, 0]), k1=0
-):
-    coords_centered = coords - output_center
-    r_u = np.sqrt((coords_centered**2).sum(axis=1))[:, np.newaxis]
+def radial_distortion_inverse(coords, k1, input_center=None, output_center=None):
+    if output_center is not None:
+        coords = coords - np.asarray(output_center)
+    r_u = np.sqrt((coords**2).sum(axis=-1))[..., np.newaxis]
     r_d = _quadratic_root(k1 * r_u, -1, r_u)
-    new_coords = input_center + (r_d / r_u) * coords_centered
+    with np.errstate(invalid="ignore"):
+        # center pixel has r_u = 0, which raises a warning (that we silence)
+        new_coords = (r_d / r_u) * coords
+    if input_center is not None:
+        new_coords += np.asarray(input_center)
     return new_coords
 
 
-@lru_cache(maxsize=1)
-def radial_distortion_coords(shape, k1):
-    input_center = (np.array(shape)[::-1] - 1) / 2
-    output_shape = np.ceil(input_center / (1 + k1 * input_center**2) * 2 + 1).astype(
-        np.int32
-    )[::-1]
-    output_center = (output_shape[::-1] - 1) / 2
+def radial_distortion_output(k1, input_shape, input_center):
+    input_shape = np.asarray(input_shape)
+    input_center = np.asarray(input_center)
+    # we don't use radial_distortion so that coords**2 in denominator
+    # is elementwise (no summing to get euclidean distance)
+    coords = np.stack((input_center, input_shape[::-1] - input_center))
+    output_center, output_lr = coords / (1 + k1 * coords**2)
+    output_shape = np.ceil(output_center + output_lr).astype(np.int32)[::-1]
+    return output_shape, output_center
+
+
+def center_from_shape(shape):
+    # -1 because skimage interprets whole integer coördinates
+    # as the centers of pixels. i.e., (0,0) is the upper-leftmost pixel
+    return (np.array(shape)[::-1] - 1) / 2
+
+
+def radial_distortion_coords(
+    k1,
+    input_shape,
+    input_center=None,
+    output_shape=None,
+    output_center=None,
+):
+    if input_center is None:
+        input_center = center_from_shape(input_shape)
+    else:
+        input_center = np.asarray(input_center)
+    if (
+        num_output_kwargs := sum([output_center is not None, output_shape is not None])
+    ) == 1:
+        raise ValueError(
+            "either both or neither of output_center and output_shape must be specified"
+        )
+    elif num_output_kwargs == 0:
+        output_shape, output_center = radial_distortion_output(
+            k1, input_shape, input_center
+        )
     return skimage.transform.warp_coords(
         partial(
             radial_distortion_inverse,
+            k1=k1,
             input_center=input_center,
             output_center=output_center,
-            k1=k1,
         ),
         output_shape,
     )
 
 
-def correct_radial_distortion(img, k1=None, coords=None, **kwargs):
+def correct_radial_distortion(
+    img,
+    k1=None,
+    coords=None,
+    input_center=None,
+    output_shape=None,
+    output_center=None,
+    **kwargs,
+):
     if coords is None:
         if k1 is None:
             raise ValueError(
                 "either k1 or coords (pre-computed with radial_distortion_coords) must be specified"
             )
-        coords = radial_distortion_coords(img.shape, k1)
+        coords = radial_distortion_coords(
+            k1,
+            img.shape,
+            input_center=input_center,
+            output_shape=output_shape,
+            output_center=output_center,
+        )
     return scipy.ndimage.map_coordinates(
         img,
         coords,
