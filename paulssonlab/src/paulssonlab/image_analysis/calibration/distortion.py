@@ -1,3 +1,4 @@
+import holoviews as hv
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -122,6 +123,7 @@ def plot_puncta(
     img=None,
     labels=None,
     df=None,
+    df2=None,
     scale=True,
     filter_labels=True,
 ):
@@ -153,3 +155,25 @@ def plot_puncta(
             markeredgewidth=0.5,
             alpha=0.5,
         )
+    if df2 is not None:
+        if plot_img is not None:
+            df2 = df2[
+                df2["x"].between(0, plot_img.shape[1])
+                & df2["y"].between(0, plot_img.shape[0])
+            ]
+        plt.plot(
+            df2["x"],
+            df2["y"],
+            marker="x",
+            mfc="none",
+            c="yellow",
+            markersize=2,
+            lw=0,
+            markeredgewidth=0.5,
+            alpha=0.5,
+        )
+
+
+def vectorfield_difference(a, b):
+    delta = b - a
+    return hv.VectorField.from_uv((a[:, 0], a[:, 1], delta[:, 0], delta[:, 1]))
