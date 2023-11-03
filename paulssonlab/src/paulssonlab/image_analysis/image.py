@@ -192,14 +192,6 @@ def psd2(img):
 radial_psd2 = compose(radial_profile, psd2)
 
 
-def sharpness(img, q=0.999, radius=1):
-    # FROM: https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry/7767755#7767755
-    # TODO: vectorize?? normalize?? verify against some kind of ground truth?
-    img_blurred = skimage.filters.gaussian(img, radius)
-    img_lofg = skimage.filters.laplace(img_blurred)
-    return np.percentile(img_lofg, 100 * q)
-
-
 def hessian_eigenvalues(img, sigma=1.5):
     return hessian_matrix_eigvals(
         hessian_matrix(
