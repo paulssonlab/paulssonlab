@@ -11,6 +11,7 @@ from paulssonlab.image_analysis.geometry import (
     iter_roi_crops,
     shift_rois,
 )
+from paulssonlab.image_analysis.image import TranslationTransform
 from paulssonlab.image_analysis.misc.holoborodko_diff import holo_diff
 from paulssonlab.image_analysis.trench_detection.core import plot_trenches
 
@@ -44,13 +45,6 @@ def trench_cell_endpoints(img, sigma=2, k=2, min_height=0.3, margin_factor=1):
     x1 = img[:cutoff1, :].mean(axis=0).argmax()
     x2 = img[cutoff2:, :].mean(axis=0).argmax()
     return np.array([[x1, y1], [x2, y2]])
-
-
-class TranslationTransform(skimage.transform.EuclideanTransform):
-    def estimate(self, src, dst):
-        translation = (dst - src).mean(axis=0)
-        self.params[0 : self.dimensionality, self.dimensionality] = translation
-        return True
 
 
 def median_translation(data, diagnostics=None, **kwargs):

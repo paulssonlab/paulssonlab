@@ -221,6 +221,13 @@ def gaussian_box_approximation(ary, sigma, n=3, mode="nearest"):
     return ary
 
 
+class TranslationTransform(skimage.transform.EuclideanTransform):
+    def estimate(self, src, dst):
+        translation = (dst - src).mean(axis=0)
+        self.params[0 : self.dimensionality, self.dimensionality] = translation
+        return True
+
+
 # SEE: https://math.stackexchange.com/a/2007723
 def _quadratic_root(a, b, c):
     # we've chosen the correct root for for radial_transform (smallest positive root)
