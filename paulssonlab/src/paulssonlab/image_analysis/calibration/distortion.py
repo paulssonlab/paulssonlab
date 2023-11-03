@@ -122,8 +122,8 @@ def translate_df(df, offset):
 def plot_puncta(
     img=None,
     labels=None,
-    df=None,
-    df2=None,
+    coords=None,
+    coords2=None,
     scale=True,
     filter_labels=True,
 ):
@@ -138,15 +138,25 @@ def plot_puncta(
         plot_img = skimage.color.label2rgb(labels, img)
     if img is not None or labels is not None:
         plt.imshow(plot_img, cmap="gray")
-    if df is not None:
+    if coords is not None:
+        if isinstance(coords, pd.DataFrame):
+            coords_x = coords["x"]
+            coords_y = coords["y"]
+        else:
+            coords_x = coords[:, 0]
+            coords_y = coords[:, 1]
         if plot_img is not None:
-            df = df[
-                df["x"].between(0, plot_img.shape[1])
-                & df["y"].between(0, plot_img.shape[0])
-            ]
+            coords_mask = (
+                (-0.5 <= coords_x)
+                & (coords_x <= plot_img.shape[1] - 0.5)
+                & (-0.5 <= coords_y)
+                & (coords_y <= plot_img.shape[0] - 0.5)
+            )
+            coords_x = coords_x[coords_mask]
+            coords_y = coords_y[coords_mask]
         plt.plot(
-            df["x"],
-            df["y"],
+            coords_x,
+            coords_y,
             marker="o",
             mfc="none",
             c="w",
@@ -155,15 +165,25 @@ def plot_puncta(
             markeredgewidth=0.5,
             alpha=0.5,
         )
-    if df2 is not None:
+    if coords2 is not None:
+        if isinstance(coords2, pd.DataFrame):
+            coords2_x = coords2["x"]
+            coords2_y = coords2["y"]
+        else:
+            coords2_x = coords2[:, 0]
+            coords2_y = coords2[:, 1]
         if plot_img is not None:
-            df2 = df2[
-                df2["x"].between(0, plot_img.shape[1])
-                & df2["y"].between(0, plot_img.shape[0])
-            ]
+            coords2_mask = (
+                (-0.5 <= coords2_x)
+                & (coords2_x <= plot_img.shape[1] - 0.5)
+                & (-0.5 <= coords2_y)
+                & (coords2_y <= plot_img.shape[0] - 0.5)
+            )
+            coords2_x = coords2_x[coords2_mask]
+            coords2_y = coords2_y[coords2_mask]
         plt.plot(
-            df2["x"],
-            df2["y"],
+            coords2_x,
+            coords2_y,
             marker="x",
             mfc="none",
             c="yellow",
