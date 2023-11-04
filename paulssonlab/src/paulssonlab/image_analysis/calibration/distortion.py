@@ -1,11 +1,15 @@
+import itertools as it
+
 import holoviews as hv
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import skimage
+from scipy.optimize import minimize
 from sklearn.neighbors import KDTree
+from tqdm.auto import tqdm, trange
 
-from paulssonlab.image_analysis.image import scale_image
+from paulssonlab.image_analysis.image import radial_distortion, scale_image
 
 
 def segment_puncta(
@@ -117,6 +121,161 @@ def find_puncta(
 
 def translate_df(df, offset):
     return df.assign(x=df["x"] + offset[0], y=df["y"] + offset[1])
+
+
+def optimize_radial_distortion_correction(nd2, **kwargs):
+    # def bounds_func(shape):
+    #     return ((0, 1e-8), (0, nd2.sizes["x"] - 1), (0, nd2.sizes["y"] - 1))
+
+    def correction_func(coords, params):
+        return radial_distortion(
+            coords, params[0], (params[1], params[2]), (params[1], params[2])
+        )
+
+    # return optimize_correction(nd2, correction_func, initial_params, bounds, **kwargs)
+    initial_params = (1e-9, nd2.sizes["x"] / 2, nd2.sizes["y"] / 2)
+    bounds = ((0, 1e-8), (0, nd2.sizes["x"] - 1), (0, nd2.sizes["y"] - 1))
+    res = optimize_correction(nd2, correction_func, initial_params, bounds, **kwargs)
+    return res  # TODO
+
+
+def _prepare_optimize_correction(
+    nd2,
+    fov_pairs,
+    transform_type=skimage.transform.EuclideanTransform,
+    t=0,
+    z_idx=0,
+    channel_idx=0,
+    objective_magnification=20,
+    pixel_size=4.25,
+):
+    xs = np.asarray(nd2._parser._raw_metadata.x_data)
+    ys = np.asarray(nd2._parser._raw_metadata.y_data)
+    coords_distorted = {}
+    transforms = {}
+    for fov_pair in fov_pairs:
+        fov1, fov2 = fov_pair
+        if (coords1 := coords_distorted.get(fov1)) is None:
+            img = nd2.get_frame_2D(v=fov1, t=t, z=z_idx, c=channel_idx)
+            coords1 = df_to_coords(find_puncta(img))
+            del img
+            coords_distorted[fov1] = coords1
+        if (coords2 := coords_distorted.get(fov2)) is None:
+            img = nd2.get_frame_2D(v=fov2, t=t, z=z_idx, c=channel_idx)
+            coords2 = df_to_coords(find_puncta(img))
+            del img
+            coords_distorted[fov2] = coords2
+        stage_offset = np.array(
+            [
+                xs[fov2] - xs[fov1],
+                ys[fov2] - ys[fov1],
+            ]
+        )
+        translation_guess = stage_offset * objective_magnification / pixel_size
+        # TODO: try TranslationTransform?
+        transform = transform_type(translation=translation_guess)
+        transforms[fov_pair] = transform
+    return coords_distorted, transforms
+
+
+def optimize_correction(
+    nd2,
+    correction_func,
+    initial_params,
+    bounds,
+    transform_type=skimage.transform.EuclideanTransform,
+    t=0,
+    z_idx=0,
+    channel_idx=0,
+    fov_pairs=None,
+    objective_magnification=20,
+    pixel_size=4.25,
+    max_correspondence_dist=5,
+    num_iters=1,
+    progress_bar=tqdm,
+    prepared=None,
+    **kwargs,
+):
+    if fov_pairs is None:
+        fov_pairs = it.pairwise(range(nd2.sizes["v"]))
+    fov_pairs = list(fov_pairs)
+    if progress_bar is not None:
+        fov_pairs_progress = progress_bar(fov_pairs)
+    else:
+        fov_pairs_progress = fov_pairs
+    if prepared is None:
+        coords_distorted, transforms = _prepare_optimize_correction(
+            nd2,
+            fov_pairs_progress,
+            transform_type=transform_type,
+            t=t,
+            z_idx=z_idx,
+            channel_idx=channel_idx,
+            objective_magnification=objective_magnification,
+            pixel_size=pixel_size,
+        )
+    else:
+        coords_distorted, transforms = prepared
+
+    def objective_func(params, correction_func, coords1_all, coords2_all, transform):
+        se = 0
+        for coords1, coords2 in zip(coords1_all, coords2_all):
+            coords1_corrected = correction_func(coords1, params)
+            coords2_corrected = correction_func(coords2, params)
+            transform.estimate(coords1_corrected, coords2_corrected)
+            se += (
+                (coords1_corrected - transform.inverse(coords2_corrected)) ** 2
+            ).sum()
+        rmse = np.sqrt(se / len(coords1_all))
+        return rmse
+
+    params = initial_params
+    for iter_num in trange(num_iters + 1):
+        coords1_correspondences = []
+        coords2_correspondences = []
+        for fov_pair in fov_pairs:
+            fov1, fov2 = fov_pair
+            coords1_distorted = coords_distorted[fov1]
+            coords2_distorted = coords_distorted[fov2]
+            coords1 = correction_func(coords1_distorted, params)
+            coords2 = correction_func(coords2_distorted, params)
+            transform = transforms[fov_pair]
+            coords2_transformed = transform.inverse(coords2)
+            correspondence_dists, correspondence_idxs = nearest_neighbors(
+                coords1, coords2_transformed
+            )
+            correspondence_mask = correspondence_dists < max_correspondence_dist
+            coords1_correspondence = coords1_distorted[correspondence_mask]
+            coords2_correspondence = coords2_distorted[correspondence_idxs][
+                correspondence_mask
+            ]
+            transform.estimate(coords1_correspondence, coords2_correspondence)
+            coords1_correspondences.append(coords1_correspondence)
+            coords2_correspondences.append(coords2_correspondence)
+        if iter_num == num_iters:
+            # last iteration: re-estimate transforms/correspondences before returning
+            # (this only matters if we return the transforms or correspondences)
+            return res
+        res = minimize(
+            objective_func,
+            initial_params,
+            **{
+                "method": "L-BFGS-B",
+                "bounds": bounds,
+                "args": (
+                    correction_func,
+                    coords1_correspondences,
+                    coords2_correspondences,
+                    transform_type(),
+                ),
+                **kwargs,
+            },
+        )
+        if not res.success:
+            raise Exception(
+                f"optimizer not successful (status {res.status}): {res.message}"
+            )
+        params = res.x
 
 
 def plot_puncta(
