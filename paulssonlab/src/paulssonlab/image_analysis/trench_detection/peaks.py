@@ -145,6 +145,6 @@ def find_periodic_peaks(
         **dict(zip(("prominences", "left_bases", "right_bases"), prominence_data)),
         **dict(zip(("widths", "width_heights", "left_ips", "right_ips"), width_data)),
     }
-    trench_info = pd.DataFrame(trench_info)
+    trench_info = pd.DataFrame(trench_info).rename_axis(index="trench_line")
     info = dict(pitch=pitch, offset=offset)
     return refined_idxs, info, trench_info

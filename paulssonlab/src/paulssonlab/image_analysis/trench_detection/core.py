@@ -1,16 +1,11 @@
 import holoviews as hv
 import numpy as np
 import pandas as pd
-import skimage.morphology
 
 from paulssonlab.image_analysis.geometry import get_image_limits
+from paulssonlab.image_analysis.trench_detection.end_finding import find_trench_ends
 from paulssonlab.image_analysis.trench_detection.hough import find_periodic_lines
 from paulssonlab.image_analysis.trench_detection.peaks import find_periodic_peaks
-from paulssonlab.image_analysis.trench_detection.set_finding import (
-    binarize_trench_image,
-    find_trench_ends,
-    find_trench_sets_by_cutting,
-)
 from paulssonlab.image_analysis.ui import RevImage
 from paulssonlab.image_analysis.util import getitem_if_not_none
 
@@ -54,16 +49,24 @@ def get_trench_bboxes(trenches, width, x_lim, y_lim, **kwargs):
     return bboxes
 
 
-def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
+def plot_trenches(trenches_trenches_df, bboxes=True, lines=False, labels=False):
     plots = []
     if lines:
         top_endpoints = (
-            np.vstack((trenches_df["top_x"].values, trenches_df["top_y"].values)).T
+            np.vstack(
+                (
+                    trenches_trenches_df["top_x"].values,
+                    trenches_trenches_df["top_y"].values,
+                )
+            ).T
             + 0.5
         )
         bottom_endpoints = (
             np.vstack(
-                (trenches_df["bottom_x"].values, trenches_df["bottom_y"].values)
+                (
+                    trenches_trenches_df["bottom_x"].values,
+                    trenches_trenches_df["bottom_y"].values,
+                )
             ).T
             + 0.5
         )
@@ -81,10 +84,10 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
     if bboxes:
         bbox_plot = hv.Rectangles(
             (
-                trenches_df["ul_x"],
-                trenches_df["lr_y"] + 1,
-                trenches_df["lr_x"] + 1,
-                trenches_df["ul_y"],
+                trenches_trenches_df["ul_x"],
+                trenches_trenches_df["lr_y"] + 1,
+                trenches_trenches_df["lr_x"] + 1,
+                trenches_trenches_df["ul_y"],
             )
         ).opts(fill_color=None, line_color="red")
         plots.append(bbox_plot)
@@ -94,9 +97,9 @@ def plot_trenches(trenches_df, bboxes=True, lines=False, labels=False):
         # 2) bokeh doesn't allow text size to be set in data coördinates (so it scales with zoom level)
         label_plot = hv.Labels(
             (
-                trenches_df["ul_x"],
-                trenches_df["ul_y"],
-                trenches_df.index.values.astype(str),
+                trenches_trenches_df["ul_x"],
+                trenches_trenches_df["ul_y"],
+                trenches_trenches_df.index.values.astype(str),
             )
         ).opts(text_color="white", text_font_size="10pt", xoffset=2, yoffset=2)
         plots.append(label_plot)
@@ -113,55 +116,34 @@ def find_trenches(
     max_angle=np.deg2rad(10),
     num_angles=400,
     peak_func=find_periodic_peaks,
-    set_finding_func=find_trench_sets_by_cutting,
+    end_finding_func=find_trench_ends,
     diagnostics=None,
     join_info=True,
     return_bboxes=True,
 ):
-    labeling_diagnostics = getitem_if_not_none(diagnostics, "labeling")
-    img_normalized, img_binarized = binarize_trench_image(
-        img,
-        diagnostics=getitem_if_not_none(labeling_diagnostics, "binarize_trench_image"),
-    )
     if angle is None:
         theta = np.linspace(-max_angle, max_angle, num_angles)
     else:
         theta = [angle]
     angle, rhos, info, line_info = find_periodic_lines(
-        img_normalized,
+        img,
         theta=theta,
         pitch=pitch,
         peak_func=peak_func,
-        diagnostics=getitem_if_not_none(labeling_diagnostics, "find_periodic_lines"),
+        diagnostics=getitem_if_not_none(diagnostics, "find_periodic_lines"),
     )
     if line_info is not None:
         line_info.columns = [f"line_{c}" for c in line_info.columns]
-    img_labels, label_index = set_finding_func(
-        img_normalized,
-        img_binarized,
+    trenches_df = end_finding_func(
+        img,
         angle,
         rhos,
-        diagnostics=getitem_if_not_none(labeling_diagnostics, "set_finding"),
+        diagnostics=getitem_if_not_none(diagnostics, "end_finding"),
     )
-    trench_sets = {}
-    for label in label_index:
-        label_diagnostics = getitem_if_not_none(diagnostics, "label_{}".format(label))
-        img_masked = np.where(
-            skimage.morphology.binary_dilation(img_labels == label),
-            img_normalized,
-            np.percentile(img_normalized, 5),
-        )
-        trench_sets[label] = find_trench_ends(
-            img_masked,
-            angle,
-            rhos,
-            diagnostics=getitem_if_not_none(label_diagnostics, "find_trench_ends"),
-        )
-        trench_sets[label]["trench_set"] = label
-        if line_info is not None:
-            trench_sets[label] = trench_sets[label].join(line_info)
-    trenches_df = pd.concat(trench_sets.values())
-    trenches_df.reset_index(drop=True, inplace=True)
+    if line_info is not None:
+        trenches_df = trenches_df.join(line_info, on="trench_line")
+    trenches_df.reset_index(inplace=True)
+    trenches_df.rename_axis(index="roi", inplace=True)
     if return_bboxes:
         if (
             sum(
