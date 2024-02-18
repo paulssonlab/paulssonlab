@@ -9,6 +9,7 @@ import h5py
 import nd2reader
 import numpy as np
 import pandas as pd
+import zarr
 from cytoolz import excepts
 from tqdm.auto import tqdm
 
@@ -215,11 +216,11 @@ def send_hdf5(filename, delayed=True):
                     yield msg
 
 
-def convert_nd2_to_hdf5(
+def convert_nd2_to_array(
     nd2_filename,
-    hdf5_path,
-    file_axes=["t", "fov"],
-    dataset_axes=["channel"],
+    output_filename,
+    file_axes=[],
+    dataset_axes=["fov", "channel"],
     slice_axes=None,
     chunks=dict(
         z=None,
@@ -230,7 +231,15 @@ def convert_nd2_to_hdf5(
         width=None,
     ),
     slices={},
+    format="zarr",
+    **kwargs,
 ):
+    if not isinstance(output_filename, str):
+        raise ValueError(
+            "output_filename must be a string, and should include a trailing slash (/) if it is a directory"
+        )
+    if format not in ["zarr", "hdf5"]:
+        raise ValueError("format must be zarr or hdf5")
     file_and_dataset_axes = set(file_axes) | set(dataset_axes)
     unknown_axes = file_and_dataset_axes - set(
         ["t", "fov", "channel", "channel_num", "z"]
@@ -250,34 +259,45 @@ def convert_nd2_to_hdf5(
     # the keys given to dataset_shape_func and dataset_chunks_func
     # have keys named channel, t (not channel_idx, t_idx)
     dataset_creation_axes = [axis.split("_")[0] for axis in slice_axes]
-    hdf5_filename = str(hdf5_path)
     if file_axes:
-        hdf5_filename += "_".join([f"{a}={{{a}}}" for a in file_axes])
-    if not (
-        hdf5_filename.lower().endswith(".hdf5") or hdf5_filename.lower().endswith(".h5")
-    ):
-        hdf5_filename += r".hdf5"
-    filename_func = lambda key: hdf5_filename.format(
-        **{axis: v for axis, v in key.items() if axis in file_axes}
-    )
-    dataset_func = lambda key: "/".join(f"{axis}={key[axis]}" for axis in dataset_axes)
-    slice_func = lambda key: (
-        *(key[axis] for axis in slice_axes),
-        slice(None),
-        slice(None),
-    )
-    dataset_shape_func = lambda key: (
-        *(len(key[axis]) for axis in dataset_creation_axes),
-        key["height"],
-        key["width"],
-    )
-    dataset_chunks_func = lambda key: tuple(
-        dataset_shape_func(key)[axis_idx]
-        if chunks[axis] is None
-        else min(chunks[axis], dataset_shape_func(key)[axis_idx])
-        for axis_idx, axis in enumerate([*dataset_creation_axes, "height", "width"])
-    )
-    _convert_nd2_to_hdf5(
+        output_filename += "_".join([f"{a}={{{a}}}" for a in file_axes])
+    if format == "zarr":
+        if not (output_filename.lower().endswith(".zarr")):
+            output_filename += ".zarr"
+    elif format == "hdf5":
+        if not (
+            output_filename.lower().endswith(".hdf5")
+            or output_filename.lower().endswith(".h5")
+        ):
+            output_filename += ".hdf5"
+
+    def filename_func(key):
+        return output_filename.format(
+            **{axis: v for axis, v in key.items() if axis in file_axes}
+        )
+
+    def dataset_func(key):
+        return "/".join(f"{axis}={key[axis]}" for axis in dataset_axes)
+
+    def slice_func(key):
+        return (*(key[axis] for axis in slice_axes), slice(None), slice(None))
+
+    def dataset_shape_func(key):
+        return (
+            *(len(key[axis]) for axis in dataset_creation_axes),
+            key["height"],
+            key["width"],
+        )
+
+    def dataset_chunks_func(key):
+        return tuple(
+            dataset_shape_func(key)[axis_idx]
+            if chunks[axis] is None
+            else min(chunks[axis], dataset_shape_func(key)[axis_idx])
+            for axis_idx, axis in enumerate([*dataset_creation_axes, "height", "width"])
+        )
+
+    _convert_nd2_to_array(
         nd2_filename,
         filename_func,
         dataset_func,
@@ -285,10 +305,12 @@ def convert_nd2_to_hdf5(
         dataset_shape_func,
         dataset_chunks_func,
         slices=slices,
+        format=format,
+        **kwargs,
     )
 
 
-def _convert_nd2_to_hdf5(
+def _convert_nd2_to_array(
     nd2_filename,
     filename_func,
     dataset_func,
@@ -296,7 +318,11 @@ def _convert_nd2_to_hdf5(
     dataset_shape_func,
     dataset_chunks_func,
     slices={},
+    format="zarr",
+    zarr_store_func=None,
 ):
+    if format not in ["zarr", "hdf5"]:
+        raise ValueError("format must be zarr or hdf5")
     if "channel" in slices and "channel_num" in slices:
         raise ValueError("cannot specify both channel and channel_num slices")
     if isinstance(nd2_filename, nd2reader.ND2Reader):
@@ -326,7 +352,7 @@ def _convert_nd2_to_hdf5(
     )
     zs = _select_indices(np.arange(nd2.sizes.get("z", 1)), slices.get("z", slice(None)))
     ts = _select_indices(np.arange(nd2.sizes.get("t", 1)), slices.get("t", slice(None)))
-    hdf5_files = {}
+    output_files = {}
     try:
         for channel_idx, channel_num in enumerate(
             tqdm(channel_nums, desc="c", leave=None)
@@ -347,14 +373,25 @@ def _convert_nd2_to_hdf5(
                             t_idx=t_idx,
                         )
                         frame = nd2.get_frame_2D(c=channel_num, v=fov, z=z, t=t)
-                        hdf5_filename = filename_func(key)
-                        hdf5_file = hdf5_files.get(hdf5_filename)
-                        if hdf5_file is None:
-                            hdf5_file = hdf5_files[hdf5_filename] = h5py.File(
-                                hdf5_filename, "a"
-                            )
+                        output_filename = filename_func(key)
+                        Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
+                        output_file = output_files.get(output_filename)
+                        if output_file is None:
+                            if format == "zarr":
+                                if zarr_store_func:
+                                    store = zarr_store_func(output_filename)
+                                    zarr_file = zarr.group(store=store)
+                                else:
+                                    zarr_file = zarr.hierarchy.open_group(
+                                        output_filename, "a"
+                                    )
+                                output_file = output_files[output_filename] = zarr_file
+                            elif format == "hdf5":
+                                output_file = output_files[output_filename] = h5py.File(
+                                    output_filename, "a"
+                                )
                         dataset_path = dataset_func(key)
-                        if dataset_path not in hdf5_file:
+                        if dataset_path not in output_file:
                             dataset_key = dict(
                                 # this key is called channel, not channel_nums
                                 # for naming consistency in the key that is
@@ -369,15 +406,18 @@ def _convert_nd2_to_hdf5(
                             )
                             dataset_shape = dataset_shape_func(dataset_key)
                             dataset_chunks = dataset_chunks_func(dataset_key)
-                            hdf5_file.create_dataset(
+                            output_file.create_dataset(
                                 dataset_path,
                                 shape=dataset_shape,
                                 chunks=dataset_chunks,
                                 dtype=dtype,
                             )
                         slice_ = slice_func(key)
-                        hdf5_file[dataset_path][slice_] = frame
+                        output_file[dataset_path][slice_] = frame
 
     finally:
-        for hdf5_file in hdf5_files.values():
-            hdf5_file.close()
+        for output_file in output_files.values():
+            if format == "zarr":
+                output_file.store.close()
+            elif format == "hdf5":
+                output_file.close()
