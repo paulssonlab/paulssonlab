@@ -1,12 +1,12 @@
 default_stages: [commit]
 repos:
 -   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 5.13.2
     hooks:
     -   id: isort
         name: isort (python)
 -   repo: https://github.com/psf/black
-    rev: 23.10.0
+    rev: 24.2.0
     hooks:
     -   id: black
 -   repo: https://github.com/pre-commit/pre-commit-hooks
@@ -24,7 +24,7 @@ repos:
     -   id: check-merge-conflict
     -   id: check-case-conflict
 -   repo: https://github.com/shenker/pre-commit-hooks.git
-    rev: 87cc13a9113b48feb5f26bb9be17376e19d8b00b
+    rev: a2410ed28f3545703a21cebfe90803f90cb52f15
     hooks:
     -   id: fix-environment-yamls
     -   id: tag-directories
