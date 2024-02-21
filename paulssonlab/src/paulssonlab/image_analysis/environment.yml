@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - av
   - black
   - bokeh
   - cachetools
@@ -20,6 +21,7 @@ dependencies:
   - jupyterlab
   - jupyterlab_code_formatter
   - matplotlib-base
+  - nd2reader
   - numba
   - numcodecs
   - numpy
@@ -29,11 +31,10 @@ dependencies:
   - py-opencv
   - pyarrow
   - pyinstrument
-  - pytables
-  - python-lmdb
   - scikit-image
   - scikit-learn
   - scipy
+  - split-file-reader
   - streamz
   - tornado
   - wrapt
