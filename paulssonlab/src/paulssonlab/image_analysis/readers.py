@@ -4,7 +4,6 @@ from numbers import Integral
 from pathlib import Path
 
 import cachetools
-import dask
 import h5py
 import nd2reader
 import numpy as np
@@ -44,8 +43,8 @@ def _select_indices(idxs, slice_):
         return slice_
 
 
-# TODO: random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
-# (better for testing)
+# TODO: add random_axes argument for testing?
+# random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
 def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
     delayed = get_delayed(delayed)
     nd2 = nd2reader.ND2Reader(filename)
@@ -74,7 +73,6 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
         # we can put arbitrary per-frame metadata here
         # TODO: do we need a way to encode metadata that differs between individual frames? [maybe not.]
         image_metadata = {
-            "dummy_metadata": 0,
             "channel": channel,
             "z_level": z_level,
             "fov_num": fov_num,
@@ -186,6 +184,8 @@ def send_eaton_fish(
             yield msg
 
 
+# TODO: handle more elegantly
+# (open file pool, etc.)
 def get_hdf5_frame(filename, hdf5_path, slice_=()):
     return h5py.File(filename)[hdf5_path][slice_]
 
@@ -194,7 +194,7 @@ def send_hdf5(filename, delayed=True):
     delayed = get_delayed(delayed)
     h5 = h5py.File(filename)
     # TODO: this is currently useless,
-    # need to handle flexible file/dataset indexing (as supported by convert_nd2_to_hdf5)
+    # need to handle flexible file/dataset indexing (as supported by convert_nd2_to_array)
     # TODO: slicing
     # TODO: send whole-file metadata
     for channel, channel_group in h5.items():
@@ -291,9 +291,11 @@ def convert_nd2_to_array(
 
     def dataset_chunks_func(key):
         return tuple(
-            dataset_shape_func(key)[axis_idx]
-            if chunks[axis] is None
-            else min(chunks[axis], dataset_shape_func(key)[axis_idx])
+            (
+                dataset_shape_func(key)[axis_idx]
+                if chunks[axis] is None
+                else min(chunks[axis], dataset_shape_func(key)[axis_idx])
+            )
             for axis_idx, axis in enumerate([*dataset_creation_axes, "height", "width"])
         )
 
