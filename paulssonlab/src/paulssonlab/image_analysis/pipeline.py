@@ -1,5 +1,5 @@
 import itertools as it
-from functools import compose, partial
+from functools import compose
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 import zarr
 from cytoolz import get_in
 
+from paulssonlab.image_analysis.delayed import DelayedArrayStore, DelayedTableStore
 from paulssonlab.image_analysis.drift import find_feature_drift, get_drift_features
 from paulssonlab.image_analysis.geometry import filter_rois, iter_roi_crops, shift_rois
 from paulssonlab.image_analysis.segmentation.watershed import (
@@ -236,71 +237,11 @@ def composite_for_segmentation(imgs):
     return np.sum([img / img.max() for img in imgs.values()], axis=0)
 
 
-class DelayedStore:
-    pass
-
-
-class DelayedArrayStore(DelayedStore):
-    pass
-
-
-class DelayedTableStore(DelayedStore):
-    pass
-
-
-class CallbackQueue:
-    def __init__(self, add_callback=None, before_callback=None, after_callback=None):
-        self.add_callback = add_callback
-        self.before_callback = before_callback
-        self.after_callback = after_callback
-        self.queue = []
-
-    @classmethod
-    def expand_conditions(conditions):
-        return sum(
-            [
-                [(obj, k) for k in key] if isinstance(key, list) else [(obj, key)]
-                for obj, key in conditions
-            ],
-            [],
-        )
-
-    def add(self, conditions, func, *args, **kwargs):
-        for condition in conditions:
-            if len(condition) != 2:
-                raise ValueError(
-                    f"expecting length 2 tuple (obj, key) instead of {condition}"
-                )
-        if args or kwargs:
-            func = partial(func, *args, **kwargs)
-        if self.add_callback:
-            add_res = self.add_callback(conditions, func)
-        self.queue.append((conditions, func, add_res))
-
-    def run(self):
-        while True:
-            any_fired = False
-            for idx in enumerate(self.queue):
-                conditions, func, add_res = self.queue[idx]
-                if all(key in obj for obj, key in self.expand_conditions(conditions)):
-                    self._run(conditions, func, add_res)
-                    any_fired = True
-
-            if not any_fired:
-                break
-        return
-
-    def _run(self, conditions, func, add_res):
-        if self.before_callback:
-            before_res = self.before_callback(conditions, func, add_res)
-        else:
-            before_res = None
-        func()
-        if self.after_callback:
-            self.after_callback(conditions, func, add_res, before_res)
-
-
 class Pipeline:
+    pass  # TODO: move boilerplate here
+
+
+class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
         "composite_func": composite_for_segmentation,
         "roi_detection_func": find_trenches,
@@ -315,16 +256,22 @@ class Pipeline:
             config = {}
         config = {**self.DEFAULT_CONFIG, **config}
         self.config = config
-        self.delayed = get_delayed(delayed)
-        self.callbacks = CallbackQueue()
+        # self.delayed = get_delayed(delayed)
+        # self._callbacks = CallbackQueue()
+        # self._runner = Runner.get(delayed)
+        self.raw_frames = DelayedArrayStore(output_dir / "raw")
+        self.processed_frames = DelayedArrayStore(output_dir / "processed")
+        self.crops = DelayedArrayStore(output_dir / "crops")
+        self.segmentation_masks = DelayedArrayStore(output_dir / "segmentation_masks")
+        self.fish_crops = DelayedArrayStore(output_dir / "fish_crops")
+
+    def delayed(self, func, *args, **kwargs):
+        return self._runner.delayed(func, *args, **kwargs)
 
     def validate_config(self):
         for key in self.REQUIRED_CONFIG:
             if not get_in(self.config, *key):
                 raise ValueError(f"missing required config key {key}")
-
-    def add_callback(self, conditions, func, *args, **kwargs):
-        return self.callbacks.add(conditions, self.delayed(func, *args, **kwargs))
 
     # we should pick a name that's better/more intuitive than handle_message
     def handle_message(self, msg):
@@ -354,101 +301,49 @@ class Pipeline:
         t = metadata["t"]
         channel = metadata["channel"]
         # store raw image ("/raw")
+        raw_frame = self.raw_frames.setdefault((fov_num, channel, t), image)
         # preprocess image
         # store preprocessed whole frame image ("/frame")
+        if self.config["preprocess_func"]:
+            processed_frame = self.processed_frames.setdefault(
+                (fov_num, channel, t),
+                self.delayed(self.config["preprocess_func"], image),
+            )
+        else:
+            processed_frame = raw_frame
         # if all segmentation channels available -> detect rois
         segmentation_frame_keys = [
-            (fov_num, channel, t) for channel in self.config["segmentation_channels"]
+            (fov_num, seg_channel, t)
+            for seg_channel in self.config["segmentation_channels"]
         ]
-        self.add_callback(
-            [self.frames, segmentation_frame_keys], self.do_roi_detection, image
+        # self.add_callback(
+        #     [self.frames, segmentation_frame_keys], self.do_roi_detection, image
+        # )
+        # get rois
+        roi_detection_func = compose(
+            self.config["roi_detection_func"], self.config["composite_func"]
         )
-        self.rois[(fov_num, t)] = self.delayed(
-            compose(find_trenches, composite_for_segmentation), image
+        segmentation_frames = [self.frames[k] for k in segmentation_frame_keys]
+        rois = self.rois.setdefault(
+            (fov_num, t), self.delayed(roi_detection_func, segmentation_frames)
         )
-        # USE FUNCS FROM CONFIG
         # if rois available -> crop
-        # if crop segmentation available -> measure
-
-    def do_roi_detection(self, image):
-        pass
+        crops = self.crops.setdefault(
+            (fov_num, channel, t), self.delayed(crop_rois, rois, processed_frame)
+        )
+        # # if crop available -> segment crops
+        # seg_masks = self.segmentation_masks.setdefault(
+        #     (fov_num, t),
+        #     self.delayed(segment_crops, rois, crops,
+        # )
+        # # if crop segmentation available -> measure
+        ### TODO: segmentationless measurement
+        self.measurements.setdefault(
+            (fov_num, t, channel),
+            self.delayed(measure_crops),
+            crops,
+            # seg_masks,
+        )
 
     def handle_fish_barcode(self, msg):
         pass  # TODO
-
-
-# TODO: use a namedtuple (or typing.NamedTuple, or dataclass) for keys so that fields are named
-def handle_image(self, msg):
-    image = msg["image"]
-    metadata = msg["metadata"]
-    fov_num = metadata["fov_num"]
-    t = metadata["t"]
-    channel = metadata["channel"]
-    raw_key = ("raw", fov_num, t, channel)
-    # store raw image (in production, we won't do this, we will only store crops as we do below)
-    self.array[raw_key] = image
-    # TODO: we need a way to store per-frame metadata and write it to disk
-    trenches_key = (
-        "trenches",
-        fov_num,
-    )
-    trenches = self.table.get(trenches_key)
-    # check if we have done trench detection for this FOV
-    if trenches is None and channel == trench_detection_channel:
-        # if not, find trenches and save the resulting table
-        trenches = self.delayed(new.image.find_trench_bboxes)(
-            image, peak_func=trench_detection.peaks.find_peaks
-        )
-        self.table[trenches_key] = trenches
-    # this list keeps track of all the raw frames that need to be cropped
-    # frames for multiple channels will accumulate in this list until we get a frame for trench_detection_channel
-    # if we have already processed such a frame, then keys_to_crop will contain only the current frame (raw_key)
-    keys_to_crop = self.state.setdefault(("keys_to_crop", fov_num), [])
-    keys_to_crop.append(raw_key)
-    # we only can do further processing if we have already detected trenches for this FOV
-    if trenches is not None:
-        for raw_to_crop in keys_to_crop:
-            crop_key = ("crops", *raw_to_crop[1:])
-            # save trench crops for every frame in keys_to_crop
-            self.array[crop_key] = self.delayed(crop_trenches)(
-                self.array[raw_to_crop], trenches
-            )
-            segmentation_key = ("segmentation", fov_num, t, segmentation_channel)
-            segmentation = self.array.get(segmentation_key)
-            if segmentation is not None:
-                if crop_key[-1] in measure_channels:
-                    # if we have segmentation masks for this frame, we can immediately segment only this frame
-                    keys_to_measure = [crop_key]
-                else:
-                    keys_to_measure = []
-            else:
-                # we don't have a segmentation mask yet, so we need to add to the keys_to_measure list
-                keys_to_measure = self.state.setdefault(
-                    ("keys_to_measure", fov_num, t), []
-                )
-                if crop_key[-1] in measure_channels:
-                    # we want to measure this frame
-                    keys_to_measure.append(crop_key)
-                if crop_key[-1] == segmentation_channel:
-                    # if this frame's channel is the segmentation channel, run segmentation
-                    segmentation = self.delayed(segment_trenches)(self.array[crop_key])
-                    self.array[segmentation_key] = segmentation
-                    # once we have the segmentation mask, get measurements for the mask
-                    self.table[
-                        (
-                            "mask_measurements",
-                            *crop_key[1:],
-                        )
-                    ] = self.delayed(
-                        measure_mask_crops
-                    )(segmentation)
-            segmentation = self.array.get(segmentation_key)
-            # if we now have the segmentation mask, try measuring all frames in the keys_to_measure list
-            if segmentation is not None:
-                for crop_to_measure in keys_to_measure:
-                    measurements_key = ("measurements", *crop_to_measure[1:])
-                    self.table[measurements_key] = self.delayed(measure_crops)(
-                        segmentation, self.array[crop_to_measure]
-                    )
-                self.state.pop(("keys_to_measure", fov_num, t), None)
-        self.state.pop(("keys_to_crop", fov_num), None)
