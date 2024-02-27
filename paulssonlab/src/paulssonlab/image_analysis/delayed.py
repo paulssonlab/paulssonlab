@@ -1,7 +1,7 @@
 import itertools as it
 from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
-from dataclasses import dataclass
-from functools import cached_property, partial
+from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any
 
 import dask
@@ -10,27 +10,50 @@ import distributed
 from paulssonlab.util.core import iter_recursive, map_recursive
 
 
-class DelayedBase:
-    runner: "Runner"
-    dependencies: "list[DelayedBase]"
+class DelayedNotReadyError(RuntimeError):
+    pass
+
+
+class Delayed:
+    pass
 
 
 NoResult = object()
 
 
 @dataclass(kw_only=True)
-class Delayed(DelayedBase):
+class DelayedValue(Delayed):
+    value: Any = NoResult
+
+    def is_ready(self):
+        return self.value is not NoResult
+
+    def result(self):
+        if not self.is_ready():
+            raise DelayedNotReadyError
+        return self.value
+
+
+@dataclass(kw_only=True)
+class DelayedCallable(Delayed):
     func: Callable
     args: list
     kwargs: dict
+    dependencies: "list[Delayed]" = field(default_factory=list)
+    runner: "Runner"
     _result: Any = NoResult
 
     @cached_property
     def dependencies(self):
+        # TODO: make sure this doesn't get called if dependencies is set
         return get_delayed(self.func, self.args, self.kwargs)
 
     def is_ready(self):
         return all(dep.is_ready() for dep in self.dependencies)
+
+    @property
+    def is_pending(self):
+        return self._result is NoResult
 
     def result(self):
         if (res := self._result) is NoResult:
@@ -42,7 +65,7 @@ class Delayed(DelayedBase):
 
 
 @dataclass(kw_only=True)
-class DelayedGetitem(DelayedBase):
+class DelayedGetitem(Delayed):
     obj: MutableMapping | MutableSequence
     key: Hashable | int
 
@@ -54,6 +77,8 @@ class DelayedGetitem(DelayedBase):
         return self.key in self.obj
 
     def result(self):
+        if not self.is_ready():
+            raise DelayedNotReadyError
         return self.obj[self.key]
 
 
@@ -75,7 +100,7 @@ class Runner:
     def __init__(self):
         self.queue = []
 
-    @classmethod
+    @staticmethod
     def get(config):
         if config is False or config == "eager":
             return EagerRunner()
@@ -83,11 +108,15 @@ class Runner:
             return DaskRunner()
         elif isinstance(config, distributed.Client):
             return DaskDistributedRunner(config)
+        else:
+            raise ValueError(
+                f"unknown Runner config {config}, must be eager, delayed, or a distributed.Client instance"
+            )
 
     def delayed(self, func, *args, **kwargs):
         dependencies = list(get_delayed(func, args, kwargs))
         if dependencies:
-            delayed = Delayed(
+            delayed = DelayedCallable(
                 func=func,
                 args=args,
                 kwargs=kwargs,
@@ -151,7 +180,7 @@ class DelayedStore:
 
     def __setitem__(self, key, value):
         if key in self:
-            raise ValueError(f"attempting to overwrite key {value}")
+            raise RuntimeError(f"attempting to overwrite key {value}")
 
     def getdefault(self, key, default):
         pass
