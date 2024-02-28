@@ -18,15 +18,15 @@ class Delayed:
     pass
 
 
-NoResult = object()
+NotReady = object()
 
 
 @dataclass(kw_only=True)
 class DelayedValue(Delayed):
-    value: Any = NoResult
+    value: Any = NotReady
 
     def is_ready(self):
-        return self.value is not NoResult
+        return self.value is not NotReady
 
     def result(self):
         if not self.is_ready():
@@ -41,7 +41,7 @@ class DelayedCallable(Delayed):
     kwargs: dict
     dependencies: "list[Delayed]" = field(default_factory=list)
     runner: "Runner"
-    _result: Any = NoResult
+    _result: Any = NotReady
 
     @cached_property
     def dependencies(self):
@@ -53,10 +53,10 @@ class DelayedCallable(Delayed):
 
     @property
     def is_pending(self):
-        return self._result is NoResult
+        return self._result is NotReady
 
     def result(self):
-        if (res := self._result) is NoResult:
+        if (res := self._result) is NotReady:
             args = unbox_delayed(self.args)
             kwargs = unbox_delayed(self.kwargs)
             res = self.runner.run(self.func, *args, **kwargs)
@@ -75,6 +75,14 @@ class DelayedGetitem(Delayed):
 
     def is_ready(self):
         return self.key in self.obj
+
+    @property
+    def value(self):
+        return self.obj[self.key]
+
+    @value.setter
+    def value(self, new_value):
+        self.obj[self.key] = new_value
 
     def result(self):
         if not self.is_ready():
@@ -153,11 +161,12 @@ class EagerRunner(Runner):
 
 class DaskRunner(Runner):
     def run(self, func, *args, **kwargs):
-        return dask.delayed(func, *args, **kwargs)
+        return dask.delayed(func)(*args, **kwargs)
 
 
 class DaskDistributedRunner(Runner):
     def __init__(self, client):
+        super().__init__()
         self.client = client
 
     def run(self, func, *args, **kwargs):
@@ -165,28 +174,85 @@ class DaskDistributedRunner(Runner):
 
 
 class DelayedStore:
-    def __init__(self, output_path):
-        self.output_path = output_path
+    def __init__(self):
         self._store = {}
 
-    def __contains__(self, key):
-        return key in self._store
+    def __len__(self):
+        return len(self._store)
 
     def __getitem__(self, key):
         if key in self:
             return self._store[key]
         else:
-            return DelayedGetitem(self, key)
+            return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
         if key in self:
-            raise RuntimeError(f"attempting to overwrite key {value}")
+            raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
+        self._store[key] = value
 
-    def getdefault(self, key, default):
-        pass
+    def __delitem__(self, key):
+        raise RuntimeError(f"store is immutable, cannot delete key {key}")
+
+    def __contains__(self, key):
+        return key in self._store
+
+    def __iter__(self):
+        return iter(self._store)
+
+    def clear(self):
+        return self._store.clear()
+
+    def __copy__(self):
+        new = type(self).__new__()
+        new._store = self._store.copy()
+        return new
+
+    copy = __copy__
+
+    @classmethod
+    def fromkeys(cls, iterable, value):
+        raise NotImplementedError
+
+    def get(self, key, default):
+        if key in self:
+            return self[key]
+        else:
+            return default
+
+    def items(self):
+        return self._store.items()
+
+    def keys(self):
+        return self._store.keys()
+
+    def pop(self, key, default=None):
+        raise NotImplementedError
+
+    def popitem(self):
+        raise NotImplementedError
+
+    def __reversed__(self):
+        return reversed(self._queue)
 
     def setdefault(self, key, value):
-        pass
+        if key in self:
+            return self[key]
+        else:
+            self[key] = value
+            return value
+
+    def update(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def values(self):
+        return self._store.values()
+
+    def __or__(self, other):
+        raise NotImplementedError
+
+    def __ior__(self, other):
+        raise NotImplementedError
 
     def write(self):
         raise NotImplementedError
