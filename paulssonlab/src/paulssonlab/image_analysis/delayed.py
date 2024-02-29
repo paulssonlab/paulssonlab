@@ -5,7 +5,7 @@ from functools import cached_property
 from typing import Any
 
 import dask
-import distributed
+from dask.distributed import Client
 
 from paulssonlab.util.core import iter_recursive, map_recursive
 
@@ -114,7 +114,7 @@ class Runner:
             return EagerRunner()
         elif config is True or config == "delayed":
             return DaskRunner()
-        elif isinstance(config, distributed.Client):
+        elif isinstance(config, Client):
             return DaskDistributedRunner(config)
         else:
             raise ValueError(

@@ -7,11 +7,11 @@ import av
 import cv2
 import dask
 import dask.array as da
-import distributed
 import numpy as np
 import scipy.ndimage as ndi
 import skimage
 import zarr
+from dask.distributed import Future
 from PIL import Image, ImageDraw, ImageFont
 from skimage.transform import SimilarityTransform, warp
 from tqdm.auto import tqdm
@@ -470,7 +470,7 @@ def export_video(
             idxs = progress_bar(idxs)
         for idx in idxs:
             img = ary[idx]
-            if isinstance(img, distributed.Future):
+            if isinstance(img, Future):
                 img = img.result()
             if downsample is not None:
                 img = img[::downsample, ::downsample, ...]
