@@ -37,10 +37,9 @@ class DelayedValue(Delayed):
 @dataclass(kw_only=True)
 class DelayedCallable(Delayed):
     func: Callable
-    args: list
-    kwargs: dict
+    args: list | None = None
+    kwargs: dict | None = None
     dependencies: "list[Delayed]" = field(default_factory=list)
-    runner: "Runner"
     _result: Any = NotReady
 
     @cached_property
@@ -57,9 +56,9 @@ class DelayedCallable(Delayed):
 
     def result(self):
         if (res := self._result) is NotReady:
-            args = unbox_delayed(self.args)
-            kwargs = unbox_delayed(self.kwargs)
-            res = self.runner.run(self.func, *args, **kwargs)
+            args = unbox_delayed(self.args) or ()
+            kwargs = unbox_delayed(self.kwargs) or {}
+            res = self.func(*args, **kwargs)
             self._result = res
         return res
 
@@ -104,108 +103,88 @@ def unbox_delayed(obj):
     )
 
 
-class Runner:
+class DelayedQueue:
     def __init__(self):
-        self.queue = []
-
-    @staticmethod
-    def get(config):
-        if config is False or config == "eager":
-            return EagerRunner()
-        elif config is True or config == "delayed":
-            return DaskRunner()
-        elif isinstance(config, Client):
-            return DaskDistributedRunner(config)
-        else:
-            raise ValueError(
-                f"unknown Runner config {config}, must be eager, delayed, or a distributed.Client instance"
-            )
+        self._queue = []
 
     def delayed(self, func, *args, **kwargs):
         dependencies = list(get_delayed(func, args, kwargs))
         if dependencies:
-            delayed = DelayedCallable(
+            dc = DelayedCallable(
                 func=func,
                 args=args,
                 kwargs=kwargs,
                 dependencies=dependencies,
-                runner=self,
             )
-            self.queue.append(delayed)
-            return delayed
+            self.append(dc)
+            return dc
         else:
-            return self.run(func, *args, **kwargs)
-
-    def run(self, func, *args, **kwargs):
-        raise NotImplementedError
+            return func(*args, **kwargs)
 
     def poll(self):
         while True:
             any_fired = False
-            for idx in enumerate(self.queue):
-                delayed = self.queue[idx]
+            idx = 0
+            while idx < len(self._queue):
+                delayed = self._queue[idx]
                 if delayed.is_ready():
                     delayed.result()
-                    del self.queue[idx]
+                    del self._queue[idx]
                     any_fired = True
+                else:
+                    idx += 1
 
             if not any_fired:
                 break
         return
 
-
-class EagerRunner(Runner):
-    def run(self, func, *args, **kwargs):
-        return func(*args, **kwargs)
-
-
-class DaskRunner(Runner):
-    def run(self, func, *args, **kwargs):
-        return dask.delayed(func)(*args, **kwargs)
-
-
-class DaskDistributedRunner(Runner):
-    def __init__(self, client):
-        super().__init__()
-        self.client = client
-
-    def run(self, func, *args, **kwargs):
-        return self.client.submit(func, *args, **kwargs)
+    def append(self, delayed):
+        self._queue.append(delayed)
 
 
 class DelayedStore:
-    def __init__(self):
-        self._store = {}
+    def __init__(self, queue):
+        self.value = {}
+        self.queue = queue
 
     def __len__(self):
-        return len(self._store)
+        return len(self.value)
 
     def __getitem__(self, key):
         if key in self:
-            return self._store[key]
+            return self.value[key]
         else:
             return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
         if key in self:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
-        self._store[key] = value
+        if isinstance(value, Delayed):
+            setter = DelayedCallable(
+                func=self.value.__setitem__,
+                args=[key, value],
+                dependencies=[value],
+            )
+            self.queue.append(value)
+            self.queue.append(setter)
+        else:
+            self.value[key] = value
 
     def __delitem__(self, key):
         raise RuntimeError(f"store is immutable, cannot delete key {key}")
 
     def __contains__(self, key):
-        return key in self._store
+        return key in self.value
 
     def __iter__(self):
-        return iter(self._store)
+        return iter(self.value)
 
     def clear(self):
-        return self._store.clear()
+        return self.value.clear()
 
     def __copy__(self):
         new = type(self).__new__()
-        new._store = self._store.copy()
+        new.value = self.value.copy()
         return new
 
     copy = __copy__
@@ -221,10 +200,10 @@ class DelayedStore:
             return default
 
     def items(self):
-        return self._store.items()
+        return self.value.items()
 
     def keys(self):
-        return self._store.keys()
+        return self.value.keys()
 
     def pop(self, key, default=None):
         raise NotImplementedError
@@ -233,7 +212,7 @@ class DelayedStore:
         raise NotImplementedError
 
     def __reversed__(self):
-        return reversed(self._queue)
+        return reversed(self.value)
 
     def setdefault(self, key, value):
         if key in self:
@@ -246,7 +225,7 @@ class DelayedStore:
         raise NotImplementedError
 
     def values(self):
-        return self._store.values()
+        return self.value.values()
 
     def __or__(self, other):
         raise NotImplementedError
