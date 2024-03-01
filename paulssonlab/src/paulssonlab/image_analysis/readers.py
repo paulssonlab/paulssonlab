@@ -13,23 +13,10 @@ from cytoolz import excepts
 from tqdm.auto import tqdm
 
 from paulssonlab.image_analysis.util import get_delayed
+from paulssonlab.image_analysis.workflow import get_nd2_frame, get_nd2_reader
 from paulssonlab.io.metadata import parse_nd2_metadata
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
-
-
-def _get_nd2_reader(filename, **kwargs):
-    # TODO: removed memmap flag
-    return nd2reader.ND2Reader(filename, **kwargs)
-
-
-get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
-
-
-def get_nd2_frame(filename, position, channel_num, t):
-    reader = get_nd2_reader(filename)
-    ary = reader.get_frame_2D(v=position, c=channel_num, t=t)
-    return ary
 
 
 def _select_indices(idxs, slice_):
@@ -47,7 +34,7 @@ def _select_indices(idxs, slice_):
 # random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
 def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
     delayed = get_delayed(delayed)
-    nd2 = nd2reader.ND2Reader(filename)
+    nd2 = get_nd2_reader(filename)
     iterators = [
         _select_indices(
             np.arange(nd2.sizes.get(axis_name, 1)), slices.get(axis_name, slice(None))
@@ -330,7 +317,7 @@ def _convert_nd2_to_array(
     if isinstance(nd2_filename, nd2reader.ND2Reader):
         nd2 = nd2_filename
     else:
-        nd2 = nd2reader.ND2Reader(nd2_filename)
+        nd2 = get_nd2_reader(nd2_filename)
     nd2_channels = nd2.metadata["channels"]
     frame = nd2.get_frame_2D()
     dtype = frame.dtype
