@@ -441,3 +441,35 @@ def _colorize(channel_imgs, colors, scale=True):
     for img2 in imgs_to_combine[1:]:
         img = 1 - (1 - img) * (1 - img2)
     return img
+
+
+def cyclic_composite(func, imgs, same_dtype=True):
+    if same_dtype:
+        dtype = imgs[0].dtype
+    else:
+        dtype = None
+    composites = [
+        func(imgs_reordered, same_dtype=same_dtype)
+        for imgs_reordered in (imgs[idx:] + imgs[:idx] for idx in range(len(imgs)))
+    ]
+    return np.mean(composites, axis=0, dtype=dtype)
+
+
+def mean_composite(imgs, same_dtype=True):
+    if same_dtype:
+        dtype = imgs[0].dtype
+    else:
+        dtype = None
+    return np.mean([img / img.max() for img in imgs.values()], axis=0, dtype=dtype)
+
+
+def histogram_matching_composite(imgs, same_dtype=True):
+    if same_dtype:
+        dtype = imgs[0].dtype
+    else:
+        dtype = None
+    imgs = [
+        imgs[0],
+        *(skimage.exposure.match_histograms(img, imgs[0]) for img in imgs[1:]),
+    ]
+    return np.mean(np.stack(imgs), axis=0, dtype=dtype)
