@@ -238,8 +238,12 @@ class DelayedStore:
 
 
 class DelayedArrayStore(DelayedStore):
-    pass
+    def __init__(self, queue, output_path):
+        self.output_path = output_path
+        super().__init__(queue)
 
 
 class DelayedTableStore(DelayedStore):
-    pass
+    def __init__(self, queue, output_path):
+        self.output_path = output_path
+        super().__init__(queue)
