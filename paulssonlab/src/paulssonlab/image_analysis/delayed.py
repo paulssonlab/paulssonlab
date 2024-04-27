@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
-import dask
-from dask.distributed import Client
-
 from paulssonlab.util.core import iter_recursive, map_recursive
 
 
@@ -122,12 +119,15 @@ class DelayedQueue:
             return func(*args, **kwargs)
 
     def poll(self):
+        print("POLLING")
         while True:
             any_fired = False
             idx = 0
             while idx < len(self._queue):
                 delayed = self._queue[idx]
+                print("*", delayed, "IS_READY", delayed.is_ready())
                 if delayed.is_ready():
+                    print("!!! FIRING")
                     delayed.result()
                     del self._queue[idx]
                     any_fired = True
