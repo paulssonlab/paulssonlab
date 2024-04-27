@@ -4,6 +4,10 @@
 .envconda
 
 # data files
+*.arrow
+*.parquet
+*.h5
+*.nd2
 .snakemake
 .nextflow*
 *.fasta
@@ -23,8 +27,6 @@
 *.json
 *.xls
 *.xlsx
-*.h5
-*.nd2
 *.tif
 *.tiff
 *.png
