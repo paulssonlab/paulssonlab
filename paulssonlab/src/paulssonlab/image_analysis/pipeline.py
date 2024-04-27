@@ -1,5 +1,4 @@
 import itertools as it
-from functools import compose
 from pathlib import Path
 
 import numpy as np
@@ -7,11 +6,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
-from cytoolz import get_in
+from cytoolz import compose, get_in
 
-from paulssonlab.image_analysis.delayed import DelayedArrayStore, DelayedTableStore
+from paulssonlab.image_analysis.delayed import (
+    DelayedArrayStore,
+    DelayedQueue,
+    DelayedTableStore,
+)
 from paulssonlab.image_analysis.drift import find_feature_drift, get_drift_features
 from paulssonlab.image_analysis.geometry import filter_rois, iter_roi_crops, shift_rois
+from paulssonlab.image_analysis.image import mean_composite
 from paulssonlab.image_analysis.segmentation.watershed import (
     segment as watershed_segment,
 )
@@ -233,17 +237,13 @@ def process_fov(
     return write_tasks
 
 
-def composite_for_segmentation(imgs):
-    return np.sum([img / img.max() for img in imgs.values()], axis=0)
-
-
 class Pipeline:
     pass  # TODO: move boilerplate here
 
 
 class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
-        "composite_func": composite_for_segmentation,
+        "composite_func": mean_composite,
         "roi_detection_func": find_trenches,
         "track_drift": True,
         "segmentation_func": watershed_segment,
@@ -254,19 +254,29 @@ class DefaultPipeline(Pipeline):
         self.output_dir = Path(output_dir)
         if not config:
             config = {}
-        config = {**self.DEFAULT_CONFIG, **config}
         self.config = config
-        # self.delayed = get_delayed(delayed)
-        # self._callbacks = CallbackQueue()
-        # self._runner = Runner.get(delayed)
-        self.raw_frames = DelayedArrayStore(output_dir / "raw")
-        self.processed_frames = DelayedArrayStore(output_dir / "processed")
-        self.crops = DelayedArrayStore(output_dir / "crops")
-        self.segmentation_masks = DelayedArrayStore(output_dir / "segmentation_masks")
-        self.fish_crops = DelayedArrayStore(output_dir / "fish_crops")
+        self._apply_default_config()
+        self._delayed = get_delayed(delayed)
+        self._queue = DelayedQueue()
+        self.rois = DelayedTableStore(self._queue, output_dir / "rois")
+        self.measurements = DelayedTableStore(self._queue, output_dir / "measurements")
+        self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw")
+        self.processed_frames = DelayedArrayStore(self._queue, output_dir / "processed")
+        self.crops = DelayedArrayStore(self._queue, output_dir / "crops")
+        self.segmentation_masks = DelayedArrayStore(
+            self._queue, output_dir / "segmentation_masks"
+        )
+        self.fish_crops = DelayedArrayStore(self._queue, output_dir / "fish_crops")
+
+    def _apply_default_config(self):
+        config = {**self.DEFAULT_CONFIG, **self.config}
+        config["trench_detection_channels"] = config.get(
+            "trench_detection_channels"
+        ) or config.get("segmentation_channels")
+        self.config = config
 
     def delayed(self, func, *args, **kwargs):
-        return self._runner.delayed(func, *args, **kwargs)
+        return self._queue.delayed(self._delayed(func), *args, **kwargs)
 
     def validate_config(self):
         for key in self.REQUIRED_CONFIG:
@@ -279,9 +289,9 @@ class DefaultPipeline(Pipeline):
             case {"type": "image", **info}:
                 match info:
                     case {"image_type": "fish_barcode"}:
-                        self.handle_fish_barcode(self, msg)
+                        self.handle_fish_barcode(msg)
                     case _:
-                        self.handle_image(self, msg)
+                        self.handle_image(msg)
             case {"type": "ome_metadata"}:
                 print("got OME metadata")  # TODO
             case {"type": "nd2_metadata"}:
@@ -297,6 +307,7 @@ class DefaultPipeline(Pipeline):
     def handle_image(self, msg):
         image = msg["image"]
         metadata = msg["metadata"]
+        print("IMAGE", metadata)
         fov_num = metadata["fov_num"]
         t = metadata["t"]
         channel = metadata["channel"]
@@ -304,7 +315,7 @@ class DefaultPipeline(Pipeline):
         raw_frame = self.raw_frames.setdefault((fov_num, channel, t), image)
         # preprocess image
         # store preprocessed whole frame image ("/frame")
-        if self.config["preprocess_func"]:
+        if self.config.get("preprocess_func"):
             processed_frame = self.processed_frames.setdefault(
                 (fov_num, channel, t),
                 self.delayed(self.config["preprocess_func"], image),
@@ -316,14 +327,11 @@ class DefaultPipeline(Pipeline):
             (fov_num, seg_channel, t)
             for seg_channel in self.config["segmentation_channels"]
         ]
-        # self.add_callback(
-        #     [self.frames, segmentation_frame_keys], self.do_roi_detection, image
-        # )
         # get rois
         roi_detection_func = compose(
             self.config["roi_detection_func"], self.config["composite_func"]
         )
-        segmentation_frames = [self.frames[k] for k in segmentation_frame_keys]
+        segmentation_frames = [self.raw_frames[k] for k in segmentation_frame_keys]
         rois = self.rois.setdefault(
             (fov_num, t), self.delayed(roi_detection_func, segmentation_frames)
         )
@@ -340,8 +348,7 @@ class DefaultPipeline(Pipeline):
         ### TODO: segmentationless measurement
         self.measurements.setdefault(
             (fov_num, t, channel),
-            self.delayed(measure_crops),
-            crops,
+            self.delayed(measure_crops, crops),
             # seg_masks,
         )
 
