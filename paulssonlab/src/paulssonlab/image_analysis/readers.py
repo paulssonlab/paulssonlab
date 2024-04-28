@@ -56,7 +56,7 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
         channel = nd2.metadata["channels"][coords["c"]]
         z_level = coords["z"]
         t = coords["t"]
-        image = delayed(get_nd2_frame)(filename, fov_num, coords["c"], t)
+        image = delayed(get_nd2_frame)(filename, fov_num, channel, t)
         # we can put arbitrary per-frame metadata here
         # TODO: do we need a way to encode metadata that differs between individual frames? [maybe not.]
         image_metadata = {

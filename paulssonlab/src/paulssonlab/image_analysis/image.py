@@ -460,7 +460,7 @@ def mean_composite(imgs, same_dtype=True):
         dtype = imgs[0].dtype
     else:
         dtype = None
-    return np.mean([img / img.max() for img in imgs.values()], axis=0, dtype=dtype)
+    return np.mean([img / img.max() for img in imgs], axis=0, dtype=dtype)
 
 
 def histogram_matching_composite(imgs, same_dtype=True):
