@@ -102,7 +102,8 @@ def unbox_delayed(obj):
 
 class DelayedQueue:
     def __init__(self):
-        self._queue = []
+        self._items = []
+        self._ids = set()
 
     def delayed(self, func, *args, **kwargs):
         dependencies = list(get_delayed(func, args, kwargs))
@@ -113,23 +114,23 @@ class DelayedQueue:
                 kwargs=kwargs,
                 dependencies=dependencies,
             )
-            self.append(dc)
             return dc
         else:
             return func(*args, **kwargs)
 
     def poll(self):
-        print("POLLING")
+        # print("POLLING")
         while True:
             any_fired = False
             idx = 0
-            while idx < len(self._queue):
-                delayed = self._queue[idx]
-                print("*", delayed, "IS_READY", delayed.is_ready())
+            while idx < len(self._items):
+                delayed = self._items[idx]
+                # print("*", delayed, "IS_READY", delayed.is_ready())
                 if delayed.is_ready():
-                    print("!!! FIRING")
+                    # print("!!! FIRING")
                     delayed.result()
-                    del self._queue[idx]
+                    del self._items[idx]
+                    self._ids.remove(id(delayed))
                     any_fired = True
                 else:
                     idx += 1
@@ -139,7 +140,9 @@ class DelayedQueue:
         return
 
     def append(self, delayed):
-        self._queue.append(delayed)
+        if id(delayed) not in self._ids:
+            self._items.append(delayed)
+            self._ids.add(id(delayed))
 
 
 class DelayedStore:
@@ -157,7 +160,7 @@ class DelayedStore:
             return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
-        if key in self:
+        if key in self.value:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
         if isinstance(value, Delayed):
             setter = DelayedCallable(
@@ -167,14 +170,13 @@ class DelayedStore:
             )
             self.queue.append(value)
             self.queue.append(setter)
-        else:
-            self.value[key] = value
+        self.value[key] = value
 
     def __delitem__(self, key):
         raise RuntimeError(f"store is immutable, cannot delete key {key}")
 
     def __contains__(self, key):
-        return key in self.value
+        return key in self.value and not isinstance(self.value[key], Delayed)
 
     def __iter__(self):
         return iter(self.value)
@@ -215,9 +217,11 @@ class DelayedStore:
         return reversed(self.value)
 
     def setdefault(self, key, value):
-        if key in self:
+        if key in self.value:
+            print("A", key, value)
             return self[key]
         else:
+            print("B", key, value)
             self[key] = value
             return value
 

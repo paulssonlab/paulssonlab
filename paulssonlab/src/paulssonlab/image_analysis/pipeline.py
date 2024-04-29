@@ -321,26 +321,31 @@ class DefaultPipeline(Pipeline):
                 (fov_num, channel, t),
                 self.delayed(self.config["preprocess_func"], image),
             )
+            processed_frames = self.processed_frames
         else:
             processed_frame = raw_frame
+            processed_frames = self.raw_frames
         # if all segmentation channels available -> detect rois
         segmentation_frame_keys = [
             (fov_num, seg_channel, t)
             for seg_channel in self.config["segmentation_channels"]
         ]
+        segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
+        self.rois.setdefault(
+            (fov_num, t), self.delayed(lambda x: print("FOO") or x, segmentation_frames)
+        )
         # get rois
-        roi_detection_func = compose(
-            self.config["roi_detection_func"], self.config["composite_func"]
-        )
-        segmentation_frames = [self.raw_frames[k] for k in segmentation_frame_keys]
-        # composite_func
-        segmentation_composite = []
-        # print()
-        # print("KEYS",segmentation_frame_keys, "|",segmentation_frames,"||",[x.is_ready() for x in segmentation_frames])
-        # print()
-        rois = self.rois.setdefault(
-            (fov_num, t), self.delayed(roi_detection_func, segmentation_frames)
-        )
+        # roi_detection_func = compose(
+        #     self.config["roi_detection_func"], self.config["composite_func"]
+        # )
+        # # composite_func
+        # segmentation_composite = []
+        # # print()
+        # # print("KEYS",segmentation_frame_keys, "|",segmentation_frames,"||",[x.is_ready() for x in segmentation_frames])
+        # # print()
+        # rois = self.rois.setdefault(
+        #     (fov_num, t), self.delayed(roi_detection_func, segmentation_frames)
+        # )
         # # if rois available -> crop
         # crops = self.crops.setdefault(
         #     (fov_num, channel, t), self.delayed(crop_rois, rois, processed_frame)

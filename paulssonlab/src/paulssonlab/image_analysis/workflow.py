@@ -89,7 +89,7 @@ get_nd2_reader = cachetools.cached(cache=ND2READER_CACHE)(_get_nd2_reader)
 def get_nd2_frame(filename, position, channel, t, dark=None, flat=None):
     reader = get_nd2_reader(filename)
     channel_idx = reader.metadata["channels"].index(channel)
-    ary = reader.get_frame_2D(v=position, c=channel_idx, t=t)
+    ary = np.asarray(reader.get_frame_2D(v=position, c=channel_idx, t=t))
     if dark is not None:
         ary = (
             ary - dark

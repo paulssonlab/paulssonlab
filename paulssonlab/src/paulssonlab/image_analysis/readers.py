@@ -35,6 +35,7 @@ def _select_indices(idxs, slice_):
 def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
     delayed = get_delayed(delayed)
     nd2 = get_nd2_reader(filename)
+    # TODO: allow slicing by idx/name?? e.g., c=[0] or channel=["RFP-EM", "YFP-EM"]
     iterators = [
         _select_indices(
             np.arange(nd2.sizes.get(axis_name, 1)), slices.get(axis_name, slice(None))
