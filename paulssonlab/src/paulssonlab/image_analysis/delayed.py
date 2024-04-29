@@ -3,6 +3,7 @@ from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
+from weakref import finalize, ref
 
 from paulssonlab.util.core import iter_recursive, map_recursive
 
@@ -101,9 +102,9 @@ def unbox_delayed(obj):
 
 
 class DelayedQueue:
-    def __init__(self):
-        self._items = []
-        self._ids = set()
+    def __init__(self, finalize=True):
+        self._items = {}
+        self.finalize = True
 
     def delayed(self, func, *args, **kwargs):
         dependencies = list(get_delayed(func, args, kwargs))
@@ -114,25 +115,32 @@ class DelayedQueue:
                 kwargs=kwargs,
                 dependencies=dependencies,
             )
+            self.append(dc)
+            if self.finalize:
+                finalize(dc, self._remove, id(dc))
             return dc
         else:
             return func(*args, **kwargs)
 
     def poll(self):
         # print("POLLING")
+        ids = list(self._items.keys())
         while True:
             any_fired = False
             idx = 0
-            while idx < len(self._items):
-                delayed = self._items[idx]
+            while idx < len(ids):
+                id_ = ids[idx]
+                delayed = self._items[id_]()
                 # print("*", delayed, "IS_READY", delayed.is_ready())
-                if delayed.is_ready():
+                if delayed is not None and delayed.is_ready():
                     # print("!!! FIRING")
                     delayed.result()
-                    del self._items[idx]
-                    self._ids.remove(id(delayed))
+                    del self._items[id_]
+                    del ids[idx]
                     any_fired = True
                 else:
+                    if delayed is None:
+                        del self._items[id_]
                     idx += 1
 
             if not any_fired:
@@ -140,9 +148,11 @@ class DelayedQueue:
         return
 
     def append(self, delayed):
-        if id(delayed) not in self._ids:
-            self._items.append(delayed)
-            self._ids.add(id(delayed))
+        if id(delayed) not in self._items:
+            self._items[id(delayed)] = ref(delayed)
+
+    def _remove(self, id_):
+        del self._items[id_]
 
 
 class DelayedStore:
