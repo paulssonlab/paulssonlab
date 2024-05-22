@@ -303,12 +303,19 @@ class DefaultPipeline(Pipeline):
             case _:
                 # this exception should be caught, we don't want malformed messages to crash the self
                 raise ValueError("cannot handle message", msg)
+        print("&&&&&&")
+        print(self._queue._items)
+        print("&&&&&&")
         self._queue.poll()
 
     def handle_image(self, msg):
         image = msg["image"]
         metadata = msg["metadata"]
+        print()
+        print("*****************")
+        print()
         print("IMAGE", metadata)
+        print()
         fov_num = metadata["fov_num"]
         t = metadata["t"]
         channel = metadata["channel"]
@@ -323,6 +330,7 @@ class DefaultPipeline(Pipeline):
             )
             processed_frames = self.processed_frames
         else:
+            print("BYPASS")
             processed_frame = raw_frame
             processed_frames = self.raw_frames
         # if all segmentation channels available -> detect rois
@@ -331,9 +339,18 @@ class DefaultPipeline(Pipeline):
             for seg_channel in self.config["segmentation_channels"]
         ]
         segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
+        print("(((((((((((((((())))))))))))))))")
         self.rois.setdefault(
-            (fov_num, t), self.delayed(lambda x: print("FOO") or x, segmentation_frames)
+            (fov_num, t),
+            self.delayed(
+                lambda x: print(
+                    f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
+                )
+                or x,
+                segmentation_frames,
+            ),
         )
+        print("(((((((((((((((())))))))))))))))")
         # get rois
         # roi_detection_func = compose(
         #     self.config["roi_detection_func"], self.config["composite_func"]

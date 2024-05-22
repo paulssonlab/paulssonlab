@@ -107,23 +107,26 @@ class DelayedQueue:
         self.finalize = True
 
     def delayed(self, func, *args, **kwargs):
+        print("X1")
         dependencies = list(get_delayed(func, args, kwargs))
-        if dependencies:
-            dc = DelayedCallable(
-                func=func,
-                args=args,
-                kwargs=kwargs,
-                dependencies=dependencies,
-            )
-            self.append(dc)
-            if self.finalize:
-                finalize(dc, self._remove, id(dc))
-            return dc
-        else:
-            return func(*args, **kwargs)
+        print("X2")
+        dc = DelayedCallable(
+            func=func,
+            args=args,
+            kwargs=kwargs,
+            dependencies=dependencies,
+        )
+        print("X4")
+        self.append(dc)
+        print("X5")
+        if self.finalize:
+            print("X6")
+            finalize(dc, self._remove, id(dc))
+            print("X7")
+        return dc
 
     def poll(self):
-        # print("POLLING")
+        print("POLLING")
         ids = list(self._items.keys())
         while True:
             any_fired = False
@@ -131,17 +134,19 @@ class DelayedQueue:
             while idx < len(ids):
                 id_ = ids[idx]
                 delayed = self._items[id_]()
-                # print("*", delayed, "IS_READY", delayed.is_ready())
-                if delayed is not None and delayed.is_ready():
-                    # print("!!! FIRING")
-                    delayed.result()
-                    del self._items[id_]
-                    del ids[idx]
-                    any_fired = True
+                if delayed is None:
+                    print("* DEAD")
+                    self._items.pop(id_, None)
                 else:
-                    if delayed is None:
-                        del self._items[id_]
-                    idx += 1
+                    print("*", delayed, "IS_READY", delayed.is_ready())
+                    if delayed.is_ready():
+                        print("!!! FIRING")
+                        delayed.result()
+                        self._items.pop(id_, None)
+                        del ids[idx]
+                        any_fired = True
+                        continue  # don't increment idx
+                idx += 1
 
             if not any_fired:
                 break
@@ -152,7 +157,7 @@ class DelayedQueue:
             self._items[id(delayed)] = ref(delayed)
 
     def _remove(self, id_):
-        del self._items[id_]
+        self._items.pop(id_, None)
 
 
 class DelayedStore:
