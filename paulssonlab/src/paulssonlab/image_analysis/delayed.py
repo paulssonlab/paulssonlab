@@ -26,7 +26,7 @@ class DelayedValue(Delayed):
     def is_ready(self):
         return self.value is not NotReady
 
-    def result(self):
+    def result(self, **kwargs):
         if not self.is_ready():
             raise DelayedNotReadyError
         return self.value
@@ -34,7 +34,7 @@ class DelayedValue(Delayed):
 
 @dataclass(kw_only=True)
 class DelayedCallable(Delayed):
-    func: Callable
+    func: Callable | None
     args: list | None = None
     kwargs: dict | None = None
     dependencies: "list[Delayed]" = field(default_factory=list)
@@ -52,12 +52,18 @@ class DelayedCallable(Delayed):
     def is_pending(self):
         return self._result is NotReady
 
-    def result(self):
+    def result(self, clear_callable=True, **kwargs):
         if (res := self._result) is NotReady:
+            if self.func is None:
+                raise ValueError("DelayedCallable missing func, cannot get")
             args = unbox_delayed(self.args) or ()
             kwargs = unbox_delayed(self.kwargs) or {}
             res = self.func(*args, **kwargs)
             self._result = res
+            if clear_callable:
+                self.func = None
+                self.args = None
+                self.kwargs = None
         return res
 
 
@@ -81,7 +87,7 @@ class DelayedGetitem(Delayed):
     def value(self, new_value):
         self.obj[self.key] = new_value
 
-    def result(self):
+    def result(self, **kwargs):
         if not self.is_ready():
             raise DelayedNotReadyError
         return self.obj[self.key]
@@ -132,11 +138,13 @@ class DelayedQueue:
             any_fired = False
             idx = 0
             while idx < len(ids):
+                print(f"IDX: {idx}/{len(ids)}")
                 id_ = ids[idx]
                 delayed = self._items[id_]()
                 if delayed is None:
                     print("* DEAD")
                     self._items.pop(id_, None)
+                    del ids[idx]
                 else:
                     print("*", delayed, "IS_READY", delayed.is_ready())
                     if delayed.is_ready():
@@ -145,8 +153,8 @@ class DelayedQueue:
                         self._items.pop(id_, None)
                         del ids[idx]
                         any_fired = True
-                        continue  # don't increment idx
-                idx += 1
+                    else:
+                        idx += 1
 
             if not any_fired:
                 break
@@ -170,21 +178,17 @@ class DelayedStore:
 
     def __getitem__(self, key):
         if key in self:
-            return self.value[key]
+            value = self.value[key]
+            if isinstance(value, Delayed) and value.is_ready():
+                return value.result()
+            else:
+                return value
         else:
             return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
         if key in self.value:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
-        if isinstance(value, Delayed):
-            setter = DelayedCallable(
-                func=self.value.__setitem__,
-                args=[key, value],
-                dependencies=[value],
-            )
-            self.queue.append(value)
-            self.queue.append(setter)
         self.value[key] = value
 
     def __delitem__(self, key):

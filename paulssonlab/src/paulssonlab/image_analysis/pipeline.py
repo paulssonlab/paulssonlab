@@ -238,7 +238,11 @@ def process_fov(
 
 
 class Pipeline:
-    pass  # TODO: move boilerplate here
+    # TODO: move boilerplate here
+
+    def handle_message(self, msg):
+        self._handle_message(msg)
+        self._queue.poll()
 
 
 class DefaultPipeline(Pipeline):
@@ -284,7 +288,7 @@ class DefaultPipeline(Pipeline):
                 raise ValueError(f"missing required config key {key}")
 
     # we should pick a name that's better/more intuitive than handle_message
-    def handle_message(self, msg):
+    def _handle_message(self, msg):
         match msg:
             case {"type": "image", **info}:
                 match info:
@@ -306,9 +310,9 @@ class DefaultPipeline(Pipeline):
         print("&&&&&&")
         print(self._queue._items)
         print("&&&&&&")
-        self._queue.poll()
 
     def handle_image(self, msg):
+        print("EEEE0", self._queue._items)
         image = msg["image"]
         metadata = msg["metadata"]
         print()
@@ -339,18 +343,30 @@ class DefaultPipeline(Pipeline):
             for seg_channel in self.config["segmentation_channels"]
         ]
         segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
+        print("EEEE1", self._queue._items)
         print("(((((((((((((((())))))))))))))))")
-        self.rois.setdefault(
-            (fov_num, t),
-            self.delayed(
-                lambda x: print(
-                    f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
-                )
-                or x,
-                segmentation_frames,
-            ),
+        dfunc = self.delayed(
+            lambda x: print(
+                f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
+            )
+            or x,
+            segmentation_frames,
         )
+        print("EEEE1.1", self._queue._items)
+        print("|||||")
+        self.rois.setdefault((fov_num, t), dfunc)
+        # self.rois.setdefault(
+        #     (fov_num, t),
+        #     self.delayed(
+        #         lambda x: print(
+        #             f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
+        #         )
+        #         or x,
+        #         segmentation_frames,
+        #     ),
+        # )
         print("(((((((((((((((())))))))))))))))")
+        print("EEEE2", self._queue._items)
         # get rois
         # roi_detection_func = compose(
         #     self.config["roi_detection_func"], self.config["composite_func"]
