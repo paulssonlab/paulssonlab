@@ -3,7 +3,6 @@ from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
-from weakref import finalize, ref
 
 from paulssonlab.util.core import iter_recursive, map_recursive
 
@@ -108,27 +107,17 @@ def unbox_delayed(obj):
 
 
 class DelayedQueue:
-    def __init__(self, finalize=True):
+    def __init__(self):
         self._items = {}
-        self.finalize = True
 
     def delayed(self, func, *args, **kwargs):
-        print("X1")
         dependencies = list(get_delayed(func, args, kwargs))
-        print("X2")
         dc = DelayedCallable(
             func=func,
             args=args,
             kwargs=kwargs,
             dependencies=dependencies,
         )
-        print("X4")
-        self.append(dc)
-        print("X5")
-        if self.finalize:
-            print("X6")
-            finalize(dc, self._remove, id(dc))
-            print("X7")
         return dc
 
     def poll(self):
@@ -140,21 +129,16 @@ class DelayedQueue:
             while idx < len(ids):
                 print(f"IDX: {idx}/{len(ids)}")
                 id_ = ids[idx]
-                delayed = self._items[id_]()
-                if delayed is None:
-                    print("* DEAD")
+                delayed = self._items[id_]
+                print("*", delayed, "IS_READY", delayed.is_ready())
+                if delayed.is_ready():
+                    print("!!! FIRING")
+                    delayed.result()
                     self._items.pop(id_, None)
                     del ids[idx]
+                    any_fired = True
                 else:
-                    print("*", delayed, "IS_READY", delayed.is_ready())
-                    if delayed.is_ready():
-                        print("!!! FIRING")
-                        delayed.result()
-                        self._items.pop(id_, None)
-                        del ids[idx]
-                        any_fired = True
-                    else:
-                        idx += 1
+                    idx += 1
 
             if not any_fired:
                 break
@@ -162,10 +146,10 @@ class DelayedQueue:
 
     def append(self, delayed):
         if id(delayed) not in self._items:
-            self._items[id(delayed)] = ref(delayed)
-
-    def _remove(self, id_):
-        self._items.pop(id_, None)
+            if hasattr(delayed, "dependencies") and delayed.dependencies:
+                for dep in delayed.dependencies:
+                    self.append(dep)
+            self._items[id(delayed)] = delayed
 
 
 class DelayedStore:
@@ -179,16 +163,15 @@ class DelayedStore:
     def __getitem__(self, key):
         if key in self:
             value = self.value[key]
-            if isinstance(value, Delayed) and value.is_ready():
-                return value.result()
-            else:
-                return value
+            return value
         else:
             return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
         if key in self.value:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
+        if isinstance(value, DelayedCallable):
+            self.queue.append(value)
         self.value[key] = value
 
     def __delitem__(self, key):
