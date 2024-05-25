@@ -2,7 +2,6 @@ from pathlib import Path
 
 import cachetools
 import h5py
-import nd2
 import nd2reader
 import numpy as np
 import pandas as pd
