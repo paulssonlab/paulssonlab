@@ -1,4 +1,5 @@
 import itertools as it
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +16,7 @@ from paulssonlab.image_analysis.delayed import (
 )
 from paulssonlab.image_analysis.drift import find_feature_drift, get_drift_features
 from paulssonlab.image_analysis.geometry import filter_rois, iter_roi_crops, shift_rois
-from paulssonlab.image_analysis.image import mean_composite
+from paulssonlab.image_analysis.image import power_law_composite
 from paulssonlab.image_analysis.segmentation.watershed import (
     segment as watershed_segment,
 )
@@ -247,7 +248,7 @@ class Pipeline:
 
 class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
-        "composite_func": mean_composite,
+        "composite_func": power_law_composite,
         "roi_detection_func": find_trenches,
         "track_drift": True,
         "segmentation_func": watershed_segment,
@@ -307,19 +308,19 @@ class DefaultPipeline(Pipeline):
             case _:
                 # this exception should be caught, we don't want malformed messages to crash the self
                 raise ValueError("cannot handle message", msg)
-        print("&&&&&&")
-        print(self._queue._items)
-        print("&&&&&&")
+        # print("&&&&&&")
+        # print(self._queue._items)
+        # print("&&&&&&")
 
     def handle_image(self, msg):
-        print("EEEE0", self._queue._items)
+        # print("EEEE0", self._queue._items)
         image = msg["image"]
         metadata = msg["metadata"]
-        print()
-        print("*****************")
-        print()
+        # print()
+        # print("*****************")
+        # print()
         print("IMAGE", metadata)
-        print()
+        # print()
         fov_num = metadata["fov_num"]
         t = metadata["t"]
         channel = metadata["channel"]
@@ -330,11 +331,16 @@ class DefaultPipeline(Pipeline):
         if self.config.get("preprocess_func"):
             processed_frame = self.processed_frames.setdefault(
                 (fov_num, channel, t),
-                self.delayed(self.config["preprocess_func"], image),
+                self.delayed(
+                    self.config["preprocess_func"],
+                    raw_frame,
+                    # channel=channel,
+                    # **(self.config.get("preprocess_kwargs") or {}),
+                ),
             )
             processed_frames = self.processed_frames
         else:
-            print("BYPASS")
+            # print("BYPASS")
             processed_frame = raw_frame
             processed_frames = self.raw_frames
         # if all segmentation channels available -> detect rois
@@ -343,47 +349,27 @@ class DefaultPipeline(Pipeline):
             for seg_channel in self.config["segmentation_channels"]
         ]
         segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
-        print("EEEE1", self._queue._items)
-        print("(((((((((((((((())))))))))))))))")
-        dfunc = self.delayed(
-            lambda x: print(
-                f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
-            )
-            or x,
-            segmentation_frames,
-        )
-        print("EEEE1.1", self._queue._items)
-        print("|||||")
-        self.rois.setdefault((fov_num, t), dfunc)
-        # self.rois.setdefault(
-        #     (fov_num, t),
-        #     self.delayed(
-        #         lambda x: print(
-        #             f"FOO v:{fov_num} t:{t} c:{channel} DEPS:{segmentation_frame_keys}"
-        #         )
-        #         or x,
-        #         segmentation_frames,
-        #     ),
-        # )
-        print("(((((((((((((((())))))))))))))))")
-        print("EEEE2", self._queue._items)
         # get rois
-        # roi_detection_func = compose(
-        #     self.config["roi_detection_func"], self.config["composite_func"]
-        # )
-        # # composite_func
-        # segmentation_composite = []
-        # # print()
-        # # print("KEYS",segmentation_frame_keys, "|",segmentation_frames,"||",[x.is_ready() for x in segmentation_frames])
-        # # print()
-        # rois = self.rois.setdefault(
-        #     (fov_num, t), self.delayed(roi_detection_func, segmentation_frames)
-        # )
-        # # if rois available -> crop
+        roi_detection_func = compose(
+            partial(
+                self.config["roi_detection_func"],
+                **(self.config.get("roi_detection_kwargs") or {}),
+            ),
+            self.config["composite_func"],
+        )
+        rois = self.rois.setdefault(
+            (fov_num, t),
+            self.delayed(
+                # roi_detection_func,
+                lambda x: [print(i, z) for i, z in enumerate(x)],
+                segmentation_frames,
+            ),
+        )
+        # if rois available -> crop
         # crops = self.crops.setdefault(
         #     (fov_num, channel, t), self.delayed(crop_rois, rois, processed_frame)
         # )
-        # # # if crop available -> segment crops
+        # if crop available -> segment crops
         # # seg_masks = self.segmentation_masks.setdefault(
         # #     (fov_num, t),
         # #     self.delayed(segment_crops, rois, crops,

@@ -15,6 +15,7 @@ class Delayed:
     pass
 
 
+# TODO: use the sentinel library to give this a better __str__/__repr__
 NotReady = object()
 
 
@@ -36,16 +37,17 @@ class DelayedCallable(Delayed):
     func: Callable | None
     args: list | None = None
     kwargs: dict | None = None
-    dependencies: "list[Delayed]" = field(default_factory=list)
     _result: Any = NotReady
 
     @cached_property
-    def dependencies(self):
-        # TODO: make sure this doesn't get called if dependencies is set
-        return get_delayed(self.func, self.args, self.kwargs)
+    def dependencies(self) -> "list[Delayed]":
+        return list(get_delayed(self.func, self.args, self.kwargs))
 
     def is_ready(self):
-        return all(dep.is_ready() for dep in self.dependencies)
+        # print(f"IS READY ({len(self.dependencies)}):", all(dep.is_ready() for dep in self.dependencies))
+        return self._result is not NotReady or all(
+            dep.is_ready() for dep in self.dependencies
+        )
 
     @property
     def is_pending(self):
@@ -53,11 +55,13 @@ class DelayedCallable(Delayed):
 
     def result(self, clear_callable=True, **kwargs):
         if (res := self._result) is NotReady:
-            if self.func is None:
-                raise ValueError("DelayedCallable missing func, cannot get")
+            func = unbox_delayed(self.func)
             args = unbox_delayed(self.args) or ()
             kwargs = unbox_delayed(self.kwargs) or {}
-            res = self.func(*args, **kwargs)
+            print()
+            print("&&&", func, args, kwargs)
+            print()
+            res = func(*args, **kwargs)
             self._result = res
             if clear_callable:
                 self.func = None
@@ -68,28 +72,42 @@ class DelayedCallable(Delayed):
 
 @dataclass(kw_only=True)
 class DelayedGetitem(Delayed):
-    obj: MutableMapping | MutableSequence
-    key: Hashable | int
+    obj: MutableMapping | MutableSequence | Delayed
+    key: Hashable | int | Delayed
 
-    @property
-    def dependencies(self):
-        return get_delayed(self.obj, self.key, recursive=False)
+    # @cached_property
+    # def dependencies(self):
+    #     return list(get_delayed(self.obj, self.key, recursive=False))
 
     def is_ready(self):
-        return self.key in self.obj
+        if (isinstance(self.obj, Delayed) and not self.obj.is_ready()) or (
+            isinstance(self.key, Delayed) and not self.key.is_ready()
+        ):
+            return False
+        if self.key in self.obj:
+            if isinstance(value := self.obj[self.key], Delayed):
+                return value.is_ready()
+            else:
+                return True
+        else:
+            return False
 
-    @property
-    def value(self):
-        return self.obj[self.key]
+    # @property
+    # def value(self):
+    #     return self.obj[self.key]
 
-    @value.setter
-    def value(self, new_value):
-        self.obj[self.key] = new_value
+    # TODO: do we ever want to use this or will this only lead to confusion?
+    # @value.setter
+    # def value(self, new_value):
+    #     self.obj[self.key] = new_value
 
     def result(self, **kwargs):
         if not self.is_ready():
             raise DelayedNotReadyError
-        return self.obj[self.key]
+        obj = get_result(self.obj)
+        key = get_result(self.key)
+        value = obj[key]
+        return get_result(value)
 
 
 def get_delayed(*args, recursive=True):
@@ -99,11 +117,22 @@ def get_delayed(*args, recursive=True):
     return filter(lambda x: isinstance(x, Delayed), args)
 
 
+def get_result(value):
+    if isinstance(value, Delayed):
+        return value.result()
+    else:
+        return value
+
+
 def unbox_delayed(obj):
-    return map_recursive(
-        lambda x: x.result() if isinstance(x, Delayed) else x,
-        obj,
-    )
+    return map_recursive(get_result, obj)
+
+
+# def unbox_delayed(obj):
+#     return map_recursive(
+#         lambda x: x.result() if isinstance(x, Delayed) else x,
+#         obj,
+#     )
 
 
 class DelayedQueue:
@@ -111,12 +140,10 @@ class DelayedQueue:
         self._items = {}
 
     def delayed(self, func, *args, **kwargs):
-        dependencies = list(get_delayed(func, args, kwargs))
         dc = DelayedCallable(
             func=func,
             args=args,
             kwargs=kwargs,
-            dependencies=dependencies,
         )
         return dc
 
@@ -148,7 +175,9 @@ class DelayedQueue:
         if id(delayed) not in self._items:
             if hasattr(delayed, "dependencies") and delayed.dependencies:
                 for dep in delayed.dependencies:
-                    self.append(dep)
+                    if isinstance(dep, DelayedCallable):
+                        print(f"ADDING DEP {delayed} -> {dep}")
+                        self.append(dep)
             self._items[id(delayed)] = delayed
 
 
@@ -178,7 +207,7 @@ class DelayedStore:
         raise RuntimeError(f"store is immutable, cannot delete key {key}")
 
     def __contains__(self, key):
-        return key in self.value and not isinstance(self.value[key], Delayed)
+        return key in self.value
 
     def __iter__(self):
         return iter(self.value)
@@ -220,10 +249,10 @@ class DelayedStore:
 
     def setdefault(self, key, value):
         if key in self.value:
-            print("A", key, value)
+            # print("A", key, value)
             return self[key]
         else:
-            print("B", key, value)
+            # print("B", key, value)
             self[key] = value
             return value
 
