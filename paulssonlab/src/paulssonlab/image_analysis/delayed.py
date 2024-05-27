@@ -104,10 +104,10 @@ class DelayedGetitem(Delayed):
     def result(self, **kwargs):
         if not self.is_ready():
             raise DelayedNotReadyError
-        obj = get_result(self.obj)
-        key = get_result(self.key)
+        obj = get_result(self.obj, **kwargs)
+        key = get_result(self.key, **kwargs)
         value = obj[key]
-        return get_result(value)
+        return get_result(value, **kwargs)
 
 
 def get_delayed(*args, recursive=True):
@@ -117,9 +117,9 @@ def get_delayed(*args, recursive=True):
     return filter(lambda x: isinstance(x, Delayed), args)
 
 
-def get_result(value):
+def get_result(value, **kwargs):
     if isinstance(value, Delayed):
-        return value.result()
+        return value.result(**kwargs)
     else:
         return value
 
