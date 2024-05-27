@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
-from paulssonlab.util.core import iter_recursive, map_recursive
+from paulssonlab.util.core import ItemProxy, iter_recursive, map_recursive
 
 
 class DelayedNotReadyError(RuntimeError):
@@ -26,7 +26,7 @@ class DelayedValue(Delayed):
     def is_ready(self):
         return self.value is not NotReady
 
-    def result(self, **kwargs):
+    def result(self):
         if not self.is_ready():
             raise DelayedNotReadyError
         return self.value
@@ -37,6 +37,7 @@ class DelayedCallable(Delayed):
     func: Callable | None
     args: list | None = None
     kwargs: dict | None = None
+    _keep_args: bool = False
     _result: Any = NotReady
 
     @cached_property
@@ -53,17 +54,21 @@ class DelayedCallable(Delayed):
     def is_pending(self):
         return self._result is NotReady
 
-    def result(self, clear_callable=True, **kwargs):
+    def result(self):
         if (res := self._result) is NotReady:
             func = unbox_delayed(self.func)
             args = unbox_delayed(self.args) or ()
             kwargs = unbox_delayed(self.kwargs) or {}
-            print()
-            print("&&&", func, args, kwargs)
-            print()
+            if self._keep_args:
+                # keep unboxed values for debugging
+                # (e.g., to make it easy to re-run function call)
+                # that's why we do this before running function call, in case that fails
+                self.func = func
+                self.args = args
+                self.kwargs = kwargs
             res = func(*args, **kwargs)
             self._result = res
-            if clear_callable:
+            if not self._keep_args:
                 self.func = None
                 self.args = None
                 self.kwargs = None
@@ -101,13 +106,13 @@ class DelayedGetitem(Delayed):
     # def value(self, new_value):
     #     self.obj[self.key] = new_value
 
-    def result(self, **kwargs):
+    def result(self):
         if not self.is_ready():
             raise DelayedNotReadyError
-        obj = get_result(self.obj, **kwargs)
-        key = get_result(self.key, **kwargs)
+        obj = get_result(self.obj)
+        key = get_result(self.key)
         value = obj[key]
-        return get_result(value, **kwargs)
+        return get_result(value)
 
 
 def get_delayed(*args, recursive=True):
@@ -117,9 +122,16 @@ def get_delayed(*args, recursive=True):
     return filter(lambda x: isinstance(x, Delayed), args)
 
 
-def get_result(value, **kwargs):
+def get_result(value):
     if isinstance(value, Delayed):
-        return value.result(**kwargs)
+        return value.result()
+    else:
+        return value
+
+
+def get_result_if_ready(value):
+    if isinstance(value, Delayed) and value.is_ready():
+        return value.result()
     else:
         return value
 
@@ -140,10 +152,12 @@ class DelayedQueue:
         self._items = {}
 
     def delayed(self, func, *args, **kwargs):
+        _keep_args = kwargs.pop("_keep_args", False)
         dc = DelayedCallable(
             func=func,
             args=args,
             kwargs=kwargs,
+            _keep_args=_keep_args,
         )
         return dc
 
@@ -185,14 +199,20 @@ class DelayedStore:
     def __init__(self, queue):
         self.value = {}
         self.queue = queue
+        self.delayed = ItemProxy(self, "delayed")
 
     def __len__(self):
         return len(self.value)
 
     def __getitem__(self, key):
         if key in self:
-            value = self.value[key]
-            return value
+            return get_result_if_ready(self.value[key])
+        else:
+            return DelayedGetitem(obj=self, key=key)
+
+    def _delayed_getitem(self, key):
+        if key in self:
+            return self.value[key]
         else:
             return DelayedGetitem(obj=self, key=key)
 
@@ -203,14 +223,26 @@ class DelayedStore:
             self.queue.append(value)
         self.value[key] = value
 
+    def _delayed_setitem(self, key, value):
+        self.__setitem__(key, value)
+
     def __delitem__(self, key):
         raise RuntimeError(f"store is immutable, cannot delete key {key}")
+
+    def _delayed_delitem(self, key):
+        return self.__delitem__(self, key)
 
     def __contains__(self, key):
         return key in self.value
 
+    def _delayed_contains(self, key):
+        return self.__contains__(key)
+
     def __iter__(self):
         return iter(self.value)
+
+    def _delayed_iter(self):
+        return self.__iter__()
 
     def clear(self):
         return self.value.clear()
@@ -220,7 +252,8 @@ class DelayedStore:
         new.value = self.value.copy()
         return new
 
-    copy = __copy__
+    def copy(self):
+        return self.__copy__()
 
     @classmethod
     def fromkeys(cls, iterable, value):
@@ -233,6 +266,12 @@ class DelayedStore:
             return default
 
     def items(self):
+        # TODO: this ItemsView does not reference underlying dict self.value
+        # (i.e., has correct type but doesn't update when new keys are added)
+        # this shouldn't be a big deal though
+        return {k: get_result_if_ready(v) for k, v in self.value.items()}.items()
+
+    def _delayed_items(self):
         return self.value.items()
 
     def keys(self):

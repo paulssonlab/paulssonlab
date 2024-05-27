@@ -360,9 +360,10 @@ class DefaultPipeline(Pipeline):
         rois = self.rois.setdefault(
             (fov_num, t),
             self.delayed(
-                # roi_detection_func,
-                lambda x: [print(i, z) for i, z in enumerate(x)],
+                roi_detection_func,
+                # lambda x: [print(i, z) for i, z in enumerate(x)],
                 segmentation_frames,
+                _keep_args=True,
             ),
         )
         # if rois available -> crop

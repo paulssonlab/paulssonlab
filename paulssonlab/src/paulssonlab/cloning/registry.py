@@ -42,6 +42,7 @@ from paulssonlab.cloning.workflow import (
     part_entry_to_seq,
     rename_ids,
 )
+from paulssonlab.util.core import ItemProxy
 
 AMBIGUOUS_MIMETYPES = set(["application/octet-stream"])
 DEFAULT_LOOKUP_TYPES = ["oligos", "plasmids", "strains", "fragments"]
@@ -319,35 +320,6 @@ class SheetClient(GDriveClient):
         insert_sheet_rows(
             self.worksheet, len(self.remote) + 2, rows, columns=self.columns
         )
-
-
-class ItemProxy(object):
-    def __init__(self, obj, name):
-        self._obj = obj
-        self._name = name
-
-    def __contains__(self, key):
-        return getattr(self._obj, f"_{self._name}_contains")(key)
-
-    def __delitem__(self, key):
-        return getattr(self._obj, f"_{self._name}_delitem")(key)
-
-    def __iter__(self):
-        return getattr(self._obj, f"_{self._name}_iter")()
-
-    def items(self):
-        return getattr(self._obj, f"_{self._name}_items")()
-
-    def __getitem__(self, key):
-        return getattr(self._obj, f"_{self._name}_getitem")(key)
-
-    def __setitem__(self, key, value):
-        return getattr(self._obj, f"_{self._name}_setitem")(key, value)
-
-    def update(self, other):
-        setitem = getattr(self._obj, f"_{self._name}_setitem")
-        for key, value in other.items():
-            setitem(key, value)
 
 
 class FileClient(GDriveClient):
