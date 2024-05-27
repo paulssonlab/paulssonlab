@@ -20,17 +20,11 @@ def find_trench_ends(
     margin=5,
     min_length=50,
     smooth=10,
-    threshold=0.2,
-    threshold_quantile=0.99,
     diagnostics=None,
 ):
     profiles, profile_points = angled_profiles(
         img, angle, rhos, diagnostics=diagnostics
     )
-    profiles = profiles.astype(np.float32)
-    # treat <=0 values as background
-    # (useful for uint16 images where we can't use NaN)
-    profiles[profiles <= 0] = np.nan
     reduced_profile = silent_nanquantile(profiles, profile_quantile, axis=0)
     if smooth:
         reduced_profile_smooth = scipy.ndimage.filters.gaussian_filter1d(
@@ -38,8 +32,8 @@ def find_trench_ends(
         )
     else:
         reduced_profile_smooth = reduced_profile
-    threshold_value = (
-        silent_nanquantile(reduced_profile_smooth, threshold_quantile) * threshold
+    threshold_value = skimage.filters.threshold_otsu(
+        reduced_profile_smooth[~np.isnan(reduced_profile_smooth)]
     )
     profile_mask = reduced_profile_smooth > threshold_value
     if min_length:
@@ -53,7 +47,6 @@ def find_trench_ends(
         endpoints.append((nonzero[0], nonzero[-1]))
     if diagnostics is not None:
         diagnostics["profile_quantile"] = profile_quantile
-        diagnostics["threshold"] = threshold
         diagnostics["threshold_value"] = threshold_value
         diagnostics["margin"] = margin
         start_lines = hv.Overlay([hv.VLine(x[0]) for x in endpoints]).options(
