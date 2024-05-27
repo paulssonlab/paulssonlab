@@ -34,9 +34,10 @@ def downsample(img, factor):
     return img[::factor, ::factor]
 
 
-def scale_image(img, scale=False, downsample=None):
-    # needed for downsample to work if we have extraneous singleton dimensions up front
-    img = img.squeeze()
+def scale_image(img, scale=False, downsample=None, squeeze=True):
+    if squeeze:
+        # needed for downsample to work if we have extraneous singleton dimensions up front
+        img = img.squeeze()
     if downsample is not None:
         img = img[::downsample, ::downsample, ...]
     if scale is True:
@@ -443,5 +444,9 @@ def _colorize(channel_imgs, colors, scale=True):
     return img
 
 
-def power_law_composite(imgs, power=0.5, dtype=None):
-    return np.mean([(img / img.max()) ** power for img in imgs], axis=0, dtype=dtype)
+def power_law_composite(imgs, power=0.5, scale=True, dtype=None):
+    return np.mean(
+        [scale_image(img, scale=scale, squeeze=False) ** power for img in imgs],
+        axis=0,
+        dtype=dtype,
+    )
