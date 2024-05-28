@@ -162,18 +162,18 @@ class DelayedQueue:
         return dc
 
     def poll(self):
-        print("POLLING")
+        # print("POLLING")
         ids = list(self._items.keys())
         while True:
             any_fired = False
             idx = 0
             while idx < len(ids):
-                print(f"IDX: {idx}/{len(ids)}")
+                # print(f"IDX: {idx}/{len(ids)}")
                 id_ = ids[idx]
                 delayed = self._items[id_]
-                print("*", delayed, "IS_READY", delayed.is_ready())
+                # print("*", delayed, "IS_READY", delayed.is_ready())
                 if delayed.is_ready():
-                    print("!!! FIRING")
+                    # print("!!! FIRING")
                     delayed.result()
                     self._items.pop(id_, None)
                     del ids[idx]
@@ -190,7 +190,7 @@ class DelayedQueue:
             if hasattr(delayed, "dependencies") and delayed.dependencies:
                 for dep in delayed.dependencies:
                     if isinstance(dep, DelayedCallable):
-                        print(f"ADDING DEP {delayed} -> {dep}")
+                        # print(f"ADDING DEP {delayed} -> {dep}")
                         self.append(dep)
             self._items[id(delayed)] = delayed
 

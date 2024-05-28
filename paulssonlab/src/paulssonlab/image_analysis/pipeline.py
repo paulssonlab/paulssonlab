@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
 from cytoolz import compose, get_in
+from skimage.measure import regionprops_table
 
 from paulssonlab.image_analysis.delayed import (
     DelayedArrayStore,
@@ -38,47 +39,51 @@ def crop_rois(img, rois):
     return crops
 
 
-# def segment_crops(crops):
-#     masks = {}
-#     for i, crop in crops.items():
-#         masks[i] = segmentation.watershed.segment(crop)
-#     return masks
+def segment_crops(crops):
+    masks = {}
+    for i, crop in crops.items():
+        masks[i] = watershed_segment(crop)
+    return masks
 
 
 # TODO: this is really boilerplatey, also we want finer task granularity than doing a whole FOV at once
-# def measure_crops(label_images, intensity_images):
-#     keys = label_images.keys() & intensity_images.keys()
-#     return {k: measure_crop(label_images[k], intensity_images[k]) for k in keys}
-def measure_crops(intensity_images):
-    keys = intensity_images.keys()
-    return {k: measure_crop(intensity_images[k]) for k in keys}
+def measure_crops(label_images, intensity_images):
+    keys = label_images.keys() & intensity_images.keys()
+    return {k: measure_crop(label_images[k], intensity_images[k]) for k in keys}
 
 
-# def measure_crop(label_image, intensity_image):
-# return pd.DataFrame(
-#     skimage.measure.regionprops_table(
-#         label_image,
-#         intensity_image,
-#         properties=(
-#             "label",
-#             "intensity_mean",
-#         ),
-#     )
-# ).set_index("label")
-def measure_crop(intensity_image):
-    centerline = intensity_image[:, intensity_image.shape[1] // 2]
-    return pd.Series(
-        {
-            # "p1": np.percentile(intensity_image, 1),
-            # "p50": np.median(intensity_image),
-            "p90": np.percentile(intensity_image, 90),
-            # "p99": np.percentile(intensity_image, 99),
-            # "mean": np.mean(intensity_image),
-            # "centerline_mean": np.mean(centerline),
-            # "centerline_median": np.median(centerline),
-        },
-        name="value",
-    ).rename_axis(index="observable")
+# def measure_crops(intensity_images):
+#     keys = intensity_images.keys()
+#     return {k: measure_crop(intensity_images[k]) for k in keys}
+
+
+def measure_crop(label_image, intensity_image):
+    return pd.DataFrame(
+        regionprops_table(
+            label_image,
+            intensity_image,
+            properties=(
+                "label",
+                "intensity_mean",
+            ),
+        )
+    ).set_index("label")
+
+
+# def measure_crop(intensity_image):
+#     centerline = intensity_image[:, intensity_image.shape[1] // 2]
+#     return pd.Series(
+#         {
+#             # "p1": np.percentile(intensity_image, 1),
+#             # "p50": np.median(intensity_image),
+#             "p90": np.percentile(intensity_image, 90),
+#             # "p99": np.percentile(intensity_image, 99),
+#             # "mean": np.mean(intensity_image),
+#             # "centerline_mean": np.mean(centerline),
+#             # "centerline_median": np.median(centerline),
+#         },
+#         name="value",
+#     ).rename_axis(index="observable")
 
 
 def measure_mask_crops(label_images):
@@ -87,7 +92,7 @@ def measure_mask_crops(label_images):
 
 def measure_mask_crop(label_image):
     return pd.DataFrame(
-        skimage.measure.regionprops_table(
+        regionprops_table(
             label_image,
             properties=(
                 "label",
@@ -255,7 +260,7 @@ class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
         "composite_func": power_law_composite,
         "roi_detection_func": find_trenches,
-        "track_drift": True,
+        "correct_drift": True,
         "segmentation_func": watershed_segment,
     }
     REQUIRED_CONFIG = ["segmentation_channels"]
@@ -272,6 +277,9 @@ class DefaultPipeline(Pipeline):
         self.initial_rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.measurements = DelayedTableStore(self._queue, output_dir / "measurements")
+        self.mask_measurements = DelayedTableStore(
+            self._queue, output_dir / "mask_measurements"
+        )
         self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw_frames")
         self.processed_frames = DelayedArrayStore(
             self._queue, output_dir / "processed_frames"
@@ -381,7 +389,7 @@ class DefaultPipeline(Pipeline):
         if first_t is None or t == first_t:
             self.first_t[fov_num] = t
             initial_rois = self.initial_rois.setdefault(
-                fov_num,
+                (fov_num, t),
                 self.delayed(
                     self.config["roi_detection_func"],
                     segmentation_frame,
@@ -396,12 +404,8 @@ class DefaultPipeline(Pipeline):
             )
         else:
             last_shift = self.shifts.get((fov_num, t - 1), None)
-            # TODO: implemented reverse-time case
-            # if drift_shift is None:
-            #     drift_shift = self.shifts.get((fov_num, t + 1), None)
-            # if we don't have shifts for either t-1 or t+1, error
             initial_shift = self.shifts[(fov_num, first_t)]
-            initial_rois = self.initial_rois[first_t]
+            initial_rois = self.initial_rois[(fov_num, first_t)]
             shift = self.shifts.setdefault(
                 (fov_num, t),
                 self.delayed(
@@ -413,11 +417,6 @@ class DefaultPipeline(Pipeline):
                     initial_shift2=last_shift,
                 ),
             )
-            # TODO: how about same t??
-            # if not (last_t == t - 1 or last_t == t + 1):
-            #     raise ValueError(
-            #         "expecting t ({t}) to be last_t ({last_t}) +1 or -1 (fov_num={fov_num})"
-            #     )
         rois = self.rois.setdefault(
             (fov_num, t),
             self.delayed(
@@ -432,17 +431,19 @@ class DefaultPipeline(Pipeline):
             (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
         )
         # if crop available -> segment crops
-        # seg_masks = self.segmentation_masks.setdefault(
-        #     (fov_num, t),
-        #     self.delayed(segment_crops, rois, crops,
-        # )
-        # # # if crop segmentation available -> measure
-        # ### TODO: segmentationless measurement
-        # self.measurements.setdefault(
-        #     (fov_num, t, channel),
-        #     self.delayed(measure_crops, crops),
-        #     # seg_masks,
-        # )
+        seg_masks = self.segmentation_masks.setdefault(
+            (fov_num, t),
+            self.delayed(segment_crops, crops),
+        )
+        # if crop segmentation available -> measure
+        self.mask_measurements.setdefault(
+            (fov_num, t),
+            self.delayed(measure_mask_crops, seg_masks),
+        )
+        self.measurements.setdefault(
+            (fov_num, channel, t),
+            self.delayed(measure_crops, seg_masks, crops),
+        )
 
     def handle_fish_barcode(self, msg):
         pass  # TODO
