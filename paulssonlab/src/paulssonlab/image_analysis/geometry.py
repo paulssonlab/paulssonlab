@@ -67,3 +67,9 @@ def shift_rois(rois, shift):
     coords_x = {col: rois[col].values + shift[0] for col in cols_x}
     coords_y = {col: rois[col].values + shift[1] for col in cols_y}
     return rois.assign(**coords_x, **coords_y)
+
+
+def filter_and_shift_rois(rois, shift, image_limits):
+    if shift is not None:
+        rois = shift_rois(rois, shift)
+    return filter_rois(rois, image_limits)

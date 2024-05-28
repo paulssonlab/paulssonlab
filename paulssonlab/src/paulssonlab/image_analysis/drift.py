@@ -76,11 +76,13 @@ def ransac_translation(
     return model_robust.translation
 
 
-def get_drift_features(img, rois, shift, feature_func=trench_cell_endpoints):
+def get_drift_features(img, rois, shift=None, feature_func=trench_cell_endpoints):
     image_limits = get_image_limits(img.shape)
     features = {}
-    shifted_rois = filter_rois(shift_rois(rois, shift), image_limits)
-    for roi_idx, crop, ul in iter_roi_crops(img, shifted_rois, corner=True):
+    if shift is not None:
+        rois = shift_rois(rois, shift)
+    rois = filter_rois(rois, image_limits)
+    for roi_idx, crop, ul in iter_roi_crops(img, rois, corner=True):
         if (feature := feature_func(crop)) is not None:
             features[roi_idx] = feature + ul[np.newaxis, ...]
     return features
@@ -144,7 +146,7 @@ def find_feature_drift(
         # adding 0.5 puts the point in the center of the pixel
         diagnostics["features1"] = hv.Points(features_list[:, 0, :] + 0.5)
         diagnostics["features2"] = hv.Points(features_list[:, 1, :] + 0.5)
-        diagnostics["rois1"] = plot_trenches(shifted_rois1)
+        diagnostics["rois1"] = plot_trenches(rois)
         diagnostics["rois2"] = plot_trenches(shifted_rois2)
         shifted_rois_final = filter_rois(shift_rois(rois, shift), image_limits)
         diagnostics["rois_final"] = plot_trenches(shifted_rois_final)

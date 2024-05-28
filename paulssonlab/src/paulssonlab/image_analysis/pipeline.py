@@ -12,10 +12,15 @@ from cytoolz import compose, get_in
 from paulssonlab.image_analysis.delayed import (
     DelayedArrayStore,
     DelayedQueue,
+    DelayedStore,
     DelayedTableStore,
 )
 from paulssonlab.image_analysis.drift import find_feature_drift, get_drift_features
-from paulssonlab.image_analysis.geometry import filter_rois, iter_roi_crops, shift_rois
+from paulssonlab.image_analysis.geometry import (
+    filter_and_shift_rois,
+    get_image_limits,
+    iter_roi_crops,
+)
 from paulssonlab.image_analysis.image import power_law_composite
 from paulssonlab.image_analysis.segmentation.watershed import (
     segment as watershed_segment,
@@ -263,14 +268,21 @@ class DefaultPipeline(Pipeline):
         self._apply_default_config()
         self._delayed = get_delayed(delayed)
         self._queue = DelayedQueue()
+        self.first_t = {}
+        self.initial_rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.measurements = DelayedTableStore(self._queue, output_dir / "measurements")
-        self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw")
-        self.processed_frames = DelayedArrayStore(self._queue, output_dir / "processed")
+        self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw_frames")
+        self.processed_frames = DelayedArrayStore(
+            self._queue, output_dir / "processed_frames"
+        )
         self.crops = DelayedArrayStore(self._queue, output_dir / "crops")
         self.segmentation_masks = DelayedArrayStore(
             self._queue, output_dir / "segmentation_masks"
         )
+        self.initial_drift_features = DelayedStore(self._queue)
+        self.image_limits = DelayedStore(self._queue)
+        self.shifts = DelayedStore(self._queue)
         self.fish_crops = DelayedArrayStore(self._queue, output_dir / "fish_crops")
 
     def _apply_default_config(self):
@@ -350,31 +362,80 @@ class DefaultPipeline(Pipeline):
         ]
         segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
         # get rois
-        roi_detection_func = compose(
-            partial(
-                self.config["roi_detection_func"],
-                **(self.config.get("roi_detection_kwargs") or {}),
-            ),
-            self.config["composite_func"],
+        # TODO: segmentation_frame might be recomputed (undesirable) if multiple different
+        # instances (created in different calls to _handle_image) are dependencies (args)
+        # for different DelayedCallables that are themselves added to DelayedQueue
+        # via DelayedStore.setdefault
+        # segmentation_frame = self.segmentation_frames.setdefault(
+        #     (fov_num, t),
+        #     self.delayed(self.config["composite_func"], segmentation_frames),
+        # )
+        segmentation_frame = self.delayed(
+            self.config["composite_func"], segmentation_frames
         )
+        image_limits = self.image_limits.setdefault(
+            fov_num,
+            self.delayed(lambda img: get_image_limits(img.shape), processed_frame),
+        )
+        first_t = self.first_t.get(fov_num, None)
+        if first_t is None or t == first_t:
+            self.first_t[fov_num] = t
+            initial_rois = self.initial_rois.setdefault(
+                fov_num,
+                self.delayed(
+                    self.config["roi_detection_func"],
+                    segmentation_frame,
+                    _keep_args=True,
+                    **(self.config.get("roi_detection_kwargs") or {}),
+                ),
+            )
+            shift = self.shifts.setdefault((fov_num, t), np.array([0, 0]))
+            self.initial_drift_features.setdefault(
+                fov_num,
+                self.delayed(get_drift_features, segmentation_frame, initial_rois),
+            )
+        else:
+            last_shift = self.shifts.get((fov_num, t - 1), None)
+            # TODO: implemented reverse-time case
+            # if drift_shift is None:
+            #     drift_shift = self.shifts.get((fov_num, t + 1), None)
+            # if we don't have shifts for either t-1 or t+1, error
+            initial_shift = self.shifts[(fov_num, first_t)]
+            initial_rois = self.initial_rois[first_t]
+            shift = self.shifts.setdefault(
+                (fov_num, t),
+                self.delayed(
+                    find_feature_drift,
+                    self.initial_drift_features[fov_num],
+                    segmentation_frame,
+                    initial_rois,
+                    initial_shift1=initial_shift,
+                    initial_shift2=last_shift,
+                ),
+            )
+            # TODO: how about same t??
+            # if not (last_t == t - 1 or last_t == t + 1):
+            #     raise ValueError(
+            #         "expecting t ({t}) to be last_t ({last_t}) +1 or -1 (fov_num={fov_num})"
+            #     )
         rois = self.rois.setdefault(
             (fov_num, t),
             self.delayed(
-                roi_detection_func,
-                # lambda x: [print(i, z) for i, z in enumerate(x)],
-                segmentation_frames,
-                _keep_args=True,
+                filter_and_shift_rois,
+                initial_rois,
+                shift,
+                image_limits,
             ),
         )
         # if rois available -> crop
-        # crops = self.crops.setdefault(
-        #     (fov_num, channel, t), self.delayed(crop_rois, rois, processed_frame)
-        # )
+        crops = self.crops.setdefault(
+            (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
+        )
         # if crop available -> segment crops
-        # # seg_masks = self.segmentation_masks.setdefault(
-        # #     (fov_num, t),
-        # #     self.delayed(segment_crops, rois, crops,
-        # # )
+        # seg_masks = self.segmentation_masks.setdefault(
+        #     (fov_num, t),
+        #     self.delayed(segment_crops, rois, crops,
+        # )
         # # # if crop segmentation available -> measure
         # ### TODO: segmentationless measurement
         # self.measurements.setdefault(
