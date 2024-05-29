@@ -1,3 +1,4 @@
+from os import PathLike
 from pathlib import Path
 
 import cachetools
@@ -63,15 +64,20 @@ def get_position_metadata(metadata, grid_coords=True, reverse_grid="x"):
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
 
-class SplitFilename(str):
+class SplitFilename(PathLike):
     def __init__(self, files):
         self.files = files
 
-    def __str__(self):
+    def __fspath__(self):
         return self.files[0]
+
+    def __getitem__(self, idx):
+        return Path(self.files[idx])
 
     def __repr__(self):
         return f"SplitFilename:{list(self.files)}"
+
+    __str__ = __repr__
 
 
 def _get_nd2_reader(filename, **kwargs):

@@ -72,16 +72,18 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
         yield msg
 
 
-def _slice_directory_keys(keys, slices):
-    idxs = tuple(map(np.unique, zip(*keys)))
-    selected_idxs = tuple(map(_select_indices, idxs, slices))
+def _slice_directory_keys(keys, slices, values=None):
+    # TODO: I don't like the name values here or axis_values below
+    # xarray calls a similar thing coords, but that may be confusing here
+    if values is None:
+        values = tuple(map(np.unique, zip(*keys)))
+    selected_idxs = tuple(map(_select_indices, values, slices))
     for key in sorted(keys):
         for idx, selected_idx in zip(key, selected_idxs):
             if idx not in selected_idx:
                 break
         else:
             yield key
-    return selected_idxs
 
 
 def slice_directory(root_dir, pattern, axis_order="tvc", slices={}):
@@ -100,11 +102,16 @@ def slice_directory(root_dir, pattern, axis_order="tvc", slices={}):
             keys_to_filenames[key] = file.name
         else:
             unmatched_filenames.append(file.name)
+    # here axis_values is analogous to what xarray calls DataArray.coords
+    axis_values = tuple(map(np.unique, zip(*keys_to_filenames.keys())))
     selected_keys = _slice_directory_keys(
-        keys_to_filenames.keys(), [slices.get(axis, slice(None)) for axis in axis_order]
+        keys_to_filenames.keys(),
+        [slices.get(axis, slice(None)) for axis in axis_order],
+        values=axis_values,
     )
     iterator = ((key, root_dir / keys_to_filenames[key]) for key in selected_keys)
-    return iterator, unmatched_filenames
+    axis_values = dict(zip(axis_order, axis_values))
+    return iterator, unmatched_filenames, axis_values
 
 
 def get_eaton_fish_frame(filename):
@@ -126,9 +133,10 @@ def send_eaton_fish(
 ):
     root_dir = Path(root_dir)
     delayed = get_delayed(delayed)
-    filenames, unmatched_filenames = slice_directory(
+    filenames, _, axis_values = slice_directory(
         root_dir, pattern, axis_order=axis_order, slices=slices
     )
+    all_channels = list(axis_values["c"])
     if include_fixation:
         for suffix in ("initial.hdf5", "init_fixation.hdf5", "fixed.hdf5"):
             filename = root_dir / suffix
@@ -148,8 +156,9 @@ def send_eaton_fish(
         image = delayed(get_eaton_fish_frame)(filename)
         coords = dict(zip(axis_order, key))
         image_metadata = {
-            "dummy_metadata": 0,
             "channel": coords["c"],
+            # TODO: do we want to send this?
+            "all_channels": all_channels,
             "fov_num": coords["v"],
             "t": coords["t"],
         }

@@ -1,5 +1,6 @@
 import itertools as it
-from functools import partial
+from functools import reduce
+from operator import and_, methodcaller
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
 from cytoolz import compose, get_in
+from skimage.filters import threshold_otsu
 from skimage.measure import regionprops_table
 
 from paulssonlab.image_analysis.delayed import (
@@ -52,11 +54,6 @@ def measure_crops(label_images, intensity_images):
     return {k: measure_crop(label_images[k], intensity_images[k]) for k in keys}
 
 
-# def measure_crops(intensity_images):
-#     keys = intensity_images.keys()
-#     return {k: measure_crop(intensity_images[k]) for k in keys}
-
-
 def measure_crop(label_image, intensity_image):
     return pd.DataFrame(
         regionprops_table(
@@ -68,22 +65,6 @@ def measure_crop(label_image, intensity_image):
             ),
         )
     ).set_index("label")
-
-
-# def measure_crop(intensity_image):
-#     centerline = intensity_image[:, intensity_image.shape[1] // 2]
-#     return pd.Series(
-#         {
-#             # "p1": np.percentile(intensity_image, 1),
-#             # "p50": np.median(intensity_image),
-#             "p90": np.percentile(intensity_image, 90),
-#             # "p99": np.percentile(intensity_image, 99),
-#             # "mean": np.mean(intensity_image),
-#             # "centerline_mean": np.mean(centerline),
-#             # "centerline_median": np.median(centerline),
-#         },
-#         name="value",
-#     ).rename_axis(index="observable")
 
 
 def measure_mask_crops(label_images):
@@ -106,146 +87,43 @@ def measure_mask_crop(label_image):
     ).set_index("label")
 
 
-def write_parquet(output_dir, measurements, position, t):
-    df = pd.concat(
+def _common_keys(mappings):
+    return list(reduce(and_, map(methodcaller("keys"), mappings)))
+
+
+def measure_fish_crops(fish_images):
+    channels = fish_images.keys()
+    keys = _common_keys(fish_images.values())
+    return {
+        k: measure_fish_crop({ch: fish_images[ch][k] for ch in channels}) for k in keys
+    }
+
+
+def otsu_mean(x):
+    return x[threshold_otsu(x) <= x].mean()
+
+
+def measure_fish_crop(images):
+    # centerline = intensity_image[:, intensity_image.shape[1] // 2]
+    return pd.concat(
         {
-            channel: pd.concat(channel_df, names=["roi_idx"])
-            for channel, channel_df in measurements.items()
-        },
-        names=["channel"],
-    ).reset_index()
-    df["position"] = np.array(position).astype(np.uint16)
-    df["t"] = np.array(t).astype(np.uint16)
-    pq.write_to_dataset(
-        pa.Table.from_pandas(df, preserve_index=False),
-        Path(output_dir) / "measurements",
-        partition_cols=["position", "t"],
-        existing_data_behavior="delete_matching",
-    )
-
-
-def stack_dict(d, size=None):
-    if size is None:
-        size = max(d.keys()) + 1
-    shape = next(iter(d.values())).shape
-    null = np.full(shape, np.nan)
-    return [d.get(idx, null) for idx in range(size)]
-
-
-def _pad(ary, shape):
-    return np.pad(
-        ary,
-        [(0, max(goal - current, 0)) for goal, current in zip(shape, ary.shape)],
-        constant_values=np.nan,
-    )
-
-
-def write_zarr(filename, crops, t, max_t, channels):
-    store = zarr.DirectoryStore(filename)  # DirectoryStoreV3(filename)
-    if not filename.exists():
-        num_rois = max(crops[channels[0]].keys()) + 1
-        num_channels = len(channels)
-        max_shape = np.max([crop.shape for crop in crops[channels[0]].values()], axis=0)
-        shape = (num_rois, max_t, num_channels, *max_shape)
-        chunks = (5, 1, num_channels, None, None)
-        ary = zarr.open_array(
-            store,
-            mode="a",
-            zarr_version=2,
-            shape=shape,
-            chunks=chunks,
-            fill_value=np.nan,
-        )
-    else:
-        ary = zarr.open_array(store, mode="a", zarr_version=2)
-        max_shape = ary.shape[-2:]
-    stack = np.array(
-        [
-            stack_dict(
+            channel: pd.Series(
                 {
-                    idx: _pad(crop.astype(np.float32), max_shape)
-                    for idx, crop in crops[channel].items()
+                    "mean": np.mean(image),
+                    "otsu_mean": otsu_mean(image),
+                    # "p1": np.percentile(intensity_image, 1),
+                    # "p50": np.median(intensity_image),
+                    # "p90": np.percentile(intensity_image, 90),
+                    # "p99": np.percentile(intensity_image, 99),
+                    # "mean": np.mean(intensity_image),
+                    # "centerline_mean": np.mean(centerline),
+                    # "centerline_median": np.median(centerline),
                 },
-                size=ary.shape[0],
-            )
-            for channel in channels
-        ]
-    ).swapaxes(0, 1)
-    ary[:, t, ...] = stack
-
-
-def process_fov(
-    get_frame_func,
-    position,
-    ts,
-    output_dir,
-    segmentation_channel,
-    measurement_channels,
-    image_limits,
-    find_trenches_kwargs={},
-    dark=None,
-    flats=None,
-    delayed=True,
-):
-    delayed = get_delayed(delayed)
-    channels = [
-        segmentation_channel,
-        *(set(measurement_channels) - set([segmentation_channel])),
-    ]
-    measurement_channels = measurement_channels
-    rois = None
-    shifts = {}
-    write_tasks = []
-    for prev_t, t in list(zip(it.chain([None], ts[:-1]), ts)):
-        segmentation_img = delayed(get_frame_func)(position, segmentation_channel, t)
-        if rois is None:
-            rois = delayed(find_trenches)(
-                segmentation_img, **{**dict(join_info=True), **find_trenches_kwargs}
-            )
-            shifts[t] = np.array([0, 0])
-            initial_drift_features = delayed(get_drift_features)(
-                segmentation_img, rois, shifts[t]
-            )
-        else:
-            shifts[t] = delayed(find_feature_drift)(
-                initial_drift_features,
-                segmentation_img,
-                rois,
-                initial_shift2=shifts[prev_t],
-            )
-        shifted_rois = delayed(filter_rois)(
-            delayed(shift_rois)(rois, shifts[t]), image_limits
-        )
-        crops = {}
-        measurements = {}
-        for channel in channels:
-            if channel == segmentation_channel:
-                crops[channel] = delayed(crop_rois)(segmentation_img, shifted_rois)
-                # mask_crops = delayed(segment_crops)(crops[channel])
-                # mask_measurements = delayed(measure_mask_crops)(mask_crops)
-            else:
-                img = delayed(get_frame_func)(position, channel, t)
-                crops[channel] = delayed(crop_rois)(img, shifted_rois)
-            if channel in measurement_channels:
-                # measurements[channel] = delayed(measure_crops)(mask_crops, crops[channel])
-                measurements[channel] = delayed(measure_crops)(crops[channel])
-        metadata = dict(shifts=shifts)
-        write_tasks.append(
-            delayed(write_parquet)(output_dir, measurements, position, t)
-        )
-        # TODO
-        max_t = 300
-        write_tasks.append(
-            delayed(write_zarr)(
-                output_dir / f"crops_v={position}.zarr",
-                crops,
-                t,
-                max_t,
-                measurement_channels,
-            )
-        )
-        # TODO: rois, metadata
-    return write_tasks
+                name="value",
+            ).rename_axis(index="observable")
+            for channel, image in images.items()
+        }
+    )
 
 
 class Pipeline:
@@ -262,6 +140,9 @@ class DefaultPipeline(Pipeline):
         "roi_detection_func": find_trenches,
         "correct_drift": True,
         "segmentation_func": watershed_segment,
+        "segment": False,
+        "measure": False,
+        "measure_fish": True,
     }
     REQUIRED_CONFIG = ["segmentation_channels"]
 
@@ -274,6 +155,7 @@ class DefaultPipeline(Pipeline):
         self._delayed = get_delayed(delayed)
         self._queue = DelayedQueue()
         self.first_t = {}
+        self.last_t = {}
         self.initial_rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.rois = DelayedTableStore(self._queue, output_dir / "rois")
         self.measurements = DelayedTableStore(self._queue, output_dir / "measurements")
@@ -291,13 +173,24 @@ class DefaultPipeline(Pipeline):
         self.initial_drift_features = DelayedStore(self._queue)
         self.image_limits = DelayedStore(self._queue)
         self.shifts = DelayedStore(self._queue)
+        self.fish_raw_frames = DelayedArrayStore(
+            self._queue, output_dir / "fish_raw_frames"
+        )
+        self.fish_processed_frames = DelayedArrayStore(
+            self._queue, output_dir / "fish_processed_frames"
+        )
         self.fish_crops = DelayedArrayStore(self._queue, output_dir / "fish_crops")
+        self.fish_measurements = DelayedTableStore(
+            self._queue, output_dir / "fish_measurements"
+        )
 
     def _apply_default_config(self):
         config = {**self.DEFAULT_CONFIG, **self.config}
         config["trench_detection_channels"] = config.get(
             "trench_detection_channels"
         ) or config.get("segmentation_channels")
+        if config["measure"] and not config["segment"]:
+            raise ValueError("cannot enable measurement with segmentation disabled")
         self.config = config
 
     def delayed(self, func, *args, **kwargs):
@@ -315,8 +208,12 @@ class DefaultPipeline(Pipeline):
                 match info:
                     case {"image_type": "fish_barcode"}:
                         self.handle_fish_barcode(msg)
-                    case _:
+                    case {"image_type": "science"}:
                         self.handle_image(msg)
+                    case _:
+                        raise ValueError(
+                            "received image message with missing or unknown image_type"
+                        )
             case {"type": "ome_metadata"}:
                 print("got OME metadata")  # TODO
             case {"type": "nd2_metadata"}:
@@ -364,11 +261,10 @@ class DefaultPipeline(Pipeline):
             processed_frame = raw_frame
             processed_frames = self.raw_frames
         # if all segmentation channels available -> detect rois
-        segmentation_frame_keys = [
-            (fov_num, seg_channel, t)
+        segmentation_frames = [
+            processed_frames[(fov_num, seg_channel, t)]
             for seg_channel in self.config["segmentation_channels"]
         ]
-        segmentation_frames = [processed_frames[k] for k in segmentation_frame_keys]
         # get rois
         # TODO: segmentation_frame might be recomputed (undesirable) if multiple different
         # instances (created in different calls to _handle_image) are dependencies (args)
@@ -386,6 +282,12 @@ class DefaultPipeline(Pipeline):
             self.delayed(lambda img: get_image_limits(img.shape), processed_frame),
         )
         first_t = self.first_t.get(fov_num, None)
+        last_t = self.last_t.get(fov_num, None)
+        if last_t is None:
+            last_t = t
+        else:
+            last_t = max(t, last_t)
+        self.last_t[fov_num] = last_t
         if first_t is None or t == first_t:
             self.first_t[fov_num] = t
             initial_rois = self.initial_rois.setdefault(
@@ -431,19 +333,61 @@ class DefaultPipeline(Pipeline):
             (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
         )
         # if crop available -> segment crops
-        seg_masks = self.segmentation_masks.setdefault(
-            (fov_num, t),
-            self.delayed(segment_crops, crops),
-        )
+        if self.config["segment"]:
+            seg_masks = self.segmentation_masks.setdefault(
+                (fov_num, t),
+                self.delayed(segment_crops, crops),
+            )
         # if crop segmentation available -> measure
-        self.mask_measurements.setdefault(
-            (fov_num, t),
-            self.delayed(measure_mask_crops, seg_masks),
-        )
-        self.measurements.setdefault(
-            (fov_num, channel, t),
-            self.delayed(measure_crops, seg_masks, crops),
-        )
+        if self.config["measure"]:
+            self.mask_measurements.setdefault(
+                (fov_num, t),
+                self.delayed(measure_mask_crops, seg_masks),
+            )
+            self.measurements.setdefault(
+                (fov_num, channel, t),
+                self.delayed(measure_crops, seg_masks, crops),
+            )
 
     def handle_fish_barcode(self, msg):
-        pass  # TODO
+        image = msg["image"]
+        metadata = msg["metadata"]
+        print("FISH IMAGE", metadata)
+        fov_num = metadata["fov_num"]
+        t = metadata["t"]
+        channel = metadata["channel"]
+        # store raw image ("/raw")
+        raw_frame = self.fish_raw_frames.setdefault((fov_num, channel, t), image)
+        # preprocess image
+        # store preprocessed whole frame image ("/frame")
+        if self.config.get("preprocess_func"):
+            processed_frame = self.fish_processed_frames.setdefault(
+                (fov_num, channel, t),
+                self.delayed(
+                    self.config["preprocess_func"],
+                    raw_frame,
+                    # channel=channel,
+                    # **(self.config.get("preprocess_kwargs") or {}),
+                ),
+            )
+            processed_frames = self.fish_processed_frames
+        else:
+            processed_frame = raw_frame
+            processed_frames = self.fish_raw_frames
+        last_t = self.last_t.get(fov_num, None)
+        if last_t is None:
+            raise ValueError("received FISH image before ROI detection")
+        rois = self.rois[(fov_num, last_t)]
+        # if rois available -> crop
+        self.fish_crops.setdefault(
+            (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
+        )
+        if self.config["measure_fish"]:
+            crops = {
+                fish_channel: self.fish_crops[(fov_num, fish_channel, t)]
+                for fish_channel in self.config["fish_measure_channels"]
+            }
+            self.fish_measurements.setdefault(
+                (fov_num, t),
+                self.delayed(measure_fish_crops, crops),
+            )
