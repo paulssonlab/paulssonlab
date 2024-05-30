@@ -5,6 +5,8 @@ from functools import cached_property
 from typing import Any
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from deltalake import write_deltalake
 
 from paulssonlab.util.core import (
@@ -25,15 +27,17 @@ class Delayed:
 
 
 # TODO: use the sentinel library to give this a better __str__/__repr__
-NotReady = object()
+NotAvailable = object()
 
 
 @dataclass(kw_only=True)
 class DelayedValue(Delayed):
-    value: Any = NotReady
+    value: Any = NotAvailable
 
     def is_ready(self):
-        return self.value is not NotReady
+        return self.value is not NotAvailable
+
+    is_available = is_ready
 
     def result(self):
         if not self.is_ready():
@@ -47,24 +51,20 @@ class DelayedCallable(Delayed):
     args: list | None = None
     kwargs: dict | None = None
     _keep_args: bool = False
-    _result: Any = NotReady
+    _result: Any = NotAvailable
 
     @cached_property
     def dependencies(self) -> "list[Delayed]":
         return list(get_delayed(self.func, self.args, self.kwargs))
 
     def is_ready(self):
-        # print(f"IS READY ({len(self.dependencies)}):", all(dep.is_ready() for dep in self.dependencies))
-        return self._result is not NotReady or all(
-            dep.is_ready() for dep in self.dependencies
-        )
+        return self.is_available() or all(dep.is_ready() for dep in self.dependencies)
 
-    @property
-    def is_pending(self):
-        return self._result is NotReady
+    def is_available(self):
+        return self._result is not NotAvailable
 
     def result(self):
-        if (res := self._result) is NotReady:
+        if (res := self._result) is NotAvailable:
             func = unbox_delayed(self.func)
             args = unbox_delayed(self.args) or ()
             kwargs = unbox_delayed(self.kwargs) or {}
@@ -86,18 +86,10 @@ class DelayedCallable(Delayed):
 
 @dataclass(kw_only=True)
 class DelayedGetitem(Delayed):
-    obj: MutableMapping | MutableSequence | Delayed
-    key: Hashable | int | Delayed
-
-    # @cached_property
-    # def dependencies(self):
-    #     return list(get_delayed(self.obj, self.key, recursive=False))
+    obj: MutableMapping | MutableSequence
+    key: Hashable | int
 
     def is_ready(self):
-        if (isinstance(self.obj, Delayed) and not self.obj.is_ready()) or (
-            isinstance(self.key, Delayed) and not self.key.is_ready()
-        ):
-            return False
         if self.key in self.obj:
             if isinstance(value := self.obj[self.key], Delayed):
                 return value.is_ready()
@@ -106,14 +98,14 @@ class DelayedGetitem(Delayed):
         else:
             return False
 
-    # @property
-    # def value(self):
-    #     return self.obj[self.key]
-
-    # TODO: do we ever want to use this or will this only lead to confusion?
-    # @value.setter
-    # def value(self, new_value):
-    #     self.obj[self.key] = new_value
+    def is_available(self):
+        if self.key in self.obj:
+            if isinstance(value := self.obj[self.key], Delayed):
+                return value.is_available()
+            else:
+                return True
+        else:
+            return False
 
     def result(self):
         if not self.is_ready():
@@ -145,9 +137,23 @@ def get_result_if_ready(value):
         return value
 
 
+def get_result_if_available(value):
+    if isinstance(value, Delayed) and value.is_available():
+        return value.result()
+    else:
+        return value
+
+
 def is_ready(value):
     if isinstance(value, Delayed):
         return value.is_ready()
+    else:
+        return True
+
+
+def is_available(value):
+    if isinstance(value, Delayed):
+        return value.is_available()
     else:
         return True
 
@@ -220,7 +226,7 @@ class DelayedStore:
 
     def __getitem__(self, key):
         if key in self:
-            return get_result_if_ready(self.value[key])
+            return get_result_if_available(self.value[key])
         else:
             return DelayedGetitem(obj=self, key=key)
 
@@ -260,7 +266,8 @@ class DelayedStore:
         return self.__iter__()
 
     def clear(self):
-        return self.value.clear()
+        self.value.clear()
+        self._write_queue.clear()
 
     def __copy__(self):
         new = type(self).__new__()
@@ -284,7 +291,7 @@ class DelayedStore:
         # TODO: this ItemsView does not reference underlying dict self.value
         # (i.e., has correct type but doesn't update when new keys are added)
         # this shouldn't be a big deal though
-        return {k: get_result_if_ready(v) for k, v in self.value.items()}.items()
+        return {k: get_result_if_available(v) for k, v in self.value.items()}.items()
 
     def _delayed_items(self):
         return self.value.items()
@@ -302,9 +309,10 @@ class DelayedStore:
         return reversed(self.value)
 
     def setdefault(self, key, value):
-        if key in self.value:
+        if key in self:
             # print("A", key, value)
-            return self[key]
+            # return self[key]
+            return get_result_if_available(self.value[key])
         else:
             # print("B", key, value)
             self[key] = value
@@ -333,7 +341,8 @@ class DelayedArrayStore(DelayedStore):
 
 
 class DelayedTableStore(DelayedStore):
-    DEFAULT_WRITE_OPTIONS = {"mode": "append", "engine": "rust"}
+    # DEFAULT_WRITE_OPTIONS = {"mode": "append", "engine": "rust"}
+    DEFAULT_WRITE_OPTIONS = {"existing_data_behavior": "delete_matching"}
 
     def __init__(self, queue, output_path, schema=None, write_options=None):
         self.output_path = output_path
@@ -356,7 +365,7 @@ class DelayedTableStore(DelayedStore):
             self.write_options,
         )
         self.queue.append(writer)
-        self._write_queue.clear()
+        self._write_queue -= items_to_write.keys()
 
     @staticmethod
     def _concat_table(items, schema):
@@ -364,9 +373,12 @@ class DelayedTableStore(DelayedStore):
         items = flatten_dict(items, concatenate_keys=True)
         first_key = first(items)
         names = [s[0] for s in schema[: len(first_key)]]
-        return pd.concat(items, names=names).droplevel(level=-1, axis=0)
+        return pd.concat(items, names=names).droplevel(level=-1, axis=0).reset_index()
 
     @classmethod
     def _write(cls, items, schema, path, write_options):
-        table = cls._concat_table(items, schema)
-        write_deltalake(path, table, **write_options)
+        df = cls._concat_table(items, schema)
+        # write_deltalake(path, table, **write_options)
+        pq.write_to_dataset(
+            pa.Table.from_pandas(df, preserve_index=False), path, **write_options
+        )

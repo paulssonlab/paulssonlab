@@ -105,22 +105,15 @@ def otsu_mean(x):
 
 def measure_fish_crop(images):
     # TODO: can surely do this faster/more elegantly
-    return (
-        pd.Series(
-            reduce(
-                or_,
-                [
-                    {
-                        f"{channel}:mean": np.mean(image),
-                        f"{channel}:otsu_mean": otsu_mean(image),
-                    }
-                    for channel, image in images.items()
-                ],
-                {},
-            )
-        )
-        .to_frame()
-        .T
+    return pd.DataFrame(
+        [
+            {
+                "channel": channel,
+                "mean": np.mean(image),
+                "otsu_mean": otsu_mean(image),
+            }
+            for channel, image in images.items()
+        ],
     )
 
 
@@ -172,8 +165,8 @@ class DefaultPipeline(Pipeline):
         "roi_detection_func": find_trenches,
         "correct_drift": True,
         "segmentation_func": watershed_segment,
-        "segment": False,
-        "measure": False,
+        "segment": True,
+        "measure": True,
         "measure_fish": True,
     }
     REQUIRED_CONFIG = ["segmentation_channels"]
@@ -203,25 +196,25 @@ class DefaultPipeline(Pipeline):
             self._queue,
             output_dir / "rois",
             schema=self.FOV_T_SCHEMA,
-            write_options=dict(partition_by=["fov_num"]),
+            write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self.rois = DelayedTableStore(
             self._queue,
             output_dir / "rois",
             schema=self.FOV_T_SCHEMA,
-            write_options=dict(partition_by=["fov_num"]),
+            write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self.measurements = DelayedTableStore(
             self._queue,
             output_dir / "measurements",
             schema=self.FOV_CHANNEL_T_ROI_SCHEMA,
-            write_options=dict(partition_by=["fov_num"]),
+            write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self.mask_measurements = DelayedTableStore(
             self._queue,
             output_dir / "mask_measurements",
             schema=self.FOV_T_ROI_SCHEMA,
-            write_options=dict(partition_by=["fov_num"]),
+            write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw_frames")
         self.processed_frames = DelayedArrayStore(
@@ -245,7 +238,7 @@ class DefaultPipeline(Pipeline):
             self._queue,
             output_dir / "fish_measurements",
             schema=self.FOV_T_ROI_SCHEMA,
-            write_options=dict(partition_by=["fov_num"]),
+            write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self._stores = [x for x in vars(self).values() if isinstance(x, DelayedStore)]
 
@@ -296,6 +289,8 @@ class DefaultPipeline(Pipeline):
         ####
         # for store in self._stores:
         #     store.write()
+        self.measurements.write()
+        self.mask_measurements.write()
         self.fish_measurements.write()
 
     def handle_image(self, msg):
