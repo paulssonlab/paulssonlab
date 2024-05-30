@@ -1,6 +1,6 @@
 import itertools as it
 from functools import reduce
-from operator import and_, methodcaller
+from operator import and_, methodcaller, or_
 from pathlib import Path
 
 import numpy as np
@@ -104,27 +104,20 @@ def otsu_mean(x):
 
 
 def measure_fish_crop(images):
-    # centerline = intensity_image[:, intensity_image.shape[1] // 2]
     # TODO: can surely do this faster/more elegantly
     return (
-        pd.concat(
-            {
-                channel: pd.Series(
+        pd.Series(
+            reduce(
+                or_,
+                [
                     {
-                        "mean": np.mean(image),
-                        "otsu_mean": otsu_mean(image),
-                        # "p1": np.percentile(intensity_image, 1),
-                        # "p50": np.median(intensity_image),
-                        # "p90": np.percentile(intensity_image, 90),
-                        # "p99": np.percentile(intensity_image, 99),
-                        # "mean": np.mean(intensity_image),
-                        # "centerline_mean": np.mean(centerline),
-                        # "centerline_median": np.median(centerline),
-                    },
-                    name="value",
-                ).rename_axis(index="observable")
-                for channel, image in images.items()
-            }
+                        f"{channel}:mean": np.mean(image),
+                        f"{channel}:otsu_mean": otsu_mean(image),
+                    }
+                    for channel, image in images.items()
+                ],
+                {},
+            )
         )
         .to_frame()
         .T

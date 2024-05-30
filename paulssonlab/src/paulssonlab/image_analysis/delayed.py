@@ -364,7 +364,7 @@ class DelayedTableStore(DelayedStore):
         items = flatten_dict(items, concatenate_keys=True)
         first_key = first(items)
         names = [s[0] for s in schema[: len(first_key)]]
-        return pd.concat(items, names=names)
+        return pd.concat(items, names=names).droplevel(level=-1, axis=0)
 
     @classmethod
     def _write(cls, items, schema, path, write_options):
