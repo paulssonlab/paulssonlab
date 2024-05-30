@@ -105,25 +105,64 @@ def otsu_mean(x):
 
 def measure_fish_crop(images):
     # centerline = intensity_image[:, intensity_image.shape[1] // 2]
-    return pd.concat(
-        {
-            channel: pd.Series(
-                {
-                    "mean": np.mean(image),
-                    "otsu_mean": otsu_mean(image),
-                    # "p1": np.percentile(intensity_image, 1),
-                    # "p50": np.median(intensity_image),
-                    # "p90": np.percentile(intensity_image, 90),
-                    # "p99": np.percentile(intensity_image, 99),
-                    # "mean": np.mean(intensity_image),
-                    # "centerline_mean": np.mean(centerline),
-                    # "centerline_median": np.median(centerline),
-                },
-                name="value",
-            ).rename_axis(index="observable")
-            for channel, image in images.items()
-        }
+    # TODO: can surely do this faster/more elegantly
+    return (
+        pd.concat(
+            {
+                channel: pd.Series(
+                    {
+                        "mean": np.mean(image),
+                        "otsu_mean": otsu_mean(image),
+                        # "p1": np.percentile(intensity_image, 1),
+                        # "p50": np.median(intensity_image),
+                        # "p90": np.percentile(intensity_image, 90),
+                        # "p99": np.percentile(intensity_image, 99),
+                        # "mean": np.mean(intensity_image),
+                        # "centerline_mean": np.mean(centerline),
+                        # "centerline_median": np.median(centerline),
+                    },
+                    name="value",
+                ).rename_axis(index="observable")
+                for channel, image in images.items()
+            }
+        )
+        .to_frame()
+        .T
     )
+
+
+def write_zarr(filename, crops, t, max_t, channels):
+    store = zarr.DirectoryStore(filename)  # DirectoryStoreV3(filename)
+    if not filename.exists():
+        num_rois = max(crops[channels[0]].keys()) + 1
+        num_channels = len(channels)
+        max_shape = np.max([crop.shape for crop in crops[channels[0]].values()], axis=0)
+        shape = (num_rois, max_t, num_channels, *max_shape)
+        chunks = (5, 1, num_channels, None, None)
+        ary = zarr.open_array(
+            store,
+            mode="a",
+            zarr_version=2,
+            shape=shape,
+            chunks=chunks,
+            fill_value=np.nan,
+        )
+    else:
+        ary = zarr.open_array(store, mode="a", zarr_version=2)
+        max_shape = ary.shape[-2:]
+    stack = np.array(
+        [
+            stack_dict(
+                {
+                    idx: _pad(crop.astype(np.float32), max_shape)
+                    for idx, crop in crops[channel].items()
+                },
+                size=ary.shape[0],
+            )
+            for channel in channels
+        ]
+    ).swapaxes(0, 1)
+    ary[:, t, ...] = stack
 
 
 class Pipeline:
@@ -145,6 +184,18 @@ class DefaultPipeline(Pipeline):
         "measure_fish": True,
     }
     REQUIRED_CONFIG = ["segmentation_channels"]
+    FOV_T_SCHEMA = [("fov_num", pa.uint16()), ("t", pa.uint16())]
+    FOV_T_ROI_SCHEMA = [
+        ("fov_num", pa.uint16()),
+        ("t", pa.uint16()),
+        ("roi", pa.uint16()),
+    ]
+    FOV_CHANNEL_T_ROI_SCHEMA = [
+        ("fov_num", pa.uint16()),
+        ("channel", pa.string()),
+        ("t", pa.uint16()),
+        ("roi", pa.uint16()),
+    ]
 
     def __init__(self, output_dir, config=None, delayed=False):
         self.output_dir = Path(output_dir)
@@ -152,15 +203,32 @@ class DefaultPipeline(Pipeline):
             config = {}
         self.config = config
         self._apply_default_config()
-        self._delayed = get_delayed(delayed)
-        self._queue = DelayedQueue()
+        self._queue = DelayedQueue(wrapper=get_delayed(delayed))
         self.first_t = {}
         self.last_t = {}
-        self.initial_rois = DelayedTableStore(self._queue, output_dir / "rois")
-        self.rois = DelayedTableStore(self._queue, output_dir / "rois")
-        self.measurements = DelayedTableStore(self._queue, output_dir / "measurements")
+        self.initial_rois = DelayedTableStore(
+            self._queue,
+            output_dir / "rois",
+            schema=self.FOV_T_SCHEMA,
+            write_options=dict(partition_by=["fov_num"]),
+        )
+        self.rois = DelayedTableStore(
+            self._queue,
+            output_dir / "rois",
+            schema=self.FOV_T_SCHEMA,
+            write_options=dict(partition_by=["fov_num"]),
+        )
+        self.measurements = DelayedTableStore(
+            self._queue,
+            output_dir / "measurements",
+            schema=self.FOV_CHANNEL_T_ROI_SCHEMA,
+            write_options=dict(partition_by=["fov_num"]),
+        )
         self.mask_measurements = DelayedTableStore(
-            self._queue, output_dir / "mask_measurements"
+            self._queue,
+            output_dir / "mask_measurements",
+            schema=self.FOV_T_ROI_SCHEMA,
+            write_options=dict(partition_by=["fov_num"]),
         )
         self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw_frames")
         self.processed_frames = DelayedArrayStore(
@@ -181,8 +249,12 @@ class DefaultPipeline(Pipeline):
         )
         self.fish_crops = DelayedArrayStore(self._queue, output_dir / "fish_crops")
         self.fish_measurements = DelayedTableStore(
-            self._queue, output_dir / "fish_measurements"
+            self._queue,
+            output_dir / "fish_measurements",
+            schema=self.FOV_T_ROI_SCHEMA,
+            write_options=dict(partition_by=["fov_num"]),
         )
+        self._stores = [x for x in vars(self).values() if isinstance(x, DelayedStore)]
 
     def _apply_default_config(self):
         config = {**self.DEFAULT_CONFIG, **self.config}
@@ -194,7 +266,7 @@ class DefaultPipeline(Pipeline):
         self.config = config
 
     def delayed(self, func, *args, **kwargs):
-        return self._queue.delayed(self._delayed(func), *args, **kwargs)
+        return self._queue.delayed(func, *args, **kwargs)
 
     def validate_config(self):
         for key in self.REQUIRED_CONFIG:
@@ -221,13 +293,17 @@ class DefaultPipeline(Pipeline):
             case {"type": "event", **info}:
                 print("event", info)
             case {"type": "done"}:
-                print("DONE")
+                self.handle_done()
             case _:
                 # this exception should be caught, we don't want malformed messages to crash the self
                 raise ValueError("cannot handle message", msg)
         # print("&&&&&&")
         # print(self._queue._items)
         # print("&&&&&&")
+        ####
+        # for store in self._stores:
+        #     store.write()
+        self.fish_measurements.write()
 
     def handle_image(self, msg):
         # print("EEEE0", self._queue._items)
@@ -391,3 +467,9 @@ class DefaultPipeline(Pipeline):
                 (fov_num, t),
                 self.delayed(measure_fish_crops, crops),
             )
+
+    def handle_done(self):
+        print("CLEANING UP")
+        for store in self._stores:
+            store.write()
+        print("DONE")

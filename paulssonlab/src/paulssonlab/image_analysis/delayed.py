@@ -4,7 +4,16 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
-from paulssonlab.util.core import ItemProxy, iter_recursive, map_recursive
+import pandas as pd
+from deltalake import write_deltalake
+
+from paulssonlab.util.core import (
+    ItemProxy,
+    first,
+    flatten_dict,
+    iter_recursive,
+    map_recursive,
+)
 
 
 class DelayedNotReadyError(RuntimeError):
@@ -136,23 +145,27 @@ def get_result_if_ready(value):
         return value
 
 
+def is_ready(value):
+    if isinstance(value, Delayed):
+        return value.is_ready()
+    else:
+        return True
+
+
 def unbox_delayed(obj):
     return map_recursive(get_result, obj)
 
 
-# def unbox_delayed(obj):
-#     return map_recursive(
-#         lambda x: x.result() if isinstance(x, Delayed) else x,
-#         obj,
-#     )
-
-
 class DelayedQueue:
-    def __init__(self):
+    def __init__(self, wrapper=None):
         self._items = {}
+        self.wrapper = wrapper
 
     def delayed(self, func, *args, **kwargs):
         _keep_args = kwargs.pop("_keep_args", False)
+        wrapper = kwargs.pop("_wrapper", self.wrapper)
+        if wrapper is not None:
+            func = self.wrapper(func)
         dc = DelayedCallable(
             func=func,
             args=args,
@@ -199,6 +212,7 @@ class DelayedStore:
     def __init__(self, queue):
         self.value = {}
         self.queue = queue
+        self._write_queue = set()
         self.delayed = ItemProxy(self, "delayed")
 
     def __len__(self):
@@ -221,6 +235,7 @@ class DelayedStore:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
         if isinstance(value, DelayedCallable):
             self.queue.append(value)
+        self._write_queue.add(key)
         self.value[key] = value
 
     def _delayed_setitem(self, key, value):
@@ -318,6 +333,40 @@ class DelayedArrayStore(DelayedStore):
 
 
 class DelayedTableStore(DelayedStore):
-    def __init__(self, queue, output_path):
+    DEFAULT_WRITE_OPTIONS = {"mode": "append", "engine": "rust"}
+
+    def __init__(self, queue, output_path, schema=None, write_options=None):
         self.output_path = output_path
+        self.schema = schema
+        self.write_options = {**self.DEFAULT_WRITE_OPTIONS, **(write_options or {})}
         super().__init__(queue)
+
+    def write(self):
+        # we directly access self.value[k] instead of self[k] so we don't check readiness
+        items_to_write = {
+            k: self.value[k] for k in self._write_queue if k in self.value
+        }
+        if not items_to_write:
+            return
+        writer = self.queue.delayed(
+            self._write,
+            items_to_write,
+            self.schema,
+            self.output_path,
+            self.write_options,
+        )
+        self.queue.append(writer)
+        self._write_queue.clear()
+
+    @staticmethod
+    def _concat_table(items, schema):
+        # TODO: replace pd.concat with faster arrow operation?
+        items = flatten_dict(items, concatenate_keys=True)
+        first_key = first(items)
+        names = [s[0] for s in schema[: len(first_key)]]
+        return pd.concat(items, names=names)
+
+    @classmethod
+    def _write(cls, items, schema, path, write_options):
+        table = cls._concat_table(items, schema)
+        write_deltalake(path, table, **write_options)
