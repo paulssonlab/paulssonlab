@@ -194,7 +194,7 @@ class DefaultPipeline(Pipeline):
         self.last_t = {}
         self.initial_rois = DelayedTableStore(
             self._queue,
-            output_dir / "rois",
+            output_dir / "initial_rois",
             schema=self.FOV_T_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
@@ -289,9 +289,20 @@ class DefaultPipeline(Pipeline):
         ####
         # for store in self._stores:
         #     store.write()
+        #### DelayedTableStore
+        self.initial_rois.write()
+        self.rois.write()
         self.measurements.write()
         self.mask_measurements.write()
         self.fish_measurements.write()
+        #### DelayedArrayStore
+        # self.raw_frames
+        # self.processed_frames
+        # self.crops
+        # self.segmentation_masks
+        # self.fish_raw_frames
+        # self.processed_raw_frames
+        # self.fish_crops
 
     def handle_image(self, msg):
         # print("EEEE0", self._queue._items)
