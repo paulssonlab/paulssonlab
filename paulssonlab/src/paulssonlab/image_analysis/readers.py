@@ -86,22 +86,49 @@ def _slice_directory_keys(keys, slices, values=None):
             yield key
 
 
-def slice_directory(root_dir, pattern, axis_order="tvc", slices={}):
+def _iter_dir(root, recursive=False, files=True, directories=True):
+    if recursive:
+        for path, path_dirs, path_files in root.walk():
+            if files:
+                for file in path_files:
+                    yield path / file
+            if directories:
+                for dir in path_dirs:
+                    yield path / dir
+    else:
+        for file in root.iterdir():
+            if files and file.is_file():
+                yield file
+            elif directories and file.is_dir():
+                yield file
+
+
+def slice_directory(
+    root_dir,
+    pattern,
+    axis_order="tvc",
+    slices={},
+    recursive=False,
+    files=True,
+    directories=True,
+):
     pattern = re.compile(pattern)
     root_dir = Path(root_dir)
     unmatched_filenames = []
     keys_to_filenames = {}
-    for file in root_dir.iterdir():
-        match = pattern.match(file.name)
+    for file in _iter_dir(
+        root_dir, recursive=recursive, files=files, directories=directories
+    ):
+        match = pattern.match(str(file.relative_to(root_dir)))
         if match:
             idxs = {
                 k: excepts(ValueError, int, lambda _: v)(v)
                 for k, v in match.groupdict().items()
             }
             key = tuple([idxs[axis] for axis in axis_order])
-            keys_to_filenames[key] = file.name
+            keys_to_filenames[key] = file
         else:
-            unmatched_filenames.append(file.name)
+            unmatched_filenames.append(file)
     # here axis_values is analogous to what xarray calls DataArray.coords
     axis_values = tuple(map(np.unique, zip(*keys_to_filenames.keys())))
     selected_keys = _slice_directory_keys(
