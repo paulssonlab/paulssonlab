@@ -117,40 +117,6 @@ def measure_fish_crop(images):
     )
 
 
-def write_zarr(filename, crops, t, max_t, channels):
-    store = zarr.DirectoryStore(filename)  # DirectoryStoreV3(filename)
-    if not filename.exists():
-        num_rois = max(crops[channels[0]].keys()) + 1
-        num_channels = len(channels)
-        max_shape = np.max([crop.shape for crop in crops[channels[0]].values()], axis=0)
-        shape = (num_rois, max_t, num_channels, *max_shape)
-        chunks = (5, 1, num_channels, None, None)
-        ary = zarr.open_array(
-            store,
-            mode="a",
-            zarr_version=2,
-            shape=shape,
-            chunks=chunks,
-            fill_value=np.nan,
-        )
-    else:
-        ary = zarr.open_array(store, mode="a", zarr_version=2)
-        max_shape = ary.shape[-2:]
-    stack = np.array(
-        [
-            stack_dict(
-                {
-                    idx: _pad(crop.astype(np.float32), max_shape)
-                    for idx, crop in crops[channel].items()
-                },
-                size=ary.shape[0],
-            )
-            for channel in channels
-        ]
-    ).swapaxes(0, 1)
-    ary[:, t, ...] = stack
-
-
 class Pipeline:
     # TODO: move boilerplate here
 
@@ -216,24 +182,36 @@ class DefaultPipeline(Pipeline):
             schema=self.FOV_T_ROI_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
-        self.raw_frames = DelayedArrayStore(self._queue, output_dir / "raw_frames")
-        self.processed_frames = DelayedArrayStore(
-            self._queue, output_dir / "processed_frames"
+        self.raw_frames = DelayedArrayStore(
+            self._queue, output_dir / "raw_frames/roi={}/channel={}/t={}"
         )
-        self.crops = DelayedArrayStore(self._queue, output_dir / "crops")
+        self.processed_frames = DelayedArrayStore(
+            self._queue, output_dir / "processed_frames/roi={}/channel={}/t={}"
+        )
+        self.crops = DelayedArrayStore(
+            self._queue,
+            output_dir / "crops/roi={}/channel={}/t={}",
+            write_options=dict(chunks=(5,)),
+        )
         self.segmentation_masks = DelayedArrayStore(
-            self._queue, output_dir / "segmentation_masks"
+            self._queue,
+            output_dir / "segmentation_masks/roi={}/channel={}/t={}",
+            write_options=dict(chunks=(5,)),
         )
         self.initial_drift_features = DelayedStore(self._queue)
         self.image_limits = DelayedStore(self._queue)
         self.shifts = DelayedStore(self._queue)
         self.fish_raw_frames = DelayedArrayStore(
-            self._queue, output_dir / "fish_raw_frames"
+            self._queue, output_dir / "fish_raw_frames/roi={}/channel={}/t={}"
         )
         self.fish_processed_frames = DelayedArrayStore(
-            self._queue, output_dir / "fish_processed_frames"
+            self._queue, output_dir / "fish_processed_frames/roi={}/channel={}/t={}"
         )
-        self.fish_crops = DelayedArrayStore(self._queue, output_dir / "fish_crops")
+        self.fish_crops = DelayedArrayStore(
+            self._queue,
+            output_dir / "fish_crops/roi={}/channel={}/t={}",
+            write_options=dict(chunks=(5,)),
+        )
         self.fish_measurements = DelayedTableStore(
             self._queue,
             output_dir / "fish_measurements",
@@ -298,7 +276,7 @@ class DefaultPipeline(Pipeline):
         #### DelayedArrayStore
         # self.raw_frames
         # self.processed_frames
-        # self.crops
+        self.crops.write()
         # self.segmentation_masks
         # self.fish_raw_frames
         # self.processed_raw_frames

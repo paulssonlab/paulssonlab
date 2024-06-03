@@ -2,20 +2,25 @@ import itertools as it
 from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from functools import cached_property
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import zarr
 from deltalake import write_deltalake
 
 from paulssonlab.util.core import (
     ItemProxy,
+    count_placeholders,
     first,
     flatten_dict,
     iter_recursive,
     map_recursive,
 )
+from paulssonlab.util.numeric import pad
 
 
 class DelayedNotReadyError(RuntimeError):
@@ -335,9 +340,63 @@ class DelayedStore:
 
 
 class DelayedArrayStore(DelayedStore):
-    def __init__(self, queue, output_path):
+    def __init__(self, queue, output_path, write_options=None):
         self.output_path = output_path
+        self.write_options = write_options or {}
         super().__init__(queue)
+
+    def write(self):
+        # we directly access self.value[k] instead of self[k] so we don't check readiness
+        items_to_write = {
+            k: self.value[k] for k in self._write_queue if k in self.value
+        }
+        if not items_to_write:
+            return
+        writer = self.queue.delayed(
+            self._write,
+            items_to_write,
+            self.output_path,
+            self.write_options,
+        )
+        self.queue.append(writer)
+        self._write_queue -= items_to_write.keys()
+
+    @staticmethod
+    def _write(items, path, write_options):
+        chunks_spec = write_options.get("chunks", None)
+        cval = write_options.get("cval", None)
+        if chunks_spec is None:
+            chunks_spec = ()
+        for store_key, arrays in items.items():
+            if (num_placeholders := count_placeholders(str(path))) != len(store_key):
+                raise ValueError(
+                    f"expected {len(store_key)} placeholders in output_path, got {num_placeholders} instead"
+                )
+            path = Path(str(path).format(*store_key))
+            store = zarr.DirectoryStore(path)
+            arrays = flatten_dict(arrays, concatenate_keys=True)
+            array_shape = tuple(
+                np.max([array.shape for array in arrays.values()], axis=0)
+            )
+            if not path.exists():
+                key_shape = tuple(np.max(list(arrays.keys()), axis=0) + 1)
+                dtypes = [array.dtype for array in arrays.values()]
+                if not all(dtype == dtypes[0] for dtype in dtypes[1:]):
+                    raise ValueError(f"got heterogenous dtypes: {list(set(dtypes))}")
+                shape = (*key_shape, *array_shape)
+                chunks = chunks_spec + (None,) * (len(shape) - len(chunks_spec))
+                ary = zarr.open_array(
+                    store,
+                    mode="a",
+                    zarr_version=2,
+                    shape=shape,
+                    chunks=chunks,
+                    fill_value=np.nan,
+                )
+            else:
+                ary = zarr.open_array(store, mode="a", zarr_version=2)
+            for array_key, array in arrays.items():
+                ary[array_key] = pad(array, array_shape, cval=cval)
 
 
 class DelayedTableStore(DelayedStore):
