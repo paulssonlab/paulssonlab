@@ -183,33 +183,33 @@ class DefaultPipeline(Pipeline):
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
         self.raw_frames = DelayedArrayStore(
-            self._queue, output_dir / "raw_frames/roi={}/channel={}/t={}"
+            self._queue, output_dir / "raw_frames/fov={}/channel={}/t={}"
         )
         self.processed_frames = DelayedArrayStore(
-            self._queue, output_dir / "processed_frames/roi={}/channel={}/t={}"
+            self._queue, output_dir / "processed_frames/fov={}/channel={}/t={}"
         )
         self.crops = DelayedArrayStore(
             self._queue,
-            output_dir / "crops/roi={}/channel={}/t={}",
+            output_dir / "crops/fov={}/channel={}/t={}",
             write_options=dict(chunks=(5,)),
         )
         self.segmentation_masks = DelayedArrayStore(
             self._queue,
-            output_dir / "segmentation_masks/roi={}/channel={}/t={}",
+            output_dir / "segmentation_masks/fov={}/channel={}/t={}",
             write_options=dict(chunks=(5,)),
         )
         self.initial_drift_features = DelayedStore(self._queue)
         self.image_limits = DelayedStore(self._queue)
         self.shifts = DelayedStore(self._queue)
         self.fish_raw_frames = DelayedArrayStore(
-            self._queue, output_dir / "fish_raw_frames/roi={}/channel={}/t={}"
+            self._queue, output_dir / "fish_raw_frames/fov={}/channel={}/t={}"
         )
         self.fish_processed_frames = DelayedArrayStore(
-            self._queue, output_dir / "fish_processed_frames/roi={}/channel={}/t={}"
+            self._queue, output_dir / "fish_processed_frames/fov={}/channel={}/t={}"
         )
         self.fish_crops = DelayedArrayStore(
             self._queue,
-            output_dir / "fish_crops/roi={}/channel={}/t={}",
+            output_dir / "fish_crops/fov={}/channel={}/t={}",
             write_options=dict(chunks=(5,)),
         )
         self.fish_measurements = DelayedTableStore(
@@ -277,7 +277,7 @@ class DefaultPipeline(Pipeline):
         # self.raw_frames
         # self.processed_frames
         self.crops.write()
-        # self.segmentation_masks
+        # self.segmentation_masks.write()
         # self.fish_raw_frames
         # self.processed_raw_frames
         # self.fish_crops
