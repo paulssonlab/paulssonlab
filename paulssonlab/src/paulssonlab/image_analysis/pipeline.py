@@ -195,7 +195,7 @@ class DefaultPipeline(Pipeline):
         )
         self.segmentation_masks = DelayedArrayStore(
             self._queue,
-            output_dir / "segmentation_masks/fov={}/channel={}/t={}",
+            output_dir / "segmentation_masks/fov={}/t={}",
             write_options=dict(chunks=(5,)),
         )
         self.initial_drift_features = DelayedStore(self._queue)
@@ -264,23 +264,6 @@ class DefaultPipeline(Pipeline):
         # print("&&&&&&")
         # print(self._queue._items)
         # print("&&&&&&")
-        ####
-        # for store in self._stores:
-        #     store.write()
-        #### DelayedTableStore
-        self.initial_rois.write()
-        self.rois.write()
-        self.measurements.write()
-        self.mask_measurements.write()
-        self.fish_measurements.write()
-        #### DelayedArrayStore
-        # self.raw_frames
-        # self.processed_frames
-        self.crops.write()
-        # self.segmentation_masks.write()
-        # self.fish_raw_frames
-        # self.processed_raw_frames
-        # self.fish_crops
 
     def handle_image(self, msg):
         # print("EEEE0", self._queue._items)
@@ -401,6 +384,24 @@ class DefaultPipeline(Pipeline):
                 (fov_num, channel, t),
                 self.delayed(measure_crops, seg_masks, crops),
             )
+        # cleanup
+        self.write_stores()
+        for store in [
+            self.raw_frames,
+            self.processed_frames,
+            self.crops,
+            self.segmentation_masks,
+            self.fish_raw_frames,
+            self.fish_processed_frames,
+            self.fish_crops,
+            self.measurements,
+            self.mask_measurements,
+            self.fish_measurements,
+            self.rois,
+        ]:
+            for key in list(store.keys()):
+                if key[-1] != t:
+                    del store[key]
 
     def handle_fish_barcode(self, msg):
         image = msg["image"]
@@ -444,9 +445,54 @@ class DefaultPipeline(Pipeline):
                 (fov_num, t),
                 self.delayed(measure_fish_crops, crops),
             )
+        # cleanup
+        self.write_stores()
+        for store in [
+            self.raw_frames,
+            self.processed_frames,
+            self.crops,
+            self.segmentation_masks,
+            self.fish_raw_frames,
+            self.fish_processed_frames,
+            self.measurements,
+            self.mask_measurements,
+        ]:
+            for key in list(store.keys()):
+                del store[key]
+        for store in [self.fish_crops, self.fish_measurements]:
+            for key in list(store.keys()):
+                if key[-1] != t:
+                    del store[key]
+        for store in [self.rois]:
+            for key in list(store.keys()):
+                if key != (fov_num, last_t):
+                    del store[key]
+
+    def write_stores(self):
+        ####
+        # for store in self._stores:
+        #     store.write()
+        #### DelayedTableStore
+        self.initial_rois.write()
+        self.rois.write()
+        self.measurements.write()
+        self.mask_measurements.write()
+        self.fish_measurements.write()
+        #### DelayedArrayStore
+        # self.raw_frames
+        # self.processed_frames
+        self.crops.write()
+        self.segmentation_masks.write()
+        # self.fish_raw_frames
+        # self.processed_raw_frames
+        self.fish_crops.write()
 
     def handle_done(self):
         print("CLEANING UP")
+        # for store in self._stores:
+        #     store.write()
+        # self.write_stores() # we should already have finished writing after every handle_message
         for store in self._stores:
-            store.write()
+            for key in list(store.keys()):
+                del store[key]
         print("DONE")

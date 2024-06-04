@@ -1,6 +1,6 @@
 import itertools as it
 from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -10,7 +10,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
-from deltalake import write_deltalake
 
 from paulssonlab.util.core import (
     ItemProxy,
@@ -224,6 +223,8 @@ class DelayedStore:
         self.value = {}
         self.queue = queue
         self._write_queue = set()
+        self.writers = {}
+        self._evicted = set()
         self.delayed = ItemProxy(self, "delayed")
 
     def __len__(self):
@@ -242,7 +243,7 @@ class DelayedStore:
             return DelayedGetitem(obj=self, key=key)
 
     def __setitem__(self, key, value):
-        if key in self.value:
+        if key in self.value or key in self._evicted:
             raise RuntimeError(f"store is immutable, cannot overwrite key {key}")
         if isinstance(value, DelayedCallable):
             self.queue.append(value)
@@ -253,7 +254,8 @@ class DelayedStore:
         self.__setitem__(key, value)
 
     def __delitem__(self, key):
-        raise RuntimeError(f"store is immutable, cannot delete key {key}")
+        self._evicted.add(key)
+        self.value.pop(key, None)
 
     def _delayed_delitem(self, key):
         return self.__delitem__(self, key)
@@ -358,6 +360,7 @@ class DelayedArrayStore(DelayedStore):
             self.output_path,
             self.write_options,
         )
+        self.writers[tuple(items_to_write.keys())] = writer
         self.queue.append(writer)
         self._write_queue -= items_to_write.keys()
 
@@ -423,6 +426,7 @@ class DelayedTableStore(DelayedStore):
             self.output_path,
             self.write_options,
         )
+        self.writers[tuple(items_to_write.keys())] = writer
         self.queue.append(writer)
         self._write_queue -= items_to_write.keys()
 
