@@ -11,6 +11,7 @@ import zarr
 from cytoolz import compose, get_in
 from skimage.filters import threshold_otsu
 from skimage.measure import regionprops_table
+from skimage.registration import phase_cross_correlation
 
 from paulssonlab.image_analysis.delayed import (
     DelayedArrayStore,
@@ -158,6 +159,7 @@ class DefaultPipeline(Pipeline):
         self._queue = DelayedQueue(wrapper=get_delayed(delayed))
         self.first_t = {}
         self.last_t = {}
+        self.fish_first_t = {}
         self.initial_rois = DelayedTableStore(
             self._queue,
             output_dir / "initial_rois",
@@ -167,6 +169,12 @@ class DefaultPipeline(Pipeline):
         self.rois = DelayedTableStore(
             self._queue,
             output_dir / "rois",
+            schema=self.FOV_T_SCHEMA,
+            write_options=dict(partition_cols=["fov_num", "t"]),
+        )
+        self.fish_rois = DelayedTableStore(
+            self._queue,
+            output_dir / "fish_rois",
             schema=self.FOV_T_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
@@ -200,7 +208,9 @@ class DefaultPipeline(Pipeline):
         )
         self.initial_drift_features = DelayedStore(self._queue)
         self.image_limits = DelayedStore(self._queue)
+        self.fish_image_limits = DelayedStore(self._queue)
         self.shifts = DelayedStore(self._queue)
+        self.fish_shifts = DelayedStore(self._queue)
         self.fish_raw_frames = DelayedArrayStore(
             self._queue, output_dir / "fish_raw_frames/fov={}/channel={}/t={}"
         )
@@ -428,10 +438,42 @@ class DefaultPipeline(Pipeline):
         else:
             processed_frame = raw_frame
             processed_frames = self.fish_raw_frames
+        fish_image_limits = self.fish_image_limits.setdefault(
+            fov_num,
+            self.delayed(lambda img: get_image_limits(img.shape), processed_frame),
+        )
+        fish_first_t = self.fish_first_t.setdefault(fov_num, t)
         last_t = self.last_t.get(fov_num, None)
         if last_t is None:
             raise ValueError("received FISH image before ROI detection")
-        rois = self.rois[(fov_num, last_t)]
+        last_science_rois = self.rois[(fov_num, last_t)]
+        if t == fish_first_t:
+            rois = self.fish_rois.setdefault((fov_num, t), last_science_rois)
+        else:
+            drift_tracking_channel = self.config["fish_drift_tracking_channel"]
+            shift = self.fish_shifts.setdefault(
+                (fov_num, t),
+                self.delayed(
+                    # phase_cross_correlation returns offset in y,x (array) order
+                    # not x,y order as filter_and_shift_rois expects
+                    # also we swap ref and moving image (equivalently, we could've inverted sign)
+                    # to get correct offset sign
+                    compose(
+                        lambda x: x[0].astype(np.int16)[::-1], phase_cross_correlation
+                    ),
+                    processed_frames[(fov_num, drift_tracking_channel, t)],
+                    processed_frames[(fov_num, drift_tracking_channel, fish_first_t)],
+                ),
+            )
+            rois = self.fish_rois.setdefault(
+                (fov_num, t),
+                self.delayed(
+                    filter_and_shift_rois,
+                    last_science_rois,
+                    shift,
+                    fish_image_limits,
+                ),
+            )
         # if rois available -> crop
         self.fish_crops.setdefault(
             (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
@@ -447,13 +489,21 @@ class DefaultPipeline(Pipeline):
             )
         # cleanup
         self.write_stores()
+        if self.config.get("preprocess_func"):
+            for key in list(self.fish_raw_frames):
+                del self.fish_raw_frames[key]
+            for key in list(self.fish_processed_frames):
+                if key[-1] != fish_first_t:
+                    del self.fish_processed_frames[key]
+        else:
+            for key in list(self.fish_raw_frames):
+                if key[-1] != fish_first_t:
+                    del self.fish_raw_frames[key]
         for store in [
             self.raw_frames,
             self.processed_frames,
             self.crops,
             self.segmentation_masks,
-            self.fish_raw_frames,
-            self.fish_processed_frames,
             self.measurements,
             self.mask_measurements,
         ]:

@@ -85,6 +85,8 @@ def _get_nd2_reader(filename, **kwargs):
         from split_file_reader import SplitFileReader
 
         filename = SplitFileReader.open(filename.files, mode="rb")
+    elif isinstance(filename, PathLike):
+        filename = str(filename)
     return nd2reader.ND2Reader(filename, **kwargs)
 
 
