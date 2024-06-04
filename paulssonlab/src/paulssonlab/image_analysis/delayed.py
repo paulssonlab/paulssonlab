@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
 
+from paulssonlab.image_analysis.image import pad
 from paulssonlab.util.core import (
     ItemProxy,
     count_placeholders,
@@ -19,7 +20,6 @@ from paulssonlab.util.core import (
     iter_recursive,
     map_recursive,
 )
-from paulssonlab.util.numeric import pad
 
 
 class DelayedNotReadyError(RuntimeError):
@@ -342,9 +342,11 @@ class DelayedStore:
 
 
 class DelayedArrayStore(DelayedStore):
+    DEFAULT_WRITE_OPTIONS = {"fill_value": np.nan}
+
     def __init__(self, queue, output_path, write_options=None):
         self.output_path = output_path
-        self.write_options = write_options or {}
+        self.write_options = {**self.DEFAULT_WRITE_OPTIONS, **(write_options or {})}
         super().__init__(queue)
 
     def write(self):
@@ -367,7 +369,7 @@ class DelayedArrayStore(DelayedStore):
     @staticmethod
     def _write(items, path, write_options):
         chunks_spec = write_options.get("chunks", None)
-        cval = write_options.get("cval", None)
+        fill_value = write_options.get("fill_value", None)
         if chunks_spec is None:
             chunks_spec = ()
         for store_key, arrays in items.items():
@@ -386,6 +388,9 @@ class DelayedArrayStore(DelayedStore):
                 dtypes = [array.dtype for array in arrays.values()]
                 if not all(dtype == dtypes[0] for dtype in dtypes[1:]):
                     raise ValueError(f"got heterogenous dtypes: {list(set(dtypes))}")
+                dtype = dtypes[0]
+                if fill_value is not None:
+                    dtype = np.promote_types(dtype, np.min_scalar_type(fill_value))
                 shape = (*key_shape, *array_shape)
                 chunks = chunks_spec + (None,) * (len(shape) - len(chunks_spec))
                 ary = zarr.open_array(
@@ -394,12 +399,13 @@ class DelayedArrayStore(DelayedStore):
                     zarr_version=2,
                     shape=shape,
                     chunks=chunks,
-                    fill_value=np.nan,
+                    dtype=dtype,
+                    fill_value=fill_value,
                 )
             else:
                 ary = zarr.open_array(store, mode="a", zarr_version=2)
             for array_key, array in arrays.items():
-                ary[array_key] = pad(array, array_shape, cval=cval)
+                ary[array_key] = pad(array, array_shape, fill_value=fill_value)
 
 
 class DelayedTableStore(DelayedStore):

@@ -414,6 +414,29 @@ def unstack_multichannel(arys, colors=None, scale=True):
         return np.concatenate(imgs, axis=-1)
 
 
+def pad(ary, shape, fill_value=None):
+    if fill_value is None:
+        if np.issubdtype(ary.dtype, np.integer):
+            fill_value = 0
+        else:
+            fill_value = np.nan
+    dtype = np.promote_types(ary.dtype, np.min_scalar_type(fill_value))
+    return np.pad(
+        ary.astype(dtype),
+        [(0, max(goal - current, 0)) for goal, current in zip(shape, ary.shape)],
+        constant_values=fill_value,
+    )
+
+
+def crop_to_mask(ary, mask=np.isfinite):
+    if callable(mask):
+        mask = mask(ary)
+    for i in range(ary.ndim):
+        axis_mask = np.any(mask, axis=tuple([j for j in range(mask.ndim) if j != i]))
+        ary = ary[(*[slice(None)] * i, axis_mask)]
+    return ary
+
+
 def colorize(imgs, hexcolors, scale=True):
     colors = [hex2color(hexcolor) for hexcolor in hexcolors]
     return _colorize(imgs, colors, scale=scale)

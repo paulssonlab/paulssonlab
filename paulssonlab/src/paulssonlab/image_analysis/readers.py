@@ -12,9 +12,11 @@ import zarr
 from cytoolz import excepts
 from tqdm.auto import tqdm
 
+from paulssonlab.image_analysis.image import pad
 from paulssonlab.image_analysis.util import get_delayed
 from paulssonlab.image_analysis.workflow import get_nd2_frame, get_nd2_reader
 from paulssonlab.io.metadata import parse_nd2_metadata
+from paulssonlab.util.core import first
 
 ND2READER_CACHE = cachetools.LFUCache(maxsize=48)
 
@@ -73,7 +75,7 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
 
 
 def _slice_directory_keys(keys, slices, values=None):
-    # TODO: I don't like the name values here or axis_values below
+    # TODO: I don't like the name values here or axis_coords below
     # xarray calls a similar thing coords, but that may be confusing here
     if values is None:
         values = tuple(map(np.unique, zip(*keys)))
@@ -129,16 +131,16 @@ def slice_directory(
             keys_to_filenames[key] = file
         else:
             unmatched_filenames.append(file)
-    # here axis_values is analogous to what xarray calls DataArray.coords
-    axis_values = tuple(map(np.unique, zip(*keys_to_filenames.keys())))
+    # here axis_coords is analogous to what xarray calls DataArray.coords
+    axis_coords = tuple(map(np.unique, zip(*keys_to_filenames.keys())))
     selected_keys = _slice_directory_keys(
         keys_to_filenames.keys(),
         [slices.get(axis, slice(None)) for axis in axis_order],
-        values=axis_values,
+        values=axis_coords,
     )
     iterator = ((key, root_dir / keys_to_filenames[key]) for key in selected_keys)
-    axis_values = dict(zip(axis_order, axis_values))
-    return iterator, unmatched_filenames, axis_values
+    axis_coords = dict(zip(axis_order, axis_coords))
+    return iterator, unmatched_filenames, axis_coords
 
 
 def get_eaton_fish_frame(filename):
@@ -160,10 +162,10 @@ def send_eaton_fish(
 ):
     root_dir = Path(root_dir)
     delayed = get_delayed(delayed)
-    filenames, _, axis_values = slice_directory(
+    filenames, _, axis_coords = slice_directory(
         root_dir, pattern, axis_order=axis_order, slices=slices
     )
-    all_channels = list(axis_values["c"])
+    all_channels = list(axis_coords["c"])
     if include_fixation:
         for suffix in ("initial.hdf5", "init_fixation.hdf5", "fixed.hdf5"):
             filename = root_dir / suffix
@@ -447,3 +449,67 @@ def _convert_nd2_to_array(
                 output_file.store.close()
             elif format == "hdf5":
                 output_file.close()
+
+
+class ZarrSlicer:
+    def __init__(self, *args, fill_value=np.nan, **kwargs):
+        self.fill_value = fill_value
+        sources, unmatched, axis_coords = slice_directory(*args, **kwargs)
+        self.sources = dict(sources)
+        self.source_key_length = len(first(self.sources.keys()))
+        self.array_dim = len(self._open_array(first(self.sources.values())).shape)
+        self.unmatched = unmatched
+        self.axis_coords = list(map(list, axis_coords.values()))
+
+    def _open_array(self, path):
+        return zarr.open(path, mode="r")
+
+    @staticmethod
+    def _get_slice(values, slice_):
+        if isinstance(slice_, slice):
+            if slice_.start is None:
+                start = None
+            else:
+                start = values.index(slice_.start)
+            if slice_.stop is None:
+                stop = None
+            else:
+                stop = values.index(slice_.stop) + 1
+            if slice_.step is None:
+                step = 1
+            else:
+                step = slice_.step
+            return values[start:stop:step]
+        elif isinstance(slice_, list):
+            return values
+        else:
+            return [slice_]
+
+    def __getitem__(self, slice_):
+        if not isinstance(slice_, tuple):
+            slice_ = (slice_,)
+        slice_ = slice_ + (self.source_key_length + self.array_dim - len(slice_)) * (
+            slice(None),
+        )
+        selected_axis_coords = [
+            self._get_slice(self.axis_coords[idx], slice_[idx])
+            for idx in range(self.source_key_length)
+        ]
+        array_slice = slice_[self.source_key_length :]
+        selected_sources = {
+            source_key: self._open_array(path)[array_slice]
+            for source_key, path in self.sources.items()
+            if all(k in sel for k, sel in zip(source_key, selected_axis_coords))
+        }
+        max_shape = np.max([ary.shape for ary in selected_sources.values()], axis=0)
+        shape = [len(k) for k in selected_axis_coords] + list(max_shape)
+        output = np.full(shape, self.fill_value)
+        for source_key, ary in selected_sources.items():
+            idxs = tuple(
+                [
+                    values.index(value)
+                    for value, values in zip(source_key, selected_axis_coords)
+                ]
+            )
+            output[idxs] = pad(ary, max_shape, fill_value=self.fill_value)
+        return output
