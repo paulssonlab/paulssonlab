@@ -481,8 +481,13 @@ class ZarrSlicer:
                 step = slice_.step
             return values[start:stop:step]
         elif isinstance(slice_, list):
-            return values
+            missing = set(slice_) - set(values)
+            if missing:
+                raise ValueError(f"invalid indices: {list(missing)}")
+            return slice_
         else:
+            if slice_ not in values:
+                raise ValueError(f"invalid index: {slice_}")
             return [slice_]
 
     def __getitem__(self, slice_):
