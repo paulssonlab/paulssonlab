@@ -493,12 +493,22 @@ class DefaultPipeline(Pipeline):
             for key in list(self.fish_raw_frames):
                 del self.fish_raw_frames[key]
             for key in list(self.fish_processed_frames):
-                if key[-1] != fish_first_t:
+                if key[0] == fov_num and key[1:3] != (
+                    self.config["fish_drift_tracking_channel"],
+                    fish_first_t,
+                ):
                     del self.fish_processed_frames[key]
         else:
             for key in list(self.fish_raw_frames):
-                if key[-1] != fish_first_t:
+                if key[0] == fov_num and key[1:3] != (
+                    self.config["fish_drift_tracking_channel"],
+                    fish_first_t,
+                ):
                     del self.fish_raw_frames[key]
+        for store in [self.fish_crops, self.fish_measurements]:
+            for key in list(store.keys()):
+                if key[0] == fov_num and key[-1] != t:
+                    del store[key]
         for store in [
             self.raw_frames,
             self.processed_frames,
@@ -509,13 +519,13 @@ class DefaultPipeline(Pipeline):
         ]:
             for key in list(store.keys()):
                 del store[key]
-        for store in [self.fish_crops, self.fish_measurements]:
-            for key in list(store.keys()):
-                if key[-1] != t:
-                    del store[key]
         for store in [self.rois]:
             for key in list(store.keys()):
-                if key != (fov_num, last_t):
+                if key[0] == fov_num and key[1] != last_t:
+                    del store[key]
+        for store in [self.fish_rois]:
+            for key in list(store.keys()):
+                if key[0] == fov_num and key[1] != t:
                     del store[key]
 
     def write_stores(self):

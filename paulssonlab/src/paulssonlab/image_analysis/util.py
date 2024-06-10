@@ -1,10 +1,13 @@
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import partial
 from itertools import zip_longest
+from typing import Callable
 
 import dask
 from cytoolz import compose, reduce, take
+from distributed import Client
 
 
 def tree():
@@ -49,11 +52,30 @@ def get_one(obj, count=1, level=1):
     return _get_one(repeat_apply(_get_one, level - 1)(obj), count=count)
 
 
+@dataclass
+class DaskDistributedDelayed:
+    func: Callable
+    client: Client
+
+    def __call__(self, *args, **kwargs):
+        return self.client.submit(self.func, *args, **kwargs)
+
+
 def get_delayed(delayed):
     if delayed is True:
         return dask.delayed(pure=True)
     elif delayed is False:
-        return lambda func, **kwargs: func
+
+        def wrapper(func, **kwargs):
+            return func
+
+        return wrapper
+    elif isinstance(delayed, Client):
+
+        def outer_wrapper(func, **kwargs):
+            return DaskDistributedDelayed(func, delayed)
+
+        return outer_wrapper
     else:
         return delayed
 
