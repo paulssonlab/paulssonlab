@@ -55,6 +55,7 @@ class DelayedCallable(Delayed):
     args: list | None = None
     kwargs: dict | None = None
     _keep_args: bool = False
+    _keep_dependencies: bool = False
     _result: Any = NotAvailable
 
     @cached_property
@@ -85,6 +86,11 @@ class DelayedCallable(Delayed):
                 self.func = None
                 self.args = None
                 self.kwargs = None
+            if not self._keep_dependencies:
+                # keep dependencies for debugging
+                # note that this will prevent garbage-collecting unused results of dependencies
+                # (e.g., dask Futures)
+                self.dependencies = []
         return res
 
 

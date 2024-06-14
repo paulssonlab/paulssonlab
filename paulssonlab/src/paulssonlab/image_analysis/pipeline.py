@@ -100,18 +100,24 @@ def measure_fish_crops(fish_images):
     }
 
 
-def otsu_mean(x):
-    return x[threshold_otsu(x) <= x].mean()
-
-
 def measure_fish_crop(images):
     # TODO: can surely do this faster/more elegantly
+    composite = power_law_composite(list(images.values()))
+    composite_threshold = threshold_otsu(composite)
     return pd.DataFrame(
         [
             {
                 "channel": channel,
                 "mean": np.mean(image),
-                "otsu_mean": otsu_mean(image),
+                "otsu_mean": np.median(image[threshold_otsu(image) <= image]),
+                "median": np.median(image),
+                "otsu_median": np.median(image[threshold_otsu(image) <= image]),
+                "composite_otsu_mean": np.mean(image[composite_threshold <= image]),
+                "composite_otsu_median": np.median(image[composite_threshold <= image]),
+                "p90": np.percentile(image, 90),
+                "p95": np.percentile(image, 95),
+                "p98": np.percentile(image, 98),
+                "p99": np.percentile(image, 98),
             }
             for channel, image in images.items()
         ],
@@ -282,7 +288,7 @@ class DefaultPipeline(Pipeline):
         # print()
         # print("*****************")
         # print()
-        print("IMAGE", metadata)
+        # print("IMAGE", metadata)
         # print()
         fov_num = metadata["fov_num"]
         t = metadata["t"]
@@ -416,7 +422,7 @@ class DefaultPipeline(Pipeline):
     def handle_fish_barcode(self, msg):
         image = msg["image"]
         metadata = msg["metadata"]
-        print("FISH IMAGE", metadata)
+        # print("FISH IMAGE", metadata)
         fov_num = metadata["fov_num"]
         t = metadata["t"]
         channel = metadata["channel"]
