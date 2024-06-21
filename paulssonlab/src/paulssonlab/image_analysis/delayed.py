@@ -448,7 +448,20 @@ class DelayedTableStore(DelayedStore):
         items = flatten_dict(items, concatenate_keys=True)
         first_key = first(items)
         names = [s[0] for s in schema[: len(first_key)]]
-        return pd.concat(items, names=names).droplevel(level=-1, axis=0).reset_index()
+        df = pd.concat(items, names=names)
+        if isinstance(df.index, pd.MultiIndex):
+            levels_to_drop = [
+                idx for idx, name in enumerate(df.index.names) if name is None
+            ]
+            if len(levels_to_drop) == len(df.index.names):
+                levels_to_drop = levels_to_drop[1:]
+            df = df.droplevel(level=levels_to_drop, axis=0)
+            if df.index.names[-1] is not None:
+                df = df.reset_index()
+        else:
+            if df.index.name is not None:
+                df = df.reset_index()
+        return df
 
     @classmethod
     def _write(cls, items, schema, path, write_options):
