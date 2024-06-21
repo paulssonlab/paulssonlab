@@ -379,8 +379,9 @@ def permute_labels(labels):
     return label_map[labels]
 
 
-def unstack(ary):
-    return np.swapaxes(ary, 0, 1).reshape(ary.shape[1], -1)
+def unstack(ary, axis=1):
+    ary = np.moveaxis(ary, 0, axis - 1)
+    return ary.reshape(*ary.shape[: axis - 1], -1, *ary.shape[axis + 1 :])
 
 
 def pad_and_stack(arys, fill_value=0):
@@ -401,10 +402,10 @@ def pad_unstack(arys):
     return unstack(pad_and_stack(arys))
 
 
-def unstack_multichannel(arys, colors=None, scale=True):
+def unstack_multichannel(arys, colors=None, scale=True, axis=2):
     imgs = []
     for i in range(arys.shape[0]):
-        img = unstack(arys[i]).T
+        img = unstack(arys[i], axis=axis).T
         if scale:
             img = scale_image(img, scale=scale)
         imgs.append(img)
