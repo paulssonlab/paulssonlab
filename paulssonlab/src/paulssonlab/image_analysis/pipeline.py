@@ -109,11 +109,25 @@ def measure_fish_crop(images):
             {
                 "channel": channel,
                 "mean": np.mean(image),
-                "otsu_mean": np.median(image[threshold_otsu(image) <= image]),
+                "otsu_mean": np.mean(image[threshold_otsu(image) <= image]),
                 "median": np.median(image),
                 "otsu_median": np.median(image[threshold_otsu(image) <= image]),
-                "composite_otsu_mean": np.mean(image[composite_threshold <= image]),
-                "composite_otsu_median": np.median(image[composite_threshold <= image]),
+                "composite_otsu_mean": np.mean(image[composite_threshold <= composite]),
+                "composite_otsu_median": np.median(
+                    image[composite_threshold <= composite]
+                ),
+                "composite_otsu_p90": np.percentile(
+                    image[composite_threshold <= composite], 90
+                ),
+                "composite_otsu_p95": np.percentile(
+                    image[composite_threshold <= composite], 95
+                ),
+                "composite_otsu_p98": np.percentile(
+                    image[composite_threshold <= composite], 98
+                ),
+                "composite_otsu_p99": np.percentile(
+                    image[composite_threshold <= composite], 99
+                ),
                 "p90": np.percentile(image, 90),
                 "p95": np.percentile(image, 95),
                 "p98": np.percentile(image, 98),
