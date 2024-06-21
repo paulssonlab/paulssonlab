@@ -1,5 +1,5 @@
 import itertools as it
-from functools import reduce
+from functools import partial, reduce
 from operator import and_, methodcaller, or_
 from pathlib import Path
 
@@ -40,6 +40,13 @@ def crop_rois(img, rois):
     for i, crop in iter_roi_crops(img, rois):
         crops[i] = crop
     return crops
+
+
+def combine_crops(func, crop_sets, *args, **kwargs):
+    keys = _common_keys(crop_sets)
+    return {
+        k: func([crop_set[k] for crop_set in crop_sets], *args, **kwargs) for k in keys
+    }
 
 
 def segment_crops(crops):
@@ -148,7 +155,8 @@ class Pipeline:
 
 class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
-        "composite_func": power_law_composite,
+        "roi_detection_composite_func": power_law_composite,
+        "segmentation_composite_func": partial(np.nanmean, axis=0),
         "roi_detection_func": find_trenches,
         "correct_drift": True,
         "segmentation_func": watershed_segment,
@@ -202,7 +210,7 @@ class DefaultPipeline(Pipeline):
             self._queue,
             output_dir / "measurements",
             schema=self.FOV_CHANNEL_T_ROI_SCHEMA,
-            write_options=dict(partition_cols=["fov_num", "t"]),
+            write_options=dict(partition_cols=["fov_num", "t", "channel"]),
         )
         self.mask_measurements = DelayedTableStore(
             self._queue,
@@ -219,6 +227,11 @@ class DefaultPipeline(Pipeline):
         self.crops = DelayedArrayStore(
             self._queue,
             output_dir / "crops/fov={}/channel={}/t={}",
+            write_options=dict(chunks=(5,)),
+        )
+        self.segmentation_crops = DelayedArrayStore(
+            self._queue,
+            output_dir / "segmentation_crops/fov={}/t={}",
             write_options=dict(chunks=(5,)),
         )
         self.segmentation_masks = DelayedArrayStore(
@@ -340,9 +353,12 @@ class DefaultPipeline(Pipeline):
         #     (fov_num, t),
         #     self.delayed(self.config["composite_func"], segmentation_frames),
         # )
-        segmentation_frame = self.delayed(
-            self.config["composite_func"], segmentation_frames
+        roi_detection_frame = self.delayed(
+            self.config["roi_detection_composite_func"], segmentation_frames
         )
+        # segmentation_frame = self.delayed(
+        #     self.config["segmentation_composite_func"], segmentation_frames
+        # )
         image_limits = self.image_limits.setdefault(
             fov_num,
             self.delayed(lambda img: get_image_limits(img.shape), processed_frame),
@@ -360,7 +376,7 @@ class DefaultPipeline(Pipeline):
                 (fov_num, t),
                 self.delayed(
                     self.config["roi_detection_func"],
-                    segmentation_frame,
+                    roi_detection_frame,
                     _keep_args=True,
                     **(self.config.get("roi_detection_kwargs") or {}),
                 ),
@@ -368,7 +384,7 @@ class DefaultPipeline(Pipeline):
             shift = self.shifts.setdefault((fov_num, t), np.array([0, 0]))
             self.initial_drift_features.setdefault(
                 fov_num,
-                self.delayed(get_drift_features, segmentation_frame, initial_rois),
+                self.delayed(get_drift_features, roi_detection_frame, initial_rois),
             )
         else:
             last_shift = self.shifts.get((fov_num, t - 1), None)
@@ -379,7 +395,7 @@ class DefaultPipeline(Pipeline):
                 self.delayed(
                     find_feature_drift,
                     self.initial_drift_features[fov_num],
-                    segmentation_frame,
+                    roi_detection_frame,
                     initial_rois,
                     initial_shift1=initial_shift,
                     initial_shift2=last_shift,
@@ -398,11 +414,26 @@ class DefaultPipeline(Pipeline):
         crops = self.crops.setdefault(
             (fov_num, channel, t), self.delayed(crop_rois, processed_frame, rois)
         )
+        # segmentation_crops
+        segmentation_crops = self.segmentation_crops.setdefault(
+            (fov_num, t),
+            self.delayed(
+                combine_crops,
+                self.config["segmentation_composite_func"],
+                [
+                    self.crops[(fov_num, channel, t)]
+                    for channel in self.config["segmentation_channels"]
+                ],
+            ),
+        )
         # if crop available -> segment crops
         if self.config["segment"]:
             seg_masks = self.segmentation_masks.setdefault(
                 (fov_num, t),
-                self.delayed(segment_crops, crops),
+                self.delayed(
+                    segment_crops,
+                    segmentation_crops,
+                ),
             )
         # if crop segmentation available -> measure
         if self.config["measure"]:
@@ -420,6 +451,7 @@ class DefaultPipeline(Pipeline):
             self.raw_frames,
             self.processed_frames,
             self.crops,
+            self.segmentation_crops,
             self.segmentation_masks,
             self.fish_raw_frames,
             self.fish_processed_frames,
@@ -533,6 +565,7 @@ class DefaultPipeline(Pipeline):
             self.raw_frames,
             self.processed_frames,
             self.crops,
+            self.segmentation_crops,
             self.segmentation_masks,
             self.measurements,
             self.mask_measurements,
@@ -562,6 +595,7 @@ class DefaultPipeline(Pipeline):
         # self.raw_frames
         # self.processed_frames
         self.crops.write()
+        self.segmentation_crops.write()
         self.segmentation_masks.write()
         # self.fish_raw_frames
         # self.processed_raw_frames
