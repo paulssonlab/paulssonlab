@@ -1,20 +1,17 @@
-import itertools as it
 from functools import partial, reduce
-from operator import and_, methodcaller, or_
+from operator import and_, methodcaller
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pyarrow.parquet as pq
-import zarr
 from cytoolz import compose, get_in
 from skimage.filters import threshold_otsu
 from skimage.measure import regionprops_table
 from skimage.registration import phase_cross_correlation
 
 from paulssonlab.image_analysis.delayed import (
-    DelayedArrayStore,
+    DelayedBatchedZarrStore,
     DelayedQueue,
     DelayedStore,
     DelayedTableStore,
@@ -218,23 +215,23 @@ class DefaultPipeline(Pipeline):
             schema=self.FOV_T_ROI_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
-        self.raw_frames = DelayedArrayStore(
+        self.raw_frames = DelayedBatchedZarrStore(
             self._queue, output_dir / "raw_frames/fov={}/channel={}/t={}"
         )
-        self.processed_frames = DelayedArrayStore(
+        self.processed_frames = DelayedBatchedZarrStore(
             self._queue, output_dir / "processed_frames/fov={}/channel={}/t={}"
         )
-        self.crops = DelayedArrayStore(
+        self.crops = DelayedBatchedZarrStore(
             self._queue,
             output_dir / "crops/fov={}/channel={}/t={}",
             write_options=dict(chunks=(5,)),
         )
-        self.segmentation_crops = DelayedArrayStore(
+        self.segmentation_crops = DelayedBatchedZarrStore(
             self._queue,
             output_dir / "segmentation_crops/fov={}/t={}",
             write_options=dict(chunks=(5,)),
         )
-        self.segmentation_masks = DelayedArrayStore(
+        self.segmentation_masks = DelayedBatchedZarrStore(
             self._queue,
             output_dir / "segmentation_masks/fov={}/t={}",
             write_options=dict(chunks=(5,)),
@@ -244,13 +241,13 @@ class DefaultPipeline(Pipeline):
         self.fish_image_limits = DelayedStore(self._queue)
         self.shifts = DelayedStore(self._queue)
         self.fish_shifts = DelayedStore(self._queue)
-        self.fish_raw_frames = DelayedArrayStore(
+        self.fish_raw_frames = DelayedBatchedZarrStore(
             self._queue, output_dir / "fish_raw_frames/fov={}/channel={}/t={}"
         )
-        self.fish_processed_frames = DelayedArrayStore(
+        self.fish_processed_frames = DelayedBatchedZarrStore(
             self._queue, output_dir / "fish_processed_frames/fov={}/channel={}/t={}"
         )
-        self.fish_crops = DelayedArrayStore(
+        self.fish_crops = DelayedBatchedZarrStore(
             self._queue,
             output_dir / "fish_crops/fov={}/channel={}/t={}",
             write_options=dict(chunks=(5,)),
@@ -570,6 +567,7 @@ class DefaultPipeline(Pipeline):
             self.measurements,
             self.mask_measurements,
         ]:
+            store.flush()
             for key in list(store.keys()):
                 del store[key]
         for store in [self.rois]:
@@ -591,7 +589,7 @@ class DefaultPipeline(Pipeline):
         self.measurements.write()
         self.mask_measurements.write()
         self.fish_measurements.write()
-        #### DelayedArrayStore
+        #### DelayedBatchedZarrStore
         # self.raw_frames
         # self.processed_frames
         self.crops.write()
@@ -607,6 +605,7 @@ class DefaultPipeline(Pipeline):
         #     store.write()
         # self.write_stores() # we should already have finished writing after every handle_message
         for store in self._stores:
+            store.flush()
             for key in list(store.keys()):
                 del store[key]
         print("DONE")

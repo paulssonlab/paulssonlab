@@ -29,7 +29,7 @@ def iter_roi_crops(img, rois, corner=False):
     lr_x = rois["lr_x"].values
     lr_y = rois["lr_y"].values
     for i in range(len(index)):
-        roi_idx = index[i]
+        roi_idx = int(index[i])  # convert from np.int64
         crop = img[ul_y[i] : lr_y[i] + 1, ul_x[i] : lr_x[i] + 1]
         if corner:
             yield roi_idx, crop, np.array([ul_x[i], ul_y[i]])

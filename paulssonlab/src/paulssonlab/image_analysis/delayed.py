@@ -1,4 +1,5 @@
 import itertools as it
+from collections import defaultdict
 from collections.abc import Callable, Hashable, MutableMapping, MutableSequence
 from dataclasses import dataclass
 from functools import cached_property
@@ -15,6 +16,7 @@ from paulssonlab.image_analysis.image import pad
 from paulssonlab.util.core import (
     ItemProxy,
     count_placeholders,
+    extract_keys,
     first,
     flatten_dict,
     iter_recursive,
@@ -346,8 +348,26 @@ class DelayedStore:
     def write(self):
         raise NotImplementedError
 
+    def flush(self):
+        pass
 
-class DelayedArrayStore(DelayedStore):
+
+def _shape_for_arrays(shapes):
+    if not all(shape == shapes[0] for shape in shapes[1:]):
+        raise ValueError(f"got heterogenous shapes: {list(set(shapes))}")
+    return shapes[0]
+
+
+def _dtype_for_arrays(dtypes, fill_value=None):
+    if not all(dtype == dtypes[0] for dtype in dtypes[1:]):
+        raise ValueError(f"got heterogenous dtypes: {list(set(dtypes))}")
+    dtype = dtypes[0]
+    if fill_value is not None:
+        dtype = np.promote_types(dtype, np.min_scalar_type(fill_value))
+    return dtype
+
+
+class DelayedZarrStore(DelayedStore):
     DEFAULT_WRITE_OPTIONS = {"fill_value": np.nan}
 
     def __init__(self, queue, output_path, write_options=None):
@@ -391,12 +411,9 @@ class DelayedArrayStore(DelayedStore):
             )
             if not path.exists():
                 key_shape = tuple(np.max(list(arrays.keys()), axis=0) + 1)
-                dtypes = [array.dtype for array in arrays.values()]
-                if not all(dtype == dtypes[0] for dtype in dtypes[1:]):
-                    raise ValueError(f"got heterogenous dtypes: {list(set(dtypes))}")
-                dtype = dtypes[0]
-                if fill_value is not None:
-                    dtype = np.promote_types(dtype, np.min_scalar_type(fill_value))
+                dtype = _dtype_for_arrays(
+                    [array.dtype for array in arrays.values()], fill_value=fill_value
+                )
                 shape = (*key_shape, *array_shape)
                 chunks = chunks_spec + (None,) * (len(shape) - len(chunks_spec))
                 ary = zarr.open_array(
@@ -412,6 +429,149 @@ class DelayedArrayStore(DelayedStore):
                 ary = zarr.open_array(store, mode="a", zarr_version=2)
             for array_key, array in arrays.items():
                 ary[array_key] = pad(array, array_shape, fill_value=fill_value)
+
+
+# def _normalize_chunks(chunks, shape):
+#     return tuple(c if c is not None else s for c, s in zip(chunks, shape))
+
+
+def group_by_chunks(idxs, chunks):
+    def chunk_index(idx):
+        return tuple(i // c for i, c in zip(idx, chunks))
+
+    groups = defaultdict(list)
+    for key in idxs:
+        groups[chunk_index(key)].append(key)
+    return groups
+
+
+def indices_for_chunk(chunk_idx, chunks):
+    return set(
+        it.product(
+            *[range((i // c) * c, (i // c + 1) * c) for i, c in zip(chunk_idx, chunks)]
+        )
+    )
+
+
+def complete_chunks(idxs, chunks):
+    chunk_groups = group_by_chunks(idxs, chunks)
+    print("*", chunk_groups)
+    return {
+        k: v for k, v in chunk_groups.items() if set(v) == indices_for_chunk(k, chunks)
+    }
+
+
+# def stack_chunk(source_arrays, fill_value=np.nan, dtype=None, shape=None, pad_if_needed=True):
+def stack_subarrays(source_arrays):
+    sorted_arrays = [source_arrays[k] for k in sorted(source_arrays.keys())]
+    key_shape = tuple(np.max(list(source_arrays.keys()), axis=0) + 1)
+    new_shape = (
+        *key_shape,
+        _shape_for_arrays([array.shape for array in source_arrays.values()]),
+    )
+    return np.stack(sorted_arrays).reshape(new_shape)
+    # new_array = np.stack(sorted_arrays).reshape(new_shape)
+    # if shape is not None:
+    #     new_array = pad(new_array, shape, fill_value=fill_value)
+    # return new_array
+
+
+class DelayedBatchedZarrStore(DelayedZarrStore):
+    DEFAULT_WRITE_OPTIONS = {
+        "fill_value": np.nan,
+        "write_complete_chunks": True,
+        "store": zarr.DirectoryStore,
+        "synchronizer": zarr.ProcessSynchronizer,
+    }
+
+    def write(self):
+        # we directly access self.value[k] instead of self[k] so we don't check readiness
+        num_path_components = count_placeholders(str(self.output_path))
+        subarrays_by_path = defaultdict(dict)
+        for k in self._write_queue:
+            if k not in self.value:
+                continue
+
+            path = str(self.output_path).format(*k[:num_path_components])
+            subarrays_by_path[path][k[num_path_components:]] = self.value[k]
+        print("(())", subarrays_by_path)
+        items_to_write = {
+            path: {
+                chunk_key: extract_keys(subarrays, subarray_keys)
+                for chunk_key, subarray_keys in complete_chunks(
+                    subarrays.keys(), self.write_options["chunks"]
+                ).items()
+            }
+            for path, subarrays in subarrays_by_path.items()
+        }
+        items_to_write = {
+            path: subarrays for path, subarrays in items_to_write.items() if subarrays
+        }
+        print("**", items_to_write)
+        if not items_to_write:
+            return
+
+        writer = self.queue.delayed(
+            self._write,
+            items_to_write,
+            self.write_options,
+        )
+        # writer_key: ((path1, (chunk_key1.1, chunk_key1.2, ...)), (path2, (chunk_key2.1, ...)), ...)
+        writer_key = tuple(
+            (path, tuple(sorted(subarrays.keys())))
+            for path, subarrays in items_to_write.items()
+        )
+        self.writers[writer_key] = writer
+        self.queue.append(writer)
+        for item_group in items_to_write.values():
+            self._write_queue -= set(item_group.keys())
+
+    @staticmethod
+    def _write(items, write_options):
+        print(">", items)
+        chunks_spec = write_options.get("chunks", None)
+        fill_value = write_options.get("fill_value", None)
+        if chunks_spec is None:
+            chunks_spec = ()
+        for store_path, subarrays in items.items():
+            store = write_options["store"](store_path)
+            synchronizer = write_options["synchronizer"](store_path + ".lock")
+            # subarrays = {chunk_key: flatten_dict(chunk_subarrays, concatenate_keys=True) for chunk_key, chunk_subarrays in subarrays.items()}
+            #     array_shape = tuple(
+            #         np.max([array.shape for array in arrays.values()], axis=0)
+            #     )
+            if not store_path.exists():
+                dtype = _dtype_for_arrays(
+                    [subarray.dtype for subarray in subarrays.values()],
+                    fill_value=fill_value,
+                )
+                #         key_shape = tuple(np.max(list(arrays.keys()), axis=0) + 1)
+                #         shape = (*key_shape, *array_shape)
+                #         chunks = chunks_spec + (None,) * (len(shape) - len(chunks_spec))
+                ary = zarr.open_array(
+                    store,
+                    mode="a",
+                    zarr_version=2,
+                    shape=shape,
+                    chunks=chunks,
+                    dtype=dtype,
+                    fill_value=fill_value,
+                    synchronizer=synchronizer,
+                )
+            else:
+                dest_array = zarr.open_array(
+                    store, mode="a", zarr_version=2, synchronizer=synchronizer
+                )
+            for chunk_key, chunk_subarrays in subarrays.items():
+                chunk_array = stack_subarrays(
+                    chunk_subarrays,
+                    # fill_value=fill_value,
+                    # dtype=dtype,
+                    # shape=chunk_shape,
+                )
+                dest_array.chunks[chunk_key] = chunk_array
+        #     for array_key, array in arrays.items():
+        #         ary[array_key] = pad(array, array_shape, fill_value=fill_value)
 
 
 class DelayedTableStore(DelayedStore):
