@@ -368,7 +368,11 @@ def _dtype_for_arrays(dtypes, fill_value=None):
     return dtype
 
 
-def _shape_for_keys(keys):
+def _shape_for_keys(keys, old_shape=None):
+    keys = np.asarray(keys)
+    if old_shape is not None:
+        print("$", keys, np.asarray(old_shape))
+        keys = np.concatenate((keys, np.asarray(old_shape)[np.newaxis, :] - 1))
     return tuple(int(x) for x in (np.max(keys, axis=0) + 1))
 
 
@@ -477,16 +481,17 @@ def complete_chunks(idxs, chunks):
     }
 
 
-# def stack_chunk(source_arrays, fill_value=np.nan, dtype=None, shape=None, pad_if_needed=True):
-def stack_subarrays(source_arrays):
+def stack_subarrays(
+    source_arrays, fill_value=np.nan, dtype=None, shape=None, pad_if_needed=True
+):
     sorted_arrays = [source_arrays[k] for k in sorted(source_arrays.keys())]
-    key_shape = _shape_for_keys(list(source_arrays.keys()))
-    new_shape = (
-        *key_shape,
-        *_shape_for_arrays([array.shape for array in source_arrays.values()]),
-    )
-    print("^^", new_shape)
-    return np.stack(sorted_arrays).reshape(new_shape)
+    # key_shape = _shape_for_keys(list(source_arrays.keys()))
+    # new_shape = (
+    #     *key_shape,
+    #     *_shape_for_arrays([array.shape for array in source_arrays.values()]),
+    # )
+    # print("^^", new_shape)
+    return np.stack(sorted_arrays).reshape(shape)
     # new_array = np.stack(sorted_arrays).reshape(new_shape)
     # if shape is not None:
     #     new_array = pad(new_array, shape, fill_value=fill_value)
@@ -511,6 +516,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         # we directly access self.value[k] instead of self[k] so we don't check readiness
         path_placeholders = set(str_placeholders(str(self.output_path)))
         subarrays_by_path = defaultdict(dict)
+        subarray_key_to_full_key = {}
         for key in self._write_queue:
             if key not in self.value:
                 continue
@@ -520,6 +526,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
             )
             path = str(self.output_path).format(*key)
             subarrays_by_path[path][subarray_key] = self.value[key]
+            subarray_key_to_full_key[(path, subarray_key)] = key
         print("(())", subarrays_by_path)
         items_to_write = {
             path: {
@@ -549,8 +556,14 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         )
         self.writers[writer_key] = writer
         self.queue.append(writer)
-        for item_group in items_to_write.values():
-            self._write_queue -= set(item_group.keys())
+        keys_to_write = set(
+            subarray_key_to_full_key[(path, subarray_key)]
+            for path, subarrays_by_chunk in items_to_write.items()
+            for chunk_subarrays in subarrays_by_chunk.values()
+            for subarray_key in chunk_subarrays.keys()
+        )
+        print("!!! REMOVING", keys_to_write)
+        self._write_queue -= keys_to_write
 
     @staticmethod
     def _write(items, write_options):
@@ -583,12 +596,12 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                 *chunks_spec,
                 *subarray_shape,
             )
+            dtype = _dtype_for_arrays(
+                [subarray.dtype for subarray in all_subarrays],
+                fill_value=fill_value,
+            )
             if not Path(store_path).exists():
                 print("&", all_subarrays)
-                dtype = _dtype_for_arrays(
-                    [subarray.dtype for subarray in all_subarrays],
-                    fill_value=fill_value,
-                )
                 shape = (*_shape_for_keys(all_keys), *subarray_shape)
                 chunks = chunks_spec + (None,) * len(subarray_shape)
                 dest_array = zarr.open_array(
@@ -606,16 +619,26 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     store, mode="a", zarr_version=2, synchronizer=synchronizer
                 )
             for chunk_key, chunk_subarrays in subarrays_by_chunk.items():
-                # chunk_array = stack_subarrays(
-                #     chunk_subarrays,
-                #     # fill_value=fill_value,
-                #     # dtype=dtype,
-                #     # shape=chunk_shape,
-                # )
-                sorted_arrays = [
-                    chunk_subarrays[k] for k in sorted(chunk_subarrays.keys())
-                ]
-                chunk_array = np.stack(sorted_arrays).reshape(chunk_shape)
+                # sorted_arrays = [
+                #     chunk_subarrays[k] for k in sorted(chunk_subarrays.keys())
+                # ]
+                # chunk_array = np.stack(sorted_arrays).reshape(chunk_shape)
+                shape = (
+                    *_shape_for_keys(
+                        all_keys, old_shape=dest_array.shape[: len(all_keys[0])]
+                    ),
+                    *subarray_shape,
+                )
+                print("NEW SHAPE", shape, "OLD SHAPE", dest_array.shape)
+                chunk_array = stack_subarrays(
+                    chunk_subarrays,
+                    fill_value=fill_value,
+                    dtype=dtype,
+                    shape=chunk_shape,
+                )
+                if dest_array.shape != shape:
+                    print("RESIZING")
+                    dest_array.resize(*shape)
                 print(
                     "ARRAY",
                     chunk_array.shape,
