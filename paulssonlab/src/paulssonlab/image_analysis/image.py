@@ -422,11 +422,16 @@ def pad(ary, shape, fill_value=None):
         else:
             fill_value = np.nan
     dtype = np.promote_types(ary.dtype, np.min_scalar_type(fill_value))
-    return np.pad(
-        ary.astype(dtype),
-        [(0, max(goal - current, 0)) for goal, current in zip(shape, ary.shape)],
-        constant_values=fill_value,
-    )
+    ary = ary.astype(dtype)
+    shape = tuple(shape)
+    if ary.shape == shape:
+        return ary
+    else:
+        return np.pad(
+            ary,
+            [(0, max(goal - current, 0)) for goal, current in zip(shape, ary.shape)],
+            constant_values=fill_value,
+        )
 
 
 def crop_to_mask(ary, mask=np.isfinite):
