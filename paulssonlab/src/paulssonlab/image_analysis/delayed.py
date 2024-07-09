@@ -619,7 +619,9 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                 else:
                     value = {(): value}
                 for value_key, array in value.items():
-                    if (max_placeholder := max(path_placeholders)) + 1 > len(value_key):
+                    if path_placeholders and (
+                        (max_placeholder := max(path_placeholders)) + 1 > len(value_key)
+                    ):
                         raise ValueError(
                             f"path '{path_template}' requires value key with length at least {max_placeholder+1}, but instead got value key: {value_key}"
                         )
@@ -631,6 +633,8 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     print(
                         "TEMPLATE",
                         path_template,
+                        "PATH PLACEHOLDERS",
+                        path_placeholders,
                         "KEY",
                         key,
                         "VALUE KEY",
@@ -642,8 +646,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     )
                     path = path_template.format(*value_key)
                     items_by_path[path][key + value_key_subset] = np.asarray(array)
-        print(888, items_by_path)
-        0 / 0
+        print("ITEMS BY PATH", items_by_path)
         # items = {
         #     store_path: {
         #         key: { for } for key, subarrays in path_subarray.items()
@@ -659,7 +662,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         #     }
         #     for path, subarrays in subarrays_by_path.items()
         # }
-        for store_path, subarrays in items.items():
+        for store_path, subarrays in items_by_path.items():
             store = write_options["store"](store_path)
             synchronizer = write_options["synchronizer"](store_path + ".lock")
             # subarrays_by_chunk = {
@@ -671,6 +674,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
             #     }
             #     for chunk_key, chunk_subarrays in subarrays_by_chunk.items()
             # }
+            print("SUBARRAYS >>>", subarrays)
             all_subarrays = [subarray for subarray in subarrays.values()]
             all_keys = [key for key in subarrays.keys()]
             subarray_shape = _shape_for_subarrays(
@@ -757,9 +761,28 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         dest_array.chunks,
                     )
                     origin = tuple(k * c for k, c in zip(chunk_key, chunks_spec))
+                    chunk_shape = tuple(
+                        min(c, k - o) for c, k, o in zip(chunks_spec, key_shape, origin)
+                    )
+                    print(
+                        "CHUNKS_SPEC",
+                        chunks_spec,
+                        "subarray_shape",
+                        subarray_shape,
+                        "ORIGIN",
+                        origin,
+                        "CHUNK_KEY",
+                        chunk_key,
+                        "KEY SHAPE",
+                        key_shape,
+                        "DEST SHAPE",
+                        dest_array.shape,
+                        "CHUNK SHAPE",
+                        chunk_shape,
+                    )
                     chunk_array = stack_subarrays(
                         chunk_subarrays,
-                        chunks_spec,
+                        chunk_shape,
                         subarray_shape,
                         origin=origin,
                         fill_value=fill_value,
