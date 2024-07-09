@@ -451,17 +451,32 @@ def group_by_chunks(idxs, chunks):
     return groups
 
 
-def indices_for_chunk(chunk_idx, chunks):
-    return set(
-        it.product(*[range(i * c, (i + 1) * c) for i, c in zip(chunk_idx, chunks)])
-    )
+def indices_for_chunk(chunk_idx, chunks, shape):
+    if shape is None:
+        iters = [range(i * c, (i + 1) * c) for i, c in zip(chunk_idx, chunks)]
+    else:
+        iters = [
+            range(min(i * c, s), min((i + 1) * c, s))
+            for i, c, s in zip(chunk_idx, chunks, shape)
+        ]
+    return set(it.product(*iters))
 
 
-def complete_chunks(idxs, chunks):
+def complete_chunks(idxs, chunks, shape, ignore_axes=None):
     chunk_groups = group_by_chunks(idxs, chunks)
     return {
-        k: v for k, v in chunk_groups.items() if set(v) == indices_for_chunk(k, chunks)
+        k: v
+        for k, v in chunk_groups.items()
+        if slice_key_set(v, ignore_axes)
+        == slice_key_set(indices_for_chunk(k, chunks, shape), ignore_axes)
     }
+
+
+def slice_key_set(s, mask):
+    if mask is None:
+        return set(s)
+    else:
+        return set(tuple(k for k, m in zip(key, mask) if not m) for key in s)
 
 
 def stack_subarrays(
@@ -496,8 +511,8 @@ def stack_subarrays(
 
 class DelayedBatchedZarrStore(DelayedZarrStore):
     DEFAULT_WRITE_OPTIONS = {
+        "batch_chunks": True,
         "pad_if_needed": True,
-        "write_complete_chunks": True,
         "fill_value": np.nan,
         "store": zarr.DirectoryStore,
         "synchronizer": zarr.ProcessSynchronizer,
@@ -533,17 +548,31 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
             subarray_key_to_full_key[(path, key_subset)] = key
         if partial_chunks:
 
-            def chunk_filter_func(keys, chunks):
+            def chunk_filter_func(keys, chunks, shape, ignore_axes=None):
                 return {None: keys}
 
         else:
             chunk_filter_func = complete_chunks
+        incomplete_chunks_axes = self.write_options.get("incomplete_chunks_axes") or [
+            False for _ in range(len(self.write_options["chunks"]))
+        ]
+        # chunks_spec = [
+        #     c
+        #     for c, ignore in zip(self.write_options["chunks"], incomplete_chunks_axes)
+        #     if not ignore
+        # ]
         items_to_write = {
             path: merge(
                 [
                     extract_keys(subarrays, subarray_keys)
                     for _, subarray_keys in chunk_filter_func(
-                        list(subarrays.keys()), self.write_options["chunks"]
+                        # we don't pass a shape here because we don't know the shape of the array at time of writing
+                        # this means that some complete chunks at the boundaries of the array
+                        # will not be written until .flush() is called (to write partial chunks)
+                        list(subarrays.keys()),
+                        self.write_options["chunks"],
+                        None,
+                        ignore_axes=incomplete_chunks_axes,
                     ).items()
                 ]
             )
@@ -559,7 +588,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         writer = self.queue.delayed(
             self._write,
             items_to_write,
-            {"batch_chunks": not partial_chunks, **self.write_options},
+            self.write_options,
         )
         # writer_key: ((path1, (chunk_key1.1, chunk_key1.2, ...)), (path2, (chunk_key2.1, ...)), ...)
         writer_key = tuple(
@@ -582,9 +611,13 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
 
     @staticmethod
     def _write(items, write_options):
+        print("ITEMS", items)
+        batch_chunks = write_options.get("batch_chunks", True)
         pad_if_needed = write_options.get("pad_if_needed", True)
-        batch_chunks = write_options.get("batch_chunks", False)
         chunks_spec = write_options.get("chunks", None)
+        incomplete_chunks_axes = write_options.get("incomplete_chunks_axes") or [
+            False for _ in range(len(chunks_spec))
+        ]
         fill_value = write_options.get("fill_value", None)
         if chunks_spec is None:
             chunks_spec = ()
@@ -610,6 +643,7 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     )
                     path = path_template.format(*value_key)
                     items_by_path[path][key + value_key_subset] = np.asarray(array)
+        print("ITEMS BY PATH", items_by_path)
         for store_path, subarrays in items_by_path.items():
             store = write_options["store"](store_path)
             synchronizer = write_options["synchronizer"](store_path + ".lock")
@@ -661,6 +695,42 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         chunks_spec,
                     ).items()
                 }
+                print("SUBARRAYS BY CHUNK", subarrays_by_chunk)
+                # put subarrays that don't belong to a complete chunk here
+                # they are set individually below, after setting complete chunks
+                subarrays = {}
+                for chunk_key in list(subarrays_by_chunk.keys()):
+                    chunk_subarrays = subarrays_by_chunk[chunk_key]
+                    print(
+                        "COMPARING INDICES",
+                        set(chunk_subarrays.keys()),
+                        indices_for_chunk(chunk_key, chunks_spec, new_shape),
+                    )
+                    print(
+                        "COMPARING INDICES SLICED",
+                        slice_key_set(chunk_subarrays.keys(), incomplete_chunks_axes),
+                        slice_key_set(
+                            indices_for_chunk(
+                                chunk_key,
+                                chunks_spec,
+                                new_shape,
+                            ),
+                            incomplete_chunks_axes,
+                        ),
+                    )
+                    if slice_key_set(
+                        chunk_subarrays.keys(), incomplete_chunks_axes
+                    ) != slice_key_set(
+                        indices_for_chunk(
+                            chunk_key,
+                            chunks_spec,
+                            new_shape,
+                        ),
+                        incomplete_chunks_axes,
+                    ):
+                        print("DEL PARTIAL", chunk_key)
+                        subarrays.update(chunk_subarrays)
+                        del subarrays_by_chunk[chunk_key]
                 for chunk_key, chunk_subarrays in subarrays_by_chunk.items():
                     origin = tuple(k * c for k, c in zip(chunk_key, chunks_spec))
                     chunk_shape = tuple(
@@ -675,21 +745,22 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         dtype=dtype,
                         pad_if_needed=pad_if_needed,
                     )
+                    print("SETTING BLOCK", chunk_key)
                     dest_array.blocks[chunk_key] = chunk_array
-            else:
-                for key, subarray in subarrays.items():
-                    print()
-                    print(">>>>>>", key)
-                    print("PRE-PAD", subarray.shape, subarray.dtype, subarray)
-                    if pad_if_needed:
-                        subarray = pad(
-                            subarray.astype(dtype),
-                            subarray_shape,
-                            fill_value=fill_value,
-                        )
-                    print("POST-PAD", subarray.shape, subarray.dtype, subarray)
-                    dest_array[key] = subarray
-                    print("DONE SETTING")
+            print("REMAINDER SUBARRAYS", subarrays)
+            for key, subarray in subarrays.items():
+                print()
+                print(">>>>>>", key)
+                print("PRE-PAD", subarray.shape, subarray.dtype, subarray)
+                if pad_if_needed:
+                    subarray = pad(
+                        subarray.astype(dtype),
+                        subarray_shape,
+                        fill_value=fill_value,
+                    )
+                print("POST-PAD", subarray.shape, subarray.dtype, subarray)
+                dest_array[key] = subarray
+                print("DONE SETTING")
 
 
 class DelayedTableStore(DelayedStore):
