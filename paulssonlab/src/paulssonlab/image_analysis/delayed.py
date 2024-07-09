@@ -341,7 +341,7 @@ class DelayedStore:
         raise NotImplementedError
 
     def write(self):
-        raise NotImplementedError
+        pass
 
     def flush(self):
         return self.write()
@@ -659,10 +659,15 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     dtype=dtype,
                     fill_value=fill_value,
                     synchronizer=synchronizer,
+                    write_empty_chunks=False,
                 )
             else:
                 dest_array = zarr.open_array(
-                    store, mode="a", zarr_version=2, synchronizer=synchronizer
+                    store,
+                    mode="a",
+                    zarr_version=2,
+                    synchronizer=synchronizer,
+                    write_empty_chunks=False,
                 )
                 key_shape = _shape_for_keys(
                     all_keys,
