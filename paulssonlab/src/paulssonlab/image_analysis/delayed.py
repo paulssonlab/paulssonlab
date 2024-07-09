@@ -437,10 +437,6 @@ class DelayedZarrStore(DelayedStore):
                 ary[array_key] = pad(array, array_shape, fill_value=fill_value)
 
 
-# def _normalize_chunks(chunks, shape):
-#     return tuple(c if c is not None else s for c, s in zip(chunks, shape))
-
-
 def group_by_chunks(idxs, chunks):
     def chunk_index(idx):
         return tuple(i // c for i, c in zip(idx, chunks))
@@ -556,11 +552,6 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         incomplete_chunks_axes = self.write_options.get("incomplete_chunks_axes") or [
             False for _ in range(len(self.write_options["chunks"]))
         ]
-        # chunks_spec = [
-        #     c
-        #     for c, ignore in zip(self.write_options["chunks"], incomplete_chunks_axes)
-        #     if not ignore
-        # ]
         items_to_write = {
             path: merge(
                 [
@@ -611,7 +602,6 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
 
     @staticmethod
     def _write(items, write_options):
-        print("ITEMS", items)
         batch_chunks = write_options.get("batch_chunks", True)
         pad_if_needed = write_options.get("pad_if_needed", True)
         chunks_spec = write_options.get("chunks", None)
@@ -643,7 +633,6 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     )
                     path = path_template.format(*value_key)
                     items_by_path[path][key + value_key_subset] = np.asarray(array)
-        print("ITEMS BY PATH", items_by_path)
         for store_path, subarrays in items_by_path.items():
             store = write_options["store"](store_path)
             synchronizer = write_options["synchronizer"](store_path + ".lock")
@@ -695,29 +684,11 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         chunks_spec,
                     ).items()
                 }
-                print("SUBARRAYS BY CHUNK", subarrays_by_chunk)
                 # put subarrays that don't belong to a complete chunk here
                 # they are set individually below, after setting complete chunks
                 subarrays = {}
                 for chunk_key in list(subarrays_by_chunk.keys()):
                     chunk_subarrays = subarrays_by_chunk[chunk_key]
-                    print(
-                        "COMPARING INDICES",
-                        set(chunk_subarrays.keys()),
-                        indices_for_chunk(chunk_key, chunks_spec, new_shape),
-                    )
-                    print(
-                        "COMPARING INDICES SLICED",
-                        slice_key_set(chunk_subarrays.keys(), incomplete_chunks_axes),
-                        slice_key_set(
-                            indices_for_chunk(
-                                chunk_key,
-                                chunks_spec,
-                                new_shape,
-                            ),
-                            incomplete_chunks_axes,
-                        ),
-                    )
                     if slice_key_set(
                         chunk_subarrays.keys(), incomplete_chunks_axes
                     ) != slice_key_set(
@@ -728,7 +699,6 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         ),
                         incomplete_chunks_axes,
                     ):
-                        print("DEL PARTIAL", chunk_key)
                         subarrays.update(chunk_subarrays)
                         del subarrays_by_chunk[chunk_key]
                 for chunk_key, chunk_subarrays in subarrays_by_chunk.items():
@@ -745,22 +715,15 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                         dtype=dtype,
                         pad_if_needed=pad_if_needed,
                     )
-                    print("SETTING BLOCK", chunk_key)
                     dest_array.blocks[chunk_key] = chunk_array
-            print("REMAINDER SUBARRAYS", subarrays)
             for key, subarray in subarrays.items():
-                print()
-                print(">>>>>>", key)
-                print("PRE-PAD", subarray.shape, subarray.dtype, subarray)
                 if pad_if_needed:
                     subarray = pad(
                         subarray.astype(dtype),
                         subarray_shape,
                         fill_value=fill_value,
                     )
-                print("POST-PAD", subarray.shape, subarray.dtype, subarray)
                 dest_array[key] = subarray
-                print("DONE SETTING")
 
 
 class DelayedTableStore(DelayedStore):
