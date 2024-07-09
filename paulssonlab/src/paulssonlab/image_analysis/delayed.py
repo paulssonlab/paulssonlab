@@ -12,6 +12,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
+from cytoolz import merge
 
 from paulssonlab.image_analysis.image import pad
 from paulssonlab.util.core import (
@@ -483,6 +484,7 @@ def stack_subarrays(
 ):
     if origin is None:
         origin = tuple(0 for _ in range(len(key_shape)))
+    print("ORIGIN", origin)
     fill_array = np.full(subarray_shape, fill_value, dtype=dtype)
     print("(((", key_shape, subarray_shape, source_arrays.keys())
     sorted_keys = [
@@ -519,20 +521,27 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
             raise ValueError(f"chunks must be a tuple of integers: {chunks_spec}")
 
     def write(self, partial_chunks=False):
-        # we directly access self.value[k] instead of self[k] so we don't check readiness
-        path_placeholders = set(str_placeholders(str(self.output_path)))
+        path_placeholders = str_placeholders(str(self.output_path))
         subarrays_by_path = defaultdict(dict)
         subarray_key_to_full_key = {}
         for key in self._write_queue:
             if key not in self.value:
                 continue
 
-            subarray_key = tuple(
-                key[idx] for idx in set(range(len(key))) - path_placeholders
+            key_subset = tuple(
+                key[idx] for idx in range(len(key)) if idx not in path_placeholders
             )
-            path = str(self.output_path).format(*key)
-            subarrays_by_path[path][subarray_key] = self.value[key]
-            subarray_key_to_full_key[(path, subarray_key)] = key
+            remaining_placeholders = [p for p in path_placeholders if p >= len(key)]
+            if remaining_placeholders:
+                min_remaining_placeholder = min(remaining_placeholders)
+                placeholder_replacements = [
+                    f"{{{p-min_remaining_placeholder}}}" for p in remaining_placeholders
+                ]
+            else:
+                placeholder_replacements = []
+            path = str(self.output_path).format(*key, *placeholder_replacements)
+            subarrays_by_path[path][key_subset] = self.value[key]
+            subarray_key_to_full_key[(path, key_subset)] = key
         print("(())", subarrays_by_path)
         if partial_chunks:
 
@@ -541,15 +550,27 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
 
         else:
             chunk_filter_func = complete_chunks
+        # items_to_write = {
+        #     path: {
+        #         chunk_key: extract_keys(subarrays, subarray_keys)
+        #         for chunk_key, subarray_keys in chunk_filter_func(
+        #             list(subarrays.keys()), self.write_options["chunks"]
+        #         ).items()
+        #     }
+        #     for path, subarrays in subarrays_by_path.items()
+        # }
         items_to_write = {
-            path: {
-                chunk_key: extract_keys(subarrays, subarray_keys)
-                for chunk_key, subarray_keys in chunk_filter_func(
-                    list(subarrays.keys()), self.write_options["chunks"]
-                ).items()
-            }
+            path: merge(
+                [
+                    extract_keys(subarrays, subarray_keys)
+                    for _, subarray_keys in chunk_filter_func(
+                        list(subarrays.keys()), self.write_options["chunks"]
+                    ).items()
+                ]
+            )
             for path, subarrays in subarrays_by_path.items()
         }
+        # filter out paths with no subarrays
         items_to_write = {
             path: subarrays for path, subarrays in items_to_write.items() if subarrays
         }
@@ -565,15 +586,14 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         # writer_key: ((path1, (chunk_key1.1, chunk_key1.2, ...)), (path2, (chunk_key2.1, ...)), ...)
         writer_key = tuple(
             (path, tuple(sorted(subarrays.keys())))
-            for path, subarrays in items_to_write.items()
+            for path, subarrays in sorted(items_to_write.items())
         )
         self.writers[writer_key] = writer
         self.queue.append(writer)
         keys_to_write = set(
             subarray_key_to_full_key[(path, subarray_key)]
-            for path, subarrays_by_chunk in items_to_write.items()
-            for chunk_subarrays in subarrays_by_chunk.values()
-            for subarray_key in chunk_subarrays.keys()
+            for path, subarrays in items_to_write.items()
+            for subarray_key in subarrays.keys()
         )
         print("!!! REMOVING", keys_to_write)
         self._write_queue -= keys_to_write
@@ -590,36 +610,77 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
         fill_value = write_options.get("fill_value", None)
         if chunks_spec is None:
             chunks_spec = ()
-        for store_path, subarrays_by_chunk in items.items():
+        items_by_path = defaultdict(dict)
+        for path_template, path_subarrays in items.items():
+            path_placeholders = str_placeholders(path_template)
+            for key, value in path_subarrays.items():
+                if isinstance(value, dict):
+                    value = flatten_dict(value, concatenate_keys=True)
+                else:
+                    value = {(): value}
+                for value_key, array in value.items():
+                    if (max_placeholder := max(path_placeholders)) + 1 > len(value_key):
+                        raise ValueError(
+                            f"path '{path_template}' requires value key with length at least {max_placeholder+1}, but instead got value key: {value_key}"
+                        )
+                    value_key_subset = tuple(
+                        value_key[idx]
+                        for idx in range(len(value_key))
+                        if idx not in path_placeholders
+                    )
+                    print(
+                        "TEMPLATE",
+                        path_template,
+                        "KEY",
+                        key,
+                        "VALUE KEY",
+                        value_key,
+                        "SUBSET",
+                        value_key_subset,
+                        "ARRAY",
+                        array,
+                    )
+                    path = path_template.format(*value_key)
+                    items_by_path[path][key + value_key_subset] = np.asarray(array)
+        print(888, items_by_path)
+        0 / 0
+        # items = {
+        #     store_path: {
+        #         key: { for } for key, subarrays in path_subarray.items()
+        #     }
+        #     for store_path, pasath_subarrays in items.items()
+        # }
+        # items_to_write = {
+        #     path: {
+        #         chunk_key: extract_keys(subarrays, subarray_keys)
+        #         for chunk_key, subarray_keys in chunk_filter_func(
+        #             list(subarrays.keys()), self.write_options["chunks"]
+        #         ).items()
+        #     }
+        #     for path, subarrays in subarrays_by_path.items()
+        # }
+        for store_path, subarrays in items.items():
             store = write_options["store"](store_path)
             synchronizer = write_options["synchronizer"](store_path + ".lock")
-            subarrays_by_chunk = {
-                chunk_key: {
-                    chunk_subarray_key: np.asarray(chunk_subarray)
-                    for chunk_subarray_key, chunk_subarray in flatten_dict(
-                        chunk_subarrays, concatenate_keys=True
-                    ).items()
-                }
-                for chunk_key, chunk_subarrays in subarrays_by_chunk.items()
-            }
-            all_subarrays = [
-                subarray
-                for chunk_subarrays in subarrays_by_chunk.values()
-                for subarray in chunk_subarrays.values()
-            ]
-            all_keys = [
-                key
-                for chunk_subarrays in subarrays_by_chunk.values()
-                for key in chunk_subarrays.keys()
-            ]
+            # subarrays_by_chunk = {
+            #     chunk_key: {
+            #         chunk_subarray_key: np.asarray(chunk_subarray)
+            #         for chunk_subarray_key, chunk_subarray in flatten_dict(
+            #             chunk_subarrays, concatenate_keys=True
+            #         ).items()
+            #     }
+            #     for chunk_key, chunk_subarrays in subarrays_by_chunk.items()
+            # }
+            all_subarrays = [subarray for subarray in subarrays.values()]
+            all_keys = [key for key in subarrays.keys()]
             subarray_shape = _shape_for_subarrays(
                 [subarray.shape for subarray in all_subarrays],
                 pad_if_needed=pad_if_needed,
             )
-            chunk_shape = (
-                *chunks_spec,
-                *subarray_shape,
-            )
+            # chunk_shape = (
+            #     *chunks_spec,
+            #     *subarray_shape,
+            # )
             dtype = _dtype_for_arrays(
                 [subarray.dtype for subarray in all_subarrays],
                 fill_value=fill_value,
@@ -680,6 +741,13 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                 print("RESIZING")
                 dest_array.resize(*new_shape)
             if batch_chunks:
+                subarrays_by_chunk = {
+                    chunk_key: extract_keys(subarrays, subarray_keys)
+                    for chunk_key, subarray_keys in group_by_chunks(
+                        list(subarrays.keys()),
+                        chunks_spec,
+                    ).items()
+                }
                 for chunk_key, chunk_subarrays in subarrays_by_chunk.items():
                     print(
                         "KEY",
@@ -701,15 +769,14 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
                     print("ARRAY", chunk_array.shape)
                     dest_array.blocks[chunk_key] = chunk_array
             else:
-                for chunk_key, chunk_subarrays in subarrays_by_chunk.items():
-                    for chunk_subarray_key, chunk_subarray in chunk_subarrays.items():
-                        if pad_if_needed:
-                            chunk_subarray = pad(
-                                chunk_subarray.astype(dtype),
-                                subarray_shape,
-                                fill_value=fill_value,
-                            )
-                        dest_array[chunk_subarray_key] = chunk_subarray
+                for key, subarray in subarrays.items():
+                    if pad_if_needed:
+                        subarray = pad(
+                            subarray.astype(dtype),
+                            subarray_shape,
+                            fill_value=fill_value,
+                        )
+                    dest_array[key] = subarray
 
 
 class DelayedTableStore(DelayedStore):
