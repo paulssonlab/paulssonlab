@@ -189,7 +189,7 @@ def send_eaton_fish(
             # TODO: do we want to send this?
             "all_channels": all_channels,
             "fov_num": coords["v"],
-            "t": coords["t"],
+            "t": coords["t"] - 1,  # convert from one-based to zero-based indexing
         }
         msg = {
             "type": "image",

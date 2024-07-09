@@ -182,76 +182,106 @@ class DefaultPipeline(Pipeline):
         self.config = config
         self._apply_default_config()
         self._queue = DelayedQueue(wrapper=get_delayed(delayed))
+        # fov
         self.first_t = {}
+        # fov
         self.last_t = {}
+        # fov
         self.fish_first_t = {}
+        # fov, t
         self.initial_rois = DelayedTableStore(
             self._queue,
             output_dir / "initial_rois",
             schema=self.FOV_T_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
+        # fov, t
         self.rois = DelayedTableStore(
             self._queue,
             output_dir / "rois",
             schema=self.FOV_T_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
+        # fov, t
         self.fish_rois = DelayedTableStore(
             self._queue,
             output_dir / "fish_rois",
             schema=self.FOV_T_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
+        # fov, channel, t
         self.measurements = DelayedTableStore(
             self._queue,
             output_dir / "measurements",
             schema=self.FOV_CHANNEL_T_ROI_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t", "channel"]),
         )
+        # fov, t
         self.mask_measurements = DelayedTableStore(
             self._queue,
             output_dir / "mask_measurements",
             schema=self.FOV_T_ROI_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
+        # fov, channel, t
         self.raw_frames = DelayedBatchedZarrStore(
-            self._queue, output_dir / "raw_frames/fov={}/channel={}/t={}"
+            self._queue,
+            output_dir / "raw_frames/fov={}",
+            write_options=dict(chunks=(1, 1)),
         )
+        # fov, channel, t
         self.processed_frames = DelayedBatchedZarrStore(
-            self._queue, output_dir / "processed_frames/fov={}/channel={}/t={}"
+            self._queue,
+            output_dir / "processed_frames/fov={}",
+            write_options=dict(chunks=(1, 1)),
         )
+        # fov, channel, t; roi
         self.crops = DelayedBatchedZarrStore(
             self._queue,
-            output_dir / "crops/fov={}/channel={}/t={}",
-            write_options=dict(chunks=(5,)),
+            output_dir / "crops/fov={}/channel={}",
+            write_options=dict(chunks=(20, 40), incomplete_chunks_axes=[False, True]),
         )
+        # fov, t; roi
         self.segmentation_crops = DelayedBatchedZarrStore(
             self._queue,
-            output_dir / "segmentation_crops/fov={}/t={}",
-            write_options=dict(chunks=(5,)),
+            output_dir / "segmentation_crops/fov={}",
+            write_options=dict(chunks=(20, 40), incomplete_chunks_axes=[False, True]),
         )
+        # fov, t; roi
         self.segmentation_masks = DelayedBatchedZarrStore(
             self._queue,
-            output_dir / "segmentation_masks/fov={}/t={}",
-            write_options=dict(chunks=(5,)),
+            output_dir / "segmentation_masks/fov={}",
+            write_options=dict(chunks=(20, 40), incomplete_chunks_axes=[False, True]),
         )
+        # fov
         self.initial_drift_features = DelayedStore(self._queue)
+        # fov
         self.image_limits = DelayedStore(self._queue)
+        # fov
         self.fish_image_limits = DelayedStore(self._queue)
+        # fov, t
         self.shifts = DelayedStore(self._queue)
+        # fov, t
         self.fish_shifts = DelayedStore(self._queue)
+        # fov, channel, t
         self.fish_raw_frames = DelayedBatchedZarrStore(
-            self._queue, output_dir / "fish_raw_frames/fov={}/channel={}/t={}"
+            self._queue,
+            output_dir / "fish_raw_frames/fov={}",
+            write_options=dict(chunks=(1, 1)),
         )
+        # fov, channel, t
         self.fish_processed_frames = DelayedBatchedZarrStore(
-            self._queue, output_dir / "fish_processed_frames/fov={}/channel={}/t={}"
+            self._queue,
+            output_dir / "fish_processed_frames/fov={}",
+            write_options=dict(chunks=(1, 1)),
         )
+        # fov, channel, t; roi
         self.fish_crops = DelayedBatchedZarrStore(
             self._queue,
-            output_dir / "fish_crops/fov={}/channel={}/t={}",
-            write_options=dict(chunks=(5,)),
+            output_dir / "fish_crops/fov={}/channel={}",
+            write_options=dict(chunks=(10, 40), incomplete_chunks_axes=[False, True]),
         )
+        # fov, t
         self.fish_measurements = DelayedTableStore(
             self._queue,
             output_dir / "fish_measurements",
@@ -537,6 +567,10 @@ class DefaultPipeline(Pipeline):
                 self.delayed(measure_fish_crops, crops),
             )
         # cleanup
+        # flush non-FISH DelayedBatchedZarrStores so that non-FISH write tasks launch before FISH tasks
+        self.crops.flush()
+        self.segmentation_crops.flush()
+        self.segmentation_masks.flush()
         self.write_stores()
         if self.config.get("preprocess_func"):
             for key in list(self.fish_raw_frames):
@@ -590,13 +624,21 @@ class DefaultPipeline(Pipeline):
         self.mask_measurements.write()
         self.fish_measurements.write()
         #### DelayedBatchedZarrStore
-        # self.raw_frames
-        # self.processed_frames
+        # don't write, but allow entries to be deleted
+        for store in [
+            self.raw_frames,
+            self.processed_frames,
+            self.fish_raw_frames,
+            self.fish_processed_frames,
+        ]:
+            store._write_queue.clear()
+        # self.raw_frames.write()
+        # self.processed_frames.write()
         self.crops.write()
         self.segmentation_crops.write()
         self.segmentation_masks.write()
-        # self.fish_raw_frames
-        # self.processed_raw_frames
+        # self.fish_raw_frames.write()
+        # self.fish_processed_frames.write()
         self.fish_crops.write()
 
     def handle_done(self):
