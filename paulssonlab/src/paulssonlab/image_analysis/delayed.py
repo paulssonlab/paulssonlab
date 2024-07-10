@@ -732,7 +732,6 @@ class DelayedBatchedZarrStore(DelayedZarrStore):
 
 
 class DelayedTableStore(DelayedStore):
-    # DEFAULT_WRITE_OPTIONS = {"mode": "append", "engine": "rust"}
     DEFAULT_WRITE_OPTIONS = {"existing_data_behavior": "delete_matching"}
 
     def __init__(self, queue, output_path, schema=None, write_options=None):
@@ -783,7 +782,6 @@ class DelayedTableStore(DelayedStore):
     @classmethod
     def _write(cls, items, schema, path, write_options):
         df = cls._concat_table(items, schema)
-        # write_deltalake(path, table, **write_options)
         pq.write_to_dataset(
             pa.Table.from_pandas(df, preserve_index=False), path, **write_options
         )
