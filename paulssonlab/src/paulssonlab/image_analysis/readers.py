@@ -32,9 +32,16 @@ def _select_indices(idxs, slice_):
         return slice_
 
 
+def _numpy_to_py(obj):
+    if hasattr(obj, "item"):
+        return obj.item()
+    else:
+        return obj
+
+
 # TODO: add random_axes argument for testing?
 # random_axes="v", axis_order="vtcz" processes whole FOVs time-series in random FOV order
-def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
+def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True, send_metadata=True):
     delayed = get_delayed(delayed)
     nd2 = get_nd2_reader(filename)
     # TODO: allow slicing by idx/name?? e.g., c=[0] or channel=["RFP-EM", "YFP-EM"]
@@ -47,11 +54,12 @@ def send_nd2(filename, axis_order="tvcz", slices={}, delayed=True):
     iterator = product(*iterators)
     # send whole-file metadata
     # TODO: we don't wrap in delayed, should we?
-    nd2_metadata = parse_nd2_metadata(nd2)
-    yield {"type": "nd2_metadata", "metadata": nd2_metadata}
+    if send_metadata:
+        nd2_metadata = parse_nd2_metadata(nd2)
+        yield {"type": "nd2_metadata", "metadata": nd2_metadata}
     # send frames
     for idxs in iterator:
-        coords = dict(zip(axis_order, idxs))
+        coords = dict(zip(axis_order, (_numpy_to_py(idx) for idx in idxs)))
         # TODO: this might not work delayed because ND2Reader doesn't reopen file handles correctly
         # TODO: use an LRU buffer for open ND2 file handles?
         # image = delayed(nd2.get_frame_2D)(**coords)
@@ -183,7 +191,7 @@ def send_eaton_fish(
             yield msg
     for key, filename in filenames:
         image = delayed(get_eaton_fish_frame)(filename)
-        coords = dict(zip(axis_order, key))
+        coords = dict(zip(axis_order, (_numpy_to_py(k) for k in key)))
         image_metadata = {
             "channel": coords["c"],
             # TODO: do we want to send this?
