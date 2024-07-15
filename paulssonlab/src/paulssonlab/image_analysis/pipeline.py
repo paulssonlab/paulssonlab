@@ -135,7 +135,8 @@ def measure_fish_crop(images):
                 "p90": np.percentile(image, 90),
                 "p95": np.percentile(image, 95),
                 "p98": np.percentile(image, 98),
-                "p99": np.percentile(image, 98),
+                "p99": np.percentile(image, 99),
+                "p99.5": np.percentile(image, 99.5),
             }
             for channel, image in images.items()
         ],
