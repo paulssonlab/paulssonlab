@@ -151,14 +151,6 @@ def slice_directory(
     return iterator, unmatched_filenames, axis_coords
 
 
-def get_eaton_fish_frame(filename):
-    with h5py.File(filename) as f:
-        # load array into memory as a numpy array
-        # TODO: do we ever want to memmap?
-        frame = f["data"][()]
-    return frame
-
-
 def send_eaton_fish(
     root_dir,
     pattern=r"fov=(?P<v>\d+)_config=(?P<c>\w+)_t=(?P<t>\d+)",
@@ -179,7 +171,7 @@ def send_eaton_fish(
             filename = root_dir / suffix
             if not filename.exists():
                 continue
-            image = delayed(get_eaton_fish_frame)(filename)
+            image = delayed(get_hdf5_frame)(filename, "data")
             image_metadata = {}  # TODO
             msg = {
                 "type": "image",
@@ -190,7 +182,7 @@ def send_eaton_fish(
             }
             yield msg
     for key, filename in filenames:
-        image = delayed(get_eaton_fish_frame)(filename)
+        image = delayed(get_hdf5_frame)(filename, "data")
         coords = dict(zip(axis_order, (_numpy_to_py(k) for k in key)))
         image_metadata = {
             "channel": coords["c"],
@@ -221,7 +213,11 @@ def send_eaton_fish(
 # TODO: handle more elegantly
 # (open file pool, etc.)
 def get_hdf5_frame(filename, hdf5_path, slice_=()):
-    return h5py.File(filename)[hdf5_path][slice_]
+    with h5py.File(filename) as f:
+        # load array into memory as a numpy array
+        # TODO: do we ever want to memmap?
+        frame = f[hdf5_path][slice_]
+    return frame
 
 
 def send_hdf5(filename, delayed=True):
