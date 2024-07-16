@@ -28,9 +28,11 @@ dependencies:
   - numpy-indexed
   - pandas
   - panel
+  - polars-u64-idx
   - py-opencv
   - pyarrow
   - pyinstrument
+  - pymc
   - scikit-image
   - scikit-learn
   - scipy
