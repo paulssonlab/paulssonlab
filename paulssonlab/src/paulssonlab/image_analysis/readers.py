@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import zarr
 from cytoolz import excepts
+from skimage.io import imread
 from tqdm.auto import tqdm
 
 from paulssonlab.image_analysis.image import pad
@@ -244,6 +245,23 @@ def send_hdf5(filename, delayed=True):
                     }
                     msg = {"type": "image", "image": image, "metadata": image_metadata}
                     yield msg
+
+
+def send_calibration(dark, flats, delayed=True):
+    delayed = get_delayed(delayed)
+    yield {
+        "type": "image",
+        "image_type": "calibration",
+        "metadata": {"calibration_type": "dark"},
+        "image": delayed(imread)(dark),
+    }
+    for channel, filename in flats.items():
+        yield {
+            "type": "image",
+            "image_type": "calibration",
+            "metadata": {"calibration_type": "flat", "channel": channel},
+            "image": delayed(imread)(filename),
+        }
 
 
 def convert_nd2_to_array(

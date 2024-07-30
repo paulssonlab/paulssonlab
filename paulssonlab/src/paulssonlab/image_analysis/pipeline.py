@@ -30,6 +30,10 @@ from paulssonlab.image_analysis.trench_detection import find_trenches
 from paulssonlab.image_analysis.util import get_delayed
 
 
+def apply_dark_and_flat(img, dark, flat):
+    return (img - dark) / (flat - dark)
+
+
 def crop_rois(img, rois):
     crops = {}
     # TODO: the islice is just for testing (we only deal with three trenches for FOV), otherwise every dask task takes a long time
@@ -114,9 +118,14 @@ def measure_fish_crop(images):
                 "channel": channel,
                 "mean": np.mean(image),
                 "otsu_mean": np.mean(image[threshold_otsu(image) <= image]),
+                "bg_otsu_mean": np.mean(image[threshold_otsu(image) > image]),
                 "median": np.median(image),
                 "otsu_median": np.median(image[threshold_otsu(image) <= image]),
+                "bg_otsu_median": np.median(image[threshold_otsu(image) > image]),
                 "composite_otsu_mean": np.mean(image[composite_threshold <= composite]),
+                "bg_composite_otsu_mean": np.mean(
+                    image[composite_threshold > composite]
+                ),
                 "composite_otsu_median": np.median(
                     image[composite_threshold <= composite]
                 ),
@@ -132,6 +141,38 @@ def measure_fish_crop(images):
                 "composite_otsu_p99": np.percentile(
                     image[composite_threshold <= composite], 99
                 ),
+                "bg_composite_otsu_median": np.median(
+                    image[composite_threshold > composite]
+                ),
+                "bg_composite_otsu_p40": np.percentile(
+                    image[composite_threshold > composite], 40
+                ),
+                "bg_composite_otsu_p30": np.percentile(
+                    image[composite_threshold > composite], 30
+                ),
+                "bg_composite_otsu_p20": np.percentile(
+                    image[composite_threshold > composite], 20
+                ),
+                "bg_composite_otsu_p10": np.percentile(
+                    image[composite_threshold > composite], 10
+                ),
+                "bg_composite_otsu_p5": np.percentile(
+                    image[composite_threshold > composite], 5
+                ),
+                "bg_composite_otsu_p92": np.percentile(
+                    image[composite_threshold > composite], 2
+                ),
+                "bg_composite_otsu_p1": np.percentile(
+                    image[composite_threshold > composite], 1
+                ),
+                "p40": np.percentile(image, 40),
+                "p30": np.percentile(image, 30),
+                "p20": np.percentile(image, 20),
+                "p10": np.percentile(image, 10),
+                "p5": np.percentile(image, 5),
+                "p2": np.percentile(image, 2),
+                "p1": np.percentile(image, 1),
+                "p0.5": np.percentile(image, 0.5),
                 "p90": np.percentile(image, 90),
                 "p95": np.percentile(image, 95),
                 "p98": np.percentile(image, 98),
@@ -153,6 +194,7 @@ class Pipeline:
 
 class DefaultPipeline(Pipeline):
     DEFAULT_CONFIG = {
+        "apply_dark_and_flats": True,
         "roi_detection_composite_func": power_law_composite,
         "segmentation_composite_func": partial(np.nanmean, axis=0),
         "roi_detection_func": find_trenches,
@@ -224,6 +266,8 @@ class DefaultPipeline(Pipeline):
             schema=self.FOV_T_ROI_SCHEMA,
             write_options=dict(partition_cols=["fov_num", "t"]),
         )
+        # ("dark", None) or ("flat", "GFP")
+        self.calibration_frames = DelayedStore(self._queue)
         # fov, channel, t
         self.raw_frames = DelayedBatchedZarrStore(
             self._queue,
@@ -317,6 +361,8 @@ class DefaultPipeline(Pipeline):
                         self.handle_fish_barcode(msg)
                     case {"image_type": "science"}:
                         self.handle_image(msg)
+                    case {"image_type": "calibration"}:
+                        self.handle_calibration(msg)
                     case _:
                         raise ValueError(
                             "received image message with missing or unknown image_type"
@@ -352,15 +398,26 @@ class DefaultPipeline(Pipeline):
         raw_frame = self.raw_frames.setdefault((fov_num, channel, t), image)
         # preprocess image
         # store preprocessed whole frame image ("/frame")
-        if self.config.get("preprocess_func"):
+        if self.config.get("preprocess_func") or self.config["apply_dark_and_flats"]:
+            processed_frame = raw_frame
+            if self.config["apply_dark_and_flats"]:
+                processed_frame = (
+                    self.delayed(
+                        apply_dark_and_flat,
+                        processed_frame,
+                        self.calibration_frames[("dark", None)],
+                        self.calibration_frames[("flat", channel)],
+                    ),
+                )
+            if self.config["preprocess_func"]:
+                processed_frame = (
+                    self.delayed(
+                        self.config["preprocess_func"],
+                        processed_frame,
+                    ),
+                )
             processed_frame = self.processed_frames.setdefault(
-                (fov_num, channel, t),
-                self.delayed(
-                    self.config["preprocess_func"],
-                    raw_frame,
-                    # channel=channel,
-                    # **(self.config.get("preprocess_kwargs") or {}),
-                ),
+                (fov_num, channel, t), processed_frame
             )
             processed_frames = self.processed_frames
         else:
@@ -504,15 +561,26 @@ class DefaultPipeline(Pipeline):
         raw_frame = self.fish_raw_frames.setdefault((fov_num, channel, t), image)
         # preprocess image
         # store preprocessed whole frame image ("/frame")
-        if self.config.get("preprocess_func"):
+        if self.config.get("preprocess_func") or self.config["apply_dark_and_flats"]:
+            processed_frame = raw_frame
+            if self.config["apply_dark_and_flats"]:
+                processed_frame = (
+                    self.delayed(
+                        apply_dark_and_flat,
+                        processed_frame,
+                        self.calibration_frames[("dark", None)],
+                        self.calibration_frames[("flat", channel)],
+                    ),
+                )
+            if self.config["preprocess_func"]:
+                processed_frame = (
+                    self.delayed(
+                        self.config["preprocess_func"],
+                        processed_frame,
+                    ),
+                )
             processed_frame = self.fish_processed_frames.setdefault(
-                (fov_num, channel, t),
-                self.delayed(
-                    self.config["preprocess_func"],
-                    raw_frame,
-                    # channel=channel,
-                    # **(self.config.get("preprocess_kwargs") or {}),
-                ),
+                (fov_num, channel, t), processed_frame
             )
             processed_frames = self.fish_processed_frames
         else:
@@ -613,6 +681,13 @@ class DefaultPipeline(Pipeline):
             for key in list(store.keys()):
                 if key[0] == fov_num and key[1] != t:
                     del store[key]
+
+    def handle_calibration(self, msg):
+        image = msg["image"]
+        metadata = msg["metadata"]
+        calibration_type = metadata["calibration_type"]
+        channel = metadata.get("channel")
+        self.calibration_frames.setdefault((calibration_type, channel), image)
 
     def write_stores(self):
         ####
